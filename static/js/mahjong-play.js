@@ -35,6 +35,7 @@
   let roomChat = null;
   let dealerRevealTimer = null;
   let dealerRevealDealNudged = false;
+  let rulePresetSyncing = false;
   let activeJokerTiles = new Set();
 
   const MJ_PRESET_HINTS = {
@@ -184,16 +185,9 @@
 
   function appendMjReadyOverlay(els, s, esc, btn) {
     const lobby = s.lobby || {};
-    const minP = Number(s.min_players) || 2;
-    const n = lobby.occupied_count != null
-      ? lobby.occupied_count
-      : (s.seats || []).filter(Boolean).length;
     const dialog = mjOverlayDialogEl();
     if (dialog) dialog.classList.add('widget-board-dialog--wide');
-    const hint = '房间内 ' + n + ' 人 · 至少 ' + minP + ' 人全部准备后可开局'
-      + (lobby.can_start ? '（可开局）' : '');
-    els.msgEl.innerHTML = renderMjLobbySeatsHtml(s, esc)
-      + `<p class="mj-overlay-hint">${esc(hint)}</p>`;
+    els.msgEl.innerHTML = renderMjLobbySeatsHtml(s, esc);
     const mySeat = resolveMySeat(s);
     const me = mySeat != null ? (s.seats || [])[mySeat] : null;
     if (mySeat != null) {
@@ -240,13 +234,11 @@
         if (pat) resultLine += ' · ' + pat;
       }
       appendMjReadyOverlay(els, s, esc, btn);
-      const prep = els.msgEl.querySelector('.mj-overlay-hint');
-      if (prep) {
-        let dealerHint = '上局赢家坐庄，无需掷骰';
-        if (r.win_type === 'draw') dealerHint = '流局庄家顺延，无需掷骰';
-        const extra = (resultLine ? resultLine + ' · ' : '') + '准备下一局 · ' + dealerHint;
-        prep.textContent = extra + ' · ' + prep.textContent;
-      }
+      const dealerHint = r.win_type === 'draw' ? '流局庄家顺延，无需掷骰' : '上局赢家坐庄，无需掷骰';
+      const hintParts = [];
+      if (resultLine) hintParts.push(resultLine);
+      hintParts.push('准备下一局 · ' + dealerHint);
+      els.msgEl.innerHTML += `<p class="mj-overlay-hint">${esc(hintParts.join(' · '))}</p>`;
       return true;
     }
 
@@ -622,14 +614,15 @@
   }
 
   function renderLobbySeats(s) {
-    const lobby = s && s.lobby || {};
     const hint = $('mjRoomHint');
-    if (hint && s && s.status === 'lobby' && s.code) {
-      const seats = s.seats || [];
-      const minP = Number(s.min_players) || 2;
-      const n = lobby.occupied_count != null ? lobby.occupied_count : seats.filter(Boolean).length;
-      hint.textContent = '房间内 ' + n + ' 人 · 至少 ' + minP + ' 人全部准备后可开局'
-        + (lobby.can_start ? '（可开局）' : '');
+    if (!hint) return;
+    if (s && s.code && lobbyInRoom(s)) {
+      hint.classList.add('pm-u-hidden');
+      return;
+    }
+    hint.classList.remove('pm-u-hidden');
+    if (!s || !s.code) {
+      hint.textContent = '创建或加入房间后开始。';
     }
   }
 
@@ -687,8 +680,9 @@
     }
     const ruleEl = $('mjSideRuleLine');
     const inRoom = lobbyInRoom(s);
+    const inLobby = inRoom && s.status === 'lobby';
     if (ruleEl) {
-      if (inRoom && (s.rule_summary || s.rule_label)) {
+      if (inRoom && !inLobby && (s.rule_summary || s.rule_label)) {
         ruleEl.textContent = s.rule_summary || ('规则：' + s.rule_label);
         ruleEl.classList.remove('pm-u-hidden');
       } else {
@@ -708,12 +702,29 @@
         streakEl.textContent = '';
       }
     }
-    const presetSel = $('mjRulePreset');
-    if (presetSel) presetSel.disabled = inRoom;
-    const lobbyPanel = $('mjLobbyPanel');
-    if (lobbyPanel) lobbyPanel.classList.toggle('pm-u-hidden', inRoom);
+    syncRulePresetUi(s);
     const panel = $('mjRoomPanel');
     if (panel) panel.classList.toggle('pm-u-hidden', !inRoom);
+  }
+
+  function syncRulePresetUi(s) {
+    const notice = $('mjRuleNotice');
+    const sel = $('mjRulePreset');
+    const hint = $('mjRulePresetHint');
+    const inRoom = s && lobbyInRoom(s);
+    const inLobby = inRoom && s.status === 'lobby';
+    if (notice) notice.classList.toggle('pm-u-hidden', !inLobby);
+    if (!sel) return;
+    const preset = (s && s.rule_preset) || 'standard';
+    rulePresetSyncing = true;
+    sel.value = preset;
+    rulePresetSyncing = false;
+    if (hint) {
+      hint.textContent = (s && s.rule_summary)
+        || MJ_PRESET_HINTS[preset]
+        || MJ_PRESET_HINTS.standard;
+    }
+    sel.disabled = !(inLobby && s && s.you_are_host);
   }
 
   function clearRoomUi(hint) {
@@ -729,7 +740,10 @@
     selectedDiscardTile = null;
     if (!isPopup) postStateToPopup();
     const hintEl = $('mjRoomHint');
-    if (hintEl) hintEl.textContent = hint || '在右侧选择规则并创建房间，或输入房间号加入。';
+    if (hintEl) {
+      hintEl.textContent = hint || '创建或加入房间后开始。';
+      hintEl.classList.remove('pm-u-hidden');
+    }
     setVisible($('mjReadyBtn'), false);
     setVisible($('mjStartBtn'), false);
     setVisible($('mjConfirmRollBtn'), false);
@@ -739,12 +753,12 @@
       setVisible($('mjBoardCard'), true);
       setVisible($('mjTableLayout'), false);
       setVisible($('mjTablePlaceholder'), true);
-      const lobbyPanel = $('mjLobbyPanel');
-      if (lobbyPanel) lobbyPanel.classList.remove('pm-u-hidden');
     } else {
       setVisible($('mjBoardCard'), false);
     }
     $('mjRoomPanel') && $('mjRoomPanel').classList.add('pm-u-hidden');
+    const ruleNotice = $('mjRuleNotice');
+    if (ruleNotice) ruleNotice.classList.add('pm-u-hidden');
     if (roomChat) roomChat.setVisible(false);
     const lobbySeats = $('mjLobbySeats');
     if (lobbySeats) {
@@ -1526,9 +1540,7 @@
     if (btn && btn.disabled) return;
     if (btn) btn.disabled = true;
     try {
-      const data = await api('create', {
-        rule_preset: ($('mjRulePreset') && $('mjRulePreset').value) || 'standard',
-      });
+      const data = await api('create', {});
       if (!applyState(data)) {
         mjToast('房间已创建但界面更新失败，请刷新页面', true);
         return;
@@ -1923,6 +1935,18 @@
     }
   }
 
+  async function doSetRulePreset() {
+    if (rulePresetSyncing || !roomCode || !state) return;
+    if (state.status !== 'lobby' || !state.you_are_host) return;
+    const preset = ($('mjRulePreset') && $('mjRulePreset').value) || 'standard';
+    if (preset === (state.rule_preset || 'standard')) {
+      syncRulePresetUi(state);
+      return;
+    }
+    const data = await api('set_rule_preset', { room_code: roomCode, rule_preset: preset });
+    applyState(data);
+  }
+
   function syncRulePresetHint() {
     const sel = $('mjRulePreset');
     const hint = $('mjRulePresetHint');
@@ -1931,13 +1955,22 @@
     hint.textContent = MJ_PRESET_HINTS[key] || MJ_PRESET_HINTS.standard;
   }
 
+  function onRulePresetChange() {
+    syncRulePresetHint();
+    if (rulePresetSyncing) return;
+    doSetRulePreset().catch((err) => {
+      alert(err.message || '规则更新失败');
+      if (state) syncRulePresetUi(state);
+    });
+  }
+
   function initMain() {
     initMjBoardOverlay();
     initRoomChat();
     bindPlayerAvatarUi();
     bindMainMessageBridge();
     syncRulePresetHint();
-    $('mjRulePreset') && $('mjRulePreset').addEventListener('change', syncRulePresetHint);
+    $('mjRulePreset') && $('mjRulePreset').addEventListener('change', onRulePresetChange);
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => mjToast(e.message || '创建失败', true)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
     $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));

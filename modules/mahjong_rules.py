@@ -1,4 +1,4 @@
-"""麻将规则预设（房间创建时选定，对局内不可改）。"""
+"""麻将规则预设（大厅内由房主选定，开局后不可改）。"""
 
 MJ_PRESET_STANDARD = 'standard'
 MJ_PRESET_HANGZHOU = 'hangzhou'

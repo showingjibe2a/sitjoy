@@ -41,7 +41,7 @@ MJ_HONORS = tuple(f'z{i}' for i in range(1, 8))
 
 MJ_CLEANUP_ACTIONS = frozenset({
     'create', 'join', 'leave', 'ready', 'start', 'confirm_roll', 'roll_dice', 'rejoin', 'state', 'wait',
-    'discard', 'claim', 'next_hand', 'chat_send', 'swap_seat',
+    'discard', 'claim', 'next_hand', 'chat_send', 'swap_seat', 'set_rule_preset',
 })
 
 _mj_file_lock = threading.RLock()
@@ -1431,6 +1431,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             return self._mj_action_chat_send(user_id, data, start_response)
         if action == 'swap_seat':
             return self._mj_action_swap_seat(user_id, data, start_response)
+        if action == 'set_rule_preset':
+            return self._mj_action_set_rule_preset(user_id, data, start_response)
         return self.send_json({'status': 'error', 'message': '未知操作'}, start_response)
 
     def _mj_action_chat_send(self, user_id, data, start_response):
@@ -1479,6 +1481,25 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             self._mj_write_room_file(room)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': f'创建房间失败：{e}'}, start_response)
+        return self._mj_json_room(room, user_id, start_response)
+
+    def _mj_action_set_rule_preset(self, user_id, data, start_response):
+        code = str(data.get('room_code') or '').strip().upper()
+        preset = mj_normalize_preset((data or {}).get('rule_preset'))
+        rules = mj_rules_for_preset(preset)
+        with self._mj_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            if int(user_id) != self._parse_int(room.get('host_user_id')):
+                return self.send_json({'status': 'error', 'message': '仅房主可修改规则'}, start_response)
+            if room.get('status') != 'lobby':
+                return self.send_json({'status': 'error', 'message': '对局已开始，无法修改规则'}, start_response)
+            if mj_normalize_preset(room.get('rule_preset')) == preset:
+                return self._mj_json_room(room, user_id, start_response)
+            room['rule_preset'] = preset
+            room['rule_label'] = rules.get('label') or preset
+            self._mj_bump_version(room)
+            self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
 
     def _mj_action_swap_seat(self, user_id, data, start_response):
