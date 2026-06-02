@@ -280,6 +280,7 @@
       showStatus('请先填写面料编号', true);
       return false;
     }
+    const fabricId = typeof hooks.getFabricId === 'function' ? hooks.getFabricId() : null;
     const list = (paths || []).filter(Boolean);
     if (!list.length) {
       showStatus('请先勾选要导入的图片', true);
@@ -292,6 +293,7 @@
       credentials: 'include',
       body: JSON.stringify({
         fabric_code: code,
+        fabric_id: fabricId,
         source_paths_b64: list,
         image_type: getSelectedImageType(),
       }),

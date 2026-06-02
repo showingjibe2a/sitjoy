@@ -45,6 +45,27 @@ class FabricManagementMixin:
     def _get_fabric_folder_bytes(self):
         return self._join_resources('『面料』')
 
+    def _resolve_fabric_naming_code(self, fabric_id=None, client_code='', conn=None):
+        """面料图片命名前缀：fabric_materials.fabric_code（面料编码），不用 fabric_name_en。"""
+        hint = str(client_code or '').strip()
+        fid = int(fabric_id or 0)
+        if fid <= 0:
+            return hint
+        try:
+            if conn is not None:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT fabric_code FROM fabric_materials WHERE id=%s LIMIT 1",
+                        (fid,),
+                    )
+                    row = cur.fetchone() or {}
+                db_code = str(row.get('fabric_code') or '').strip()
+                return db_code or hint
+            with self._get_db_connection() as own_conn:
+                return self._resolve_fabric_naming_code(fid, hint, own_conn)
+        except Exception:
+            return hint
+
     def _next_fabric_image_index(self, existing_names, fabric_code, image_type='文字卖点图'):
         return self._next_fabric_image_seq(existing_names, fabric_code, image_type)
 
@@ -182,6 +203,8 @@ class FabricManagementMixin:
             form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
 
             fabric_code = (form.getfirst('fabric_code', '') or '').strip()
+            fabric_id = self._parse_int(form.getfirst('fabric_id', '') or '')
+            fabric_code = self._resolve_fabric_naming_code(fabric_id, fabric_code)
             if not fabric_code:
                 return self.send_json({'status': 'error', 'message': 'Missing fabric_code'}, start_response)
 
@@ -274,7 +297,10 @@ class FabricManagementMixin:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             data = self._read_json_body(environ)
-            fabric_code = (data.get('fabric_code') or '').strip()
+            fabric_id = self._parse_int(data.get('fabric_id'))
+            fabric_code = self._resolve_fabric_naming_code(
+                fabric_id, (data.get('fabric_code') or '').strip()
+            )
             image_type = (data.get('image_type') or data.get('remark') or '文字卖点图').strip()
             source_path_b64 = str(data.get('source_path_b64') or data.get('source_path') or '').strip()
             source_paths_b64 = data.get('source_paths_b64') or []
@@ -716,8 +742,11 @@ class FabricManagementMixin:
             fabric_id = self._parse_int(data.get('fabric_id'))
             items = data.get('items') or []
 
+            if not fabric_code and fabric_id:
+                fabric_code = self._resolve_fabric_naming_code(fabric_id, '')
             if not fabric_code:
                 return self.send_json({'status': 'error', 'message': 'Missing fabric_code'}, start_response)
+            fabric_code = self._resolve_fabric_naming_code(fabric_id, fabric_code)
             if not image_type:
                 return self.send_json({'status': 'error', 'message': '请先选择图片类型'}, start_response)
             if not items:
@@ -918,7 +947,8 @@ class FabricManagementMixin:
                         )
                         new_id = cur.lastrowid
                     try:
-                        images = self._prepare_fabric_images_for_save(images, fabric_code)
+                        naming_code = self._resolve_fabric_naming_code(new_id, fabric_code, conn)
+                        images = self._prepare_fabric_images_for_save(images, naming_code)
                     except ValueError as ex:
                         return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
                     self._replace_fabric_image_mappings(conn, new_id, images)
@@ -953,7 +983,8 @@ class FabricManagementMixin:
                             (fabric_code, fabric_name_en, representative_color, material_id, item_id)
                         )
                     try:
-                        images = self._prepare_fabric_images_for_save(images, fabric_code)
+                        naming_code = self._resolve_fabric_naming_code(item_id, fabric_code, conn)
+                        images = self._prepare_fabric_images_for_save(images, naming_code)
                     except ValueError as ex:
                         return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
                     self._replace_fabric_image_mappings(conn, item_id, images)

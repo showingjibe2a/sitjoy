@@ -435,6 +435,7 @@
             if (!window.FabricNasImportUi) return;
             window.FabricNasImportUi.configure({
                 getFabricCode: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
+                getFabricId: () => editId || null,
                 getImageTypeOptions: () => fabricImageTypeOptions || [],
                 getImportImageType: () => {
                     const bar = document.getElementById('fabricNasImageTypeBar');
@@ -1599,6 +1600,7 @@
                 mode: 'gallery',
                 hooks: {
                     prefillVariantLinks: true,
+                    resolveRecommendFabricName: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
                     onAfterSuccess: async () => {
                         await loadFabricImages();
                         await syncFabricImageFromGalleryMeta(index);

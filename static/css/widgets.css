@@ -1030,7 +1030,9 @@
     display: none;
 }
 
-/* —— 麻将牌：系统 Unicode emoji（跨平台彩色字形） —— */
+/* —— 麻将牌：系统 Unicode emoji（跨平台彩色字形） ——
+   麻将块 (U+1F000) 仅「中」默认为 emoji，其余为文本样式；Safari 不支持 font-variant-emoji，
+   会退化为继承色的空心描边并因负间距叠牌而难以辨认。JS 已在各牌后追加 U+FE0F (VS16)。 */
 .mj-tile {
     position: relative;
     display: inline-block;
@@ -1068,7 +1070,7 @@
     user-select: none;
     text-rendering: auto;
     /* 切勿设置 color / -webkit-text-fill-color（含 initial/currentColor）：
-       WebKit 会把 Mahjong emoji 退化为继承色的空心描边，而非系统彩色字形。 */
+       文本展示模式下 WebKit 会用继承色画空心描边；彩色展示依赖 JS 追加的 U+FE0F。 */
 }
 
 .mj-tile--hand {

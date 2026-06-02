@@ -361,7 +361,7 @@
       const fmap = new Map((fabricOptions || []).map(it => [Number(it.fabric_id || 0), it]));
       const names = fids.map(fid => {
         const it = fmap.get(fid) || {};
-        return String(it.fabric_name_en || it.fabric_code || '').trim();
+        return String(it.fabric_code || it.fabric_name_en || '').trim();
       }).filter(Boolean);
       if (!names.length) return '';
       const first = names[0];
@@ -373,7 +373,7 @@
     const map = new Map((variantOptions || []).map(it => [Number(it.variant_id || 0), it]));
     const fabrics = vids.map(vid => {
       const it = map.get(vid) || {};
-      return String(it.fabric_name_en || it.fabric_code || '').trim();
+      return String(it.fabric_code || it.fabric_name_en || '').trim();
     }).filter(Boolean);
     if (!fabrics.length) return '';
     const first = fabrics[0];
