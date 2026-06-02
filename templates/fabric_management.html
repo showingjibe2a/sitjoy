@@ -383,12 +383,15 @@
                 onConfirm: (picked) => {
                     const defaultType = getDefaultFabricImageTypeForAdd();
                     (picked || []).forEach(it => {
-                        const display = it.display || it.name || '';
+                        const display = (window.SitjoyFsName && window.SitjoyFsName.resolveItemDisplayName)
+                            ? window.SitjoyFsName.resolveItemDisplayName(it)
+                            : (it.display || it.name || '');
                         if (!display) return;
                         if ((selectedImageObjects || []).some(x => (x.image_name || '') === display)) return;
                         selectedImageObjects.push({
                             image_name: display,
-                            image_name_raw_b64: '',
+                            image_name_raw_b64: it.name_raw_b64 || '',
+                            preview_b64: it.b64 || it.path_b64 || '',
                             remark: defaultType,
                             description: '',
                             sort_order: selectedImageObjects.length
@@ -599,6 +602,9 @@
                     }
                 }
                 if (img._localPreviewUrl) return img._localPreviewUrl;
+            }
+            if (img && img.preview_b64) {
+                return `/api/image-preview?id=${encodeURIComponent(img.preview_b64)}&mode=thumb&w=${width}&q=${quality}`;
             }
             return getFabricImagePreviewSrc(img ? img.image_name : '', width, quality);
         }
@@ -884,6 +890,9 @@
         }
 
         function tryDecodeNameFromB64(rawB64) {
+            if (window.SitjoyFsName && typeof window.SitjoyFsName.decodeFsNameFromB64 === 'function') {
+                return window.SitjoyFsName.decodeFsNameFromB64(rawB64) || null;
+            }
             if (!rawB64) return null;
             try {
                 const binary = atob(rawB64);
@@ -899,7 +908,6 @@
                         continue;
                     }
                 }
-                // fallback latin1-like
                 let s = '';
                 for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
                 return s;
@@ -1034,6 +1042,7 @@
                 representative_color: representativeColor,
                 images: selectedImageObjects.map((img, idx) => ({
                     image_name: img.image_name,
+                    image_name_raw_b64: img.image_name_raw_b64 || '',
                     remark: img.remark || '',
                     description: String(img.description != null ? img.description : '').trim(),
                     sort_order: idx
@@ -1642,6 +1651,7 @@
     </script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
+    <script src="/static/js/sitjoy_fs_name.js"></script>
     <script src="/static/js/fabric_nas_import.js"></script>
     <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>

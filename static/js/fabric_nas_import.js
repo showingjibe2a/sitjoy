@@ -9,8 +9,18 @@
   const ACTION_MODE_KEY = 'sj.fabricNas.actionMode.v1';
   const THUMB_SIZE_KEY = 'sj.fabricNas.thumbSize.v1';
 
-  let pathB64 = '';
-  let navStack = [];
+  const FABRIC_LIBRARY_ROOT_B64 = '44CO6Z2i5paZ44CP'; /* UTF-8 『面料』 */
+
+  function fabricLibraryRootStack() {
+    return [{ name: '『面料』', pathB64: FABRIC_LIBRARY_ROOT_B64 }];
+  }
+
+  function ensureFabricLibraryPath() {
+    if (!pathB64) {
+      pathB64 = FABRIC_LIBRARY_ROOT_B64;
+      navStack = fabricLibraryRootStack();
+    }
+  }
   let selected = new Set();
   let hooks = {};
   let selectAllBound = false;
@@ -25,6 +35,9 @@
   }
 
   function decodeB64Utf8(b64) {
+    if (global.SitjoyFsName && typeof global.SitjoyFsName.decodeFsNameFromB64 === 'function') {
+      return global.SitjoyFsName.decodeFsNameFromB64(b64);
+    }
     try {
       const binary = atob(String(b64 || ''));
       const bytes = new Uint8Array(binary.length);
@@ -61,7 +74,7 @@
   }
 
   function buildBreadcrumbsHtml() {
-    const crumbs = [`<a href="#" class="nas-main-image-crumb" data-crumb-idx="-1">根目录</a>`];
+    const crumbs = [`<a href="#" class="nas-main-image-crumb" data-crumb-idx="-1">『面料』</a>`];
     (navStack || []).forEach((seg, idx) => {
       const label = escapeHtml(String((seg && seg.name) ? seg.name : `目录${idx + 1}`));
       crumbs.push('<span class="nas-main-image-crumb-sep" aria-hidden="true">›</span>');
@@ -277,7 +290,11 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ fabric_code: code, source_paths_b64: list }),
+      body: JSON.stringify({
+        fabric_code: code,
+        source_paths_b64: list,
+        image_type: getSelectedImageType(),
+      }),
     });
     const data = await resp.json();
     if (!data || data.status !== 'success') {
@@ -320,8 +337,8 @@
   async function jumpTo(stackIdx) {
     const idx = Number(stackIdx);
     if (idx < 0 || Number.isNaN(idx)) {
-      navStack = [];
-      pathB64 = '';
+      pathB64 = FABRIC_LIBRARY_ROOT_B64;
+      navStack = fabricLibraryRootStack();
     } else {
       navStack = Array.isArray(navStack) ? navStack.slice(0, idx + 1) : [];
       const last = navStack.length ? navStack[navStack.length - 1] : null;
@@ -487,6 +504,7 @@
       navStack = [];
     }
     selected = new Set();
+    ensureFabricLibraryPath();
     $(MODAL_ID)?.classList.add('active');
     renderImageTypeBar();
     initActionModeSegment();
@@ -496,12 +514,10 @@
     const savedStack = navStack.slice();
     const ok = await renderList();
     if (!ok && (savedPath || savedStack.length)) {
-      showStatus('上次记住的路径暂时无法访问，已显示根目录。', true);
-      pathB64 = '';
-      navStack = [];
+      showStatus('上次记住的路径暂时无法访问，已回到『面料』目录。', true);
+      pathB64 = FABRIC_LIBRARY_ROOT_B64;
+      navStack = fabricLibraryRootStack();
       await renderList();
-      pathB64 = savedPath;
-      navStack = savedStack;
     }
   }
 

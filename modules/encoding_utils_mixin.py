@@ -269,6 +269,56 @@ class EncodingUtilsMixin:
                 except Exception:
                     continue
 
+    def _entry_name_bytes(self, entry):
+        raw = entry.name
+        if isinstance(raw, str):
+            try:
+                return os.fsencode(raw)
+            except Exception:
+                return raw.encode('utf-8', errors='surrogatepass')
+        return bytes(raw)
+
+    def _decode_fs_name_bytes(self, raw_bytes):
+        if raw_bytes is None:
+            return ''
+        if isinstance(raw_bytes, str):
+            raw_bytes = self._safe_fsencode(raw_bytes)
+        try:
+            display = os.fsdecode(raw_bytes)
+            return display.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
+        except Exception:
+            pass
+        for enc in ('utf-8', 'gb18030', 'latin-1'):
+            try:
+                return raw_bytes.decode(enc, errors='replace')
+            except Exception:
+                continue
+        return repr(raw_bytes)
+
+    def _resources_rel_path_b64(self, *parts):
+        """相对『上架资源』根目录的路径 bytes → (rel_str, path_b64)。"""
+        import base64
+        chunks = []
+        for part in parts:
+            if part is None:
+                continue
+            if isinstance(part, str):
+                text = part.replace('\\', '/').strip('/')
+                if not text:
+                    continue
+                chunks.append(self._safe_fsencode(text))
+            else:
+                b = bytes(part).strip(b'/\\')
+                if b:
+                    chunks.append(b)
+        if not chunks:
+            return '', ''
+        rel_b = chunks[0]
+        for b in chunks[1:]:
+            rel_b = rel_b + b'/' + b
+        rel_str = self._safe_fsdecode(rel_b).replace('\\', '/')
+        return rel_str, base64.b64encode(rel_b).decode('ascii')
+
     def _normalize_fabric_remark(self, remark):
         """标准化面料图片备注"""
         value = (remark or '').strip()

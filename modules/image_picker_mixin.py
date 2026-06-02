@@ -30,10 +30,10 @@ class ImagePickerMixin:
             if not root_b:
                 continue
             if not rel_b:
-                return True
+                return False
             if rel_b == root_b or rel_b.startswith(root_b + b'/'):
                 return True
-        return not rel_b and bool(root_rel_paths)
+        return False
 
     def _image_picker_bound_asset_ids(self, conn, context, fabric_id=None, variant_id=None, order_product_id=None):
         bound = set()
@@ -140,17 +140,40 @@ class ImagePickerMixin:
 
         return roots
 
+    def _entry_display_name(self, entry):
+        return self._decode_fs_name_bytes(self._entry_name_bytes(entry))
+
     def _image_picker_breadcrumbs(self, rel_path, roots):
         rel_norm = (rel_path or '').replace('\\', '/').strip('/')
-        crumbs = [{'label': '根', 'path': '', 'path_b64': ''}]
         if not rel_norm:
+            if roots:
+                r0 = roots[0]
+                return [{
+                    'label': r0.get('label') or '根',
+                    'path': r0.get('path') or '',
+                    'path_b64': r0.get('path_b64') or '',
+                }]
+            return [{'label': '根', 'path': '', 'path_b64': ''}]
+        root_path = ''
+        root_label = '根'
+        if roots:
+            root_path = (roots[0].get('path') or '').replace('\\', '/').strip('/')
+            root_label = roots[0].get('label') or root_label
+        crumbs = [{
+            'label': root_label,
+            'path': root_path,
+            'path_b64': roots[0].get('path_b64') if roots else '',
+        }]
+        if root_path and rel_norm == root_path:
             return crumbs
-        parts = rel_norm.split('/')
-        acc = []
+        tail = rel_norm
+        if root_path and rel_norm.startswith(root_path + '/'):
+            tail = rel_norm[len(root_path) + 1:]
+        parts = [p for p in tail.split('/') if p]
+        acc = root_path
         for part in parts:
-            acc.append(part)
-            p = '/'.join(acc)
-            crumbs.append({'label': part, 'path': p, 'path_b64': self._b64_rel_path(p)})
+            acc = f'{acc}/{part}' if acc else part
+            crumbs.append({'label': part, 'path': acc, 'path_b64': self._b64_rel_path(acc)})
         return crumbs
 
     def _image_picker_scan_folder(self, conn, cur, rel_path, bound_ids, keyword=''):
@@ -166,25 +189,22 @@ class ImagePickerMixin:
         try:
             with os.scandir(abs_path) as it:
                 for entry in it:
-                    name = entry.name
-                    if isinstance(name, bytes):
-                        try:
-                            display = os.fsdecode(name)
-                        except Exception:
-                            display = name.decode('utf-8', errors='replace')
-                    else:
-                        display = str(name)
-                    if display.startswith('.') or display.startswith('@'):
+                    display = self._entry_display_name(entry)
+                    if not display or display.startswith('.') or display.startswith('@'):
                         continue
-                    child_rel = f"{rel_norm}/{display}".strip('/') if rel_norm else display
+                    name_b = self._entry_name_bytes(entry)
+                    if rel_norm:
+                        child_rel, path_b64 = self._resources_rel_path_b64(rel_norm, name_b)
+                    else:
+                        child_rel, path_b64 = self._resources_rel_path_b64(name_b)
                     if entry.is_dir(follow_symlinks=False):
                         folders.append({
-                            'name': self._b64_from_fs(name if isinstance(name, bytes) else os.fsencode(display)),
+                            'name': self._b64_from_fs(name_b),
                             'display': display,
                             'path': child_rel,
-                            'path_b64': self._b64_rel_path(child_rel),
+                            'path_b64': path_b64,
                         })
-                    elif entry.is_file(follow_symlinks=False) and self._is_image_name(name):
+                    elif entry.is_file(follow_symlinks=False) and self._is_image_name(entry.name):
                         if kw and kw not in display.lower():
                             continue
                         aid = self._image_picker_asset_id_by_rel(cur, child_rel)
@@ -193,9 +213,10 @@ class ImagePickerMixin:
                         items.append({
                             'name': display,
                             'display': display,
+                            'name_raw_b64': base64.b64encode(name_b).decode('ascii'),
                             'path': child_rel,
-                            'path_b64': self._b64_rel_path(child_rel),
-                            'b64': self._b64_rel_path(child_rel),
+                            'path_b64': path_b64,
+                            'b64': path_b64,
                             'image_asset_id': aid or 0,
                         })
         except Exception:
@@ -242,9 +263,11 @@ class ImagePickerMixin:
             root_paths = [r['path'] for r in roots]
             rel_path = self._rel_from_b64(path_b64) if path_b64 else ''
             rel_str = self._safe_fsdecode(rel_path) if isinstance(rel_path, bytes) else str(rel_path or '')
-            if not self._abs_allowed_under_roots(rel_str, root_paths):
-                rel_str = roots[0]['path']
-                path_b64 = roots[0]['path_b64']
+            rel_str = rel_str.replace('\\', '/').strip('/')
+            # 空路径会落到上架资源根目录；面料等上下文应默认进入指定根（如『面料』）
+            if not rel_str or not self._abs_allowed_under_roots(rel_str, root_paths):
+                rel_str = (roots[0].get('path') or '').replace('\\', '/').strip('/')
+                path_b64 = roots[0].get('path_b64') or ''
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:

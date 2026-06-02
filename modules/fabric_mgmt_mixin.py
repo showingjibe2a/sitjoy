@@ -8,6 +8,7 @@ import time
 import cgi
 import io
 import re
+import secrets
 import hashlib
 import unicodedata
 from urllib.parse import parse_qs
@@ -44,22 +45,20 @@ class FabricManagementMixin:
     def _get_fabric_folder_bytes(self):
         return self._join_resources('『面料』')
 
-    def _next_fabric_image_index(self, existing_names, fabric_code):
-        max_idx = 0
-        prefix = f"{fabric_code}_"
-        for name in existing_names:
-            if not name:
-                continue
-            if name.startswith(prefix):
-                match = re.match(rf"^{re.escape(prefix)}(\\d+)", name)
-                if match:
-                    try:
-                        max_idx = max(max_idx, int(match.group(1)))
-                    except Exception:
-                        continue
-            elif name.startswith(f"{fabric_code}."):
-                max_idx = max(max_idx, 1)
-        return max_idx + 1
+    def _next_fabric_image_index(self, existing_names, fabric_code, image_type='文字卖点图'):
+        return self._next_fabric_image_seq(existing_names, fabric_code, image_type)
+
+    def _prepare_fabric_images_for_save(self, images, fabric_code):
+        plan = self._build_fabric_image_plan(images, fabric_code)
+        if plan.get('missing'):
+            raise ValueError('找不到图片文件: ' + '、'.join(plan['missing'][:5]))
+        if plan.get('not_ready'):
+            raise ValueError('图片文件尚未就绪: ' + '、'.join(plan['not_ready'][:5]))
+        if plan.get('rename_pairs'):
+            result = self._execute_fabric_rename_pairs(plan['rename_pairs'])
+            if result.get('status') != 'success':
+                raise ValueError(result.get('message') or '图片重命名失败')
+        return plan.get('planned_images') or []
 
     def handle_fabric_images_api(self, environ, start_response):
         """列出面料文件夹内图片"""
@@ -109,27 +108,8 @@ class FabricManagementMixin:
             with os.scandir(folder) as it:
                 for entry in it:
                     if entry.is_file(follow_symlinks=False) and self._is_image_name(entry.name):
-                        raw = entry.name
-                        if isinstance(raw, (str,)):
-                            try:
-                                raw_bytes = os.fsencode(raw)
-                            except Exception:
-                                raw_bytes = raw.encode('utf-8', errors='surrogatepass')
-                        else:
-                            raw_bytes = raw
-
-                        display = None
-                        try:
-                            display = os.fsdecode(raw_bytes)
-                            display = display.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
-                        except Exception:
-                            try:
-                                display = raw_bytes.decode('utf-8', errors='replace')
-                            except Exception:
-                                try:
-                                    display = raw_bytes.decode('gb18030', errors='replace')
-                                except Exception:
-                                    display = raw_bytes.decode('latin-1', errors='replace')
+                        raw_bytes = self._entry_name_bytes(entry)
+                        display = self._decode_fs_name_bytes(raw_bytes)
 
                         if unbound_only:
                             normalized_display = (display or '').replace('\\', '/').split('/')[-1].strip()
@@ -171,15 +151,7 @@ class FabricManagementMixin:
                             if check_ids:
                                 continue
 
-                        try:
-                            folder_bytes = os.fsencode('『面料』')
-                        except Exception:
-                            folder_bytes = '『面料』'.encode('utf-8', errors='surrogatepass')
-                        try:
-                            rel_bytes = os.path.join(folder_bytes, raw_bytes)
-                        except Exception:
-                            rel_bytes = folder_bytes + os.sep.encode('utf-8', errors='surrogatepass') + raw_bytes
-                        b64 = base64.b64encode(rel_bytes).decode('ascii')
+                        _, b64 = self._resources_rel_path_b64('『面料』', raw_bytes)
                         name_raw_b64 = base64.b64encode(raw_bytes).decode('ascii')
                         items.append({'name': display, 'name_raw_b64': name_raw_b64, 'b64': b64})
 
@@ -272,8 +244,11 @@ class FabricManagementMixin:
                     if not ext:
                         continue
 
-                    index = self._next_fabric_image_index(existing, fabric_code)
-                    target_name = f"{fabric_code}_{index:02d}{ext}"
+                    token = secrets.token_hex(4)
+                    target_name = f"{self._fabric_filename_part(fabric_code)}-tmp-{token}{ext}"
+                    while target_name in existing:
+                        token = secrets.token_hex(4)
+                        target_name = f"{self._fabric_filename_part(fabric_code)}-tmp-{token}{ext}"
                     dest_path = os.path.join(folder, os.fsencode(target_name))
                     
                     if target_name not in existing and not os.path.exists(dest_path):
@@ -299,6 +274,7 @@ class FabricManagementMixin:
                 return self.send_error(405, 'Method not allowed', start_response)
             data = self._read_json_body(environ)
             fabric_code = (data.get('fabric_code') or '').strip()
+            image_type = (data.get('image_type') or data.get('remark') or '文字卖点图').strip()
             source_path_b64 = str(data.get('source_path_b64') or data.get('source_path') or '').strip()
             source_paths_b64 = data.get('source_paths_b64') or []
             if not fabric_code:
@@ -346,8 +322,8 @@ class FabricManagementMixin:
                 except Exception:
                     base = 'image.jpg'
                 ext = os.path.splitext(base)[1] or '.jpg'
-                idx = self._next_fabric_image_index(existing, fabric_code)
-                target_name = f"{fabric_code}_{idx:02d}{ext}"
+                idx = self._next_fabric_image_index(existing, fabric_code, image_type)
+                target_name = self._fabric_target_filename(fabric_code, image_type, idx, ext)
                 dst_b = os.path.join(folder, os.fsencode(target_name))
                 try:
                     import shutil
@@ -517,6 +493,7 @@ class FabricManagementMixin:
                 data = json.loads(text) if text else {}
             
             fabric_code = (data.get('fabric_code') or '').strip()
+            image_type = (data.get('image_type') or data.get('remark') or '文字卖点图').strip()
             items = data.get('items') or []
             
             if not fabric_code or not items:
@@ -567,7 +544,7 @@ class FabricManagementMixin:
                     ext = os.path.splitext(src_basename_str)[1] or ''
                     idx = next_idx
                     while True:
-                        candidate = f"{fabric_code}_{idx:02d}{ext}"
+                        candidate = self._fabric_target_filename(fabric_code, image_type, idx, ext)
                         if candidate not in existing:
                             break
                         idx += 1
@@ -734,6 +711,10 @@ class FabricManagementMixin:
                             (fabric_code, fabric_name_en, representative_color, material_id)
                         )
                         new_id = cur.lastrowid
+                    try:
+                        images = self._prepare_fabric_images_for_save(images, fabric_code)
+                    except ValueError as ex:
+                        return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
                     self._replace_fabric_image_mappings(conn, new_id, images)
                     self._replace_fabric_sku_families(conn, new_id, sku_family_ids)
 
@@ -765,6 +746,10 @@ class FabricManagementMixin:
                             """,
                             (fabric_code, fabric_name_en, representative_color, material_id, item_id)
                         )
+                    try:
+                        images = self._prepare_fabric_images_for_save(images, fabric_code)
+                    except ValueError as ex:
+                        return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
                     self._replace_fabric_image_mappings(conn, item_id, images)
                     self._replace_fabric_sku_families(conn, item_id, sku_family_ids)
 

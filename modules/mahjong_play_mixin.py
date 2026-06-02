@@ -450,6 +450,47 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 out.append(i)
         return out
 
+    def _mj_seat_waits_next_hand(self, room, seat):
+        if room.get('status') not in ('playing', 'dealer_roll'):
+            return False
+        s = (room.get('seats') or [None] * MJ_SEATS)[seat]
+        return isinstance(s, dict) and bool(s.get('waits_next_hand'))
+
+    def _mj_playing_seats(self, room):
+        active = self._mj_active_seats(room)
+        if room.get('status') not in ('playing', 'dealer_roll'):
+            return active
+        playing = [s for s in active if not self._mj_seat_waits_next_hand(room, s)]
+        return playing if playing else active
+
+    def _mj_set_join_notice(self, room, seat, user_id, name):
+        self._mj_bump_version(room)
+        display = str(name or '').strip() or '新玩家'
+        room['join_notice'] = {
+            'seat': int(seat),
+            'user_id': int(user_id),
+            'name': display,
+            'message': f'{display} 已入座，将于下局加入对局',
+            'at_version': int(room.get('version') or 0),
+        }
+
+    def _mj_put_user_in_seat(self, room, user_id, slot, *, waits_next=False):
+        uid = int(user_id)
+        name = self._mj_user_display_name(uid)
+        seats = list(room.get('seats') or [None] * MJ_SEATS)
+        while len(seats) < MJ_SEATS:
+            seats.append(None)
+        entry = {
+            'user_id': uid,
+            'name': name,
+            'ready': False,
+        }
+        if waits_next:
+            entry['waits_next_hand'] = True
+        seats[int(slot)] = entry
+        room['seats'] = seats[:MJ_SEATS]
+        return name
+
     def _mj_seat_of_user(self, room, user_id):
         uid = int(user_id)
         found = None
@@ -510,7 +551,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         }
 
     def _mj_next_seat(self, room, seat):
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         if not active:
             return seat
         if seat not in active:
@@ -997,7 +1038,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
     def _mj_apply_kong_score(self, room, kong_seat, kong_kind):
         """杠牌即时计分：明杠（含补杠、点杠）每家付 1 分，暗杠每家付 2 分。"""
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         if kong_seat not in active:
             return
         pay = 2 if str(kong_kind or '').strip().lower() == 'concealed' else 1
@@ -1016,7 +1057,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
     def _mj_apply_hand_scores(self, room, winner_seat, win_type, pattern_code=None):
         dealer = int(room.get('dealer_seat') or 0)
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         rules = self._mj_rules(room)
         streak = int(room.get('dealer_streak') or 0)
         mult = mj_dealer_streak_multiplier(streak) if rules.get('dealer_streak_scoring') else None
@@ -1084,10 +1125,12 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         elif w is not None and win_type == 'ron':
             room['dealer_seat'] = int(w)
             room['dealer_streak'] = 0
+        room.pop('join_notice', None)
         seats = room.get('seats') or [None] * MJ_SEATS
         for i in range(MJ_SEATS):
             s = seats[i]
             if isinstance(s, dict):
+                s.pop('waits_next_hand', None)
                 s['ready'] = False
                 seats[i] = s
         room['seats'] = seats
@@ -1186,7 +1229,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         return opts
 
     def _mj_any_claim_possible(self, room, discard_seat, tile):
-        for s in self._mj_active_seats(room):
+        for s in self._mj_playing_seats(room):
             if s == discard_seat:
                 continue
             if self._mj_claim_options_for_seat(room, s, tile, discard_seat):
@@ -1207,7 +1250,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             return
         discard_seat = int(cr.get('discard_seat', -1))
         tile = cr.get('tile')
-        waiting = [s for s in self._mj_active_seats(room) if s != discard_seat]
+        waiting = [s for s in self._mj_playing_seats(room) if s != discard_seat]
         responses = dict(cr.get('responses') or {})
         for s in waiting:
             if s in responses:
@@ -1218,7 +1261,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['claim_round'] = cr
 
     def _mj_finalize_dealer_from_rolls(self, room):
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         rolls = room.get('dice_rolls') or {}
         best_seat = None
         best_total = -1
@@ -1259,7 +1302,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['dealer_deal_at'] = time.time() + MJ_DEALER_REVEAL_SEC
 
     def _mj_all_dice_rolled(self, room):
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         rolls = room.get('dice_rolls') or {}
         return bool(active) and len(rolls) >= len(active)
 
@@ -1391,7 +1434,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         discard_seat = int(cr.get('discard_seat', -1))
         tile = cr.get('tile')
         responses = cr.get('responses') or {}
-        active = self._mj_active_seats(room)
+        active = self._mj_playing_seats(room)
         waiting = [s for s in active if s != discard_seat]
         if any(s not in responses for s in waiting):
             return
@@ -1528,6 +1571,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 'user_id': self._parse_int(s.get('user_id')),
                 'name': s.get('name') or '',
                 'ready': bool(s.get('ready')),
+                'waits_next_hand': bool(s.get('waits_next_hand')),
                 'is_host': self._parse_int(s.get('user_id')) == self._parse_int(room.get('host_user_id')),
                 'avatar_url': self._mj_user_avatar_url(s.get('user_id')),
             })
@@ -1537,7 +1581,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         claim = room.get('claim_round')
         claim_view = None
         if isinstance(claim, dict) and my_seat is not None:
-            waiting = [s for s in self._mj_active_seats(room) if s != int(claim.get('discard_seat', -1))]
+            waiting = [s for s in self._mj_playing_seats(room) if s != int(claim.get('discard_seat', -1))]
             claim_view = {
                 'discard_seat': claim.get('discard_seat'),
                 'tile': claim.get('tile'),
@@ -1556,7 +1600,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     claim_view['chi_options'] = chi_opts
         dice_roll = None
         if room.get('status') == 'dealer_roll':
-            active = self._mj_active_seats(room)
+            active = self._mj_playing_seats(room)
             rolls_map = room.get('dice_rolls') or {}
             rolls_list = []
             for s in active:
@@ -1570,7 +1614,11 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     'dice2': int(r.get('dice2') or 0) if isinstance(r, dict) else 0,
                     'total': int(r.get('total') or 0) if isinstance(r, dict) else 0,
                 })
-            need_my_roll = my_seat is not None and str(my_seat) not in rolls_map
+            need_my_roll = (
+                my_seat is not None
+                and my_seat in active
+                and str(my_seat) not in rolls_map
+            )
             dr = room.get('dice_roll') or {}
             ds = int(dr.get('dealer_seat', room.get('dealer_seat') or 0))
             dealer_name = ''
@@ -1644,6 +1692,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 else None
             ),
             'last_hand_result': room.get('last_hand_result'),
+            'join_notice': room.get('join_notice'),
             'you_are_host': uid == self._parse_int(room.get('host_user_id')),
             'can_swap_seat': self._mj_can_swap_seat(room),
             'lobby': self._mj_lobby_ready_summary(room) if room.get('status') in ('lobby', 'hand_end') else None,
@@ -1809,29 +1858,35 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         with self._mj_room_store(code) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
-            if room.get('status') != 'lobby':
+            status = room.get('status')
+            if status not in ('lobby', 'hand_end', 'playing', 'dealer_roll'):
                 return self.send_json({'status': 'error', 'message': '对局已开始，无法加入'}, start_response)
+            waits_next = status in ('playing', 'dealer_roll')
             self._mj_normalize_seats(room)
             existing = self._mj_seat_of_user(room, user_id)
-            seats = list(room.get('seats') or [None] * MJ_SEATS)
-            while len(seats) < MJ_SEATS:
-                seats.append(None)
             if existing is not None:
+                seats = list(room.get('seats') or [None] * MJ_SEATS)
+                while len(seats) < MJ_SEATS:
+                    seats.append(None)
                 seats[existing]['name'] = self._mj_user_display_name(user_id)
                 self._mj_clear_user_duplicate_seats(seats, user_id, keep_seat=existing)
+                room['seats'] = seats[:MJ_SEATS]
+                self._mj_bump_version(room)
             else:
+                seats = list(room.get('seats') or [None] * MJ_SEATS)
+                while len(seats) < MJ_SEATS:
+                    seats.append(None)
                 self._mj_clear_user_duplicate_seats(seats, user_id, keep_seat=None)
+                room['seats'] = seats[:MJ_SEATS]
                 slot = self._mj_pick_join_seat(room, seats)
                 if slot is None:
                     return self.send_json({'status': 'error', 'message': '房间座位已满'}, start_response)
-                seats[slot] = {
-                    'user_id': int(user_id),
-                    'name': self._mj_user_display_name(user_id),
-                    'ready': False,
-                }
-            room['seats'] = seats[:MJ_SEATS]
+                name = self._mj_put_user_in_seat(room, user_id, slot, waits_next=waits_next)
+                if waits_next:
+                    self._mj_set_join_notice(room, slot, user_id, name)
+                else:
+                    self._mj_bump_version(room)
             self._mj_after_lobby_seating_change(room)
-            self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
 
@@ -1936,36 +1991,38 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self._mj_json_room(room, user_id, start_response, message='已在房间中')
             uid = int(user_id)
             is_host = uid == self._parse_int(room.get('host_user_id'))
-            seats = list(room.get('seats') or [None] * MJ_SEATS)
-            while len(seats) < MJ_SEATS:
-                seats.append(None)
-            if room.get('status') == 'lobby':
-                slot = self._mj_pick_join_seat(room, seats)
+            status = room.get('status')
+            if status == 'lobby':
+                slot = self._mj_pick_join_seat(room, room.get('seats') or [])
                 if slot is None:
                     return self.send_json({'status': 'error', 'message': '房间座位已满'}, start_response)
-                seats[slot] = {
-                    'user_id': uid,
-                    'name': self._mj_user_display_name(uid),
-                    'ready': bool(is_host),
-                }
-            elif is_host:
-                slot = None
-                for i in range(MJ_SEATS):
-                    if seats[i] is None:
-                        slot = i
-                        break
+                self._mj_put_user_in_seat(room, uid, slot, waits_next=False)
+                if is_host:
+                    seats = room.get('seats') or []
+                    if isinstance(seats[slot], dict):
+                        seats[slot]['ready'] = True
+                        room['seats'] = seats
+            elif status == 'hand_end':
+                slot = self._mj_pick_join_seat(room, room.get('seats') or [])
                 if slot is None:
                     return self.send_json({'status': 'error', 'message': '房间座位已满，无法重连'}, start_response)
-                seats[slot] = {
-                    'user_id': uid,
-                    'name': self._mj_user_display_name(uid),
-                    'ready': True,
-                }
+                self._mj_put_user_in_seat(room, uid, slot, waits_next=False)
+            elif status in ('playing', 'dealer_roll'):
+                slot = self._mj_pick_join_seat(room, room.get('seats') or [])
+                if slot is None and is_host:
+                    for i in range(MJ_SEATS):
+                        if (room.get('seats') or [None] * MJ_SEATS)[i] is None:
+                            slot = i
+                            break
+                if slot is None:
+                    return self.send_json({'status': 'error', 'message': '房间座位已满，无法重连'}, start_response)
+                name = self._mj_put_user_in_seat(room, uid, slot, waits_next=True)
+                self._mj_set_join_notice(room, slot, uid, name)
             else:
                 return self.send_json({'status': 'error', 'message': '对局已开始，无法重新加入'}, start_response)
-            room['seats'] = seats[:MJ_SEATS]
             self._mj_after_lobby_seating_change(room)
-            self._mj_bump_version(room)
+            if status not in ('playing', 'dealer_roll'):
+                self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response, message='已重新加入房间')
 
@@ -2078,6 +2135,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             seat = self._mj_seat_of_user(room, user_id)
             if seat is None:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+            if self._mj_seat_waits_next_hand(room, seat):
+                return self.send_json({'status': 'error', 'message': '您将于下局加入，无需掷骰'}, start_response)
             rolls = dict(room.get('dice_rolls') or {})
             if str(seat) in rolls:
                 return self.send_json({'status': 'error', 'message': '您已掷过骰子'}, start_response)
@@ -2085,7 +2144,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             d2 = random.randint(1, 6)
             rolls[str(seat)] = {'dice1': d1, 'dice2': d2, 'total': d1 + d2, 'seat': seat}
             room['dice_rolls'] = rolls
-            active = self._mj_active_seats(room)
+            active = self._mj_playing_seats(room)
             if len(rolls) >= len(active):
                 try:
                     self._mj_schedule_dealer_reveal(room)

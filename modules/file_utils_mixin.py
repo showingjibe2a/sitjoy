@@ -2,6 +2,7 @@
 """文件系统工具 Mixin - 文件操作、路径处理、文件夹管理"""
 
 import os
+import re
 import tempfile
 import zipfile
 from datetime import datetime
@@ -10,12 +11,45 @@ import cgi
 class FileUtilsMixin:
     """文件系统和文件操作工具"""
 
+    def _fabric_filename_part(self, text, default='文字卖点图'):
+        value = str(text or '').strip() or default
+        for ch in ('/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+            value = value.replace(ch, '-')
+        return value.strip() or default
+
+    def _fabric_target_filename(self, fabric_code, image_type, seq, ext):
+        code = self._fabric_filename_part(fabric_code, 'FAB')
+        typ = self._fabric_filename_part(image_type, '文字卖点图')
+        ext_v = ext if str(ext or '').startswith('.') else f'.{ext or "jpg"}'
+        return f"{code}-{typ}-{int(seq):02d}{ext_v}"
+
+    def _next_fabric_image_seq(self, existing_names, fabric_code, image_type='文字卖点图'):
+        code = re.escape(self._fabric_filename_part(fabric_code, 'FAB'))
+        typ = re.escape(self._fabric_filename_part(image_type, '文字卖点图'))
+        patterns = [
+            re.compile(rf'^{code}-{typ}-(\d+)\.', re.I),
+            re.compile(rf'^{code}_{typ}-(\d+)\.', re.I),
+            re.compile(rf'^{code}_(\d+)\.', re.I),
+        ]
+        max_idx = 0
+        for name in existing_names or []:
+            base = os.path.basename(str(name or ''))
+            if not base:
+                continue
+            for pat in patterns:
+                m = pat.match(base)
+                if m:
+                    try:
+                        max_idx = max(max_idx, int(m.group(1)))
+                    except Exception:
+                        pass
+        return max_idx + 1
+
     def _rename_fabric_image_with_remark(self, old_name, fabric_code, remark, index):
         if not old_name:
             return None
         ext = os.path.splitext(old_name)[1] or '.jpg'
-        remark_str = remark or '未分类'
-        new_name = f"{fabric_code}-{remark_str}-{index:02d}{ext}"
+        new_name = self._fabric_target_filename(fabric_code, remark, index, ext)
         if old_name == new_name:
             return old_name
         return new_name
@@ -46,6 +80,26 @@ class FileUtilsMixin:
             os.makedirs(folder, exist_ok=True)
         return folder
 
+    def _fabric_image_src_from_payload(self, img, folder):
+        """从保存 payload 定位面料目录中的图片（优先 image_name_raw_b64 原始字节）。"""
+        import base64
+
+        raw_b64 = (img.get('image_name_raw_b64') or '').strip()
+        if raw_b64:
+            try:
+                raw_bytes = base64.b64decode(raw_b64)
+                src_path = os.path.join(folder, raw_bytes)
+                if os.path.exists(src_path):
+                    return self._decode_fs_name_bytes(raw_bytes), src_path
+            except Exception:
+                pass
+
+        old_name = (img.get('image_name') or '').strip()
+        if not old_name:
+            return None, None
+        src_path = os.path.join(folder, self._safe_fsencode(old_name))
+        return old_name, src_path
+
     def _build_fabric_image_plan(self, images, fabric_code):
         """为面料图片生成重命名计划和最终入库数据"""
         folder = self._ensure_fabric_folder()
@@ -56,11 +110,10 @@ class FileUtilsMixin:
         not_ready = []
 
         for idx, img in enumerate(images):
-            old_name = (img.get('image_name') or '').strip()
-            if not old_name:
+            old_name, src_path = self._fabric_image_src_from_payload(img, folder)
+            if not old_name or not src_path:
                 continue
 
-            src_path = os.path.join(folder, self._safe_fsencode(old_name))
             if not os.path.exists(src_path):
                 missing.append(old_name)
                 continue
@@ -72,7 +125,7 @@ class FileUtilsMixin:
                 not_ready.append(old_name)
                 continue
 
-            remark = self._normalize_fabric_remark(img.get('remark'))
+            remark = self._fabric_filename_part(img.get('remark'), '文字卖点图')
             remark_counters[remark] = remark_counters.get(remark, 0) + 1
             index_in_remark = remark_counters[remark]
             new_name = self._rename_fabric_image_with_remark(old_name, fabric_code, remark, index_in_remark)

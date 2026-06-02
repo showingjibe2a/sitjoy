@@ -19,6 +19,45 @@
 
   function $(id) { return document.getElementById(id); }
 
+  const THUMB_LS_KEY = 'sj.pickExisting.nasThumbSize.v1';
+  const PICK_GRID_IDS = ['sjPickExistingGrid', 'sjPickExistingFolders'];
+
+  function resolveDisplayName(item) {
+    if (global.SitjoyFsName && typeof global.SitjoyFsName.resolveItemDisplayName === 'function') {
+      return global.SitjoyFsName.resolveItemDisplayName(item);
+    }
+    return String((item && (item.display || item.name)) || '');
+  }
+
+  function normalizePickerItem(it) {
+    const display = resolveDisplayName(it);
+    return {
+      display,
+      name: display,
+      path_b64: String(it.path_b64 || it.b64 || ''),
+      b64: String(it.b64 || it.path_b64 || ''),
+      name_raw_b64: String(it.name_raw_b64 || it.rawB64 || ''),
+    };
+  }
+
+  function applyThumbToPickGrids(mode) {
+    const Ui = getBrowserUi();
+    if (!Ui) return;
+    PICK_GRID_IDS.forEach((id) => Ui.applyThumbSizeToGrid(id, mode));
+  }
+
+  function initThumbSizeSegment() {
+    const Ui = getBrowserUi();
+    if (!Ui || !Ui.bindThumbSizeSegment) return;
+    Ui.bindThumbSizeSegment({
+      segmentId: 'sjPickExistingThumbSizeSegment',
+      gridId: 'sjPickExistingGrid',
+      storageKey: THUMB_LS_KEY,
+      defaultMode: 'sm',
+      onApply: (mode) => applyThumbToPickGrids(mode),
+    });
+  }
+
   function escapeHtml(s) {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -45,6 +84,7 @@
       while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
       injected = true;
       bindStaticEvents();
+      initThumbSizeSegment();
       return !!$(MODAL_ID);
     } catch (e) {
       return false;
@@ -65,8 +105,38 @@
     return p.toString();
   }
 
+  async function loadFabricPickerList() {
+    const params = new URLSearchParams();
+    params.set('unbound', '1');
+    if (state.params.fabricId) params.set('fabric_id', String(state.params.fabricId));
+    const resp = await fetch('/api/fabric-images?' + params.toString(), { credentials: 'include' });
+    const data = await resp.json();
+    if (data.status !== 'success') {
+      showStatus(data.message || '加载失败', true);
+      return;
+    }
+    const q = ($('sjPickExistingSearch') && $('sjPickExistingSearch').value || '').trim().toLowerCase();
+    let items = (data.items || []).map(normalizePickerItem);
+    if (q) {
+      items = items.filter((it) => String(it.display || '').toLowerCase().includes(q));
+    }
+    state.pathB64 = '';
+    state.items = items;
+    const rootsWrap = $('sjPickExistingRootsWrap');
+    if (rootsWrap) rootsWrap.style.display = 'none';
+    renderBreadcrumbs([{ label: '『上架资源』/『面料』', path_b64: '' }]);
+    renderFolders([]);
+    renderGrid(items);
+    applyThumbToPickGrids(getBrowserUi()?.readThumbSegmentValue('sjPickExistingThumbSizeSegment') || 'sm');
+    showStatus('', false);
+  }
+
   async function loadList() {
     showStatus('加载中…', false);
+    if (state.context === 'fabric') {
+      await loadFabricPickerList();
+      return;
+    }
     const resp = await fetch('/api/image-picker?' + buildQuery(), { credentials: 'include' });
     const data = await resp.json();
     if (data.status !== 'success') {
@@ -74,11 +144,12 @@
       return;
     }
     state.pathB64 = data.path_b64 || '';
-    state.items = data.items || [];
+    state.items = (data.items || []).map(normalizePickerItem);
     renderRoots(data.roots || []);
     renderBreadcrumbs(data.breadcrumbs || []);
     renderFolders(data.folders || []);
     renderGrid(state.items);
+    applyThumbToPickGrids(getBrowserUi()?.readThumbSegmentValue('sjPickExistingThumbSizeSegment') || 'sm');
     showStatus('', false);
   }
 
@@ -126,31 +197,52 @@
     });
   }
 
+  function getBrowserUi() {
+    return global.NasMainImageBrowserUi || null;
+  }
+
   function renderFolders(folders) {
     const grid = $('sjPickExistingFolders');
     if (!grid) return;
-    if (!folders.length) {
-      grid.innerHTML = '';
-      return;
-    }
-    grid.innerHTML = folders.map(f => {
-      const label = escapeHtml(f.display || f.name || '文件夹');
-      const pb = escapeHtml(f.path_b64 || '');
-      return `<div class="browser-card browser-card--folder" role="button" tabindex="0" data-folder-b64="${pb}" title="双击进入">
-        <div class="browser-card-icon">📁</div>
-        <div class="browser-card-name">${label}</div>
-      </div>`;
-    }).join('');
-    grid.querySelectorAll('.browser-card--folder').forEach(card => {
+    grid.innerHTML = '';
+    if (!folders.length) return;
+    const Ui = getBrowserUi();
+    folders.forEach((f) => {
+      const pb = String(f.path_b64 || '');
+      const label = resolveDisplayName(f) || '文件夹';
+      const card = document.createElement('div');
+      card.className = 'item-card item-card--folder item-card--nas-browse';
       const enter = () => {
-        state.pathB64 = card.getAttribute('data-folder-b64') || '';
+        state.pathB64 = pb;
         state.selected.clear();
         loadList();
       };
-      card.addEventListener('dblclick', (e) => { e.preventDefault(); enter(); });
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(); }
-      });
+      if (Ui) {
+        Ui.wireNasFolderBrowseCard(card, enter);
+      } else {
+        card.setAttribute('role', 'button');
+        card.tabIndex = 0;
+        card.setAttribute('title', '双击进入文件夹');
+        card.addEventListener('dblclick', (e) => { e.preventDefault(); enter(); });
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(); }
+        });
+      }
+      const thumb = document.createElement('div');
+      thumb.className = 'item-thumbnail folder';
+      const icon = document.createElement('div');
+      icon.className = 'folder-icon';
+      icon.textContent = '📁';
+      thumb.appendChild(icon);
+      const info = document.createElement('div');
+      info.className = 'item-info';
+      const title = document.createElement('div');
+      title.className = 'item-name';
+      title.textContent = label;
+      info.appendChild(title);
+      card.appendChild(thumb);
+      card.appendChild(info);
+      grid.appendChild(card);
     });
   }
 
@@ -158,31 +250,81 @@
     const grid = $('sjPickExistingGrid');
     const countEl = $('sjPickExistingCountText');
     if (!grid) return;
+    grid.innerHTML = '';
     if (countEl) countEl.textContent = `共 ${(items || []).length} 张可选图片`;
     if (!items.length) {
-      grid.innerHTML = '<div class="sj-media-image-empty" style="grid-column:1/-1;">当前目录下暂无未绑定图片</div>';
+      const empty = document.createElement('div');
+      empty.className = 'pm-select-empty nas-main-image-grid-empty';
+      empty.textContent = '当前目录下暂无未绑定图片';
+      grid.appendChild(empty);
       patchSelectAll();
       return;
     }
-    grid.innerHTML = items.map(it => {
+    const Ui = getBrowserUi();
+    (items || []).forEach((it) => {
       const pb = String(it.path_b64 || it.b64 || '');
-      const checked = state.selected.has(pb) ? ' checked' : '';
-      const name = escapeHtml(it.display || it.name || '');
-      const src = `/api/image-preview?id=${encodeURIComponent(pb)}&mode=thumb&w=240&q=68`;
-      return `<label class="browser-card browser-card--image nas-pick-card${state.selected.has(pb) ? ' is-selected' : ''}">
-        <input type="checkbox" class="nas-pick-check" data-path-b64="${escapeHtml(pb)}"${checked} style="position:absolute;left:8px;top:8px;z-index:2;">
-        <img src="${src}" alt="${name}" loading="lazy" class="browser-card-thumb">
-        <div class="browser-card-name">${name}</div>
-      </label>`;
-    }).join('');
-    grid.querySelectorAll('input.nas-pick-check').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const pb = cb.getAttribute('data-path-b64') || '';
-        if (cb.checked) state.selected.add(pb);
+      const name = resolveDisplayName(it);
+      const isSelected = state.selected.has(pb);
+      const card = document.createElement('div');
+      card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
+
+      const toggleSelected = (checked) => {
+        if (checked) state.selected.add(pb);
         else state.selected.delete(pb);
-        cb.closest('.nas-pick-card')?.classList.toggle('is-selected', cb.checked);
+        card.classList.toggle('item-card--selected', !!checked);
         patchSelectAll();
-      });
+      };
+
+      if (Ui) {
+        Ui.wireNasImageBrowseCard(card, 'multi', {
+          onMultiClick: () => {
+            const cb = card.querySelector('input.nas-pick-check');
+            if (!cb) return;
+            cb.checked = !cb.checked;
+            toggleSelected(cb.checked);
+          },
+        });
+      } else {
+        card.addEventListener('click', () => {
+          const cb = card.querySelector('input.nas-pick-check');
+          if (!cb) return;
+          cb.checked = !cb.checked;
+          toggleSelected(cb.checked);
+        });
+      }
+
+      const selectWrap = document.createElement('div');
+      selectWrap.className = 'item-select';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'nas-pick-check';
+      cb.setAttribute('data-path-b64', pb);
+      cb.checked = isSelected;
+      selectWrap.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', () => toggleSelected(cb.checked));
+      selectWrap.appendChild(cb);
+
+      const thumb = document.createElement('div');
+      thumb.className = 'item-thumbnail';
+      const im = document.createElement('img');
+      im.src = `/api/image-preview?id=${encodeURIComponent(pb)}&mode=thumb&w=240&q=68`;
+      im.alt = name;
+      im.loading = 'lazy';
+      thumb.appendChild(im);
+
+      const info = document.createElement('div');
+      info.className = 'item-info';
+      const title = document.createElement('div');
+      title.className = 'item-name';
+      title.textContent = name;
+      title.title = name;
+      info.appendChild(title);
+
+      card.appendChild(selectWrap);
+      card.appendChild(thumb);
+      card.appendChild(info);
+      grid.appendChild(card);
     });
     patchSelectAll();
   }
@@ -209,7 +351,7 @@
         const pb = cb.getAttribute('data-path-b64') || '';
         if (on) state.selected.add(pb);
         else state.selected.delete(pb);
-        cb.closest('.nas-pick-card')?.classList.toggle('is-selected', on);
+        cb.closest('.item-card')?.classList.toggle('item-card--selected', on);
       });
     });
     const modal = $(MODAL_ID);
