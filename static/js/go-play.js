@@ -42,6 +42,7 @@
   let eventSource = null;
   let watchAbort = false;
   let lastVersion = -1;
+  let lastChatSeq = -1;
   let lastMoveKey = '';
   let lastMoveX = -1;
   let lastMoveY = -1;
@@ -64,7 +65,7 @@
       layout: isPopup ? 'side' : 'below',
       isActive: () => !!roomCode,
       onSend: (text) => api('chat_send', { room_code: roomCode, text }).then((data) => {
-        applyState(data, { force: true });
+        applyGoChatOnly(data);
       }),
     });
     return goRoomChat;
@@ -1376,8 +1377,38 @@
     bindAvatarSlot($('goWhiteAvatarBtn'), 'white');
   }
 
+  function applyGoChatOnly(data) {
+    if (!data || data.status !== 'success') return false;
+    const WR = win.WidgetRoom;
+    const merge = WR && WR.mergeChatMessages ? WR.mergeChatMessages : (prev, inc) => (prev || []).concat(inc || []);
+    const seq = Number(data.chat_seq) || 0;
+    const incoming = data.chat_messages || [];
+    if (!incoming.length && lastChatSeq >= 0 && seq > 0 && seq <= lastChatSeq) return false;
+    lastChatSeq = Math.max(lastChatSeq, seq);
+    if (incoming.length) {
+      lastChatMessages = merge(lastChatMessages, incoming);
+      syncGoRoomChat({ chat_messages: lastChatMessages, chat_seq: seq });
+      if (!isPopup) postStateToPopup();
+    }
+    return true;
+  }
+
+  function handleGoWatchPayload(data) {
+    if (!data || data.status !== 'success') return;
+    if (data.chat_only) {
+      applyGoChatOnly(data);
+      return;
+    }
+    if (data.unchanged) {
+      if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
+      return;
+    }
+    applyState(data);
+  }
+
   function applyState(data, opts) {
     if (!data || data.status !== 'success') return false;
+    if (data.chat_only) return applyGoChatOnly(data);
     const ver = Number(data.version || 0);
     const force = !!(opts && opts.force);
     if (!force && lastVersion >= 0 && ver > 0 && ver <= lastVersion) {
@@ -1423,6 +1454,7 @@
     }
 
     lastVersion = Number(data.version || 0);
+    if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
     lastChatMessages = data.chat_messages || lastChatMessages;
 
     if (!isPopup) {
@@ -1744,6 +1776,7 @@
       action: 'stream',
       room_code: roomCode,
       since_version: String(lastVersion >= 0 ? lastVersion : 0),
+      since_chat_seq: String(lastChatSeq >= 0 ? lastChatSeq : 0),
     });
     return apiUrl('/api/go-play?' + qs.toString());
   }
@@ -1765,7 +1798,14 @@
       if (watchAbort || !ev.data) return;
       try {
         const d = JSON.parse(ev.data);
-        if (d && d.status === 'success') applyState(d);
+        if (d && d.status === 'success') handleGoWatchPayload(d);
+      } catch (_) {}
+    });
+    es.addEventListener('chat', (ev) => {
+      if (watchAbort || !ev.data) return;
+      try {
+        const d = JSON.parse(ev.data);
+        if (d && d.status === 'success') handleGoWatchPayload(d);
       } catch (_) {}
     });
     es.addEventListener('room_error', (ev) => {
@@ -1823,12 +1863,14 @@
     if (watchAbort || !watchActive || !roomCode) return;
     watchAbortCtrl = new AbortController();
     const signal = watchAbortCtrl.signal;
-    api('wait', { room_code: roomCode, since_version: lastVersion }, 'GET', signal)
+    api('wait', {
+      room_code: roomCode,
+      since_version: lastVersion,
+      since_chat_seq: lastChatSeq >= 0 ? lastChatSeq : 0,
+    }, 'GET', signal)
       .then((d) => {
         if (watchAbort || !roomCode) return;
-        if (d && d.status === 'success' && !d.unchanged) {
-          applyState(d);
-        }
+        handleGoWatchPayload(d);
         if (!watchAbort && roomCode) watchLoop();
       })
       .catch((err) => {
@@ -1950,6 +1992,7 @@
     lastMoveY = -1;
     lastMoveKey = '';
     lastVersion = -1;
+    lastChatSeq = -1;
     lastChatMessages = [];
     persistRoomCode('');
     stopWatch();

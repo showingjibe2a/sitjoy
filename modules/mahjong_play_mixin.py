@@ -17,8 +17,8 @@ MJ_SEATS = 4
 MJ_MIN_PLAYERS = 2
 MJ_ROOM_TTL_SEC = 24 * 3600
 MJ_WAIT_TIMEOUT_SEC = 8
-MJ_WAIT_POLL_SEC = 0.3
-MJ_STREAM_SESSION_SEC = 90
+MJ_WAIT_POLL_SEC = 0.08
+MJ_STREAM_SESSION_SEC = 300
 MJ_STREAM_PING_SEC = 12
 MJ_TILE_COPIES = 4
 MJ_TOTAL_TILES = 136
@@ -1096,12 +1096,11 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if self._mj_seat_of_user(room, user_id) is None:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
             name = self._mj_user_display_name(user_id)
-            _, err_msg = self._wrc_chat_append(room, user_id, name, data.get('text'))
+            entry, err_msg = self._wrc_chat_append(room, user_id, name, data.get('text'))
             if err_msg:
                 return self.send_json({'status': 'error', 'message': err_msg}, start_response)
-            self._mj_bump_version(room)
             self._mj_save_room(room)
-        return self._mj_json_room(room, user_id, start_response)
+        return self.send_json(self._wrc_chat_send_json(room, user_id, entry), start_response)
 
     def _mj_json_room(self, room, user_id, start_response, message=None):
         out = self._mj_room_public(room, user_id)
@@ -1438,60 +1437,46 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
     def _mj_action_wait(self, user_id, query, start_response):
         code = str((query.get('room_code') or [''])[0] or '').strip().upper()
-        try:
-            since = int((query.get('since_version') or ['0'])[0] or 0)
-        except Exception:
-            since = 0
-        waiter = _mj_register_waiter(code)
-        try:
-            deadline = time.time() + MJ_WAIT_TIMEOUT_SEC
-            while time.time() < deadline:
-                room = self._mj_read_room_retry(code)
-                if not room:
-                    return self.send_json({
-                        'status': 'error',
-                        'message': '房间已解散或已过期',
-                        'room_dissolved': True,
-                    }, start_response)
-                if self._mj_seat_of_user(room, user_id) is None:
-                    return self.send_json({
-                        'status': 'error',
-                        'message': '您不在该房间中',
-                        'left_room': True,
-                    }, start_response)
-                ver = int(room.get('version') or 0)
-                if ver > since:
-                    return self._mj_json_room(room, user_id, start_response)
-                waiter.clear()
-                remaining = max(0.05, deadline - time.time())
-                waiter.wait(timeout=min(MJ_WAIT_POLL_SEC, remaining))
-        finally:
-            _mj_unregister_waiter(code, waiter)
-        room = self._mj_read_room_retry(code)
-        if not room:
-            return self.send_json({
+        since = self._wrc_query_int(query, 'since_version', 0)
+        since_chat = self._wrc_query_int(query, 'since_chat_seq', 0)
+        result = self._wrc_wait_for_update(
+            code,
+            user_id,
+            since,
+            since_chat,
+            timeout_sec=MJ_WAIT_TIMEOUT_SEC,
+            poll_sec=MJ_WAIT_POLL_SEC,
+            register_waiter=_mj_register_waiter,
+            unregister_waiter=_mj_unregister_waiter,
+            read_room=lambda c: self._mj_read_room_retry(c),
+            user_in_room=lambda room, uid: self._mj_seat_of_user(room, uid) is not None,
+            build_state_response=lambda room, uid: {
+                'status': 'success',
+                **self._mj_room_public(room, uid),
+            },
+            build_unchanged_response=lambda room, uid: {
+                'status': 'success',
+                'unchanged': True,
+                **self._mj_room_public(room, uid),
+            },
+            room_missing_response=lambda: {
                 'status': 'error',
                 'message': '房间已解散或已过期',
                 'room_dissolved': True,
-            }, start_response)
-        if self._mj_seat_of_user(room, user_id) is None:
-            return self.send_json({
+            },
+            not_member_response=lambda: {
                 'status': 'error',
                 'message': '您不在该房间中',
                 'left_room': True,
-            }, start_response)
-        out = self._mj_room_public(room, user_id)
-        out['status'] = 'success'
-        out['unchanged'] = True
-        return self.send_json(out, start_response)
+            },
+        )
+        return self.send_json(result, start_response)
 
     def _mj_action_stream(self, user_id, query, start_response):
-        """SSE：房间 version 变化时推送 state 事件；客户端断线后自动重连。"""
+        """SSE：对局 version 变化推送 state；聊天 chat_seq 变化推送 chat 增量。"""
         code = str((query.get('room_code') or [''])[0] or '').strip().upper()
-        try:
-            since = int((query.get('since_version') or ['0'])[0] or 0)
-        except Exception:
-            since = 0
+        since = self._wrc_query_int(query, 'since_version', 0)
+        since_chat = self._wrc_query_int(query, 'since_chat_seq', 0)
         if not code:
             return self.send_json({'status': 'error', 'message': '缺少房间号'}, start_response)
 
@@ -1502,45 +1487,20 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
 
         uid = int(user_id)
-
-        def generate():
-            yield b': connected\n\n'
-            waiter = _mj_register_waiter(code)
-            since_local = since
-            started = time.time()
-            last_ping = started
-            try:
-                while time.time() - started < MJ_STREAM_SESSION_SEC:
-                    room_now = self._mj_read_room_for_user(code, uid, attempts=4)
-                    if not room_now:
-                        room_now = self._mj_read_room_retry(code, attempts=5)
-                    if not room_now:
-                        yield self._sse_event('room_dissolved', {
-                            'status': 'error',
-                            'message': '房间已解散或已过期',
-                            'room_dissolved': True,
-                        })
-                        return
-                    if self._mj_seat_of_user(room_now, uid) is None:
-                        yield self._sse_event('room_error', {'status': 'error', 'message': '您不在该房间中'})
-                        return
-                    ver = int(room_now.get('version') or 0)
-                    if ver > since_local:
-                        payload = self._mj_room_public(room_now, uid)
-                        payload['status'] = 'success'
-                        payload['version'] = ver
-                        yield self._sse_event('state', payload)
-                        since_local = ver
-                    now = time.time()
-                    if now - last_ping >= MJ_STREAM_PING_SEC:
-                        yield self._sse_event('ping', {'t': int(now)})
-                        last_ping = now
-                    waiter.clear()
-                    remaining = max(0.05, MJ_STREAM_SESSION_SEC - (now - started))
-                    waiter.wait(timeout=min(MJ_WAIT_POLL_SEC, remaining))
-            finally:
-                _mj_unregister_waiter(code, waiter)
-
+        generate = self._wrc_stream_generate(
+            code,
+            uid,
+            since,
+            since_chat,
+            session_sec=MJ_STREAM_SESSION_SEC,
+            ping_sec=MJ_STREAM_PING_SEC,
+            poll_sec=MJ_WAIT_POLL_SEC,
+            register_waiter=_mj_register_waiter,
+            unregister_waiter=_mj_unregister_waiter,
+            read_room=lambda c, u: self._mj_read_room_for_user(c, u, attempts=4) or self._mj_read_room_retry(c, attempts=5),
+            user_in_room=lambda room_now, u: self._mj_seat_of_user(room_now, u) is not None,
+            build_state_payload=lambda room_now, u: self._mj_room_public(room_now, u),
+        )
         return self.send_sse_stream(start_response, generate())
 
     def _mj_action_discard(self, user_id, data, start_response):

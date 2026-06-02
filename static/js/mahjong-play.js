@@ -20,6 +20,7 @@
   let roomCode = '';
   let state = null;
   let lastVersion = -1;
+  let lastChatSeq = -1;
   let watchAbort = false;
   let watchCtrl = null;
   let eventSource = null;
@@ -29,6 +30,7 @@
   let popupMonitorTimer = null;
   let mjBoardOverlay = null;
   let pendingChiPick = null;
+  let selectedDiscardTile = null;
   let joinInFlight = false;
   let roomChat = null;
 
@@ -330,17 +332,19 @@
       + '</span>';
   }
 
-  function tileHandButtonHtml(t, canDiscard, mark) {
+  function tileHandButtonHtml(t, canDiscard, mark, selected) {
     const key = String(t || '').trim();
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
     const cls = ['mj-tile', 'mj-tile--hand'].concat(tileKindClasses(key));
     if (canDiscard) cls.push('mj-tile--clickable');
     if (mark === 'drawn') cls.push('mj-tile--drawn');
+    if (selected) cls.push('mj-tile--selected');
     const inner = tileInnerHtml(glyph);
     const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"`;
     if (canDiscard) {
-      return `<button type="button"${attrs} data-discard="1">${inner}</button>`;
+      const pressed = selected ? ' aria-pressed="true"' : ' aria-pressed="false"';
+      return `<button type="button"${attrs}${pressed} data-select="1">${inner}</button>`;
     }
     return `<span${attrs} role="img">${inner}</span>`;
   }
@@ -374,7 +378,7 @@
       layout: isPopup ? 'side' : 'below',
       isActive: () => lobbyInRoom(state),
       onSend: (text) => api('chat_send', { room_code: roomCode, text }).then((data) => {
-        applyState(data);
+        applyChatOnly(data);
       }),
     });
     return roomChat;
@@ -596,6 +600,8 @@
     saveRoomCode('');
     state = null;
     lastVersion = -1;
+    lastChatSeq = -1;
+    selectedDiscardTile = null;
     if (!isPopup) postStateToPopup();
     const hintEl = $('mjRoomHint');
     if (hintEl) hintEl.textContent = hint || '创建或加入房间后开始。';
@@ -931,6 +937,13 @@
     });
   }
 
+  function syncDiscardSelection(s) {
+    const hand = (s && s.my_hand) || [];
+    if (!selectedDiscardTile || hand.indexOf(selectedDiscardTile) < 0) {
+      selectedDiscardTile = null;
+    }
+  }
+
   function renderHand(s) {
     const handEl = $('mjMyHand');
     const stripEl = handEl && handEl.closest('.mj-hand-strip');
@@ -938,12 +951,15 @@
     ensureHandLayoutSync();
     if (s.status === 'dealer_roll' || s.status === 'lobby') {
       handEl.innerHTML = '';
+      selectedDiscardTile = null;
       if (stripEl) stripEl.classList.add('pm-u-hidden');
       return;
     }
     const hand = s.my_hand || [];
     const mySeat = resolveMySeat(s);
     const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
+    syncDiscardSelection(s);
+    if (!canDiscard) selectedDiscardTile = null;
     const dt = s.drawn_tile;
     const drawnTile = (dt && Number(dt.seat) === mySeat) ? dt.tile : null;
     let drawnIdx = -1;
@@ -954,12 +970,15 @@
     }
     if (stripEl) stripEl.classList.toggle('pm-u-hidden', !hand.length);
     handEl.innerHTML = hand.map((t, i) =>
-      tileHandButtonHtml(t, canDiscard, i === drawnIdx ? 'drawn' : null)
+      tileHandButtonHtml(t, canDiscard, i === drawnIdx ? 'drawn' : null, canDiscard && t === selectedDiscardTile)
     ).join('');
     handEl.querySelectorAll('.mj-tile--hand.mj-tile--clickable').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tile = btn.getAttribute('data-tile');
-        if (tile) doDiscard(tile);
+        if (!tile || !canDiscard) return;
+        selectedDiscardTile = selectedDiscardTile === tile ? null : tile;
+        renderHand(s);
+        renderHandActions(s);
       });
     });
     syncHandTileLayout(handEl);
@@ -1024,14 +1043,21 @@
     doClaim(type).catch((err) => alert(err.message));
   }
 
-  function renderActions(s) {
-    const wrap = $('mjActions');
-    const btns = $('mjActionBtns');
+  function renderHandActions(s) {
+    const wrap = $('mjHandActions');
+    const btns = $('mjHandActionBtns');
+    const legacyWrap = $('mjActions');
+    if (legacyWrap) legacyWrap.hidden = true;
     if (!wrap || !btns) return;
+
+    const mySeat = resolveMySeat(s);
+    const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
+    syncDiscardSelection(s);
+
     const list = [];
     if (s.pending_self_win) {
-      list.push({ type: 'win', label: '自摸胡' });
-      list.push({ type: 'pass', label: '不胡，出牌' });
+      list.push({ type: 'win', label: '自摸胡', style: 'win' });
+      list.push({ type: 'pass', label: '不胡，出牌', style: 'claim' });
     }
     const cr = s.claim_round;
     if (cr && cr.need_response && (cr.options || []).length) {
@@ -1043,24 +1069,58 @@
       });
       opts.forEach((opt) => {
         const labels = { win: '胡', pung: '碰', kong: '杠', chi: '吃', pass: '过' };
-        list.push({ type: opt, label: labels[opt] || opt });
+        const style = opt === 'win' ? 'win' : (opt === 'pass' ? 'claim' : 'claim');
+        list.push({ type: opt, label: labels[opt] || opt, style });
       });
     }
+    if (canDiscard && !s.pending_self_win && !(cr && cr.need_response)) {
+      list.push({
+        type: 'discard',
+        label: '出牌',
+        style: 'primary',
+        disabled: !selectedDiscardTile,
+      });
+    }
+
     if (!list.length) {
       wrap.hidden = true;
+      wrap.classList.remove('is-active');
+      btns.innerHTML = '';
       hideChiOverlayIfIdle();
       return;
     }
+
     wrap.hidden = false;
-    btns.innerHTML = list.map((a) =>
-      `<button type="button" class="btn-secondary mj-claim-btn" data-claim="${esc(a.type)}">${esc(a.label)}</button>`
-    ).join('');
-    btns.querySelectorAll('.mj-claim-btn').forEach((btn) => {
+    wrap.classList.add('is-active');
+    btns.innerHTML = list.map((a) => {
+      const cls = ['mj-hand-action-btn'];
+      if (a.style === 'primary') cls.push('mj-hand-action-btn--primary');
+      else if (a.style === 'win') cls.push('mj-hand-action-btn--win');
+      else if (a.style === 'claim') cls.push('mj-hand-action-btn--claim');
+      const dis = a.disabled ? ' disabled' : '';
+      const action = a.type === 'discard' ? 'discard' : a.type;
+      return `<button type="button" class="${cls.join(' ')}" data-hand-action="${esc(action)}"${dis}>${esc(a.label)}</button>`;
+    }).join('');
+
+    btns.querySelectorAll('[data-hand-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const t = btn.getAttribute('data-claim');
+        if (btn.disabled) return;
+        const t = btn.getAttribute('data-hand-action');
+        if (t === 'discard') {
+          if (!selectedDiscardTile) return;
+          const tile = selectedDiscardTile;
+          selectedDiscardTile = null;
+          doDiscard(tile).catch((err) => alert(err.message));
+          return;
+        }
         if (t) onClaimClick(t);
       });
     });
+  }
+
+  /** @deprecated 操作区已移至手牌上方 mjHandActions */
+  function renderActions(s) {
+    renderHandActions(s);
   }
 
   function shouldRotateTableView(s) {
@@ -1178,17 +1238,52 @@
     syncMjLayoutScale();
   }
 
+  function applyChatOnly(data) {
+    if (!data || data.status !== 'success') return false;
+    const WR = win.WidgetRoom;
+    const merge = WR && WR.mergeChatMessages ? WR.mergeChatMessages : (prev, inc) => (prev || []).concat(inc || []);
+    const seq = Number(data.chat_seq) || 0;
+    const incoming = data.chat_messages || [];
+    if (!incoming.length && lastChatSeq >= 0 && seq > 0 && seq <= lastChatSeq) return false;
+    lastChatSeq = Math.max(lastChatSeq, seq);
+    if (state) {
+      state = Object.assign({}, state, {
+        chat_messages: merge(state.chat_messages, incoming),
+        chat_seq: seq || state.chat_seq,
+      });
+    }
+    if (!roomChat) initRoomChat();
+    if (roomChat && incoming.length) roomChat.render(incoming);
+    if (!isPopup) postStateToPopup();
+    return true;
+  }
+
   function applyState(data) {
     if (!data || data.status !== 'success') return false;
+    if (data.chat_only) return applyChatOnly(data);
     const ver = Number(data.version) || 0;
     if (!data.unchanged && lastVersion >= 0 && ver > 0 && ver < lastVersion) {
       return false;
     }
     if (data.unchanged && lastVersion >= 0 && ver <= lastVersion) return true;
     lastVersion = ver;
+    if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
     renderTable(data);
     if (!isPopup) postStateToPopup();
     return true;
+  }
+
+  function handleWatchPayload(data) {
+    if (!data || data.status !== 'success') return;
+    if (data.chat_only) {
+      applyChatOnly(data);
+      return;
+    }
+    if (data.unchanged) {
+      if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
+      return;
+    }
+    applyState(data);
   }
 
   function applyPayloadFromParent(payload) {
@@ -1422,6 +1517,7 @@
       action: 'stream',
       room_code: roomCode,
       since_version: String(lastVersion >= 0 ? lastVersion : 0),
+      since_chat_seq: String(lastChatSeq >= 0 ? lastChatSeq : 0),
     });
     return apiUrl('/api/mahjong-play?' + qs.toString());
   }
@@ -1443,7 +1539,13 @@
     es.addEventListener('state', (ev) => {
       if (watchAbort || !ev.data) return;
       try {
-        applyState(JSON.parse(ev.data));
+        handleWatchPayload(JSON.parse(ev.data));
+      } catch (_) {}
+    });
+    es.addEventListener('chat', (ev) => {
+      if (watchAbort || !ev.data) return;
+      try {
+        handleWatchPayload(JSON.parse(ev.data));
       } catch (_) {}
     });
     const onRoomEndedEvent = (ev) => {
@@ -1488,10 +1590,14 @@
     if (watchAbort || !roomCode) return;
     watchCtrl = new AbortController();
     const signal = watchCtrl.signal;
-    api('wait', { room_code: roomCode, since_version: String(lastVersion >= 0 ? lastVersion : 0) }, 'GET')
+    api('wait', {
+      room_code: roomCode,
+      since_version: String(lastVersion >= 0 ? lastVersion : 0),
+      since_chat_seq: String(lastChatSeq >= 0 ? lastChatSeq : 0),
+    }, 'GET')
       .then((data) => {
         if (watchAbort || !roomCode) return;
-        if (data && data.status === 'success' && !data.unchanged) applyState(data);
+        handleWatchPayload(data);
         if (!watchAbort && roomCode) watchLoop();
       })
       .catch((err) => {

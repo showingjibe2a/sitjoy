@@ -5982,7 +5982,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除图标微按钮、小号按钮、状态 pill 等） */
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand) {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -6043,11 +6043,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):active {
     transform: translateY(0);
 }
 

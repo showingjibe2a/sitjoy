@@ -214,6 +214,36 @@
   }
 
   /**
+   * 合并聊天增量到已有列表（按 id 去重）。
+   */
+  function mergeChatMessages(existing, incoming) {
+    const prev = Array.isArray(existing) ? existing : [];
+    const ids = new Set(prev.map((m) => Number(m.id)));
+    const merged = prev.slice();
+    (incoming || []).forEach((m) => {
+      const id = Number(m.id);
+      if (!id || ids.has(id)) return;
+      ids.add(id);
+      merged.push(m);
+    });
+    return merged;
+  }
+
+  /**
+   * 处理 chat_only 推送（SSE chat 事件 / chat_send 响应 / wait 增量）。
+   * @param {{lastChatSeq:number, onChat?:(msgs:object[], data:object)=>void}} ctx
+   */
+  function applyChatPayload(ctx, data) {
+    if (!data || data.status !== 'success' || !data.chat_only) return false;
+    const seq = Number(data.chat_seq) || 0;
+    const incoming = data.chat_messages || [];
+    if (!incoming.length && ctx.lastChatSeq >= 0 && seq > 0 && seq <= ctx.lastChatSeq) return false;
+    ctx.lastChatSeq = Math.max(ctx.lastChatSeq, seq);
+    if (typeof ctx.onChat === 'function') ctx.onChat(incoming, data);
+    return true;
+  }
+
+  /**
    * SSE + 长轮询房间状态订阅（通用）。
    */
   function createWatcher(options) {
@@ -222,6 +252,7 @@
     let eventSource = null;
     let watchCtrl = null;
     let lastVersion = -1;
+    let lastChatSeq = -1;
 
     function stop() {
       watchAbort = true;
@@ -235,29 +266,42 @@
       }
     }
 
-    function streamUrl(roomCode) {
-      const qs = new URLSearchParams({
+    function watchQuery(roomCode) {
+      return new URLSearchParams({
+        action: 'wait',
+        room_code: roomCode,
+        since_version: String(lastVersion >= 0 ? lastVersion : 0),
+        since_chat_seq: String(lastChatSeq >= 0 ? lastChatSeq : 0),
+      });
+    }
+
+    function streamQuery(roomCode) {
+      return new URLSearchParams({
         action: 'stream',
         room_code: roomCode,
         since_version: String(lastVersion >= 0 ? lastVersion : 0),
+        since_chat_seq: String(lastChatSeq >= 0 ? lastChatSeq : 0),
       });
-      return o.apiUrl('/api/' + o.apiName + '?' + qs.toString());
+    }
+
+    function streamUrl(roomCode) {
+      return o.apiUrl('/api/' + o.apiName + '?' + streamQuery(roomCode).toString());
     }
 
     function waitOnce(roomCode) {
       watchCtrl = new AbortController();
-      const qs = new URLSearchParams({
-        action: 'wait',
-        room_code: roomCode,
-        since_version: String(lastVersion >= 0 ? lastVersion : 0),
-      });
-      return fetchJson(o.apiUrl('/api/' + o.apiName + '?' + qs.toString()), { signal: watchCtrl.signal });
+      return fetchJson(o.apiUrl('/api/' + o.apiName + '?' + watchQuery(roomCode).toString()), { signal: watchCtrl.signal });
     }
 
     function handlePayload(data) {
       if (!data || data.status !== 'success') return;
+      if (data.chat_only) {
+        applyChatPayload({ lastChatSeq, onChat: o.onChat }, data);
+        return;
+      }
       const ver = Number(data.version) || 0;
       if (data.unchanged && lastVersion >= 0 && ver <= lastVersion) return;
+      if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
       lastVersion = ver;
       if (typeof o.onState === 'function') o.onState(data);
     }
@@ -276,6 +320,10 @@
       }
       eventSource = es;
       es.addEventListener('state', (ev) => {
+        if (watchAbort || !ev.data) return;
+        try { handlePayload(JSON.parse(ev.data)); } catch (_) {}
+      });
+      es.addEventListener('chat', (ev) => {
         if (watchAbort || !ev.data) return;
         try { handlePayload(JSON.parse(ev.data)); } catch (_) {}
       });
@@ -304,7 +352,7 @@
       if (watchAbort || !roomCode) return;
       waitOnce(roomCode).then((data) => {
         if (watchAbort || !roomCode) return;
-        if (data && data.status === 'success' && !data.unchanged) handlePayload(data);
+        if (data && data.status === 'success') handlePayload(data);
         if (!watchAbort && roomCode) watchLoop(roomCode);
       }).catch((err) => {
         if (watchAbort || (err && err.name === 'AbortError')) return;
@@ -319,10 +367,11 @@
       });
     }
 
-    function start(roomCode, sinceVersion) {
+    function start(roomCode, sinceVersion, sinceChatSeq) {
       stop();
       watchAbort = false;
       lastVersion = sinceVersion != null ? Number(sinceVersion) : -1;
+      lastChatSeq = sinceChatSeq != null ? Number(sinceChatSeq) : -1;
       const code = String(roomCode || '').trim().toUpperCase();
       if (!code) return;
       if (o.useSse !== false) connectSse(code);
@@ -334,6 +383,8 @@
       stop,
       getLastVersion() { return lastVersion; },
       setLastVersion(v) { lastVersion = Number(v) || 0; },
+      getLastChatSeq() { return lastChatSeq; },
+      setLastChatSeq(v) { lastChatSeq = Number(v) || 0; },
     };
   }
 
@@ -347,5 +398,7 @@
     setUrlRoomParam,
     createChat,
     createWatcher,
+    mergeChatMessages,
+    applyChatPayload,
   };
 })(typeof window !== 'undefined' ? window : this);
