@@ -51,6 +51,13 @@
     return idx > 0 ? n.slice(0, idx) : n;
   }
 
+  function computeRenamedPathB64Default({ oldPathB64, newFilename }) {
+    const oldRel = decodeB64Utf8(oldPathB64);
+    const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
+    const newRel = folder ? `${folder}/${newFilename}` : newFilename;
+    return utf8ToB64(newRel);
+  }
+
   async function ensureInjectedOnce() {
     if (!document.body) return false;
     if (!$('pmImageEditModal')) {
@@ -1339,11 +1346,11 @@
         const ext = oldName.includes('.') ? oldName.slice(oldName.lastIndexOf('.')) : '';
         const newFilename = String(newBase || '').trim() + (ext || '');
         current.name = newFilename;
-        if (ctx && ctx.hooks && typeof ctx.hooks.onRenamed === 'function') {
-          // 让业务侧基于“同文件夹替换 basename”更新 pathB64
-          const newPathB64 = ctx.hooks.onRenamed({ oldPathB64: current.pathB64, newFilename, oldFilename: oldName });
-          if (newPathB64) current.pathB64 = newPathB64;
-        }
+        const renameArgs = { oldPathB64: current.pathB64, newFilename, oldFilename: oldName };
+        const newPathB64 = (ctx && ctx.hooks && typeof ctx.hooks.onRenamed === 'function')
+          ? ctx.hooks.onRenamed(renameArgs)
+          : computeRenamedPathB64Default(renameArgs);
+        if (newPathB64) current.pathB64 = newPathB64;
       }
 
       // 2) meta

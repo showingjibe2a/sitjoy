@@ -1601,6 +1601,18 @@
                 hooks: {
                     prefillVariantLinks: true,
                     resolveRecommendFabricName: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
+                    onRenamed: ({ oldPathB64, newFilename }) => {
+                        const oldRel = tryDecodeNameFromB64(oldPathB64) || '';
+                        const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
+                        const newRel = folder ? `${folder}/${newFilename}` : newFilename;
+                        const newPathB64 = utf8ToB64(newRel);
+                        const edited = selectedImageObjects[currentEditingImageIndex];
+                        if (edited) {
+                            edited.image_name = newFilename;
+                            edited.preview_b64 = newPathB64;
+                        }
+                        return newPathB64;
+                    },
                     onAfterSuccess: async () => {
                         await loadFabricImages();
                         await syncFabricImageFromGalleryMeta(index);
