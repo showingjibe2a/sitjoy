@@ -1001,18 +1001,27 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             raise ValueError('定庄失败')
         room['dealer_deal_at'] = time.time() + MJ_DEALER_REVEAL_SEC
 
-    def _mj_try_deal_after_reveal(self, room):
-        """投骰展示结束后自动发牌（在 room_store 内调用并 raise _MjRoomMutated）。"""
-        if str(room.get('status') or '') != 'dealer_roll':
-            return False
-        deal_at = float(room.get('dealer_deal_at') or 0)
-        if not deal_at or time.time() < deal_at:
-            return False
+    def _mj_all_dice_rolled(self, room):
         active = self._mj_active_seats(room)
         rolls = room.get('dice_rolls') or {}
-        if len(rolls) < len(active):
+        return bool(active) and len(rolls) >= len(active)
+
+    def _mj_dealer_reveal_ready_to_deal(self, room):
+        """全员已掷骰且展示计时结束（或定时器丢失但已定庄）时可发牌。"""
+        if str(room.get('status') or '') != 'dealer_roll':
+            return False
+        if not self._mj_all_dice_rolled(room):
             return False
         if not room.get('dice_roll') and not self._mj_finalize_dealer_from_rolls(room):
+            return False
+        deal_at = float(room.get('dealer_deal_at') or 0)
+        if deal_at:
+            return time.time() >= deal_at
+        return bool(room.get('dice_roll'))
+
+    def _mj_try_deal_after_reveal(self, room):
+        """投骰展示结束后自动发牌（在 room_store 内调用并 raise _MjRoomMutated）。"""
+        if not self._mj_dealer_reveal_ready_to_deal(room):
             return False
         self._mj_start_hand(room)
         self._mj_bump_version(room)
@@ -1025,8 +1034,23 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room = self._mj_read_room_retry(code)
         if not room or str(room.get('status') or '') != 'dealer_roll':
             return room
-        deal_at = float(room.get('dealer_deal_at') or 0)
-        if not deal_at or time.time() < deal_at:
+        if self._mj_all_dice_rolled(room) and not float(room.get('dealer_deal_at') or 0):
+            try:
+                with self._mj_room_store(code) as (room_now, err):
+                    if err or not room_now:
+                        return self._mj_read_room_retry(code)
+                    if (
+                        str(room_now.get('status') or '') == 'dealer_roll'
+                        and self._mj_all_dice_rolled(room_now)
+                        and not float(room_now.get('dealer_deal_at') or 0)
+                    ):
+                        self._mj_schedule_dealer_reveal(room_now)
+                        self._mj_bump_version(room_now)
+                        raise _MjRoomMutated()
+            except _MjRoomMutated:
+                pass
+            room = self._mj_read_room_retry(code) or room
+        if not self._mj_dealer_reveal_ready_to_deal(room):
             return room
         try:
             with self._mj_room_store(code) as (room_now, err):

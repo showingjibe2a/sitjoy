@@ -34,6 +34,7 @@
   let joinInFlight = false;
   let roomChat = null;
   let dealerRevealTimer = null;
+  let dealerRevealDealNudged = false;
   let activeJokerTiles = new Set();
 
   const MJ_PRESET_HINTS = {
@@ -58,6 +59,10 @@
     }
   }
 
+  function resetDealerRevealNudge() {
+    dealerRevealDealNudged = false;
+  }
+
   /** 投骰定庄展示期 version 不变，需主动拉 state 更新倒计时并在到时发牌。 */
   function needsDealerRevealPoll(s) {
     if (!s || s.status !== 'dealer_roll') return false;
@@ -66,10 +71,29 @@
   }
 
   function syncDealerRevealPoll(s) {
-    clearDealerRevealPoll();
-    if (!needsDealerRevealPoll(s) || !roomCode || watchAbort) return;
+    if (!s || s.status !== 'dealer_roll') {
+      resetDealerRevealNudge();
+      clearDealerRevealPoll();
+      return;
+    }
+    if (!needsDealerRevealPoll(s) || !roomCode || watchAbort) {
+      clearDealerRevealPoll();
+      return;
+    }
     const remain = Number((s.dice_roll || {}).reveal_remaining) || 0;
-    const delay = remain > 0 ? Math.min(900, Math.max(250, remain * 450)) : 300;
+    if (remain <= 0 && !dealerRevealDealNudged) {
+      dealerRevealDealNudged = true;
+      api('state', { room_code: roomCode }, 'GET')
+        .then((data) => { if (data) applyState(data); })
+        .catch(() => { dealerRevealDealNudged = false; });
+      if (s.you_are_host) {
+        doConfirmRoll()
+          .then((data) => { if (data) applyState(data); })
+          .catch(() => { dealerRevealDealNudged = false; });
+      }
+    }
+    clearDealerRevealPoll();
+    const delay = remain > 0 ? Math.min(900, Math.max(250, remain * 450)) : 400;
     dealerRevealTimer = win.setTimeout(() => {
       dealerRevealTimer = null;
       if (watchAbort || !roomCode) return;
@@ -695,6 +719,7 @@
   function clearRoomUi(hint) {
     stopWatch();
     clearDealerRevealPoll();
+    resetDealerRevealNudge();
     closeTableWindow();
     roomCode = '';
     saveRoomCode('');
