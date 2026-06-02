@@ -305,7 +305,7 @@
     const msg = data.message || `已导入 ${names.length} 张`;
     showStatus(msg, false);
     if (typeof hooks.onAfterImport === 'function') {
-      hooks.onAfterImport(names, getSelectedImageType());
+      hooks.onAfterImport(names, getSelectedImageType(), data);
     }
     return true;
   }

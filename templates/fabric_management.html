@@ -398,7 +398,7 @@
                 },
                 title: '选择已有图片（面料库 · 未绑定）',
                 onConfirm: (imageNames, imageType, data) => {
-                    fabricNasOnAfterImport(imageNames, imageType);
+                    fabricNasOnAfterImport(imageNames, imageType, data);
                     loadFabricImages();
                     if (editId && data && data.bound) {
                         showModalStatus(data.message || `已绑定 ${data.bound} 张`, false);
@@ -410,12 +410,19 @@
             });
         }
 
-        function fabricNasOnAfterImport(imageNames, imageType) {
+        function fabricNasOnAfterImport(imageNames, imageType, attachData) {
             const typeName = imageType || getDefaultFabricImageTypeForAdd();
+            const itemsMap = new Map();
+            ((attachData && attachData.items) || []).forEach(it => {
+                const name = String(it.new_name || '').trim();
+                if (name) itemsMap.set(name, it);
+            });
             (imageNames || []).forEach(name => {
                 if ((selectedImageObjects || []).some(x => (x.image_name || '') === name)) return;
+                const meta = itemsMap.get(name) || {};
                 selectedImageObjects.push({
                     image_name: name,
+                    preview_b64: String(meta.preview_b64 || '').trim(),
                     remark: typeName,
                     description: '',
                     sort_order: selectedImageObjects.length
@@ -591,6 +598,27 @@
             return null;
         }
 
+        function resolveFabricImagePathB64(img) {
+            if (!img) return '';
+            const stored = String(img.preview_b64 || '').trim();
+            if (stored) return stored;
+            const found = getImageItemByName(img.image_name);
+            if (found && found.b64) return found.b64;
+            if (img.image_name_raw_b64) {
+                const nameDec = tryDecodeNameFromB64(img.image_name_raw_b64) || img.image_name || '';
+                if (nameDec) return utf8ToB64(`『面料』/${nameDec}`);
+            }
+            return utf8ToB64(`『面料』/${img.image_name || ''}`);
+        }
+
+        function enrichSelectedImagesPreviewB64() {
+            (selectedImageObjects || []).forEach(img => {
+                if (!img || img._isNewUpload || String(img.preview_b64 || '').trim()) return;
+                const found = getImageItemByName(img.image_name);
+                if (found && found.b64) img.preview_b64 = found.b64;
+            });
+        }
+
         function getFabricImagePreviewSrc(imageName, width = 520, quality = 72) {
             const found = getImageItemByName(imageName);
             const fallbackPath = `『面料』/${imageName || ''}`;
@@ -689,6 +717,8 @@
             if (item.images && Array.isArray(item.images)) {
                 selectedImageObjects = item.images.map(img => ({
                     image_name: img.image_name,
+                    preview_b64: String(img.preview_b64 || '').trim(),
+                    image_asset_id: img.image_asset_id || 0,
                     remark: normalizeImageRemark(img.remark),
                     description: String(img.description != null ? img.description : '').trim(),
                     sort_order: img.sort_order || 0
@@ -890,6 +920,7 @@
                         return;
                     }
                     fabricImages = (data.items || []).map(it => ({ name: it.name, rawB64: it.name_raw_b64, b64: it.b64 }));
+                    enrichSelectedImagesPreviewB64();
                 })
                 .catch(() => {
                     fabricImages = [];
@@ -1505,15 +1536,20 @@
         async function syncFabricImageFromGalleryMeta(index) {
             const img = selectedImageObjects[index];
             if (!img || img._isNewUpload) return;
-            const found = getImageItemByName(img.image_name);
-            const pathB64 = (found && found.b64) ? found.b64 : utf8ToB64(`『面料』/${img.image_name || ''}`);
+            const pathB64 = resolveFabricImagePathB64(img);
             try {
                 const resp = await fetch('/api/gallery-image-meta?id=' + encodeURIComponent(pathB64), { credentials: 'include' });
                 const data = await resp.json();
-                if (data.status !== 'success' || !data.item) return;
-                const meta = data.item;
-                img.remark = normalizeImageRemark(meta.image_type_name || meta.remark || img.remark);
-                img.description = String(meta.description != null ? meta.description : '').trim();
+                if (data.status !== 'success') return;
+                if (data.storage_path) {
+                    img.preview_b64 = utf8ToB64(String(data.storage_path).replace(/\\/g, '/'));
+                }
+                if (data.image_type_name) {
+                    img.remark = normalizeImageRemark(data.image_type_name || img.remark);
+                }
+                if (data.description != null) {
+                    img.description = String(data.description).trim();
+                }
                 renderSelectedImagesGrid();
             } catch (e) {}
         }
@@ -1558,8 +1594,7 @@
                 return;
             }
             currentEditingImageIndex = index;
-            const found = getImageItemByName(img.image_name);
-            const pathB64 = (found && found.b64) ? found.b64 : utf8ToB64(`『面料』/${img.image_name || ''}`);
+            const pathB64 = resolveFabricImagePathB64(img);
             window.PmImageEditModal.init({
                 mode: 'gallery',
                 hooks: {

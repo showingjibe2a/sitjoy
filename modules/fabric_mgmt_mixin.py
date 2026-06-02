@@ -147,9 +147,10 @@ class FabricManagementMixin:
                                 except Exception:
                                     pass
 
-                            # unbound=1 should mean: only show images not bound to ANY fabric
+                            # unbound=1：默认只显示未绑定任何面料的图；编辑当前面料时保留已绑定到该面料的图
                             if check_ids:
-                                continue
+                                if not (current_fabric_id and current_fabric_id in check_ids):
+                                    continue
 
                         _, b64 = self._resources_rel_path_b64('『面料』', raw_bytes)
                         name_raw_b64 = base64.b64encode(raw_bytes).decode('ascii')
@@ -316,6 +317,7 @@ class FabricManagementMixin:
                 existing = set()
 
             moved = []
+            moved_items = []
             for src_b in source_files_b:
                 try:
                     base = os.fsdecode(os.path.basename(src_b))
@@ -340,8 +342,20 @@ class FabricManagementMixin:
                         return self.send_json({'status': 'error', 'message': f'移动失败: {move_err}'}, start_response)
                 existing.add(target_name)
                 moved.append(target_name)
+                try:
+                    res_root = self._join_resources('')
+                    rel_bytes = os.path.relpath(dst_b, res_root)
+                    preview_b64 = base64.b64encode(rel_bytes).decode('ascii')
+                except Exception:
+                    _, preview_b64 = self._resources_rel_path_b64('『面料』', os.fsencode(target_name))
+                moved_items.append({'new_name': target_name, 'preview_b64': preview_b64})
 
-            return self.send_json({'status': 'success', 'image_names': moved, 'moved': len(moved)}, start_response)
+            return self.send_json({
+                'status': 'success',
+                'image_names': moved,
+                'moved': len(moved),
+                'items': moved_items,
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -509,10 +523,17 @@ class FabricManagementMixin:
                 return {'status': 'error', 'message': f'重命名失败: {rename_err}', 'items': results}
 
             existing.add(candidate)
+            try:
+                res_root = self._join_resources('')
+                rel_bytes = os.path.relpath(dst, res_root)
+                preview_b64 = base64.b64encode(rel_bytes).decode('ascii')
+            except Exception:
+                _, preview_b64 = self._resources_rel_path_b64('『面料』', self._safe_fsencode(candidate))
             results.append({
                 'old_b64': str(raw_b64 or '').strip(),
                 'new_name': candidate,
                 'remark': image_type,
+                'preview_b64': preview_b64,
             })
 
         return {'status': 'success', 'items': results}
@@ -804,7 +825,7 @@ class FabricManagementMixin:
                                 tname_sel = "it.name AS type_name" if has_ia_tid else "NULL AS type_name"
                                 cur.execute(
                                     f"""
-                                    SELECT fim.fabric_id, ia.storage_path AS storage_path,
+                                    SELECT fim.fabric_id, ia.id AS image_asset_id, ia.storage_path AS storage_path,
                                            fim.sort_order, ia.description AS description,
                                            {dep_expr} AS is_deprecated,
                                            {tname_sel}, {tid_sel}
@@ -822,9 +843,22 @@ class FabricManagementMixin:
                                         continue
                                     storage_path = (img.get('storage_path') or '').strip()
                                     display_name = os.path.basename(storage_path) if storage_path else ''
+                                    preview_b64 = ''
+                                    if storage_path:
+                                        try:
+                                            preview_b64 = base64.b64encode(os.fsencode(storage_path)).decode('ascii')
+                                        except Exception:
+                                            try:
+                                                preview_b64 = base64.b64encode(
+                                                    storage_path.encode('utf-8', errors='surrogatepass')
+                                                ).decode('ascii')
+                                            except Exception:
+                                                preview_b64 = ''
                                     tname = (img.get('type_name') or '').strip()
                                     image_map.setdefault(fid, []).append({
                                         'image_name': display_name or '',
+                                        'preview_b64': preview_b64,
+                                        'image_asset_id': self._parse_int(img.get('image_asset_id')) or 0,
                                         'remark': tname,
                                         'description': (img.get('description') or '').strip(),
                                         'sort_order': self._parse_int(img.get('sort_order')) or 0,

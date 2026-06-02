@@ -8,6 +8,7 @@ import base64
 import hashlib
 import threading
 import time
+import unicodedata
 from email import policy
 from email.parser import BytesParser
 from datetime import datetime, timedelta
@@ -122,6 +123,105 @@ class SalesProductMixin:
 
     def _abs_from_storage_path(self, storage_path):
         return self._join_resources((storage_path or '').strip().replace('\\', '/'))
+
+    def _gallery_basename_variants(self, basename):
+        """文件名 basename 的 Unicode 变体（NFC/NFD），用于库内路径容错匹配。"""
+        base = os.path.basename(str(basename or '').strip().replace('\\', '/'))
+        if not base:
+            return []
+        out = []
+        seen = set()
+        for candidate in (base,):
+            variants = [candidate]
+            try:
+                variants.append(unicodedata.normalize('NFC', candidate))
+                variants.append(unicodedata.normalize('NFD', candidate))
+            except Exception:
+                pass
+            for v in variants:
+                if not v or v in seen:
+                    continue
+                seen.add(v)
+                out.append(v)
+        return out
+
+    def _find_image_asset_row_by_rel_path(self, cur, rel_text, join_type, has_tid, has_dep, has_desc):
+        """按 storage_path 精确或 basename 容错查找 image_assets。"""
+        rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
+        if not rel_text:
+            return {}
+        cur.execute(
+            f"""
+            SELECT ia.id, ia.storage_path,
+                   {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                   {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
+                   {('ia.description AS description' if has_desc else "'' AS description")},
+                   {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+            FROM image_assets ia
+            {join_type}
+            WHERE ia.storage_path=%s
+            LIMIT 1
+            """,
+            (rel_text,),
+        )
+        row = cur.fetchone() or {}
+        if row.get('id'):
+            return row
+        for base in self._gallery_basename_variants(os.path.basename(rel_text)):
+            cur.execute(
+                f"""
+                SELECT ia.id, ia.storage_path,
+                       {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                       {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
+                       {('ia.description AS description' if has_desc else "'' AS description")},
+                       {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+                FROM image_assets ia
+                {join_type}
+                WHERE ia.storage_path=%s OR ia.storage_path LIKE %s
+                ORDER BY ia.id DESC
+                LIMIT 1
+                """,
+                (base, f'%/{base}'),
+            )
+            row = cur.fetchone() or {}
+            if row.get('id'):
+                return row
+        return {}
+
+    def _resolve_gallery_abs_path(self, rel_text):
+        """gallery 相对路径 → 绝对路径；面料目录按 basename 二次解析。"""
+        rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
+        if not rel_text or '..' in rel_text:
+            return None, rel_text
+
+        abs_path = self._abs_from_storage_path(rel_text)
+        if abs_path and os.path.isfile(abs_path):
+            canonical = rel_text
+            try:
+                res_root = self._join_resources('')
+                canonical = os.fsdecode(os.path.relpath(abs_path, res_root)).replace('\\', '/')
+            except Exception:
+                pass
+            return abs_path, canonical
+
+        base = os.path.basename(rel_text)
+        if not base:
+            return None, rel_text
+
+        fabric_abs = None
+        try:
+            fabric_abs = self._resolve_fabric_image_abs_path(base)
+        except Exception:
+            fabric_abs = None
+        if fabric_abs and os.path.isfile(fabric_abs):
+            try:
+                res_root = self._join_resources('')
+                canonical = os.fsdecode(os.path.relpath(fabric_abs, res_root)).replace('\\', '/')
+            except Exception:
+                canonical = f"『面料』/{base}"
+            return fabric_abs, canonical
+
+        return None, rel_text
 
     @staticmethod
     def _sales_variant_subfolder_display_name(spec_part, fabric_part):
@@ -239,41 +339,9 @@ class SalesProductMixin:
                 has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
                 join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
                 with conn.cursor() as cur:
-                    cur.execute(
-                        f"""
-                        SELECT ia.id, ia.storage_path,
-                               {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                               {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
-                               {('ia.description AS description' if has_desc else "'' AS description")},
-                               {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
-                        FROM image_assets ia
-                        {join_type}
-                        WHERE ia.storage_path=%s
-                        LIMIT 1
-                        """,
-                        (rel_text,),
+                    row = self._find_image_asset_row_by_rel_path(
+                        cur, rel_text, join_type, has_tid, has_dep, has_desc
                     )
-                    row = cur.fetchone() or {}
-                    if not row.get('id'):
-                        # 容错：若目录层级有差异，尝试按 basename 匹配（仅用于预填，非强一致）
-                        base = os.path.basename(rel_text)
-                        if base:
-                            cur.execute(
-                                f"""
-                                SELECT ia.id, ia.storage_path,
-                                       {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                                       {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
-                                       {('ia.description AS description' if has_desc else "'' AS description")},
-                                       {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
-                                FROM image_assets ia
-                                {join_type}
-                                WHERE ia.storage_path=%s OR ia.storage_path LIKE %s
-                                ORDER BY ia.id DESC
-                                LIMIT 1
-                                """,
-                                (base, f'%/{base}'),
-                            )
-                            row = cur.fetchone() or {}
 
                     if method == 'PUT':
                         # 允许单独更新 is_enabled；若同时带 image_type_name，则更新类型
@@ -290,7 +358,7 @@ class SalesProductMixin:
                         if not aid:
                             # 兼容：若该图片尚未入库，但文件存在且用户提交了可更新字段，
                             # 自动补建 image_assets 记录，再继续保存类型/启用状态/备注。
-                            abs_path = self._abs_from_storage_path(rel_text)
+                            abs_path, canonical_rel = self._resolve_gallery_abs_path(rel_text)
                             if not abs_path or (not os.path.exists(abs_path)) or (not os.path.isfile(abs_path)):
                                 return self.send_json({'status': 'error', 'message': '图片未入库，且源文件不存在，无法保存'}, start_response)
                             try:
@@ -307,7 +375,7 @@ class SalesProductMixin:
                             else:
                                 rec = {
                                     'sha256': sha256,
-                                    'storage_path': rel_text,
+                                    'storage_path': canonical_rel or rel_text,
                                     'description': '',
                                     'is_deprecated': 0,
                                     'created_by': int(user_id) if user_id else None,
@@ -404,36 +472,9 @@ class SalesProductMixin:
                 has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
                 join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
                 with conn.cursor() as cur:
-                    cur.execute(
-                        f"""
-                        SELECT ia.id, ia.storage_path,
-                               {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                               {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
-                        FROM image_assets ia
-                        {join_type}
-                        WHERE ia.storage_path=%s
-                        LIMIT 1
-                        """,
-                        (rel_text,),
+                    row = self._find_image_asset_row_by_rel_path(
+                        cur, rel_text, join_type, has_tid, False, False
                     )
-                    row = cur.fetchone() or {}
-                    if not row.get('id'):
-                        base = os.path.basename(rel_text)
-                        if base:
-                            cur.execute(
-                                f"""
-                                SELECT ia.id, ia.storage_path,
-                                       {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                                       {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
-                                FROM image_assets ia
-                                {join_type}
-                                WHERE ia.storage_path=%s OR ia.storage_path LIKE %s
-                                ORDER BY ia.id DESC
-                                LIMIT 1
-                                """,
-                                (base, f'%/{base}'),
-                            )
-                            row = cur.fetchone() or {}
 
                     aid = self._parse_int(row.get('id')) or 0
                     if not aid:
