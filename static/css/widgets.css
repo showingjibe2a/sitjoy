@@ -118,6 +118,7 @@
     inset: -0.1em;
     border-radius: inherit;
     pointer-events: none;
+    z-index: 4;
     box-shadow:
         0 0 0.18em rgba(255, 215, 80, 0.85),
         0 0 0.55em rgba(232, 178, 42, 0.45);
@@ -137,7 +138,7 @@
     color: #9a7208;
     line-height: 1;
     pointer-events: none;
-    z-index: 1;
+    z-index: 5;
     text-shadow: 0 0 0.15em rgba(255, 220, 100, 0.85);
 }
 .mj-tile--joker.mj-tile--hand.mj-tile--selected .mj-tile-glyph-wrap {
@@ -445,10 +446,10 @@
     font-size: calc(0.92rem * var(--mj-ui-scale, 1));
 }
 .mj-badge-melds .mj-meld-set .mj-tile--meld + .mj-tile--meld {
-    margin-left: -0.14em;
+    margin-left: 0.04em;
 }
 .mj-badge-melds .mj-meld-set--concealed .mj-tile--concealed + .mj-tile--concealed {
-    margin-left: -0.14em;
+    margin-left: 0.04em;
 }
 .mj-player-rail--left .mj-player-badge,
 .mj-player-rail--right .mj-player-badge {
@@ -967,7 +968,7 @@
     flex-wrap: nowrap;
     justify-content: center;
     align-items: flex-end;
-    gap: 0;
+    gap: var(--mj-hand-gap, 0.1rem);
     width: 100%;
     min-height: 0;
     padding: 0.55rem 0 0.15rem;
@@ -976,7 +977,8 @@
     container-type: inline-size;
     --mj-hand-count: 13;
     --mj-hand-tile-max: calc(3.1rem * var(--mj-ui-scale, 1));
-    --mj-tile-pack: -0.30em;
+    --mj-hand-gap: 0.1rem;
+    --mj-tile-pack: 0;
 }
 .mj-player-rail .mj-seat-meta {
     opacity: 0.88;
@@ -991,10 +993,10 @@
 .mj-river {
     display: flex;
     flex-wrap: wrap;
-    gap: 0;
+    gap: 0.06em;
     align-content: flex-start;
     overflow: hidden;
-    --mj-tile-pack: -0.08em;
+    --mj-tile-pack: 0;
 }
 .mj-seat--top .mj-river,
 .mj-seat--bottom .mj-river {
@@ -1003,7 +1005,6 @@
     justify-content: flex-start;
     align-content: flex-start;
     align-items: flex-start;
-    --mj-tile-pack: -0.34em;
     max-width: 100%;
     max-height: calc(var(--mj-table-tile-size, 1.52rem) * 2.35);
 }
@@ -1030,7 +1031,7 @@
     display: none;
 }
 
-/* —— 麻将牌：CSS 绘制不透明牌面（不依赖系统 emoji，Safari/WebKit 兼容） —— */
+/* —— 麻将牌：平面粗框 + 精细花纹 —— */
 .mj-tile {
     position: relative;
     display: inline-block;
@@ -1046,51 +1047,309 @@
     appearance: none;
     -webkit-appearance: none;
 }
+
 .mj-tile-glyph-wrap {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     position: relative;
     vertical-align: bottom;
-    line-height: 1;
     box-sizing: border-box;
-    width: 0.74em;
-    height: 1em;
-    padding: 0.06em 0.04em 0.08em;
-    background: linear-gradient(168deg, #fffdf7 0%, #f7eed8 48%, #ebe0c8 100%);
-    border: 0.045em solid rgba(62, 52, 40, 0.36);
+    width: 0.82em;
+    height: 1.1em;
+    padding: 0.07em 0.06em 0.06em;
+    line-height: 1;
+    background: #faf7ef;
+    border: 0.09em solid #2a5038;
     border-radius: 0.11em;
-    box-shadow:
-        inset 0 0.07em 0 rgba(255, 255, 255, 0.88),
-        inset -0.04em -0.06em 0 rgba(0, 0, 0, 0.05),
-        0 0.06em 0.14em rgba(0, 0, 0, 0.14);
     isolation: isolate;
 }
-.mj-tile-glyph {
-    display: block;
-    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+
+.mj-tile-face {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    background: transparent;
+}
+
+/* 万：上黑下红 */
+.mj-tile-face--man {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.04em;
+}
+.mj-tile-man-num {
+    font-family: "STSong", "SimSun", "PingFang SC", "Hiragino Sans GB", serif;
     font-size: 0.34em;
-    font-weight: 800;
-    font-style: normal;
-    line-height: 1;
-    letter-spacing: -0.03em;
-    white-space: nowrap;
-    user-select: none;
-    text-align: center;
-    text-rendering: optimizeLegibility;
-}
-.mj-tile--man .mj-tile-glyph { color: #b42318; }
-.mj-tile--pin .mj-tile-glyph { color: #1a4a86; }
-.mj-tile--sou .mj-tile-glyph { color: #1a6b38; }
-.mj-tile--wind .mj-tile-glyph { color: #2a2824; font-size: 0.4em; }
-.mj-tile--zhong .mj-tile-glyph { color: #b42318; font-size: 0.42em; }
-.mj-tile--fa .mj-tile-glyph { color: #1a6b38; font-size: 0.42em; }
-.mj-tile--bai .mj-tile-glyph {
-    color: #6a645c;
-    font-size: 0.38em;
     font-weight: 700;
+    line-height: 1;
+    color: #101010;
 }
-.mj-tile--unknown .mj-tile-glyph { color: #5a5650; font-size: 0.38em; }
+.mj-tile-man-suit {
+    font-family: "STSong", "SimSun", "PingFang SC", "Hiragino Sans GB", serif;
+    font-size: 0.42em;
+    font-weight: 900;
+    line-height: 1;
+    color: #c41818;
+    letter-spacing: 0.05em;
+}
+
+/* 筒：3×3 或双列（六/八筒） */
+.mj-tile-pin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+    gap: 0.04em;
+}
+.mj-tile-pin-cols {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12em;
+    width: 100%;
+    height: 100%;
+}
+.mj-tile-pin-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.05em;
+    height: 100%;
+    flex: 1;
+    max-width: 46%;
+}
+.mj-tile-pin-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+}
+.mj-tile-pin-dot {
+    display: block;
+    width: 82%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #f6f2e8;
+    border: max(1px, 0.05em) solid #141414;
+    box-sizing: border-box;
+    position: relative;
+    flex-shrink: 0;
+}
+.mj-tile-pin-col .mj-tile-pin-dot {
+    width: 78%;
+}
+.mj-tile-pin-dot::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 50%;
+    height: 50%;
+    border-radius: 50%;
+    background: #f6f2e8;
+    border: max(1px, 0.045em) solid var(--mj-pin-ring, #c41818);
+    box-shadow: 0 0 0 max(1px, 0.04em) #141414;
+    box-sizing: border-box;
+}
+.mj-tile-pin-dot[data-color="r"] { --mj-pin-ring: #c41818; }
+.mj-tile-pin-dot[data-color="g"] { --mj-pin-ring: #228838; }
+.mj-tile-pin-dot[data-color="k"] { --mj-pin-ring: #141414; }
+.mj-tile-pin-dot.is-big,
+.mj-tile-pin-cell.is-big .mj-tile-pin-dot {
+    width: 92%;
+}
+.mj-tile-pin-dot.is-big::after,
+.mj-tile-pin-cell.is-big .mj-tile-pin-dot::after {
+    box-shadow: 0 0 0 max(1px, 0.045em) #141414, 0 0 0 max(1px, 0.09em) #228838;
+    border-color: #c41818;
+}
+
+/* 条：双列 / 七条 / 雀 SVG */
+.mj-tile-sou-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+    gap: 0.04em;
+}
+.mj-tile-sou-cols {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.14em;
+    width: 100%;
+    height: 100%;
+}
+.mj-tile-sou-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.04em;
+    height: 100%;
+    flex: 1;
+    max-width: 46%;
+}
+.mj-tile-sou-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+}
+.mj-tile-sou-cell:not(.is-on) {
+    visibility: hidden;
+}
+.mj-tile-sou-stick {
+    display: block;
+    width: 42%;
+    height: 88%;
+    border-radius: 0.05em;
+    border: max(1px, 0.04em) solid #134a28;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    background:
+        repeating-linear-gradient(
+            180deg,
+            #28944a 0 16%,
+            #155e30 16% 19%,
+            #38a85c 19% 32%,
+            #1a7038 32% 35%,
+            #32a050 35% 100%
+        );
+}
+.mj-tile-sou-col .mj-tile-sou-stick {
+    width: 52%;
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 24%;
+}
+.mj-tile-sou-stick[data-color="r"] {
+    border-color: #8a1810;
+    background:
+        repeating-linear-gradient(
+            180deg,
+            #e83828 0 16%,
+            #a81810 16% 19%,
+            #f05040 19% 32%,
+            #c02018 32% 35%,
+            #e84030 35% 100%
+        );
+}
+.mj-tile-sou-pair {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12em;
+    width: 100%;
+    height: 100%;
+}
+.mj-tile-sou-pair .mj-tile-sou-stick {
+    width: 28%;
+    height: 78%;
+}
+.mj-tile-face--sou3 .mj-tile-sou-pair .mj-tile-sou-stick {
+    width: 24%;
+    height: 72%;
+}
+.mj-tile-face--sou7 {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.06em;
+}
+.mj-tile-sou7-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 28%;
+    width: 100%;
+}
+.mj-tile-sou7-top .mj-tile-sou-stick {
+    width: 26%;
+    height: 100%;
+}
+.mj-tile-sou7-rows {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.05em;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+}
+.mj-tile-sou-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1em;
+    flex: 1 1 0;
+    width: 100%;
+}
+.mj-tile-sou-row .mj-tile-sou-stick {
+    width: 22%;
+    height: 100%;
+}
+.mj-tile-sou-bird-svg {
+    display: block;
+    width: 88%;
+    height: 92%;
+    overflow: visible;
+}
+
+/* 字牌 */
+.mj-tile-honor-glyph {
+    font-family: "STSong", "SimSun", "PingFang SC", "Hiragino Sans GB", serif;
+    font-size: 0.48em;
+    font-weight: 900;
+    line-height: 1;
+    user-select: none;
+}
+.mj-tile-face--z1 .mj-tile-honor-glyph,
+.mj-tile-face--z2 .mj-tile-honor-glyph,
+.mj-tile-face--z3 .mj-tile-honor-glyph,
+.mj-tile-face--z4 .mj-tile-honor-glyph {
+    color: #101010;
+}
+.mj-tile-face--z5 .mj-tile-honor-glyph {
+    color: #c41818;
+    font-size: 0.52em;
+}
+.mj-tile-face--z6 .mj-tile-honor-glyph {
+    color: #208050;
+    font-size: 0.5em;
+}
+.mj-tile-face--z7::after {
+    content: '';
+    display: block;
+    width: 48%;
+    height: 62%;
+    border: 0.08em solid #1a4068;
+    border-radius: 0.04em;
+    box-sizing: border-box;
+}
+.mj-tile-face--unknown {
+    font-family: serif;
+    font-size: 0.4em;
+    font-weight: 700;
+    color: #5a5650;
+}
 
 .mj-tile--hand {
     flex: 0 0 auto;
@@ -1107,9 +1366,6 @@
 }
 .mj-hand .mj-tile--hand {
     position: relative;
-}
-.mj-hand .mj-tile--hand + .mj-tile--hand {
-    margin-left: var(--mj-tile-pack) !important;
 }
 .mj-tile--hand.mj-tile--clickable {
     cursor: pointer;
@@ -1128,11 +1384,6 @@
 }
 .mj-tile--hand.mj-tile--selected .mj-tile-glyph-wrap {
     transform: translateY(-4px);
-    box-shadow:
-        inset 0 0.07em 0 rgba(255, 255, 255, 0.88),
-        inset -0.04em -0.06em 0 rgba(0, 0, 0, 0.05),
-        0 4px 0 rgba(74, 78, 87, 0.34),
-        0 0.06em 0.14em rgba(0, 0, 0, 0.14);
 }
 
 /* 摸牌 / 刚打出的牌：小圆角箭头标注（替代边框高亮） */
@@ -1191,26 +1442,24 @@
     display: inline-flex;
     flex-direction: row;
     align-items: flex-end;
-    gap: 0;
+    gap: 0.05em;
     margin: 0.12rem 0.18rem 0.12rem 0;
     vertical-align: bottom;
 }
 .mj-meld-set .mj-tile--meld + .mj-tile--meld {
-    margin-left: var(--mj-tile-pack, -0.08em);
+    margin-left: 0;
 }
 .mj-meld-set--concealed .mj-tile--concealed + .mj-tile--concealed {
-    margin-left: var(--mj-tile-pack, -0.08em);
+    margin-left: 0;
 }
 .mj-tile--concealed {
     display: inline-block;
     position: relative;
     vertical-align: bottom;
-    background: linear-gradient(145deg, #6b8f72 0%, #4a6b52 48%, #3d5a44 100%);
-    border: 1px solid rgba(30, 48, 34, 0.55);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.12),
-        0 1px 3px rgba(0, 0, 0, 0.18);
-    border-radius: 0.18em;
+    background: #2a5038;
+    border: 0.1em solid #1a3828;
+    box-shadow: none;
+    border-radius: 0.12em;
 }
 .mj-tile--concealed.mj-tile--meld {
     width: 0.88em;
@@ -1263,7 +1512,7 @@
     background: #fff;
 }
 .mj-chi-pick-btn .mj-tile--meld + .mj-tile--meld {
-    margin-left: -0.08em;
+    margin-left: 0.05em;
 }
 
 .mj-tile--table {
@@ -1280,12 +1529,12 @@
     position: relative;
 }
 .mj-river .mj-tile--table + .mj-tile--table {
-    margin-left: var(--mj-tile-pack);
+    margin-left: 0;
 }
 .mj-seat--left .mj-river .mj-tile--table + .mj-tile--table,
 .mj-seat--right .mj-river .mj-tile--table + .mj-tile--table {
     margin-left: 0;
-    margin-top: var(--mj-tile-pack);
+    margin-top: 0;
 }
 
 .mj-actions {

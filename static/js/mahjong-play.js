@@ -419,9 +419,172 @@
     return honor[t] || t;
   }
 
+  const MAN_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  function pinDotHtml(color, big) {
+    return `<span class="mj-tile-pin-dot${big ? ' is-big' : ''}" data-color="${color || 'k'}"></span>`;
+  }
+
+  function pinColHtml(colors) {
+    return `<span class="mj-tile-pin-col">${colors.map((c) => pinDotHtml(c)).join('')}</span>`;
+  }
+
+  function pinColsFaceHtml(rank, left, right) {
+    return `<span class="mj-tile-face mj-tile-face--pin mj-tile-face--pin-cols" data-rank="${rank}">`
+      + `<span class="mj-tile-pin-cols">${pinColHtml(left)}${pinColHtml(right)}</span></span>`;
+  }
+
+  function pinGridHtml(rank, cells) {
+    let grid = '';
+    for (let i = 1; i <= 9; i++) {
+      const d = cells[i];
+      if (d) {
+        grid += `<span class="mj-tile-pin-cell is-on${d.big ? ' is-big' : ''}">${pinDotHtml(d.c, d.big)}</span>`;
+      } else {
+        grid += '<span class="mj-tile-pin-cell"></span>';
+      }
+    }
+    return `<span class="mj-tile-face mj-tile-face--pin" data-rank="${rank}"><span class="mj-tile-pin-grid">${grid}</span></span>`;
+  }
+
+  function pinFaceHtml(rank) {
+    const G = 'g'; const R = 'r'; const K = 'k';
+    if (rank === 1) {
+      return pinGridHtml(1, { 5: { c: G, big: true } });
+    }
+    if (rank === 2) {
+      return pinGridHtml(2, { 1: { c: G }, 9: { c: K } });
+    }
+    if (rank === 3) {
+      return pinGridHtml(3, { 1: { c: G }, 5: { c: R }, 9: { c: G } });
+    }
+    if (rank === 4) {
+      return pinGridHtml(4, { 1: { c: R }, 3: { c: G }, 7: { c: G }, 9: { c: R } });
+    }
+    if (rank === 5) {
+      return pinGridHtml(5, { 1: { c: R }, 3: { c: G }, 5: { c: K }, 7: { c: G }, 9: { c: R } });
+    }
+    if (rank === 6) {
+      return pinColsFaceHtml(6, [G, G, K], [K, G, G]);
+    }
+    if (rank === 7) {
+      return pinGridHtml(7, {
+        1: { c: K }, 2: { c: R }, 3: { c: G }, 5: { c: K }, 7: { c: G }, 8: { c: R }, 9: { c: K },
+      });
+    }
+    if (rank === 8) {
+      return pinColsFaceHtml(8, [K, K, K, K], [K, K, K, K]);
+    }
+    if (rank === 9) {
+      return pinGridHtml(9, {
+        1: { c: R }, 2: { c: R }, 3: { c: R }, 4: { c: G }, 5: { c: G }, 6: { c: G }, 7: { c: K }, 8: { c: K }, 9: { c: K },
+      });
+    }
+    return pinGridHtml(rank, {});
+  }
+
+  function souStickHtml(color) {
+    return `<span class="mj-tile-sou-stick" data-color="${color || 'g'}"></span>`;
+  }
+
+  function souColHtml(count, color) {
+    let sticks = '';
+    for (let i = 0; i < count; i++) sticks += souStickHtml(color);
+    return `<span class="mj-tile-sou-col">${sticks}</span>`;
+  }
+
+  function souColsFaceHtml(rank, left, right) {
+    return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou-cols" data-rank="${rank}">`
+      + `<span class="mj-tile-sou-cols">${souColHtml(left, 'g')}${souColHtml(right, 'g')}</span></span>`;
+  }
+
+  function souBirdHtml() {
+    return '<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou1" data-rank="1">'
+      + '<svg class="mj-tile-sou-bird-svg" viewBox="0 0 24 32" aria-hidden="true" focusable="false">'
+      + '<ellipse cx="12" cy="9.5" rx="7.5" ry="6.5" fill="#d82820"/>'
+      + '<path d="M12 5c-3 0-5 2-5.5 4.5c-2 .8-2 2.8.5 2.5c-.3 2 1 3.5 5 3.5s5.3-1.5 5-3.5c2.5.3 2.5-1.7.5-2.5C17 7 15 5 12 5z" fill="#c01818"/>'
+      + '<path d="M14 8.5l5-2.5" stroke="#a01010" stroke-width="1.4" stroke-linecap="round"/>'
+      + '<circle cx="15.5" cy="7.8" r="0.9" fill="#101010"/>'
+      + '<rect x="10.2" y="15.5" width="3.6" height="11" rx="1.2" fill="#228838"/>'
+      + '<rect x="7" y="19" width="2.2" height="6.5" rx="0.8" fill="#2ca050"/>'
+      + '<rect x="14.8" y="19" width="2.2" height="6.5" rx="0.8" fill="#2ca050"/>'
+      + '</svg></span>';
+  }
+
+  function souGridHtml(rank, cells) {
+    let grid = '';
+    for (let i = 1; i <= 9; i++) {
+      const c = cells[i];
+      if (c) grid += `<span class="mj-tile-sou-cell is-on">${souStickHtml(c)}</span>`;
+      else grid += '<span class="mj-tile-sou-cell"></span>';
+    }
+    return `<span class="mj-tile-face mj-tile-face--sou" data-rank="${rank}"><span class="mj-tile-sou-grid">${grid}</span></span>`;
+  }
+
+  function souFaceHtml(rank) {
+    const G = 'g'; const R = 'r';
+    if (rank === 1) return souBirdHtml();
+    if (rank === 2) {
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou2" data-rank="2">`
+        + `<span class="mj-tile-sou-pair">${souStickHtml(G)}${souStickHtml(G)}</span></span>`;
+    }
+    if (rank === 3) {
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou3" data-rank="3">`
+        + `<span class="mj-tile-sou-pair">${souStickHtml(G)}${souStickHtml(R)}${souStickHtml(G)}</span></span>`;
+    }
+    if (rank === 4) {
+      return souColsFaceHtml(4, 2, 2);
+    }
+    if (rank === 5) {
+      return souGridHtml(5, { 1: G, 3: G, 5: R, 7: G, 9: G });
+    }
+    if (rank === 6) {
+      return souColsFaceHtml(6, 3, 3);
+    }
+    if (rank === 7) {
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou7" data-rank="7">`
+        + `<span class="mj-tile-sou7-top">${souStickHtml(R)}</span>`
+        + `<span class="mj-tile-sou7-rows">`
+        + `<span class="mj-tile-sou-row">${souStickHtml(G)}${souStickHtml(G)}${souStickHtml(G)}</span>`
+        + `<span class="mj-tile-sou-row">${souStickHtml(G)}${souStickHtml(G)}${souStickHtml(G)}</span>`
+        + '</span></span>';
+    }
+    if (rank === 8) {
+      return souColsFaceHtml(8, 4, 4);
+    }
+    if (rank === 9) {
+      return souGridHtml(9, {
+        1: G, 2: G, 3: G, 4: G, 5: R, 6: G, 7: G, 8: G, 9: G,
+      });
+    }
+    return souGridHtml(rank, {});
+  }
+
+  const HONOR_CHAR = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '发', z7: '' };
+
+  function manFaceHtml(rank) {
+    return `<span class="mj-tile-face mj-tile-face--man" data-rank="${rank}">`
+      + `<span class="mj-tile-man-num">${MAN_NUM[rank] || rank}</span>`
+      + '<span class="mj-tile-man-suit">萬</span></span>';
+  }
+
+  function honorFaceHtml(key) {
+    const ch = HONOR_CHAR[key] || '?';
+    return `<span class="mj-tile-face mj-tile-face--honor mj-tile-face--${esc(key)}">`
+      + (ch ? `<span class="mj-tile-honor-glyph">${esc(ch)}</span>` : '')
+      + '</span>';
+  }
+
   function tileInnerHtmlForTile(key) {
-    const label = tileLabel(key);
-    return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph" aria-hidden="true">' + esc(label) + '</span></span>';
+    const k = String(key || '').trim();
+    const suit = k[0];
+    const rank = parseInt(k.slice(1), 10);
+    let face;
+    if (suit === 'w' && rank >= 1 && rank <= 9) face = manFaceHtml(rank);
+    else if (suit === 'p' && rank >= 1 && rank <= 9) face = pinFaceHtml(rank);
+    else if (suit === 's' && rank >= 1 && rank <= 9) face = souFaceHtml(rank);
+    else if (/^z[1-7]$/.test(k)) face = honorFaceHtml(k);
+    else face = '<span class="mj-tile-face mj-tile-face--unknown">?</span>';
+    return `<span class="mj-tile-glyph-wrap">${face}</span>`;
   }
 
   function tileKindClasses(t) {
@@ -1111,11 +1274,11 @@
       const scale = scaleRaw ? parseFloat(scaleRaw) || 1 : 1;
       const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const maxPx = 3.1 * rootPx * scale;
-      const packRatio = 0.30;
-      const effectiveUnits = n - (n - 1) * packRatio;
-      const perTile = Math.min(maxPx, w / Math.max(effectiveUnits, 1));
+      const gapPx = Math.max(2, Math.round(w * 0.008));
+      const perTile = Math.min(maxPx, (w - gapPx * Math.max(n - 1, 0)) / Math.max(n, 1));
       handEl.style.setProperty('--mj-hand-tile-size', perTile + 'px');
-      handEl.style.setProperty('--mj-tile-pack', (-packRatio * perTile) + 'px');
+      handEl.style.setProperty('--mj-hand-gap', gapPx + 'px');
+      handEl.style.setProperty('--mj-tile-pack', '0px');
     }
   }
 
