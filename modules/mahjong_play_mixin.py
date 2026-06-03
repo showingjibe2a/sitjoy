@@ -1558,6 +1558,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
     def _mj_room_public(self, room, user_id):
         self._mj_normalize_seats(room)
+        if str(room.get('status') or '') == 'lobby':
+            self._mj_sync_lobby_dealer_seat(room)
         uid = int(user_id)
         my_seat = self._mj_seat_of_user(room, user_id)
         seats_pub = []

@@ -113,15 +113,16 @@
 
   function resolveMySeat(s) {
     if (!s) return null;
+    const uid = s.my_user_id;
+    if (uid != null) {
+      const seats = s.seats || [];
+      for (let i = 0; i < seats.length; i++) {
+        const st = seatAtIndex(seats, i);
+        if (st && Number(st.user_id) === Number(uid)) return i;
+      }
+    }
     const direct = s.my_seat;
     if (direct != null && direct >= 0) return direct;
-    const uid = s.my_user_id;
-    if (uid == null) return null;
-    const seats = s.seats || [];
-    for (let i = 0; i < seats.length; i++) {
-      const st = seats[i];
-      if (st && Number(st.user_id) === Number(uid)) return i;
-    }
     return null;
   }
 
@@ -971,9 +972,14 @@
 
   function resolveWindAnchor(s) {
     if (!s) return null;
-    if (s.status === 'lobby') return resolveHostSeat(s);
+    const hostSeat = resolveHostSeat(s);
     const ds = Number(s.dealer_seat);
-    return ds >= 0 && ds < 4 ? ds : resolveHostSeat(s);
+    if (s.status === 'lobby') {
+      if (hostSeat != null) return hostSeat;
+      return Number.isFinite(ds) && ds >= 0 && ds < 4 ? ds : null;
+    }
+    if (Number.isFinite(ds) && ds >= 0 && ds < 4) return ds;
+    return hostSeat;
   }
 
   function windLabelForSeat(seatIdx, anchorSeat) {
@@ -1216,45 +1222,48 @@
     const scoreEl = $('mjSeatScore' + domIdx);
     if (!badge || !nameEl) return;
 
+    const viewLogical = logicalSeatForDomSlot(domIdx, s);
+    const seatLogical = viewLogical >= 0 ? viewLogical : logical;
+
     clearPlayerAvatarVisuals(img, fallback, plus);
-    const st = logical >= 0 ? seatAtIndex(s.seats, logical) : null;
+    const st = seatLogical >= 0 ? seatAtIndex(s.seats, seatLogical) : null;
     const mySeat = resolveMySeat(s);
     const empty = !st;
-    const canSwap = !!s.can_swap_seat && mySeat != null && empty && logical >= 0 && logical !== mySeat;
+    const canSwap = !!s.can_swap_seat && mySeat != null && empty && seatLogical >= 0 && seatLogical !== mySeat;
 
     badge.classList.toggle('is-empty', empty);
-    badge.classList.toggle('is-me', !empty && mySeat === logical);
-    badge.classList.toggle('is-dealer', !empty && s.dealer_seat === logical);
+    badge.classList.toggle('is-me', !empty && mySeat === seatLogical);
+    badge.classList.toggle('is-dealer', !empty && s.dealer_seat === seatLogical);
     badge.classList.toggle('is-actionable', canSwap);
     badge.tabIndex = canSwap ? 0 : -1;
     badge.setAttribute('aria-disabled', canSwap ? 'false' : 'true');
-    if (logical >= 0) badge.dataset.logicalSeat = String(logical);
+    if (seatLogical >= 0) badge.dataset.logicalSeat = String(seatLogical);
     else delete badge.dataset.logicalSeat;
 
     if (empty) {
-      const wind = renderSeatWind(windEl, logical, s);
+      const wind = renderSeatWind(windEl, seatLogical, s);
       nameEl.textContent = '空位';
       renderPlayerRole(roleEl, false, false);
       if (metaEl) metaEl.textContent = canSwap ? '点击换座' : '';
       if (scoreEl) scoreEl.textContent = '';
-      renderSeatHandEndReveal(domIdx, logical, s);
+      renderSeatHandEndReveal(domIdx, seatLogical, s);
       plus?.classList.remove('pm-u-hidden');
       badge.setAttribute('aria-label', canSwap ? (wind ? `点击换到${wind}位` : '点击换到此空位') : (wind ? `${wind}位空位` : '空位'));
       return;
     }
 
     const name = st.name || '—';
-    const wind = renderSeatWind(windEl, logical, s);
+    const wind = renderSeatWind(windEl, seatLogical, s);
     nameEl.textContent = name;
-    const isDealer = s.dealer_seat === logical;
+    const isDealer = s.dealer_seat === seatLogical;
     renderPlayerRole(roleEl, isDealer, s.status !== 'lobby');
     const meta = [];
     if (st.waits_next_hand && (s.status === 'playing' || s.status === 'dealer_roll')) meta.push('下局加入');
-    if (s.current_seat === logical && s.status === 'playing') meta.push('出牌');
+    if (s.current_seat === seatLogical && s.status === 'playing') meta.push('出牌');
     if (st.ready && (s.status === 'lobby' || s.status === 'hand_end')) meta.push('已准备');
     if (metaEl) metaEl.textContent = meta.join(' · ');
     if (scoreEl) {
-      const sc = seatScoreValue(s, logical);
+      const sc = seatScoreValue(s, seatLogical);
       const showScore = s.status && s.status !== 'lobby';
       scoreEl.textContent = showScore ? `${sc} 分` : '';
       scoreEl.classList.toggle('pm-u-hidden', !showScore);
@@ -1292,7 +1301,7 @@
       fallback.hidden = false;
       fallback.classList.remove('pm-u-hidden');
     }
-    renderSeatHandEndReveal(domIdx, logical, s);
+    renderSeatHandEndReveal(domIdx, seatLogical, s);
   }
 
   function tileConcealedHtml(variant) {
