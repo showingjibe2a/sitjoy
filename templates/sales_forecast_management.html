@@ -862,6 +862,15 @@
             line-height: 1.25;
             white-space: nowrap;
         }
+        .sf-ship-region-owned {
+            font-size: 0.62rem;
+            line-height: 1.2;
+            margin-top: 0.2rem;
+            color: rgba(42, 36, 32, 0.62);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
         td.sf-cell-ship-region.sf-cell-inv-hoverable {
             cursor: help;
             min-width: 108px;
@@ -2019,7 +2028,7 @@
                 <button type="button" class="modal-close" id="sfRegionRatioModalClose" aria-label="关闭">×</button>
             </div>
             <div class="sf-leadtime-modal-body">
-                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于按区域比例分配「数量建议」中的发货量。</p>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于按区域比例分配「发货量」建议。</p>
                 <div class="sf-leadtime-table-wrap">
                     <table class="sf-leadtime-table" aria-label="区域备货比例">
                         <thead>
@@ -3568,7 +3577,6 @@
 
             const factoryStock = Math.max(0, Number(inv.in_stock_qty) || 0) || Math.max(0, Number(detail.factory_stock_qty) || 0);
             const wipBatches = Array.isArray(detail.wip_batches) ? detail.wip_batches : [];
-            const hasWip = wipBatches.some((w) => Math.max(0, Number(w.qty) || 0) > 0);
             const factoryListedDate = (factoryStock > 0 && regionName) ? sfAddDaysYmd(today, stockDays) : '';
             const factoryReadyByShip = (factoryStock > 0 && factoryListedDate && sfCompareYmd(factoryListedDate, shipDate) <= 0) ? factoryStock : 0;
 
@@ -3583,24 +3591,7 @@
 
             const factorySupply = factoryReadyByShip + wipReadyByShip;
             const shippableQty = Math.min(shortage, factorySupply);
-
-            let statusKey = 'no_shortage';
-            let statusLabel = '无缺货';
-            if (shortage > 0) {
-                if (factoryReadyByShip >= shortage) {
-                    statusKey = 'stock_ok';
-                    statusLabel = '在库可满足';
-                } else if (!hasWip) {
-                    statusKey = 'no_wip';
-                    statusLabel = '无在制';
-                } else if (factorySupply >= shortage) {
-                    statusKey = 'wip_ok';
-                    statusLabel = '按时完成能满足';
-                } else {
-                    statusKey = 'wip_short';
-                    statusLabel = '按时完成仍缺货';
-                }
-            }
+            const cannotMeetByShipDate = shortage > 0 && factorySupply < shortage;
 
             const ratios = plan.regionRatios || {};
             const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
@@ -3613,12 +3604,12 @@
                 }, 0);
                 return { regionName: rn, pct, overseas, transit, suggested: 0 };
             });
-            if (regional.length && shippableQty > 0) {
+            if (regional.length && shortage > 0) {
                 regional.forEach((r) => {
-                    r.suggested = Math.floor(shippableQty * r.pct / 100);
+                    r.suggested = Math.floor(shortage * r.pct / 100);
                 });
                 let sum = regional.reduce((a, r) => a + r.suggested, 0);
-                let diff = shippableQty - sum;
+                let diff = shortage - sum;
                 if (diff !== 0) {
                     let maxIdx = 0;
                     regional.forEach((r, i) => { if (r.pct >= regional[maxIdx].pct) maxIdx = i; });
@@ -3635,19 +3626,10 @@
                 factoryReadyByShip,
                 wipReadyByShip,
                 factorySupply,
-                statusKey,
-                statusLabel,
+                cannotMeetByShipDate,
                 transitSurplus: trSurplus,
                 regional,
             };
-        }
-
-        function sfShipPlanStatusBadgeClass(statusKey) {
-            const k = String(statusKey || '');
-            if (k === 'stock_ok' || k === 'wip_ok' || k === 'no_shortage') return 'sf-ship-plan-badge--ok';
-            if (k === 'no_wip') return 'sf-ship-plan-badge--warn';
-            if (k === 'wip_short') return 'sf-ship-plan-badge--bad';
-            return 'sf-ship-plan-badge--muted';
         }
 
         function getSfRegionReplenSnapshot(row, regionName) {
@@ -3665,15 +3647,45 @@
             return formatNumber(s.overseas) + '+' + formatNumber(s.transit) + '=' + formatNumber(s.total);
         }
 
+        function appendSfQtySuggestCell(tr, rowKey, ci, value, opts) {
+            const o = opts || {};
+            const td = document.createElement('td');
+            td.className = 'sf-cell-history sf-cell-ship-plan ' + String(o.className || '');
+            const qty = Math.max(0, Number(value) || 0);
+            if (!qty) {
+                td.textContent = '—';
+            } else {
+                const wrap = document.createElement('div');
+                const main = document.createElement('div');
+                main.className = 'sf-ship-plan-main';
+                main.textContent = formatNumber(qty);
+                wrap.appendChild(main);
+                if (o.warn) {
+                    const badges = document.createElement('div');
+                    badges.className = 'sf-ship-plan-badges';
+                    const b = document.createElement('span');
+                    b.className = 'sf-ship-plan-badge sf-ship-plan-badge--bad';
+                    b.textContent = String(o.warn);
+                    badges.appendChild(b);
+                    wrap.appendChild(badges);
+                }
+                td.appendChild(wrap);
+            }
+            if (o.title) td.title = String(o.title);
+            markSfGridCell(td, rowKey, ci);
+            tr.appendChild(td);
+            return ci + 1;
+        }
+
         function buildSfShipPlanTooltipHtml(planResult) {
             if (!planResult) return '';
             const p = planResult;
             return [
                 '<p style="margin:0 0 0.35rem;"><strong>备货月份</strong> ' + escapeHtml(monthShortLabel(p.stockMonth)) + '</p>',
                 '<p style="margin:0 0 0.35rem;"><strong>发货日期</strong> ' + escapeHtml(p.shipDate) + '</p>',
-                '<p style="margin:0 0 0.35rem;">海外仓+在途缺货（左下角盈余取反）：' + formatNumber(p.shortage) + '</p>',
-                '<p style="margin:0 0 0.35rem;">在库可发：' + formatNumber(p.factoryReadyByShip) + '；在制可发：' + formatNumber(p.wipReadyByShip) + '</p>',
-                '<p style="margin:0;">建议发货量：' + formatNumber(p.shippableQty) + '</p>',
+                '<p style="margin:0 0 0.35rem;">发货量（海外仓+在途缺口）：' + formatNumber(p.shortage) + '</p>',
+                '<p style="margin:0 0 0.35rem;">下单量（发货日前工厂可发）：' + formatNumber(p.shippableQty) + '</p>',
+                '<p style="margin:0;">在库可发 ' + formatNumber(p.factoryReadyByShip) + '；在制可发 ' + formatNumber(p.wipReadyByShip) + '</p>',
             ].join('');
         }
 
@@ -3683,89 +3695,47 @@
             if (!shipCols) return ci;
             const planResult = computeOrderSkuShipPlan(row);
             const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
+            const shipWarn = planResult && planResult.cannotMeetByShipDate ? '发货日前无法满足' : '';
 
-            const shipTd = document.createElement('td');
-            shipTd.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-qty';
-            if (!planResult) {
-                shipTd.textContent = '—';
-            } else {
-                const wrap = document.createElement('div');
-                const main = document.createElement('div');
-                main.className = 'sf-ship-plan-main';
-                main.textContent = formatNumber(planResult.shippableQty);
-                wrap.appendChild(main);
-                const badges = document.createElement('div');
-                badges.className = 'sf-ship-plan-badges';
-                if (planResult.shortage > 0) {
-                    const b1 = document.createElement('span');
-                    b1.className = 'sf-ship-plan-badge ' + sfShipPlanStatusBadgeClass(planResult.statusKey);
-                    b1.textContent = planResult.statusLabel;
-                    badges.appendChild(b1);
-                    const b2 = document.createElement('span');
-                    b2.className = 'sf-ship-plan-badge sf-ship-plan-badge--info';
-                    b2.textContent = '可发' + formatNumber(planResult.shippableQty);
-                    badges.appendChild(b2);
-                } else {
-                    const b0 = document.createElement('span');
-                    b0.className = 'sf-ship-plan-badge sf-ship-plan-badge--muted';
-                    b0.textContent = planResult.statusLabel;
-                    badges.appendChild(b0);
-                }
-                wrap.appendChild(badges);
-                shipTd.appendChild(wrap);
-                shipTd.title = '发货量：按发货日前工厂在库/在制可发量与缺货取小；缺货 ' + formatNumber(planResult.shortage);
-            }
-            markSfGridCell(shipTd, rowKey, ci);
-            ci += 1;
-            tr.appendChild(shipTd);
+            ci = appendSfQtySuggestCell(tr, rowKey, ci, planResult && planResult.shortage, {
+                className: 'sf-cell-ship-qty',
+                title: planResult
+                    ? ('发货量：' + monthShortLabel(planResult.stockMonth) + ' 海外仓+在途盈余缺口 ' + formatNumber(planResult.shortage))
+                    : '',
+            });
+            ci = appendSfQtySuggestCell(tr, rowKey, ci, planResult && planResult.shippableQty, {
+                className: 'sf-cell-ship-order',
+                warn: shipWarn,
+                title: planResult
+                    ? ('下单量：按发货日 ' + planResult.shipDate + ' 前工厂在库/在制可发 ' + formatNumber(planResult.shippableQty))
+                    : '',
+            });
 
-            const orderTd = document.createElement('td');
-            orderTd.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-order';
-            if (!planResult) {
-                orderTd.textContent = '—';
-            } else {
-                const wrap = document.createElement('div');
-                const main = document.createElement('div');
-                main.className = 'sf-ship-plan-main';
-                main.textContent = formatNumber(planResult.shortage);
-                wrap.appendChild(main);
-                const badges = document.createElement('div');
-                badges.className = 'sf-ship-plan-badges';
-                if (planResult.shortage > 0) {
-                    const b1 = document.createElement('span');
-                    b1.className = 'sf-ship-plan-badge sf-ship-plan-badge--info';
-                    b1.textContent = '缺货';
-                    badges.appendChild(b1);
-                    const b2 = document.createElement('span');
-                    b2.className = 'sf-ship-plan-badge ' + sfShipPlanStatusBadgeClass(planResult.statusKey);
-                    b2.textContent = planResult.statusLabel;
-                    badges.appendChild(b2);
-                } else {
-                    const b0 = document.createElement('span');
-                    b0.className = 'sf-ship-plan-badge sf-ship-plan-badge--muted';
-                    b0.textContent = planResult.statusLabel;
-                    badges.appendChild(b0);
-                }
-                wrap.appendChild(badges);
-                orderTd.appendChild(wrap);
-                orderTd.title = '下单量：备货月海外仓+在途盈余为负时的缺货量（' + monthShortLabel(planResult.stockMonth) + ' 盈余取反）';
-            }
-            markSfGridCell(orderTd, rowKey, ci);
-            ci += 1;
-            tr.appendChild(orderTd);
-
+            const regionalMap = {};
+            (planResult && planResult.regional ? planResult.regional : []).forEach((reg) => {
+                regionalMap[reg.regionName] = reg;
+            });
             regions.forEach((rn, ri) => {
                 const snap = getSfRegionReplenSnapshot(row, rn);
+                const reg = regionalMap[rn] || null;
+                const suggested = reg ? Math.max(0, Number(reg.suggested) || 0) : 0;
                 const td = document.createElement('td');
                 td.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-region sf-cell-inv-hoverable';
                 td.dataset.sfInvColKind = 'GR';
                 td.dataset.sfInvColIdx = String(ri);
                 td.dataset.sfInvRegionName = rn;
-                const main = document.createElement('div');
-                main.className = 'sf-ship-region-formula';
-                main.textContent = formatSfRegionReplenFormula(snap);
-                td.appendChild(main);
-                td.title = rn + '：' + formatSfRegionReplenFormula(snap);
+                const wrap = document.createElement('div');
+                const top = document.createElement('div');
+                top.className = 'sf-ship-plan-main';
+                top.textContent = suggested > 0 ? formatNumber(suggested) : '—';
+                wrap.appendChild(top);
+                const owned = document.createElement('div');
+                owned.className = 'sf-ship-region-owned';
+                owned.textContent = '已有：' + formatSfRegionReplenFormula(snap);
+                wrap.appendChild(owned);
+                td.appendChild(wrap);
+                td.title = rn + ' · 建议发货 ' + (suggested > 0 ? formatNumber(suggested) : '—')
+                    + ' · 已有 ' + formatSfRegionReplenFormula(snap);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -5056,11 +5026,11 @@
                     + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''))
                     + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
                     + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
-                    + (qtySuggestCols ? (`<th class="sf-th-ship" title="按所选备货月缺货与发货日前工厂可发量估算">发货量</th>`
-                        + `<th class="sf-th-ship" title="备货月海外仓+在途盈余为负时的缺货量">下单量</th>`) : '')
+                    + (qtySuggestCols ? (`<th class="sf-th-ship" title="备货月海外仓+在途盈余缺口，建议发往海外仓的数量">发货量</th>`
+                        + `<th class="sf-th-ship" title="按顶部发货日期，工厂在库/在制可按时发出的下单量">下单量</th>`) : '')
                     + (regionReplenCols ? (state.destinationRegions || []).map(r => {
                             const rn = String(r.region_name || '').trim();
-                            return rn ? `<th class="sf-th-ship-region" title="该区域海外仓+在途合计；按「显示产品信息」悬浮或点击可查看明细">${escapeHtml(rn)}</th>` : '';
+                            return rn ? `<th class="sf-th-ship-region" title="按区域备货比例分配的建议发货量；第二行显示已有海外仓+在途">` + escapeHtml(rn) + `</th>` : '';
                         }).join('') : '')
                     + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
                 thead.innerHTML = '';
@@ -7054,6 +7024,9 @@
                 const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
                 const regionName = regions[Number(idx) || 0] || '';
                 const snap = getSfRegionReplenSnapshot(row, regionName);
+                const planResult = computeOrderSkuShipPlan(row);
+                const reg = (planResult && planResult.regional || []).find((r) => r.regionName === regionName);
+                const suggested = reg ? Math.max(0, Number(reg.suggested) || 0) : 0;
                 const rows = [{ item: '海外仓', qty: formatNumber(snap.overseas), arrival: '—' }];
                 if (snap.transitBatches.length) {
                     snap.transitBatches.forEach((b) => {
@@ -7067,13 +7040,14 @@
                     rows.push({ item: '在途', qty: formatNumber(snap.transit), arrival: '—' });
                 }
                 const formulaNote = formatNumber(snap.overseas) + ' + ' + formatNumber(snap.transit) + ' = ' + formatNumber(snap.total);
-                dimensions.push(sfInvDimDef('region_replen', '明细', [
+                dimensions.push(sfInvDimDef('region_replen', '已有明细', [
                     { key: 'item', label: '项目' },
                     { key: 'qty', label: '数量' },
                     { key: 'arrival', label: '到货日期' },
                 ], rows, {
-                    title: regionName + ' · 海外仓+在途',
-                    note: '合计：' + formulaNote,
+                    title: regionName + ' · 已有 ' + formulaNote,
+                    note: '建议发货 ' + (suggested > 0 ? formatNumber(suggested) : '—')
+                        + (reg && reg.pct ? ('（占发货量 ' + reg.pct + '%）') : ''),
                 }));
                 if (!dimensions.length) {
                     dimensions.push(sfInvDimDef('empty', '提示', [
