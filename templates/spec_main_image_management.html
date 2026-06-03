@@ -2666,6 +2666,19 @@
     }
     specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
     specmiNasNavStack = [];
+    try {
+      const rawStack = localStorage.getItem(SPECMI_LS_STACK) || '';
+      const parsedStack = rawStack ? JSON.parse(rawStack) : null;
+      if (Array.isArray(parsedStack)) {
+        specmiNasNavStack = parsedStack
+          .filter(x => x && typeof x.pathB64 === 'string')
+          .map(x => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
+        const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
+        if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
+      }
+    } catch (e) {
+      specmiNasNavStack = [];
+    }
     specmiNasSelected = new Set();
     document.getElementById('specmi-nas-import-modal')?.classList.add('active');
     if (typeof window.syncModalScrollLock === 'function') {
@@ -2677,16 +2690,20 @@
     specmiRenderNasTypeBar();
     (async () => {
       const savedPath = specmiNasPathB64 || '';
-      const ok = await specmiRenderNasList();
-      if (!ok && savedPath) {
-        specmiShowNasStatus('上次记住的路径暂时无法访问，已显示根目录；关闭弹窗后仍会保留该路径。', true);
-        specmiNasPathB64 = '';
-        specmiNasNavStack = [];
-        await specmiRenderNasList();
-        specmiNasPathB64 = savedPath;
-        specmiNasNavStack = [];
-        await specmiRenderNasList();
+      const savedStack = Array.isArray(specmiNasNavStack) ? specmiNasNavStack.slice() : [];
+      if (window.NasMainImageBrowserUi && window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation) {
+        const restored = await window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation({
+          pathB64: savedPath,
+          navStack: savedStack,
+          crumbNameFn: (b, idx) => specmiNasBrowseCrumbName(b, idx),
+        });
+        if (restored) {
+          specmiNasPathB64 = restored.pathB64 || '';
+          specmiNasNavStack = Array.isArray(restored.navStack) ? restored.navStack : [];
+          if (restored.fellBack) specmiPersistNasBrowseLocation();
+        }
       }
+      await specmiRenderNasList();
     })();
   }
   function specmiCloseNasModal() {

@@ -4108,15 +4108,19 @@
                 initNasThumbSizeSegment();
                 const savedPath = nasMainImagePathB64 || '';
                 const savedStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack.slice() : [];
-                const ok = await renderNasMainImageList();
-                if (!ok && (savedPath || (savedStack && savedStack.length))) {
-                    showNasMainImageStatus('上次记住的路径暂时无法访问，已显示根目录；关闭弹窗后仍会保留该路径。', true);
-                    nasMainImagePathB64 = '';
-                    nasMainImageNavStack = [];
-                    await renderNasMainImageList();
-                    nasMainImagePathB64 = savedPath;
-                    nasMainImageNavStack = savedStack;
+                if (window.NasMainImageBrowserUi && window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation) {
+                    const restored = await window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation({
+                        pathB64: savedPath,
+                        navStack: savedStack,
+                        crumbNameFn: (b) => decodeB64Utf8(b.name),
+                    });
+                    if (restored) {
+                        nasMainImagePathB64 = restored.pathB64 || '';
+                        nasMainImageNavStack = Array.isArray(restored.navStack) ? restored.navStack : [];
+                        if (restored.fellBack) persistNasMainImageBrowseLocation();
+                    }
                 }
+                await renderNasMainImageList();
             })();
         }
 

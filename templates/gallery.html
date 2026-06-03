@@ -122,7 +122,18 @@
         }
 
         window.addEventListener('load', function() {
-            browse(loadGalleryLastPath() || '');
+            const last = loadGalleryLastPath() || '';
+            if (window.NasMainImageBrowserUi && window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation) {
+                window.NasMainImageBrowserUi.restoreSavedNasBrowseLocation({ pathB64: last, navStack: [] })
+                    .then(function(restored) {
+                        const p = restored ? (restored.pathB64 || '') : last;
+                        if (restored && restored.fellBack) saveGalleryLastPath(p);
+                        browse(p);
+                    })
+                    .catch(function() { browse(last); });
+            } else {
+                browse(last);
+            }
             syncGalleryBatchBar();
         });
 
@@ -137,6 +148,26 @@
                 updateBreadcrumb(data.breadcrumbs || []);
                 displayItems(data.folders || [], data.images || []);
             }).catch(err => {
+                if (currentPath && window.NasMainImageBrowserUi && window.NasMainImageBrowserUi.resolveAccessibleNasBrowsePath) {
+                    window.NasMainImageBrowserUi.resolveAccessibleNasBrowsePath({ pathB64: currentPath })
+                        .then(function(resolved) {
+                            if (resolved.ok && resolved.fellBack) {
+                                if (window.NasMainImageBrowserUi.notifyNasPathFallback) {
+                                    window.NasMainImageBrowserUi.notifyNasPathFallback(resolved.failedPathB64);
+                                }
+                                currentPath = resolved.pathB64 || '';
+                                saveGalleryLastPath(currentPath);
+                                updateBreadcrumb((resolved.data && resolved.data.breadcrumbs) || []);
+                                displayItems((resolved.data && resolved.data.folders) || [], (resolved.data && resolved.data.images) || []);
+                                return;
+                            }
+                            throw err;
+                        })
+                        .catch(function() {
+                            grid.innerHTML = '<p style="color: red; text-align: center;">加载失败: ' + (err && err.message ? err.message : err) + '</p>';
+                        });
+                    return;
+                }
                 grid.innerHTML = '<p style="color: red; text-align: center;">加载失败: ' + (err && err.message ? err.message : err) + '</p>';
                 if (currentPath) {
                     saveGalleryLastPath('');
@@ -499,8 +530,9 @@
             window.PmImageEditModal.open({ pathB64: imagePath, name: imageName, defaultVariantIds: [] });
         }
     </script>
-</body>
+    <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
+</body>
 </html>
 

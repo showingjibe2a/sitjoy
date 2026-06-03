@@ -514,13 +514,22 @@
     initSelectAllBox();
     const savedPath = pathB64 || '';
     const savedStack = navStack.slice();
-    const ok = await renderList();
-    if (!ok && (savedPath || savedStack.length)) {
-      showStatus('上次记住的路径暂时无法访问，已回到『面料』目录。', true);
-      pathB64 = FABRIC_LIBRARY_ROOT_B64;
-      navStack = fabricLibraryRootStack();
-      await renderList();
+    if (global.NasMainImageBrowserUi && global.NasMainImageBrowserUi.restoreSavedNasBrowseLocation) {
+      const restored = await global.NasMainImageBrowserUi.restoreSavedNasBrowseLocation({
+        pathB64: savedPath,
+        navStack: savedStack,
+        fallbackPathB64: FABRIC_LIBRARY_ROOT_B64,
+        crumbNameFn: (b) => decodeB64Utf8(b.name) || '目录',
+      });
+      if (restored) {
+        pathB64 = restored.pathB64 || FABRIC_LIBRARY_ROOT_B64;
+        navStack = restored.navStack.length
+          ? restored.navStack
+          : (pathB64 === FABRIC_LIBRARY_ROOT_B64 ? fabricLibraryRootStack() : []);
+        if (restored.fellBack) persistLocation();
+      }
     }
+    await renderList();
   }
 
   function close() {
