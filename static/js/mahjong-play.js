@@ -972,14 +972,13 @@
 
   function resolveWindAnchor(s) {
     if (!s) return null;
-    const hostSeat = resolveHostSeat(s);
-    const ds = Number(s.dealer_seat);
     if (s.status === 'lobby') {
-      if (hostSeat != null) return hostSeat;
-      return Number.isFinite(ds) && ds >= 0 && ds < 4 ? ds : null;
+      const east = Number(s.east_seat);
+      return Number.isFinite(east) && east >= 0 && east < 4 ? east : 0;
     }
+    const ds = Number(s.dealer_seat);
     if (Number.isFinite(ds) && ds >= 0 && ds < 4) return ds;
-    return hostSeat;
+    return resolveHostSeat(s);
   }
 
   function windLabelForSeat(seatIdx, anchorSeat) {
