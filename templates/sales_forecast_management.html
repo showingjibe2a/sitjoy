@@ -855,6 +855,18 @@
         .sf-ship-plan-badge--bad { background: rgba(182, 127, 127, 0.28); color: #6a3030; }
         .sf-ship-plan-badge--muted { background: rgba(123, 128, 136, 0.16); color: #5a5346; }
         .sf-ship-plan-badge--info { background: rgba(90, 120, 154, 0.18); color: #3a4a5a; }
+        .sf-ship-region-formula {
+            font-size: 0.72rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.25;
+            white-space: nowrap;
+        }
+        td.sf-cell-ship-region.sf-cell-inv-hoverable {
+            cursor: help;
+            min-width: 108px;
+            max-width: 160px;
+        }
         .sf-region-ratio-sum {
             font-size: 0.78rem;
             font-weight: 600;
@@ -2007,7 +2019,7 @@
                 <button type="button" class="modal-close" id="sfRegionRatioModalClose" aria-label="关闭">×</button>
             </div>
             <div class="sf-leadtime-modal-body">
-                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于「建议区域发货量」列分配。</p>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于按区域比例分配「数量建议」中的发货量。</p>
                 <div class="sf-leadtime-table-wrap">
                     <table class="sf-leadtime-table" aria-label="区域备货比例">
                         <thead>
@@ -2087,11 +2099,20 @@
         const SF_TURNOVER_COLS = 3;
         const SF_STOCK_COLS = 4;
         const SF_REMARK_COLS = 1;
+        const SF_QTY_SUGGEST_COLS = 2;
+
+        function getSfQtySuggestColCount() {
+            if (state.forecastMode !== 'order' || !(state.sfShipPlan && state.sfShipPlan.active)) return 0;
+            return SF_QTY_SUGGEST_COLS;
+        }
+
+        function getSfRegionReplenColCount() {
+            if (state.forecastMode !== 'order' || !(state.sfShipPlan && state.sfShipPlan.active)) return 0;
+            return Math.max(0, (state.destinationRegions || []).length);
+        }
 
         function getSfShipPlanColCount() {
-            if (state.forecastMode !== 'order' || !(state.sfShipPlan && state.sfShipPlan.active)) return 0;
-            const n = (state.destinationRegions || []).length;
-            return 1 + Math.max(0, n);
+            return getSfQtySuggestColCount() + getSfRegionReplenColCount();
         }
 
         function getSfTailColCount() {
@@ -3522,7 +3543,7 @@
             state.sfShipPlan.shipDate = shipDate;
             state.sfShipPlan.regionRatios = norm.ratios;
             renderForecastTable();
-            if (window.showAppToast) window.showAppToast('备货发货列已更新（仅已展开分组）', false, 2200);
+            if (window.showAppToast) window.showAppToast('数量建议与区域补货列已更新（仅已展开分组）', false, 2200);
         }
 
         function computeOrderSkuShipPlan(row) {
@@ -3629,6 +3650,21 @@
             return 'sf-ship-plan-badge--muted';
         }
 
+        function getSfRegionReplenSnapshot(row, regionName) {
+            const rn = String(regionName || '').trim();
+            const detail = (row && row.inventory_surplus_detail) || {};
+            const overseas = Math.max(0, Number((detail.overseas_by_region || {})[rn]) || 0);
+            const transitBatches = (Array.isArray(detail.transit_batches) ? detail.transit_batches : [])
+                .filter((b) => String(b.region_name || '').trim() === rn && Math.max(0, Number(b.qty) || 0) > 0);
+            const transit = transitBatches.reduce((sum, b) => sum + Math.max(0, Number(b.qty) || 0), 0);
+            return { regionName: rn, overseas, transit, total: overseas + transit, transitBatches };
+        }
+
+        function formatSfRegionReplenFormula(snapshot) {
+            const s = snapshot || { overseas: 0, transit: 0, total: 0 };
+            return formatNumber(s.overseas) + '+' + formatNumber(s.transit) + '=' + formatNumber(s.total);
+        }
+
         function buildSfShipPlanTooltipHtml(planResult) {
             if (!planResult) return '';
             const p = planResult;
@@ -3646,9 +3682,10 @@
             const shipCols = getSfShipPlanColCount();
             if (!shipCols) return ci;
             const planResult = computeOrderSkuShipPlan(row);
+            const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
 
             const shipTd = document.createElement('td');
-            shipTd.className = 'sf-cell-history sf-cell-ship-plan';
+            shipTd.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-qty';
             if (!planResult) {
                 shipTd.textContent = '—';
             } else {
@@ -3666,7 +3703,7 @@
                     badges.appendChild(b1);
                     const b2 = document.createElement('span');
                     b2.className = 'sf-ship-plan-badge sf-ship-plan-badge--info';
-                    b2.textContent = '缺' + formatNumber(planResult.shortage);
+                    b2.textContent = '可发' + formatNumber(planResult.shippableQty);
                     badges.appendChild(b2);
                 } else {
                     const b0 = document.createElement('span');
@@ -3676,48 +3713,63 @@
                 }
                 wrap.appendChild(badges);
                 shipTd.appendChild(wrap);
-                shipTd.title = '缺货 ' + formatNumber(planResult.shortage) + '；可发 ' + formatNumber(planResult.shippableQty);
+                shipTd.title = '发货量：按发货日前工厂在库/在制可发量与缺货取小；缺货 ' + formatNumber(planResult.shortage);
             }
             markSfGridCell(shipTd, rowKey, ci);
             ci += 1;
             tr.appendChild(shipTd);
 
-            (planResult && planResult.regional ? planResult.regional : []).forEach((reg) => {
-                const td = document.createElement('td');
-                td.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-region';
+            const orderTd = document.createElement('td');
+            orderTd.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-order';
+            if (!planResult) {
+                orderTd.textContent = '—';
+            } else {
                 const wrap = document.createElement('div');
                 const main = document.createElement('div');
                 main.className = 'sf-ship-plan-main';
-                main.textContent = formatNumber(reg.suggested);
+                main.textContent = formatNumber(planResult.shortage);
                 wrap.appendChild(main);
                 const badges = document.createElement('div');
                 badges.className = 'sf-ship-plan-badges';
-                const bo = document.createElement('span');
-                bo.className = 'sf-ship-plan-badge sf-ship-plan-badge--info';
-                bo.textContent = '海外' + formatNumber(reg.overseas);
-                badges.appendChild(bo);
-                const bt = document.createElement('span');
-                bt.className = 'sf-ship-plan-badge sf-ship-plan-badge--muted';
-                bt.textContent = '在途' + formatNumber(reg.transit);
-                badges.appendChild(bt);
+                if (planResult.shortage > 0) {
+                    const b1 = document.createElement('span');
+                    b1.className = 'sf-ship-plan-badge sf-ship-plan-badge--info';
+                    b1.textContent = '缺货';
+                    badges.appendChild(b1);
+                    const b2 = document.createElement('span');
+                    b2.className = 'sf-ship-plan-badge ' + sfShipPlanStatusBadgeClass(planResult.statusKey);
+                    b2.textContent = planResult.statusLabel;
+                    badges.appendChild(b2);
+                } else {
+                    const b0 = document.createElement('span');
+                    b0.className = 'sf-ship-plan-badge sf-ship-plan-badge--muted';
+                    b0.textContent = planResult.statusLabel;
+                    badges.appendChild(b0);
+                }
                 wrap.appendChild(badges);
-                td.appendChild(wrap);
-                td.title = reg.regionName + '：建议 ' + formatNumber(reg.suggested) + '（' + reg.pct + '%）';
+                orderTd.appendChild(wrap);
+                orderTd.title = '下单量：备货月海外仓+在途盈余为负时的缺货量（' + monthShortLabel(planResult.stockMonth) + ' 盈余取反）';
+            }
+            markSfGridCell(orderTd, rowKey, ci);
+            ci += 1;
+            tr.appendChild(orderTd);
+
+            regions.forEach((rn, ri) => {
+                const snap = getSfRegionReplenSnapshot(row, rn);
+                const td = document.createElement('td');
+                td.className = 'sf-cell-history sf-cell-ship-plan sf-cell-ship-region sf-cell-inv-hoverable';
+                td.dataset.sfInvColKind = 'GR';
+                td.dataset.sfInvColIdx = String(ri);
+                td.dataset.sfInvRegionName = rn;
+                const main = document.createElement('div');
+                main.className = 'sf-ship-region-formula';
+                main.textContent = formatSfRegionReplenFormula(snap);
+                td.appendChild(main);
+                td.title = rn + '：' + formatSfRegionReplenFormula(snap);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
             });
-
-            const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
-            const rendered = planResult && planResult.regional ? planResult.regional.length : 0;
-            for (let i = rendered; i < Math.max(0, regions.length); i += 1) {
-                const td = document.createElement('td');
-                td.className = 'sf-cell-history sf-cell-ship-plan';
-                td.textContent = '—';
-                markSfGridCell(td, rowKey, ci);
-                ci += 1;
-                tr.appendChild(td);
-            }
             return ci;
         }
 
@@ -4757,9 +4809,9 @@
             for (let i = 0; i < SF_STOCK_COLS; i += 1) L.push({ kind: 'I', idx: i });
             const shipCols = getSfShipPlanColCount();
             if (shipCols > 0) {
-                L.push({ kind: 'S' });
+                for (let i = 0; i < SF_QTY_SUGGEST_COLS; i += 1) L.push({ kind: i === 0 ? 'QS' : 'QO' });
                 const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
-                regions.forEach((rn) => L.push({ kind: 'G', region: rn }));
+                regions.forEach((rn) => L.push({ kind: 'GR', region: rn }));
             }
             L.push({ kind: 'R' });
             return L;
@@ -4890,6 +4942,8 @@
             const turnCols = SF_TURNOVER_COLS;
             const stockCols = SF_STOCK_COLS;
             const shipPlanCols = getSfShipPlanColCount();
+            const qtySuggestCols = getSfQtySuggestColCount();
+            const regionReplenCols = getSfRegionReplenColCount();
             const remarkCols = SF_REMARK_COLS;
             const invPref = (pref.inventory && pref.inventory.length === invCols) ? pref.inventory : null;
             let leafColWidths;
@@ -4916,7 +4970,10 @@
                     let defW = 160;
                     if (i < turnCols) defW = 86;
                     else if (i < turnCols + stockCols) defW = 92;
-                    else if (shipPlanCols > 0 && i < turnCols + stockCols + shipPlanCols) defW = 100;
+                    else if (shipPlanCols > 0 && i < turnCols + stockCols + shipPlanCols) {
+                        const rel = i - (turnCols + stockCols);
+                        defW = rel < SF_QTY_SUGGEST_COLS ? 92 : 128;
+                    }
                     const w = invPref ? invPref[i] : defW;
                     leafColWidths.push((Number.isFinite(Number(w)) && Number(w) > 40) ? Math.round(Number(w)) : defW);
                 }
@@ -4928,6 +4985,8 @@
                     turnCols,
                     stockCols,
                     shipPlanCols,
+                    qtySuggestCols,
+                    regionReplenCols,
                     remarkCols,
                     invCols,
                     historyStart: cols.length,
@@ -4942,6 +5001,10 @@
                     stockEnd: cols.length + histCols + mtdCols + fcCols + turnCols + Math.max(0, stockCols - 1),
                     shipPlanStart: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols,
                     shipPlanEnd: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols + Math.max(0, shipPlanCols - 1),
+                    qtySuggestStart: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols,
+                    qtySuggestEnd: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols + Math.max(0, qtySuggestCols - 1),
+                    regionReplenStart: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols + qtySuggestCols,
+                    regionReplenEnd: cols.length + histCols + mtdCols + fcCols + turnCols + stockCols + qtySuggestCols + Math.max(0, regionReplenCols - 1),
                     invStart: cols.length + histCols + mtdCols + fcCols,
                     invEnd: cols.length + histCols + mtdCols + fcCols + Math.max(0, invCols - 1),
                 };
@@ -4981,7 +5044,8 @@
                     (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '') +
                     `<th class="sf-th-section" colspan="${turnCols}"><span>动销月</span></th>` +
                     `<th class="sf-th-section" colspan="${stockCols}"><span>库存</span></th>` +
-                    (shipPlanCols ? `<th class="sf-th-section" colspan="${shipPlanCols}"><span>备货发货</span></th>` : '') +
+                    (qtySuggestCols ? `<th class="sf-th-section" colspan="${qtySuggestCols}"><span>数量建议</span></th>` : '') +
+                    (regionReplenCols ? `<th class="sf-th-section" colspan="${regionReplenCols}"><span>区域补货建议</span></th>` : '') +
                     `<th class="sf-th-section" colspan="${remarkCols}"><span>备注</span></th>`;
 
                 const trBottom = document.createElement('tr');
@@ -4992,11 +5056,12 @@
                     + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''))
                     + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
                     + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
-                    + (shipPlanCols ? (`<th class="sf-th-ship" title="按所选备货月海外仓+在途缺货与发货日前工厂可发量估算">发货量</th>`
-                        + (state.destinationRegions || []).map(r => {
+                    + (qtySuggestCols ? (`<th class="sf-th-ship" title="按所选备货月缺货与发货日前工厂可发量估算">发货量</th>`
+                        + `<th class="sf-th-ship" title="备货月海外仓+在途盈余为负时的缺货量">下单量</th>`) : '')
+                    + (regionReplenCols ? (state.destinationRegions || []).map(r => {
                             const rn = String(r.region_name || '').trim();
-                            return rn ? `<th class="sf-th-ship-region" title="按区域备货比例分配的建议发货量">${escapeHtml(rn)}</th>` : '';
-                        }).join('')) : '')
+                            return rn ? `<th class="sf-th-ship-region" title="该区域海外仓+在途合计；按「显示产品信息」悬浮或点击可查看明细">${escapeHtml(rn)}</th>` : '';
+                        }).join('') : '')
                     + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
                 thead.innerHTML = '';
                 thead.appendChild(trTop);
@@ -6762,6 +6827,10 @@
 
         function sfInvColTitle(kind, idx) {
             const i = Number(idx) || 0;
+            if (kind === 'GR') {
+                const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
+                return regions[i] || '区域';
+            }
             if (kind === 'T') return (SF_TURNOVER_HEADERS[i] && SF_TURNOVER_HEADERS[i].label) || '动销月';
             return (SF_STOCK_HEADERS[i] && SF_STOCK_HEADERS[i].label) || '库存';
         }
@@ -6981,6 +7050,40 @@
 
         function buildSfInvPanelModel(row, kind, idx) {
             const dimensions = [];
+            if (kind === 'GR') {
+                const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
+                const regionName = regions[Number(idx) || 0] || '';
+                const snap = getSfRegionReplenSnapshot(row, regionName);
+                const rows = [{ item: '海外仓', qty: formatNumber(snap.overseas), arrival: '—' }];
+                if (snap.transitBatches.length) {
+                    snap.transitBatches.forEach((b) => {
+                        rows.push({
+                            item: '在途',
+                            qty: formatNumber(Math.max(0, Number(b.qty) || 0)),
+                            arrival: String(b.expected_listed_date || '—').slice(0, 10),
+                        });
+                    });
+                } else if (snap.transit > 0) {
+                    rows.push({ item: '在途', qty: formatNumber(snap.transit), arrival: '—' });
+                }
+                const formulaNote = formatNumber(snap.overseas) + ' + ' + formatNumber(snap.transit) + ' = ' + formatNumber(snap.total);
+                dimensions.push(sfInvDimDef('region_replen', '明细', [
+                    { key: 'item', label: '项目' },
+                    { key: 'qty', label: '数量' },
+                    { key: 'arrival', label: '到货日期' },
+                ], rows, {
+                    title: regionName + ' · 海外仓+在途',
+                    note: '合计：' + formulaNote,
+                }));
+                if (!dimensions.length) {
+                    dimensions.push(sfInvDimDef('empty', '提示', [
+                        { key: 'item', label: '项目' },
+                        { key: 'qty', label: '数量' },
+                        { key: 'arrival', label: '到货日期' },
+                    ], [{ item: '—', qty: '—', arrival: '—' }]));
+                }
+                return { dimensions, globalFootnote: '' };
+            }
             const inv = row.inventory || {};
             const detail = row.inventory_surplus_detail || {};
             const comp = row.inventory_composition || {};
@@ -7584,6 +7687,9 @@
             if (!row || !td) return '';
             const rk = String(row.row_key || '');
             const kind = String(td.dataset.sfInvColKind || '');
+            if (kind === 'GR') {
+                return rk + '|GR|' + String(td.dataset.sfInvRegionName || td.dataset.sfInvColIdx || '');
+            }
             const idx = String(td.dataset.sfInvColIdx || '');
             return rk + '|' + kind + '|' + idx;
         }
@@ -7734,7 +7840,8 @@
             const colTitle = sfInvColTitle(kind, idx);
             const sku = (row.labels && (row.labels.sku || row.labels.platform_sku)) || '';
             if (title) {
-                title.textContent = '库存明细 · ' + colTitle + (sku ? (' · ' + sku) : '');
+                const panelKind = kind === 'GR' ? '区域补货' : '库存明细';
+                title.textContent = panelKind + ' · ' + colTitle + (sku ? (' · ' + sku) : '');
             }
             bindSfInvDimSegmentOnce();
             renderSfInvPanel(buildSfInvPanelModel(row, kind, idx));
