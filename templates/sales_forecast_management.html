@@ -3566,6 +3566,9 @@
             const trSurplusRaw = bundle.transitSurplus[stockMonth];
             const trSurplus = Number.isFinite(Number(trSurplusRaw)) ? Math.round(Number(trSurplusRaw)) : null;
             const shortage = (trSurplus != null && trSurplus < 0) ? Math.abs(trSurplus) : 0;
+            const fullSurplusRaw = bundle.fullSurplus[stockMonth];
+            const fullSurplus = Number.isFinite(Number(fullSurplusRaw)) ? Math.round(Number(fullSurplusRaw)) : null;
+            const orderQty = (fullSurplus != null && fullSurplus < 0) ? Math.abs(fullSurplus) : 0;
 
             const detail = (row && row.inventory_surplus_detail) || {};
             const inv = (row && row.inventory) || {};
@@ -3590,7 +3593,6 @@
             });
 
             const factorySupply = factoryReadyByShip + wipReadyByShip;
-            const shippableQty = Math.min(shortage, factorySupply);
             const cannotMeetByShipDate = shortage > 0 && factorySupply < shortage;
 
             const ratios = plan.regionRatios || {};
@@ -3621,13 +3623,14 @@
                 stockMonth,
                 shipDate,
                 shortage,
-                shippableQty,
+                orderQty,
                 factoryStock,
                 factoryReadyByShip,
                 wipReadyByShip,
                 factorySupply,
                 cannotMeetByShipDate,
                 transitSurplus: trSurplus,
+                fullSurplus,
                 regional,
             };
         }
@@ -3640,6 +3643,11 @@
                 .filter((b) => String(b.region_name || '').trim() === rn && Math.max(0, Number(b.qty) || 0) > 0);
             const transit = transitBatches.reduce((sum, b) => sum + Math.max(0, Number(b.qty) || 0), 0);
             return { regionName: rn, overseas, transit, total: overseas + transit, transitBatches };
+        }
+
+        function formatSfRegionReplenTotal(snapshot) {
+            const s = snapshot || { total: 0 };
+            return formatNumber(Math.max(0, Number(s.total) || 0));
         }
 
         function formatSfRegionReplenFormula(snapshot) {
@@ -3684,7 +3692,7 @@
                 '<p style="margin:0 0 0.35rem;"><strong>备货月份</strong> ' + escapeHtml(monthShortLabel(p.stockMonth)) + '</p>',
                 '<p style="margin:0 0 0.35rem;"><strong>发货日期</strong> ' + escapeHtml(p.shipDate) + '</p>',
                 '<p style="margin:0 0 0.35rem;">发货量（海外仓+在途缺口）：' + formatNumber(p.shortage) + '</p>',
-                '<p style="margin:0 0 0.35rem;">下单量（发货日前工厂可发）：' + formatNumber(p.shippableQty) + '</p>',
+                '<p style="margin:0 0 0.35rem;">下单量（含工厂在库/在制仍不足）：' + formatNumber(p.orderQty) + '</p>',
                 '<p style="margin:0;">在库可发 ' + formatNumber(p.factoryReadyByShip) + '；在制可发 ' + formatNumber(p.wipReadyByShip) + '</p>',
             ].join('');
         }
@@ -3703,11 +3711,12 @@
                     ? ('发货量：' + monthShortLabel(planResult.stockMonth) + ' 海外仓+在途盈余缺口 ' + formatNumber(planResult.shortage))
                     : '',
             });
-            ci = appendSfQtySuggestCell(tr, rowKey, ci, planResult && planResult.shippableQty, {
+            ci = appendSfQtySuggestCell(tr, rowKey, ci, planResult && planResult.orderQty, {
                 className: 'sf-cell-ship-order',
                 warn: shipWarn,
                 title: planResult
-                    ? ('下单量：按发货日 ' + planResult.shipDate + ' 前工厂在库/在制可发 ' + formatNumber(planResult.shippableQty))
+                    ? ('下单量：' + monthShortLabel(planResult.stockMonth) + ' 含工厂在库/在制后仍不能满足 '
+                        + formatNumber(planResult.orderQty) + '（与预测月右下角盈余一致）')
                     : '',
             });
 
@@ -3731,11 +3740,11 @@
                 wrap.appendChild(top);
                 const owned = document.createElement('div');
                 owned.className = 'sf-ship-region-owned';
-                owned.textContent = '已有：' + formatSfRegionReplenFormula(snap);
+                owned.textContent = '已有：' + formatSfRegionReplenTotal(snap);
                 wrap.appendChild(owned);
                 td.appendChild(wrap);
                 td.title = rn + ' · 建议发货 ' + (suggested > 0 ? formatNumber(suggested) : '—')
-                    + ' · 已有 ' + formatSfRegionReplenFormula(snap);
+                    + ' · 已有 ' + formatSfRegionReplenTotal(snap);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -5027,7 +5036,7 @@
                     + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
                     + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
                     + (qtySuggestCols ? (`<th class="sf-th-ship" title="备货月海外仓+在途盈余缺口，建议发往海外仓的数量">发货量</th>`
-                        + `<th class="sf-th-ship" title="按顶部发货日期，工厂在库/在制可按时发出的下单量">下单量</th>`) : '')
+                        + `<th class="sf-th-ship" title="含工厂在库/在制后仍不能满足的需求，与预测月右下角盈余取反一致">下单量</th>`) : '')
                     + (regionReplenCols ? (state.destinationRegions || []).map(r => {
                             const rn = String(r.region_name || '').trim();
                             return rn ? `<th class="sf-th-ship-region" title="按区域备货比例分配的建议发货量；第二行显示已有海外仓+在途">` + escapeHtml(rn) + `</th>` : '';
