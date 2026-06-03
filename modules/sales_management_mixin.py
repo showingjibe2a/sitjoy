@@ -4138,9 +4138,22 @@ class SalesManagementMixin:
             inv_by_op[sid] = self._forecast_surplus_detail_to_inv_scalars(d)
         asm = self._forecast_bom_tier_assembled_counts(inv_by_op, links)
 
-        overseas_asm = int(asm.get('overseas_qty') or 0)
-        if overseas_asm > 0:
-            merged['overseas_by_region']['合计'] = overseas_asm
+        region_names = set()
+        for sid, _mult in links:
+            d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
+            for rname in (d.get('overseas_by_region') or {}):
+                region_names.add(str(rname or '').strip() or '-')
+
+        for rname in sorted(region_names, key=lambda x: str(x)):
+            per_sid = []
+            for sid, mult in links:
+                d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
+                raw = int((d.get('overseas_by_region') or {}).get(rname) or 0)
+                per_sid.append(int(raw // max(1, mult)))
+            qty = min(per_sid) if per_sid else 0
+            if qty > 0:
+                merged['overseas_by_region'][rname] = qty
+
         merged['factory_stock_qty'] = int(asm.get('factory_stock_qty') or 0)
 
         transit_keys = set()
