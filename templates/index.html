@@ -406,6 +406,12 @@
         #todoTable tbody tr.todo-overdue td { background: rgba(179, 83, 83, 0.1) !important; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }
         .todo-mini-sub { font-size: 12px; color: #888; margin-top: 2px; }
+        .todo-other-assignees { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+        .todo-other-assignee { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 12px; line-height: 1.35; }
+        .todo-other-name { font-weight: 600; color: #4a4e57; }
+        .todo-other-status { color: #888; }
+        .todo-other-assignee--done .todo-other-status { color: #2d7d4a; }
+        .todo-other-assignee--open .todo-other-status { color: #a66; }
         /* 完成时间：高度由全站 .app-datetime-text-input / .pm-table 表内控件规则统一 */
         .todo-completed-at-input,
         .todo-completed-at-compact {
@@ -507,11 +513,12 @@
                                     <th style="width:120px;">截止日期</th>
                                     <th style="width:120px;">完成状态</th>
                                     <th style="width:190px;">完成时间</th>
+                                    <th style="min-width:140px;">他人完成情况</th>
                                     <th style="width:120px;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="todoTableBody">
-                                <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
+                                <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1553,6 +1560,46 @@
             `;
         }
 
+        function getTodoCurrentUserId() {
+            if (currentUser && Number(currentUser.id || 0) > 0) return Number(currentUser.id);
+            if (Number(window.currentUserId || 0) > 0) return Number(window.currentUserId);
+            return 0;
+        }
+
+        function todoAssigneeDisplayName(assignee) {
+            const name = String((assignee && assignee.name) || '').trim();
+            if (name) return name;
+            const username = String((assignee && assignee.username) || '').trim();
+            if (username) return username;
+            const id = parseInt(assignee && assignee.assignee_id, 10) || 0;
+            return id > 0 ? `用户${id}` : '未知用户';
+        }
+
+        function todoOtherAssigneesCellHtml(todo) {
+            const selfId = getTodoCurrentUserId();
+            const assignees = Array.isArray(todo && todo.assignees) ? todo.assignees : [];
+            const others = assignees.filter(a => {
+                const aid = parseInt(a && a.assignee_id, 10) || 0;
+                return aid > 0 && aid !== selfId;
+            });
+            if (!others.length) {
+                return '<span style="color:#999;">—</span>';
+            }
+            const rows = others.map(a => {
+                const done = Number(a.is_completed || 0) === 1;
+                const statusText = done
+                    ? `已完成${a.completed_at ? (' · ' + formatTodoDateTimeTextFromServer(a.completed_at)) : ''}`
+                    : '未完成';
+                return `
+                    <div class="todo-other-assignee ${done ? 'todo-other-assignee--done' : 'todo-other-assignee--open'}">
+                        <span class="todo-other-name">${escapeHtml(todoAssigneeDisplayName(a))}</span>
+                        <span class="todo-other-status">${escapeHtml(statusText)}</span>
+                    </div>
+                `;
+            }).join('');
+            return `<div class="todo-other-assignees">${rows}</div>`;
+        }
+
         function closeTodoModal() {
             document.getElementById('todoModal').classList.remove('active');
             closeAssigneeDropdown();
@@ -2207,7 +2254,7 @@
                 return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
             });
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无待办</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无待办</td></tr>';
                 return;
             }
             const todayStr = formatDateInputValue(new Date());
@@ -2243,6 +2290,7 @@
                                     : `<span style="color:#999;">—</span>`
                             }
                         </td>
+                        <td>${todoOtherAssigneesCellHtml(todo)}</td>
                         <td>
                             <div class="pm-actions">
                                 <button class="btn-secondary" type="button" data-todo-action="edit" data-id="${todo.id}">编辑</button>
