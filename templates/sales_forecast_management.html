@@ -2028,7 +2028,7 @@
                 <button type="button" class="modal-close" id="sfRegionRatioModalClose" aria-label="关闭">×</button>
             </div>
             <div class="sf-leadtime-modal-body">
-                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于按区域比例分配「发货量」建议。</p>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">为各目的区域填写理论备货占比（%），合计须为 <strong>100%</strong>。保存后写入本地记忆，用于分配各区域「已有+建议发货」的目标占比。</p>
                 <div class="sf-leadtime-table-wrap">
                     <table class="sf-leadtime-table" aria-label="区域备货比例">
                         <thead>
@@ -3595,29 +3595,24 @@
             const factorySupply = factoryReadyByShip + wipReadyByShip;
             const cannotMeetByShipDate = shortage > 0 && factorySupply < shortage;
 
-            const ratios = plan.regionRatios || {};
+            const ratios = Object.assign(
+                {},
+                getDefaultRegionStockRatios(),
+                readRegionStockRatioPrefs(),
+                plan.regionRatios || {}
+            );
+            const normRatios = normalizeRegionStockRatios(ratios).ratios;
             const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
             const regional = regions.map((rn) => {
-                const pct = Math.max(0, Number(ratios[rn]) || 0);
+                const pct = Math.max(0, Number(normRatios[rn]) || 0);
                 const overseas = Math.max(0, Number((detail.overseas_by_region || {})[rn]) || 0);
                 const transit = (detail.transit_batches || []).reduce((sum, b) => {
                     if (String(b.region_name || '').trim() !== rn) return sum;
                     return sum + Math.max(0, Number(b.qty) || 0);
                 }, 0);
-                return { regionName: rn, pct, overseas, transit, suggested: 0 };
+                return { regionName: rn, pct, overseas, transit, existing: overseas + transit, suggested: 0 };
             });
-            if (regional.length && shortage > 0) {
-                regional.forEach((r) => {
-                    r.suggested = Math.floor(shortage * r.pct / 100);
-                });
-                let sum = regional.reduce((a, r) => a + r.suggested, 0);
-                let diff = shortage - sum;
-                if (diff !== 0) {
-                    let maxIdx = 0;
-                    regional.forEach((r, i) => { if (r.pct >= regional[maxIdx].pct) maxIdx = i; });
-                    regional[maxIdx].suggested += diff;
-                }
-            }
+            allocateRegionalShipByStockRatio(regional, shortage);
 
             return {
                 stockMonth,
@@ -3633,6 +3628,62 @@
                 fullSurplus,
                 regional,
             };
+        }
+
+        function sfAllocateIntegerByWeight(items, total, getWeight, setVal) {
+            const n = Math.max(0, Math.round(Number(total) || 0));
+            if (!items.length) return;
+            if (n <= 0) {
+                items.forEach((it) => setVal(it, 0));
+                return;
+            }
+            const weights = items.map((it, idx) => Math.max(0, Number(getWeight(it, idx)) || 0));
+            const wSum = weights.reduce((a, b) => a + b, 0);
+            if (wSum <= 0) {
+                const each = Math.floor(n / items.length);
+                let rem = n - each * items.length;
+                items.forEach((it, i) => setVal(it, each + (i < rem ? 1 : 0)));
+                return;
+            }
+            const raw = weights.map((w) => (n * w / wSum));
+            const floors = raw.map((x) => Math.floor(x));
+            let used = floors.reduce((a, b) => a + b, 0);
+            let rem = n - used;
+            const order = raw.map((x, i) => ({ i, frac: x - floors[i] }))
+                .sort((a, b) => b.frac - a.frac);
+            const out = floors.slice();
+            for (let k = 0; k < rem; k += 1) out[order[k % order.length].i] += 1;
+            items.forEach((it, i) => setVal(it, out[i]));
+        }
+
+        /** 按区域备货比例分配建议发货：使各区域（已有+建议）占比与比例一致 */
+        function allocateRegionalShipByStockRatio(regional, shortage) {
+            (regional || []).forEach((r) => {
+                r.existing = Math.max(0, Number(r.overseas) || 0) + Math.max(0, Number(r.transit) || 0);
+                r.suggested = 0;
+            });
+            const qty = Math.max(0, Math.round(Number(shortage) || 0));
+            if (!regional || !regional.length || qty <= 0) return;
+
+            const totalExisting = regional.reduce((s, r) => s + r.existing, 0);
+            const totalPool = qty + totalExisting;
+            const pctSum = regional.reduce((s, r) => s + Math.max(0, Number(r.pct) || 0), 0);
+            if (pctSum <= 0) return;
+
+            const floats = regional.map((r) => {
+                const pct = Math.max(0, Number(r.pct) || 0);
+                const target = totalPool * pct / pctSum;
+                return Math.max(0, target - r.existing);
+            });
+            const sumFloat = floats.reduce((a, b) => a + b, 0);
+            let adjusted = floats.slice();
+            if (sumFloat > qty && sumFloat > 0) {
+                adjusted = floats.map((f) => f * qty / sumFloat);
+            } else if (sumFloat < qty) {
+                const extra = qty - sumFloat;
+                adjusted = floats.map((f, i) => f + extra * Math.max(0, Number(regional[i].pct) || 0) / pctSum);
+            }
+            sfAllocateIntegerByWeight(regional, qty, (_r, i) => adjusted[i], (r, v) => { r.suggested = v; });
         }
 
         function getSfRegionReplenSnapshot(row, regionName) {
@@ -5039,7 +5090,7 @@
                         + `<th class="sf-th-ship" title="含工厂在库/在制后仍不能满足的需求，与预测月右下角盈余取反一致">下单量</th>`) : '')
                     + (regionReplenCols ? (state.destinationRegions || []).map(r => {
                             const rn = String(r.region_name || '').trim();
-                            return rn ? `<th class="sf-th-ship-region" title="按区域备货比例分配的建议发货量；第二行显示已有海外仓+在途">` + escapeHtml(rn) + `</th>` : '';
+                            return rn ? `<th class="sf-th-ship-region" title="按区域备货比例分配，使各区域（已有+建议发货）占比与比例一致">` + escapeHtml(rn) + `</th>` : '';
                         }).join('') : '')
                     + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
                 thead.innerHTML = '';
@@ -7048,15 +7099,16 @@
                 } else if (snap.transit > 0) {
                     rows.push({ item: '在途', qty: formatNumber(snap.transit), arrival: '—' });
                 }
-                const formulaNote = formatNumber(snap.overseas) + ' + ' + formatNumber(snap.transit) + ' = ' + formatNumber(snap.total);
+                const afterTotal = snap.total + suggested;
                 dimensions.push(sfInvDimDef('region_replen', '已有明细', [
                     { key: 'item', label: '项目' },
                     { key: 'qty', label: '数量' },
                     { key: 'arrival', label: '到货日期' },
                 ], rows, {
-                    title: regionName + ' · 已有 ' + formulaNote,
+                    title: regionName + ' · 已有 ' + formatNumber(snap.total),
                     note: '建议发货 ' + (suggested > 0 ? formatNumber(suggested) : '—')
-                        + (reg && reg.pct ? ('（占发货量 ' + reg.pct + '%）') : ''),
+                        + '；合计 ' + formatNumber(afterTotal)
+                        + (reg && reg.pct ? ('（目标占比 ' + reg.pct + '%，按已有+建议分配）') : ''),
                 }));
                 if (!dimensions.length) {
                     dimensions.push(sfInvDimDef('empty', '提示', [
