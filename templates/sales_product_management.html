@@ -415,7 +415,7 @@
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin: 0;">
                             <span class="pm-search-title">搜索</span>
-                            <input type="text" id="searchInput" placeholder="搜索平台SKU/子体/货号/父体/规格/面料">
+                            <input type="text" id="searchInput" placeholder="搜索平台SKU/子体/GTIN/UPC/货号/父体/规格/面料">
                             <button class="btn-primary" onclick="loadSalesProductList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
@@ -454,6 +454,8 @@
                             <th data-manage-col-key="规格名称" data-sort-key="spec_name">规格名称</th>
                             <th data-manage-col-key="销售平台SKU" data-sort-key="platform_sku">销售平台SKU</th>
                             <th data-manage-col-key="子体编号" data-sort-key="child_code">子体编号</th>
+                            <th data-manage-col-key="GTIN" data-sort-key="gtin">GTIN</th>
+                            <th data-manage-col-key="UPC" data-sort-key="upc">UPC</th>
                             <th data-manage-col-key="下单SKU">下单SKU</th>
                             <th data-manage-col-key="售价" data-sort-key="sale_price_usd">售价</th>
                             <th data-manage-col-key="产品+头程" data-sort-key="warehouse_cost_usd" class="sales-econ-col">产品+头程</th>
@@ -467,7 +469,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="20" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="22" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -520,9 +522,27 @@
                             <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
                         </div>
                         <div class="form-group">
-                            <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN"></span></label>
+                            <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN，或其他平台的自定义编号（如沃尔玛的Item ID）"></span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
                         </div>
+                        <div class="pm-grid-3 pm-form-full" style="margin-top:0.15rem;">
+                            <div class="form-group pm-span-1">
+                                <label for="modalGtin" class="label-help">GTIN<span class="help-dot" data-tip="全球贸易项目代码，绑定本销售平台SKU"></span></label>
+                                <input type="text" id="modalGtin" class="optional-field" maxlength="32" placeholder="可选">
+                            </div>
+                            <div class="form-group pm-span-1">
+                                <label for="modalUpc" class="label-help">UPC<span class="help-dot" data-tip="通用产品代码，绑定本销售平台SKU"></span></label>
+                                <input type="text" id="modalUpc" class="optional-field" maxlength="32" placeholder="可选">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <div class="pm-section-header">
+                        <h4>规格信息</h4>
+                    </div>
+                    <div class="pm-section-body pm-form">
                         <div class="pm-grid-3 pm-form-full" style="margin-top:0.15rem;">
                             <div class="form-group pm-span-1">
                                 <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出"></span></label>
@@ -877,7 +897,7 @@
         let salesProductAggregateMode = 'none';
         let salesProductGroupSort = { key: '', dir: 'asc' };
         let salesProductCollapsedParentGroups = new Set();
-        const SALES_PRODUCT_TABLE_COLSPAN = 20;
+        const SALES_PRODUCT_TABLE_COLSPAN = 22;
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
         let fabricImageItems = [];
@@ -935,7 +955,7 @@
         }
 
         function normalizeSalesPreviewFieldValue(field, rawValue) {
-            if (field === 'child_code') {
+            if (field === 'child_code' || field === 'gtin' || field === 'upc') {
                 return String(rawValue == null ? '' : rawValue).trim();
             }
             if (field === 'sale_price_usd') {
@@ -973,17 +993,25 @@
             if (!salesPreviewEditDraft[id]) {
                 salesPreviewEditDraft[id] = {
                     child_code: item.child_code == null ? '' : String(item.child_code),
+                    gtin: item.gtin == null ? '' : String(item.gtin),
+                    upc: item.upc == null ? '' : String(item.upc),
                     sale_price_usd: item.sale_price_usd,
                 };
             }
             salesPreviewEditDraft[id][field] = normalized;
             const draft = salesPreviewEditDraft[id];
             const origChild = item.child_code == null ? '' : String(item.child_code);
+            const origGtin = item.gtin == null ? '' : String(item.gtin);
+            const origUpc = item.upc == null ? '' : String(item.upc);
             const childSame = normalizeSalesPreviewFieldValue('child_code', draft.child_code)
                 === normalizeSalesPreviewFieldValue('child_code', origChild);
+            const gtinSame = normalizeSalesPreviewFieldValue('gtin', draft.gtin)
+                === normalizeSalesPreviewFieldValue('gtin', origGtin);
+            const upcSame = normalizeSalesPreviewFieldValue('upc', draft.upc)
+                === normalizeSalesPreviewFieldValue('upc', origUpc);
             const priceSame = normalizeSalesPreviewFieldValue('sale_price_usd', draft.sale_price_usd)
                 === normalizeSalesPreviewFieldValue('sale_price_usd', item.sale_price_usd);
-            if (childSame && priceSame) {
+            if (childSame && gtinSame && upcSame && priceSame) {
                 delete salesPreviewEditDraft[id];
             }
             syncSalesPreviewSaveBar();
@@ -1018,6 +1046,8 @@
             const items = ids.map(id => ({
                 id: Number(id),
                 child_code: normalizeSalesPreviewFieldValue('child_code', salesPreviewEditDraft[id].child_code),
+                gtin: normalizeSalesPreviewFieldValue('gtin', salesPreviewEditDraft[id].gtin),
+                upc: normalizeSalesPreviewFieldValue('upc', salesPreviewEditDraft[id].upc),
                 sale_price_usd: normalizeSalesPreviewFieldValue('sale_price_usd', salesPreviewEditDraft[id].sale_price_usd),
             }));
             fetch('/api/sales-product?action=preview_update', {
@@ -1035,6 +1065,8 @@
                         const row = (salesProductItems || []).find(x => String(x.id) === String(up.id));
                         if (!row) return;
                         row.child_code = up.child_code ? up.child_code : null;
+                        row.gtin = up.gtin ? up.gtin : null;
+                        row.upc = up.upc ? up.upc : null;
                         row.sale_price_usd = up.sale_price_usd;
                         delete salesPreviewEditDraft[String(up.id)];
                     });
@@ -1936,6 +1968,10 @@
             const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
             const childCodeVal = getSalesPreviewEffectiveValue(item, 'child_code');
             const childCodeText = childCodeVal == null ? '' : String(childCodeVal);
+            const gtinVal = getSalesPreviewEffectiveValue(item, 'gtin');
+            const gtinText = gtinVal == null ? '' : String(gtinVal);
+            const upcVal = getSalesPreviewEffectiveValue(item, 'upc');
+            const upcText = upcVal == null ? '' : String(upcVal);
             const salePriceVal = getSalesPreviewEffectiveValue(item, 'sale_price_usd');
             const econ = salesEnrichItemEconomics(item);
             const salePriceLow = econ.salePrice > 0 && econ.totalCost > 0 && econ.salePrice < econ.totalCost;
@@ -1956,6 +1992,8 @@
                     <td>${item.spec_name || ''}</td>
                     <td>${item.platform_sku || ''}</td>
                     ${renderSalesChildCodeCell(item, childCodeText)}
+                    <td class="preview-edit-cell" data-field-wrap="gtin"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gtin" type="text" value="${escapeAttr(gtinText)}"></td>
+                    <td class="preview-edit-cell" data-field-wrap="upc"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="upc" type="text" value="${escapeAttr(upcText)}"></td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
                     <td class="preview-edit-cell ${salePriceLow ? 'danger-note' : ''}" data-field-wrap="sale_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="sale_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(salePriceInputVal)}"></td>
                     <td class="sales-econ-cell" data-manage-col-key="产品+头程" data-sales-econ-col="warehouse">${formatSalesEconomicsUsd(econ.bom, true)}</td>
@@ -2199,7 +2237,7 @@
                 <tr class="sales-parent-group-row" data-group-key="${safeKey}" data-parent-code="${escapeAttr(headerMeta.code || '')}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
-                    <td colspan="17" class="sales-parent-group-head"><span class="sj-group-row-head">${groupLabelHtml}</span></td>
+                    <td colspan="19" class="sales-parent-group-head"><span class="sj-group-row-head">${groupLabelHtml}</span></td>
                     ${editActionsHtml}
                 </tr>
             `);
@@ -4690,6 +4728,8 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
+            document.getElementById('modalGtin').value = '';
+            document.getElementById('modalUpc').value = '';
             document.getElementById('modalFabric').value = '';
             renderFabricSelectBySkuFamily('');
             document.getElementById('modalSpecName').value = '';
@@ -4747,6 +4787,8 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = item.child_code || '';
+            document.getElementById('modalGtin').value = item.gtin || '';
+            document.getElementById('modalUpc').value = item.upc || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             renderFabricSelectBySkuFamily(item.fabric_id || '');
             if (item.fabric_id) document.getElementById('modalFabricId').value = String(item.fabric_id);
@@ -4801,6 +4843,8 @@
                 parent_code: document.getElementById('modalParentCode').value || null,
                 parent_sku_marker: document.getElementById('modalParentSkuMarker').value.trim(),
                 child_code: document.getElementById('modalChildCode').value.trim(),
+                gtin: document.getElementById('modalGtin').value.trim(),
+                upc: document.getElementById('modalUpc').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 fabric_id: document.getElementById('modalFabricId').value || null,
                 spec_name: document.getElementById('modalSpecName').value.trim(),

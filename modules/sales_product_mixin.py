@@ -2939,6 +2939,30 @@ class SalesProductMixin:
             return f"COALESCE({parent_alias}.shop_id, {sales_alias}.shop_id)"
         return f"{parent_alias}.shop_id"
 
+    def _parse_sales_barcode(self, value):
+        text = (str(value) if value is not None else '').strip()
+        return text or None
+
+    def _sales_product_barcode_select_sql(self, conn, alias='sp'):
+        parts = []
+        if self._table_has_column(conn, 'sales_products', 'gtin'):
+            parts.append(f'{alias}.gtin')
+        else:
+            parts.append('NULL AS gtin')
+        if self._table_has_column(conn, 'sales_products', 'upc'):
+            parts.append(f'{alias}.upc')
+        else:
+            parts.append('NULL AS upc')
+        return ', '.join(parts)
+
+    def _extend_sales_product_barcode_write(self, conn, columns, values, gtin, upc):
+        if self._table_has_column(conn, 'sales_products', 'gtin'):
+            columns.append('gtin')
+            values.append(gtin)
+        if self._table_has_column(conn, 'sales_products', 'upc'):
+            columns.append('upc')
+            values.append(upc)
+
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
@@ -3441,6 +3465,7 @@ class SalesProductMixin:
                             f"""
                             SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
                                 sp.platform_sku, sp.child_code,
+                                {self._sales_product_barcode_select_sql(conn, 'sp')},
                                 pf.sku_family, v.spec_name, {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
                                 sp.sale_price_usd
                             FROM sales_products sp
@@ -3486,6 +3511,8 @@ class SalesProductMixin:
                             row.get('sku_marker') or '',
                             row.get('platform_sku') or '',
                             row.get('child_code') or '',
+                            row.get('gtin') or '',
+                            row.get('upc') or '',
                             row.get('sku_family') or '',
                             row.get('spec_name') or '',
                             row.get('fabric') or '',
@@ -3497,14 +3524,16 @@ class SalesProductMixin:
             section_headers = [
                 ('产品状态', 1, 1),
                 ('父体关联', 2, 4),
-                ('基础信息', 5, 9),
-                ('销售信息', 10, 10)
+                ('基础信息', 5, 8),
+                ('规格信息', 9, 12),
+                ('销售信息', 13, 13)
             ]
             # 第2行：字段标题
             cn_headers = [
                 '产品状态(启用/留用/弃用)',
                 '店铺(必填)', '父体编号', '新父体SKU标识(父体不存在时选填)',
-                '销售平台SKU', '子体编号',                 '货号', '规格名称', '面料(面料编号)',
+                '销售平台SKU', '子体编号', 'GTIN', 'UPC',
+                '货号', '规格名称', '面料(面料编号)',
                 '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)',
                 '售价(USD)'
             ]
@@ -3558,10 +3587,11 @@ class SalesProductMixin:
                 'MS01-MARKER',
                 'MS01-Brown-1A',
                 'CHILD-001',
+                '',
+                '',
                 'MS01',
                 'A款',
                 '棕色/Brown',
-                'Recliner Sofa for Living Room',
                 'MS01A-Brown*2\nMS01B-Gray',
                 199.99
             ])
@@ -3602,7 +3632,7 @@ class SalesProductMixin:
                     formula1=f"'_refs'!$K$2:$K${k_end}",
                     allow_blank=True,
                 )
-                sku_validation.add(f'G4:G{max_validation_row}')
+                sku_validation.add(f'I4:I{max_validation_row}')
                 ws.add_data_validation(sku_validation)
 
             m_end = ref_dims.get('spec_all_end') or 2
@@ -3611,7 +3641,7 @@ class SalesProductMixin:
                 formula1=f"'_refs'!$M$2:$M${m_end}",
                 allow_blank=True,
             )
-            spec_validation.add(f'H4:H{max_validation_row}')
+            spec_validation.add(f'J4:J{max_validation_row}')
             ws.add_data_validation(spec_validation)
 
             n_end = ref_dims.get('fab_all_end') or 2
@@ -3620,7 +3650,7 @@ class SalesProductMixin:
                 formula1=f"'_refs'!$N$2:$N${n_end}",
                 allow_blank=True,
             )
-            fabric_validation.add(f'I4:I{max_validation_row}')
+            fabric_validation.add(f'K4:K{max_validation_row}')
             ws.add_data_validation(fabric_validation)
 
             q_end = ref_dims.get('parent_end') or 2
@@ -3637,11 +3667,13 @@ class SalesProductMixin:
             # 设置列宽
             ws.column_dimensions['A'].width = 16
             ws.column_dimensions['B'].width = 12
-            ws.column_dimensions['G'].width = 14
+            ws.column_dimensions['G'].width = 16
+            ws.column_dimensions['H'].width = 14
+            ws.column_dimensions['I'].width = 14
             ws.column_dimensions['D'].width = 22
-            ws.column_dimensions['I'].width = 16
-            ws.column_dimensions['J'].width = 34
-            ws.column_dimensions['K'].width = 14
+            ws.column_dimensions['K'].width = 16
+            ws.column_dimensions['L'].width = 34
+            ws.column_dimensions['M'].width = 14
             ws.column_dimensions['P'].width = 14
             ws.column_dimensions['Q'].width = 14
             ws.column_dimensions['R'].width = 14
@@ -3751,6 +3783,10 @@ class SalesProductMixin:
                 '父体编号': 'parent_code',
                 '新父体SKU标识(父体不存在时选填)': 'parent_sku_marker',
                 '子体编号': 'child_code',
+                'GTIN': 'gtin',
+                'UPC': 'upc',
+                'gtin': 'gtin',
+                'upc': 'upc',
                 '货号': 'sku_family',
                 '面料(选填)': 'fabric',
                 '规格名(选填)': 'spec_name',
@@ -3953,6 +3989,10 @@ class SalesProductMixin:
                         parent_code = (get_cell(row, 'parent_code') or '').strip() or None
                         parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
                         child_code = (get_cell(row, 'child_code') or '').strip() or None
+                        import_has_gtin = 'gtin' in header_map
+                        import_has_upc = 'upc' in header_map
+                        gtin = self._parse_sales_barcode(get_cell(row, 'gtin')) if import_has_gtin else None
+                        upc = self._parse_sales_barcode(get_cell(row, 'upc')) if import_has_upc else None
                         sku_family_name = (get_cell(row, 'sku_family') or '').strip() or None
                         fabric = self._normalize_sales_import_fabric_cell(get_cell(row, 'fabric'))
                         spec_name = (get_cell(row, 'spec_name') or '').strip()
@@ -4127,9 +4167,16 @@ class SalesProductMixin:
                                     "variant_id=%s",
                                     "parent_id=%s",
                                     "child_code=%s",
-                                    "sale_price_usd=%s",
                                 ]
-                                update_values = [final_platform_sku, product_status, variant_id, parent_id, child_code, sale_price_usd]
+                                update_values = [final_platform_sku, product_status, variant_id, parent_id, child_code]
+                                if import_has_gtin and self._table_has_column(conn, 'sales_products', 'gtin'):
+                                    update_fields.append("gtin=%s")
+                                    update_values.append(gtin)
+                                if import_has_upc and self._table_has_column(conn, 'sales_products', 'upc'):
+                                    update_fields.append("upc=%s")
+                                    update_values.append(upc)
+                                update_fields.append("sale_price_usd=%s")
+                                update_values.append(sale_price_usd)
                                 if sp_has_shop_col:
                                     update_fields.insert(0, "shop_id=%s")
                                     update_values.insert(0, shop_id)
@@ -4149,6 +4196,12 @@ class SalesProductMixin:
                                 insert_values.extend([final_platform_sku, product_status])
                                 insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
                                 insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
+                                if import_has_gtin and self._table_has_column(conn, 'sales_products', 'gtin'):
+                                    insert_columns.append('gtin')
+                                    insert_values.append(gtin)
+                                if import_has_upc and self._table_has_column(conn, 'sales_products', 'upc'):
+                                    insert_columns.append('upc')
+                                    insert_values.append(upc)
                                 placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                                 row_cur.execute(
                                     f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4206,6 +4259,7 @@ class SalesProductMixin:
                             fabric_select = "fm.fabric_code"
                         else:
                             fabric_select = "v.fabric" if has_fabric_text else "''"
+                        barcode_select = self._sales_product_barcode_select_sql(conn, 'sp')
                         base_sql = """
                             SELECT
                                 sp.id,
@@ -4214,6 +4268,7 @@ class SalesProductMixin:
                                 sp.product_status,
                                 sp.parent_id,
                                 sp.child_code,
+                                {barcode_select},
                                 sp.variant_id,
                                 v.sku_family_id,
                                 pf.sku_family,
@@ -4238,6 +4293,7 @@ class SalesProductMixin:
                             LEFT JOIN brands b ON b.id = s.brand_id
                         """.format(
                             shop_expr=shop_expr,
+                            barcode_select=barcode_select,
                             fabric_join=fabric_join,
                             fabric_select=fabric_select,
                             fabric_id_select=("v.fabric_id" if has_fabric_id else "NULL"),
@@ -4257,7 +4313,14 @@ class SalesProductMixin:
                                 "v.spec_name LIKE %s",
                                 f"{fabric_select} LIKE %s",
                             ]
-                            params.extend([f"%{keyword}%"] * 7)
+                            kw_params = [f"%{keyword}%"] * 7
+                            if self._table_has_column(conn, 'sales_products', 'gtin'):
+                                text_filters.append("sp.gtin LIKE %s")
+                                kw_params.append(f"%{keyword}%")
+                            if self._table_has_column(conn, 'sales_products', 'upc'):
+                                text_filters.append("sp.upc LIKE %s")
+                                kw_params.append(f"%{keyword}%")
+                            params.extend(kw_params)
                             if has_fabric_text:
                                 text_filters.append("v.fabric LIKE %s")
                                 params.append(f"%{keyword}%")
@@ -4314,6 +4377,8 @@ class SalesProductMixin:
                 parent_code = (data.get('parent_code') or '').strip() or None
                 parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
+                gtin = self._parse_sales_barcode(data.get('gtin'))
+                upc = self._parse_sales_barcode(data.get('upc'))
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
                 fabric_id_input = self._parse_int(data.get('fabric_id'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
@@ -4397,6 +4462,7 @@ class SalesProductMixin:
                         insert_values.extend([platform_sku, product_status])
                         insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
                         insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
+                        self._extend_sales_product_barcode_write(conn, insert_columns, insert_values, gtin, upc)
                         placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                         cur.execute(
                             f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4428,8 +4494,14 @@ class SalesProductMixin:
                         child_code = None
                         if child_code_raw is not None:
                             child_code = (str(child_code_raw).strip() or None)
+                        gtin_raw = item.get('gtin')
+                        gtin = self._parse_sales_barcode(gtin_raw) if gtin_raw is not None else None
+                        upc_raw = item.get('upc')
+                        upc = self._parse_sales_barcode(upc_raw) if upc_raw is not None else None
                         row_map[int(item_id)] = {
                             'child_code': child_code,
+                            'gtin': gtin,
+                            'upc': upc,
                             'sale_price_usd': self._parse_float(item.get('sale_price_usd')),
                         }
 
@@ -4450,6 +4522,12 @@ class SalesProductMixin:
                         f"child_code = {build_case('child_code')}",
                         f"sale_price_usd = {build_case('sale_price_usd')}",
                     ]
+                    with self._get_db_connection() as conn:
+                        if self._table_has_column(conn, 'sales_products', 'gtin'):
+                            set_clause.insert(1, f"gtin = {build_case('gtin')}")
+                        if self._table_has_column(conn, 'sales_products', 'upc'):
+                            insert_at = 2 if self._table_has_column(conn, 'sales_products', 'gtin') else 1
+                            set_clause.insert(insert_at, f"upc = {build_case('upc')}")
                     where_placeholders = ','.join(['%s'] * len(ids))
                     sql = f"UPDATE sales_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
                     with self._get_db_connection() as conn:
@@ -4467,6 +4545,8 @@ class SalesProductMixin:
                 parent_code = (data.get('parent_code') or '').strip() or None
                 parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
+                gtin = self._parse_sales_barcode(data.get('gtin'))
+                upc = self._parse_sales_barcode(data.get('upc'))
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
                 fabric_id_input = self._parse_int(data.get('fabric_id'))
                 confirm_new_variant_folder = bool(data.get('confirm_new_variant_folder'))
@@ -4598,9 +4678,16 @@ class SalesProductMixin:
                             "variant_id=%s",
                             "parent_id=%s",
                             "child_code=%s",
-                            "sale_price_usd=%s",
                         ]
-                        update_values = [platform_sku, product_status, variant_id, parent_id, child_code, sale_price_usd]
+                        update_values = [platform_sku, product_status, variant_id, parent_id, child_code]
+                        if self._table_has_column(conn, 'sales_products', 'gtin'):
+                            update_fields.append("gtin=%s")
+                            update_values.append(gtin)
+                        if self._table_has_column(conn, 'sales_products', 'upc'):
+                            update_fields.append("upc=%s")
+                            update_values.append(upc)
+                        update_fields.append("sale_price_usd=%s")
+                        update_values.append(sale_price_usd)
                         if sp_has_shop_col:
                             update_fields.insert(0, "shop_id=%s")
                             update_values.insert(0, final_shop_id)
