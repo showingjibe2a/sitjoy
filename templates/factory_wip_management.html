@@ -107,8 +107,8 @@
         <input id="modalQuantity" type="number" min="0" step="1" value="0">
       </div>
       <div class="form-group">
-        <label for="modalExpectedDate">预计完工日期</label>
-        <input id="modalExpectedDate" type="date">
+        <label for="modalExpectedDate">预计完工日期<span class="required-asterisk">*</span></label>
+        <input id="modalExpectedDate" type="date" required>
       </div>
       <div class="form-group">
         <label>最初预计完工日期</label>
@@ -985,6 +985,11 @@ function saveFactoryWipEdits(updateFactoryStock){
     syncFactoryWipSaveBar();
     return;
   }
+  const missingDateItem = items.find(item => !String(item.expected_completion_date || '').trim());
+  if(missingDateItem){
+    if(window.showAppToast){ window.showAppToast(`记录 #${missingDateItem.id} 的预计完工日期不能为空`, true, 0); }
+    return;
+  }
   const bar = document.getElementById('factoryWipSaveBar');
   const btnNoStock = document.getElementById('factoryWipSaveNoStockBtn');
   const btnUpdateStock = document.getElementById('factoryWipSaveUpdateStockBtn');
@@ -1113,6 +1118,10 @@ function saveFromModal(){
 
   if(!editId && (!order_product_id || !factory_id)){
     showModalStatus('下单SKU和工厂为必填', true);
+    return;
+  }
+  if(!expected_completion_date){
+    showModalStatus('预计完工日期为必填', true);
     return;
   }
 
@@ -1397,7 +1406,7 @@ function renderFactoryWipTable(items){
           </div>
         </td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
-        <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>
+        <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}" required></td>
         <td><div class="history-text">${initialExpectedCompletionDate || '-'}</div></td>
         <td class="preview-edit-cell">
           <div class="status-segment status-segment--inline preview-status-segment wip-status-segment" data-id="${item.id}" data-value="${Number(isCompleted || 0) ? '1' : '0'}">

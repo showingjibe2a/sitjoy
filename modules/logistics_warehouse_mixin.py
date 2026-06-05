@@ -975,6 +975,8 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                 if not self._order_product_allowed_for_factory(op_id, factory_id):
                     return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可写入'}, start_response)
+                if not expected_date:
+                    return self.send_json({'status': 'error', 'message': '预计完工日期不能为空'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         contract_id, contract_no, order_no = _resolve_contract_binding(cur, factory_id, contract_no, order_no)
@@ -1033,6 +1035,11 @@ class LogisticsWarehouseMixin:
                             actual_completion_date = datetime.now().strftime('%Y-%m-%d')
                         if not is_completed:
                             actual_completion_date = None
+                        if not expected_date:
+                            return self.send_json({
+                                'status': 'error',
+                                'message': f'记录 #{item_id} 的预计完工日期不能为空',
+                            }, start_response)
                         parsed_items.append({
                             'id': item_id,
                             'quantity': quantity,
@@ -1155,6 +1162,8 @@ class LogisticsWarehouseMixin:
                     actual_completion_date = None
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                if not expected_date:
+                    return self.send_json({'status': 'error', 'message': '预计完工日期不能为空'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -1596,7 +1605,7 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'factory_wip'
 
-            headers = ['工厂', '订单号', '合同编号', 'SKU', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
+            headers = ['工厂', '订单号', '合同编号', 'SKU', '数量', '预计完工日期*', '是否完工(是/否)', '实际完工时间', '备注']
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
             title_cell = ws.cell(row=1, column=1, value='工厂在制库存导入模板')
             title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
@@ -1747,7 +1756,11 @@ class LogisticsWarehouseMixin:
             header_row = 2 if str(ws.cell(row=1, column=1).value or '').strip().startswith('工厂在制库存导入模板') else 1
             header_values = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True), tuple())
             headers = [str(value or '').strip() for value in header_values]
-            header_map = {name: idx for idx, name in enumerate(headers)}
+            header_map = {}
+            for idx, name in enumerate(headers):
+                header_map[name] = idx
+                if name.endswith('*'):
+                    header_map[name[:-1]] = idx
 
             for required in ('工厂', 'SKU', '数量'):
                 if required not in header_map:
@@ -1920,6 +1933,8 @@ class LogisticsWarehouseMixin:
                             notes = str(get_cell(row, '备注') or '').strip() or None
                             if not sku or not factory_name or quantity is None:
                                 raise ValueError('SKU/工厂/数量不能为空，且数量需为整数')
+                            if not expected_completion_date:
+                                raise ValueError('预计完工日期不能为空')
                             order_product_id = sku_map.get(sku)
                             factory_id = factory_map.get(factory_name)
                             if not order_product_id:
@@ -1957,7 +1972,11 @@ class LogisticsWarehouseMixin:
                             tuple(op_ids) + tuple(factory_ids)
                         )
                         for ex in (cur.fetchall() or []):
-                            key = (int(ex.get('order_product_id')), int(ex.get('factory_id')))
+                            key = (
+                                int(ex.get('order_product_id')),
+                                int(ex.get('factory_id')),
+                                self._parse_int(ex.get('contract_id')) or None,
+                            )
                             if key in existing_map:
                                 continue
                             existing_map[key] = {
@@ -1972,13 +1991,12 @@ class LogisticsWarehouseMixin:
                             }
 
                     for order_product_id, factory_id, quantity, expected_completion_date, order_no, contract_no, is_completed, actual_completion_date, notes in normalized_rows:
-                        key = (order_product_id, factory_id)
-                        ex = existing_map.get(key)
                         contract_id = resolve_contract_binding(cur, factory_id, contract_no, order_no)
+                        key = (order_product_id, factory_id, contract_id or None)
+                        ex = existing_map.get(key)
                         if ex:
                             same = (
                                 ex.get('quantity') == quantity and
-                                (self._parse_int(ex.get('contract_id')) or None) == (contract_id or None) and
                                 (ex.get('expected_completion_date') or None) == (expected_completion_date or None) and
                                 int(ex.get('is_completed') or 0) == int(is_completed or 0) and
                                 (ex.get('actual_completion_date') or None) == (actual_completion_date or None) and
@@ -1990,31 +2008,47 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 """
                                 UPDATE factory_wip_inventory
-                                                                SET quantity=%s, contract_id=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
+                                SET quantity=%s, contract_id=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
                                 WHERE id=%s
                                 """,
-                                                                (quantity, contract_id, expected_completion_date, is_completed, actual_completion_date, notes, ex['id'])
+                                (quantity, contract_id, expected_completion_date, is_completed, actual_completion_date, notes, ex['id'])
                             )
+                            ex['quantity'] = quantity
+                            ex['expected_completion_date'] = expected_completion_date
+                            ex['is_completed'] = int(is_completed or 0)
+                            ex['actual_completion_date'] = actual_completion_date
+                            ex['notes'] = notes
                             updated += 1
                         else:
                             cur.execute(
                                 """
                                 INSERT INTO factory_wip_inventory
-                                                                    (order_product_id, factory_id, contract_id, quantity, expected_completion_date, initial_expected_completion_date, is_completed, actual_completion_date, notes)
-                                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                (order_product_id, factory_id, contract_id, quantity, expected_completion_date, initial_expected_completion_date, is_completed, actual_completion_date, notes)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 """,
-                                                                (
-                                                                        order_product_id,
-                                                                        factory_id,
-                                                                        contract_id,
-                                                                        quantity,
-                                                                        expected_completion_date,
-                                                                        expected_completion_date,
-                                                                        is_completed,
-                                                                        actual_completion_date,
-                                                                        notes
-                                                                )
+                                (
+                                    order_product_id,
+                                    factory_id,
+                                    contract_id,
+                                    quantity,
+                                    expected_completion_date,
+                                    expected_completion_date,
+                                    is_completed,
+                                    actual_completion_date,
+                                    notes
+                                )
                             )
+                            new_id = int(cur.lastrowid)
+                            existing_map[key] = {
+                                'id': new_id,
+                                'contract_id': contract_id,
+                                'quantity': quantity,
+                                'expected_completion_date': expected_completion_date,
+                                'initial_expected_completion_date': expected_completion_date,
+                                'is_completed': int(is_completed or 0),
+                                'actual_completion_date': actual_completion_date,
+                                'notes': notes,
+                            }
                             created += 1
 
             return self.send_json({'status': 'success', 'created': created, 'updated': updated, 'unchanged': unchanged, 'errors': errors}, start_response)

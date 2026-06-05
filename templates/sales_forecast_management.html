@@ -2093,6 +2093,7 @@
         const SF_PREF_FACTORY_LEAD_TIMES_KEY = 'sales_forecast_factory_lead_times_v1';
         const SF_PREF_SURPLUS_REGION_KEY = 'sales_forecast_surplus_region_v1';
         const SF_PREF_REGION_STOCK_RATIO_KEY = 'sales_forecast_region_stock_ratio_v1';
+        const SF_PREF_SHIP_PLAN_KEY = 'sales_forecast_ship_plan_v1';
         const SF_PREF_TURNOVER_ALERT_KEY = 'sales_forecast_turnover_alert_v1';
         const SF_TURNOVER_ALERT_COL_IDS = ['overseas', 'overseas_transit', 'total'];
         const SF_TURNOVER_INV_KEYS = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
@@ -3392,6 +3393,92 @@
             writeJsonPref(SF_PREF_REGION_STOCK_RATIO_KEY, { v: 1, ratios: ratios || {}, updated_at: Date.now() });
         }
 
+        function readSfShipPlanPrefs() {
+            const raw = readJsonPref(SF_PREF_SHIP_PLAN_KEY, {}) || {};
+            return {
+                stockMonth: String(raw.stockMonth || '').trim(),
+                shipDate: String(raw.shipDate || '').slice(0, 10),
+            };
+        }
+
+        function writeSfShipPlanPrefs(patch) {
+            const cur = readSfShipPlanPrefs();
+            writeJsonPref(SF_PREF_SHIP_PLAN_KEY, Object.assign({ v: 1, updated_at: Date.now() }, cur, patch || {}));
+        }
+
+        function hydrateSfShipPlanToolbarFromPrefs() {
+            const pref = readSfShipPlanPrefs();
+            if (pref.stockMonth) state.sfShipPlan.stockMonth = pref.stockMonth;
+            if (pref.shipDate) state.sfShipPlan.shipDate = pref.shipDate;
+            const dateInp = document.getElementById('sfShipPlanDateInput');
+            if (pref.shipDate && dateInp) dateInp.value = pref.shipDate;
+            renderSfShipPlanMonthSelect();
+        }
+
+        /** 从工具栏同步备货方案；条件满足时自动激活。返回 headerChanged 表示表头列数变化需整表重绘。 */
+        function trySyncSfShipPlanFromToolbar() {
+            if (state.forecastMode !== 'order') return { ok: false, headerChanged: false };
+            const monthSel = document.getElementById('sfShipPlanMonthSelect');
+            const dateInp = document.getElementById('sfShipPlanDateInput');
+            const stockMonth = String((monthSel && monthSel.value) || state.sfShipPlan.stockMonth || '').trim();
+            const shipDate = String((dateInp && dateInp.value) || state.sfShipPlan.shipDate || '').trim().slice(0, 10);
+            if (!stockMonth || !shipDate || !state.sfSurplusRegion) {
+                return { ok: false, headerChanged: false };
+            }
+            const ratios = state.sfShipPlan.regionRatios && Object.keys(state.sfShipPlan.regionRatios).length
+                ? state.sfShipPlan.regionRatios
+                : readRegionStockRatioPrefs();
+            const norm = normalizeRegionStockRatios(Object.keys(ratios).length ? ratios : getDefaultRegionStockRatios());
+            if (Math.abs(norm.sum - 100) >= 0.01) {
+                return { ok: false, headerChanged: false };
+            }
+            const hadCols = getSfShipPlanColCount() > 0;
+            state.sfShipPlan.active = true;
+            state.sfShipPlan.stockMonth = stockMonth;
+            state.sfShipPlan.shipDate = shipDate;
+            state.sfShipPlan.regionRatios = norm.ratios;
+            writeSfShipPlanPrefs({ stockMonth, shipDate });
+            return { ok: true, headerChanged: !hadCols && getSfShipPlanColCount() > 0 };
+        }
+
+        function refreshSfShipPlanCellsForGroup(groupKey) {
+            if (!state.sfShipPlan.active) return;
+            const meta = state._sfColMeta;
+            const tbody = document.getElementById('forecastTbody');
+            const gk = String(groupKey || '').trim();
+            if (!gk || !meta || meta.shipPlanStart == null || !tbody) return;
+            const shipStart = Number(meta.shipPlanStart);
+            const shipCols = getSfShipPlanColCount();
+            if (!shipCols) return;
+            tbody.querySelectorAll(`tr[data-group-key="${sfCssEscape(gk)}"][data-row-key]`).forEach(tr => {
+                const rk = String(tr.dataset.rowKey || '');
+                const row = (state.rows || []).find(r => String(r.row_key) === rk);
+                if (!row) return;
+                Array.from(tr.querySelectorAll('td')).forEach(td => {
+                    const ci = Number(td.dataset.sfCi);
+                    if (Number.isFinite(ci) && ci >= shipStart && ci < shipStart + shipCols) td.remove();
+                });
+                appendSfShipPlanCells(tr, row, rk, shipStart);
+            });
+            applySfGridSelectionStyles();
+        }
+
+        function refreshSfShipPlanForExpandedGroups(onlyGroupKey) {
+            if (!state.sfShipPlan.active) return;
+            const collapsed = getCollapsedSet();
+            const only = String(onlyGroupKey || '').trim();
+            if (only) {
+                if (!collapsed.has(only)) refreshSfShipPlanCellsForGroup(only);
+                return;
+            }
+            const cols = getColumnsForMode(state.forecastMode);
+            buildGroups(applyFilters(state.rows.slice(), cols)).forEach(g => {
+                if (collapsed.has(g.key)) return;
+                if (state.lazyForecast && !state.loadedGroupKeys.has(g.key)) return;
+                refreshSfShipPlanCellsForGroup(g.key);
+            });
+        }
+
         function getDefaultRegionStockRatios() {
             const names = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
             if (!names.length) return {};
@@ -3432,7 +3519,8 @@
             const sel = document.getElementById('sfShipPlanMonthSelect');
             if (!sel) return;
             const months = (state.months || []).slice().sort(compareForecastMonthKeys);
-            const cur = String(state.sfShipPlan.stockMonth || sel.value || '').trim();
+            const pref = readSfShipPlanPrefs();
+            const cur = String(state.sfShipPlan.stockMonth || pref.stockMonth || sel.value || '').trim();
             sel.innerHTML = months.map((mk) => {
                 const lbl = monthShortLabel(mk);
                 const selAttr = mk === cur ? ' selected' : '';
@@ -3516,6 +3604,9 @@
             state.sfShipPlan.regionRatios = norm.ratios;
             writeRegionStockRatioPrefs(norm.ratios);
             closeSfRegionRatioModal();
+            const sync = trySyncSfShipPlanFromToolbar();
+            if (sync.headerChanged) renderForecastTable();
+            else if (sync.ok) refreshSfShipPlanForExpandedGroups();
             if (window.showAppToast) window.showAppToast('区域备货比例已保存', false, 1600);
             return true;
         }
@@ -3547,11 +3638,17 @@
                 openSfRegionRatioModal();
                 return;
             }
+            writeSfShipPlanPrefs({ stockMonth, shipDate });
+            const hadShipCols = getSfShipPlanColCount() > 0;
             state.sfShipPlan.active = true;
             state.sfShipPlan.stockMonth = stockMonth;
             state.sfShipPlan.shipDate = shipDate;
             state.sfShipPlan.regionRatios = norm.ratios;
-            renderForecastTable();
+            if (!hadShipCols) {
+                renderForecastTable();
+            } else {
+                refreshSfShipPlanForExpandedGroups();
+            }
             if (window.showAppToast) window.showAppToast('数量建议与区域补货列已更新（仅已展开分组）', false, 2200);
         }
 
@@ -3706,7 +3803,28 @@
             return formatNumber(s.overseas) + '+' + formatNumber(s.transit) + '=' + formatNumber(s.total);
         }
 
-        function appendSfQtySuggestCell(tr, rowKey, ci, value, opts) {
+        /** 尾部列插入：局部刷新发货量列时须插在备注列之前，避免 append 到行尾串列 */
+        function sfFindShipPlanInsertBefore(tr, startCi) {
+            const shipCols = getSfShipPlanColCount();
+            if (!shipCols) return null;
+            const remarkCi = Number(startCi) + shipCols;
+            const cells = Array.from(tr.querySelectorAll('td[data-sf-ci]'));
+            for (let i = 0; i < cells.length; i += 1) {
+                const ci = Number(cells[i].dataset.sfCi);
+                if (Number.isFinite(ci) && ci >= remarkCi) return cells[i];
+            }
+            return null;
+        }
+
+        function sfInsertTailTableCell(tr, td, insertBefore) {
+            if (insertBefore && insertBefore.parentNode === tr) {
+                tr.insertBefore(td, insertBefore);
+            } else {
+                tr.appendChild(td);
+            }
+        }
+
+        function appendSfQtySuggestCell(tr, rowKey, ci, value, opts, insertBefore) {
             const o = opts || {};
             const td = document.createElement('td');
             td.className = 'sf-cell-history sf-cell-ship-plan ' + String(o.className || '');
@@ -3732,7 +3850,7 @@
             }
             if (o.title) td.title = String(o.title);
             markSfGridCell(td, rowKey, ci);
-            tr.appendChild(td);
+            sfInsertTailTableCell(tr, td, insertBefore);
             return ci + 1;
         }
 
@@ -3752,6 +3870,7 @@
             let ci = Number(startCi) || 0;
             const shipCols = getSfShipPlanColCount();
             if (!shipCols) return ci;
+            const insertBefore = sfFindShipPlanInsertBefore(tr, ci);
             const planResult = computeOrderSkuShipPlan(row);
             const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
             const shipWarn = planResult && planResult.cannotMeetByShipDate ? '发货日前无法满足' : '';
@@ -3761,7 +3880,7 @@
                 title: planResult
                     ? ('发货量：' + monthShortLabel(planResult.stockMonth) + ' 海外仓+在途盈余缺口 ' + formatNumber(planResult.shortage))
                     : '',
-            });
+            }, insertBefore);
             ci = appendSfQtySuggestCell(tr, rowKey, ci, planResult && planResult.orderQty, {
                 className: 'sf-cell-ship-order',
                 warn: shipWarn,
@@ -3769,8 +3888,7 @@
                     ? ('下单量：' + monthShortLabel(planResult.stockMonth) + ' 含工厂在库/在制后仍不能满足 '
                         + formatNumber(planResult.orderQty) + '（与预测月右下角盈余一致）')
                     : '',
-            });
-
+            }, insertBefore);
             const regionalMap = {};
             (planResult && planResult.regional ? planResult.regional : []).forEach((reg) => {
                 regionalMap[reg.regionName] = reg;
@@ -3798,7 +3916,7 @@
                     + ' · 已有 ' + formatSfRegionReplenTotal(snap);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
-                tr.appendChild(td);
+                sfInsertTailTableCell(tr, td, insertBefore);
             });
             return ci;
         }
@@ -3809,11 +3927,29 @@
             const monthSel = document.getElementById('sfShipPlanMonthSelect');
             if (monthSel) {
                 monthSel.addEventListener('change', () => {
-                    state.sfShipPlan.stockMonth = String(monthSel.value || '').trim();
+                    const v = String(monthSel.value || '').trim();
+                    state.sfShipPlan.stockMonth = v;
+                    writeSfShipPlanPrefs({ stockMonth: v });
+                    const sync = trySyncSfShipPlanFromToolbar();
+                    if (sync.headerChanged) renderForecastTable();
+                    else if (sync.ok) refreshSfShipPlanForExpandedGroups();
                 });
             }
             const dateInp = document.getElementById('sfShipPlanDateInput');
-            if (dateInp && !dateInp.value) dateInp.value = sfTodayYmd();
+            if (dateInp && !dateInp.value) {
+                const pref = readSfShipPlanPrefs();
+                dateInp.value = pref.shipDate || sfTodayYmd();
+            }
+            if (dateInp) {
+                dateInp.addEventListener('change', () => {
+                    const v = String(dateInp.value || '').trim().slice(0, 10);
+                    state.sfShipPlan.shipDate = v;
+                    writeSfShipPlanPrefs({ shipDate: v });
+                    const sync = trySyncSfShipPlanFromToolbar();
+                    if (sync.headerChanged) renderForecastTable();
+                    else if (sync.ok) refreshSfShipPlanForExpandedGroups();
+                });
+            }
             const btnRatio = document.getElementById('btnSfRegionStockRatio');
             if (btnRatio) btnRatio.addEventListener('click', () => openSfRegionRatioModal());
             const btnConfirm = document.getElementById('btnSfShipPlanConfirm');
@@ -4303,6 +4439,8 @@
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
                 applyDashboardPayload(data);
+                hydrateSfShipPlanToolbarFromPrefs();
+                trySyncSfShipPlanFromToolbar();
                 renderForecastTable();
             } catch (err) {
                 showToast(err && err.message ? err.message : '加载失败', true);
@@ -5274,7 +5412,9 @@
                     const run = async () => {
                         if (wasCollapsed) {
                             collapsedSet.delete(key);
-                            renderForecastTableBodyOnly();
+                            const sync = trySyncSfShipPlanFromToolbar();
+                            if (sync.headerChanged) renderForecastTable();
+                            else renderForecastTableBodyOnly();
                             if (state.lazyForecast && !state.loadedGroupKeys.has(key)) {
                                 await loadForecastGroupRows(key);
                             }
@@ -8939,6 +9079,7 @@
             updateSfSurplusToolbarVisibility();
             updateSfShipPlanToolbarVisibility();
             state.sfShipPlan.regionRatios = readRegionStockRatioPrefs();
+            hydrateSfShipPlanToolbarFromPrefs();
 
             bindModeSegment();
             {
