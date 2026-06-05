@@ -37,6 +37,38 @@
         el.textContent = '';
     }
 
+    function formatEmployeeOptionLabel(emp) {
+        if (!emp) return '';
+        const name = String(emp.name || '').trim();
+        const username = String(emp.username || '').trim();
+        if (name && username) return `${name}（${username}）`;
+        return name || username || '';
+    }
+
+    function buildEmployeeSupervisorOptions(excludeId, selectedId) {
+        const items = Object.values(window.employeeMap || {})
+            .filter(emp => Number(emp.id || 0) > 0 && Number(emp.id) !== Number(excludeId || 0))
+            .sort((a, b) => {
+                const aLabel = formatEmployeeOptionLabel(a);
+                const bLabel = formatEmployeeOptionLabel(b);
+                return aLabel.localeCompare(bLabel, 'zh-CN') || Number(a.id) - Number(b.id);
+            });
+        const selected = selectedId ? String(selectedId) : '';
+        const options = ['<option value="">无</option>'];
+        items.forEach(emp => {
+            const id = String(emp.id);
+            const label = formatEmployeeOptionLabel(emp) || (`#${id}`);
+            options.push(`<option value="${id}"${id === selected ? ' selected' : ''}>${P().escapeHtml(label)}</option>`);
+        });
+        return options.join('');
+    }
+
+    function fillEmployeeSupervisorSelect(selectId, excludeId, selectedId) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        select.innerHTML = buildEmployeeSupervisorOptions(excludeId, selectedId);
+    }
+
     async function confirmEmployeeDeletion(employee) {
         if (!employee || !employee.id) {
             alert('未找到用户信息，已取消删除。');
@@ -161,6 +193,7 @@
         const modal = document.getElementById('employeeCreateModal');
         const form = document.getElementById('employeeCreateForm');
         if (form) form.reset();
+        fillEmployeeSupervisorSelect('employeeCreateDirectSupervisor', 0, '');
         P().renderPermissionEditor('employeeCreatePermissionEditor', {
             is_admin: 0,
             can_grant_admin: 0,
@@ -267,6 +300,7 @@
         document.getElementById('employeeEditHireDate').value = (data.hire_date || '').toString().slice(0, 10);
         document.getElementById('employeeEditJobTitle').value = data.job_title || '';
         document.getElementById('employeeEditPhone').value = data.phone || '';
+        fillEmployeeSupervisorSelect('employeeEditDirectSupervisor', data.id || 0, data.direct_supervisor_id || '');
         P().renderPermissionEditor('employeeEditPermissionEditor', {
             is_admin: data.is_admin,
             can_grant_admin: data.can_grant_admin,
@@ -369,6 +403,7 @@
                     birthday: document.getElementById('employeeBirthday').value,
                     hire_date: (document.getElementById('employeeHireDate') || {}).value || '',
                     job_title: (document.getElementById('employeeJobTitle') || {}).value.trim(),
+                    direct_supervisor_id: (document.getElementById('employeeCreateDirectSupervisor') || {}).value || '',
                     is_admin: permissionState.is_admin,
                     can_grant_admin: permissionState.can_grant_admin,
                     page_permissions: permissionState.page_permissions,
@@ -420,6 +455,7 @@
                     birthday: document.getElementById('employeeEditBirthday').value,
                     hire_date: (document.getElementById('employeeEditHireDate') || {}).value || '',
                     job_title: (document.getElementById('employeeEditJobTitle').value || '').trim(),
+                    direct_supervisor_id: (document.getElementById('employeeEditDirectSupervisor') || {}).value || '',
                     phone: document.getElementById('employeeEditPhone').value.trim(),
                     is_admin: permissionState.is_admin,
                     can_grant_admin: permissionState.can_grant_admin,

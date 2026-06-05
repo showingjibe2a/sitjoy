@@ -433,23 +433,29 @@ class AuthEmployeeMixin:
                         if keyword:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, hire_date, job_title,
-                                       is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                                       page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
-                                FROM users
-                                WHERE name LIKE %s OR username LIKE %s OR phone LIKE %s
-                                ORDER BY id ASC
+                                SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+                                       u.direct_supervisor_id,
+                                       u.is_admin, COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                                       u.page_permissions, COALESCE(u.is_approved, 1) AS is_approved, u.created_at,
+                                       s.name AS supervisor_name, s.username AS supervisor_username
+                                FROM users u
+                                LEFT JOIN users s ON s.id = u.direct_supervisor_id
+                                WHERE u.name LIKE %s OR u.username LIKE %s OR u.phone LIKE %s
+                                ORDER BY u.id ASC
                                 """,
                                 (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%")
                             )
                         else:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, hire_date, job_title,
-                                       is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                                       page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
-                                FROM users
-                                ORDER BY id ASC
+                                SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+                                       u.direct_supervisor_id,
+                                       u.is_admin, COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                                       u.page_permissions, COALESCE(u.is_approved, 1) AS is_approved, u.created_at,
+                                       s.name AS supervisor_name, s.username AS supervisor_username
+                                FROM users u
+                                LEFT JOIN users s ON s.id = u.direct_supervisor_id
+                                ORDER BY u.id ASC
                                 """
                             )
                         rows = cur.fetchall() or []
@@ -475,6 +481,7 @@ class AuthEmployeeMixin:
                 for row in rows:
                     uid = int(row.get('id') or 0)
                     factory_scope_ids = sorted(set(scope_map.get(uid, [])))
+                    supervisor_id = int(row['direct_supervisor_id']) if row.get('direct_supervisor_id') else None
                     items.append({
                         'id': row['id'],
                         'username': row['username'],
@@ -483,6 +490,8 @@ class AuthEmployeeMixin:
                         'birthday': row.get('birthday'),
                         'hire_date': self._parse_date_str(row.get('hire_date')) if row.get('hire_date') else None,
                         'job_title': (row.get('job_title') or '').strip(),
+                        'direct_supervisor_id': supervisor_id,
+                        'direct_supervisor_label': self._format_supervisor_label(row),
                         'is_admin': int(row.get('is_admin') or 0),
                         'can_grant_admin': int(row.get('can_grant_admin') or 0),
                         'is_approved': int(row.get('is_approved') or 0),
@@ -530,6 +539,13 @@ class AuthEmployeeMixin:
                 hire_date_raw = (data.get('hire_date') or '').strip()
                 hire_date = self._parse_date_str(hire_date_raw) if hire_date_raw else None
                 job_title = (data.get('job_title') or '').strip() or None
+                direct_supervisor_id = None
+                if 'direct_supervisor_id' in data:
+                    raw_supervisor = data.get('direct_supervisor_id')
+                    if raw_supervisor not in (None, '', 0, '0'):
+                        direct_supervisor_id = self._parse_int(raw_supervisor)
+                        if not direct_supervisor_id or direct_supervisor_id <= 0:
+                            return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
                 target_is_admin = 1 if data.get('is_admin') else 0
                 target_can_grant_admin = 1 if data.get('can_grant_admin') else 0
                 if target_is_admin and not self._can_manage_admin_permission(actor_record):
@@ -541,15 +557,26 @@ class AuthEmployeeMixin:
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        if direct_supervisor_id:
+                            cur.execute(
+                                """
+                                SELECT id FROM users
+                                WHERE id=%s AND COALESCE(is_approved, 1)=1
+                                LIMIT 1
+                                """,
+                                (direct_supervisor_id,),
+                            )
+                            if not cur.fetchone():
+                                return self.send_json({'status': 'error', 'message': '直属上级不存在或未批准'}, start_response)
                         pwd_hash = self._hash_user_password(password)
                         cur.execute(
                             """
                             INSERT INTO users (
                                 username, password_hash, name, phone, birthday,
-                                hire_date, job_title,
+                                hire_date, job_title, direct_supervisor_id,
                                 is_admin, can_grant_admin, page_permissions, is_approved
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
                             """,
                             (
                                 username,
@@ -559,6 +586,7 @@ class AuthEmployeeMixin:
                                 birthday,
                                 hire_date,
                                 job_title,
+                                direct_supervisor_id,
                                 target_is_admin,
                                 target_can_grant_admin,
                                 self._serialize_page_permissions(data.get('page_permissions'))
@@ -582,7 +610,7 @@ class AuthEmployeeMixin:
                 ):
                     return self.send_json({
                         'status': 'error',
-                        'message': '仅管理员可在员工管理中修改账号、姓名、生日、岗位或入职信息；请使用首页「编辑资料」',
+                        'message': '仅管理员可在员工管理中修改账号、姓名、生日、岗位、入职信息或直属上级；请使用首页「编辑资料」',
                     }, start_response)
 
                 username = (data.get('username') or '').strip()
@@ -625,6 +653,21 @@ class AuthEmployeeMixin:
                     updates.append('job_title=%s')
                     params.append((data.get('job_title') or '').strip() or None)
 
+                supervisor_id_to_set = None
+                has_direct_supervisor_payload = 'direct_supervisor_id' in data
+                if has_direct_supervisor_payload:
+                    if not user_is_admin:
+                        return self.send_json({'status': 'error', 'message': '仅管理员可修改直属上级'}, start_response)
+                    raw_supervisor = data.get('direct_supervisor_id')
+                    if raw_supervisor in (None, '', 0, '0'):
+                        supervisor_id_to_set = None
+                    else:
+                        supervisor_id_to_set = self._parse_int(raw_supervisor)
+                        if not supervisor_id_to_set or supervisor_id_to_set <= 0:
+                            return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
+                        if int(supervisor_id_to_set) == int(item_id):
+                            return self.send_json({'status': 'error', 'message': '不能将自己设为直属上级'}, start_response)
+
                 if 'page_permissions' in data:
                     if not user_is_admin:
                         return self.send_json({'status': 'error', 'message': '仅管理员可修改页面访问权限'}, start_response)
@@ -645,9 +688,8 @@ class AuthEmployeeMixin:
                     updates.append('can_grant_admin=%s')
                     params.append(1 if target_can_grant_admin else 0)
 
-                if not updates:
-                    if not has_factory_scope_payload:
-                        return self.send_json({'status': 'error', 'message': '无可更新字段'}, start_response)
+                if not updates and not has_factory_scope_payload and not has_direct_supervisor_payload:
+                    return self.send_json({'status': 'error', 'message': '无可更新字段'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -662,6 +704,22 @@ class AuthEmployeeMixin:
                         target_row = cur.fetchone() or {}
                         if not target_row:
                             return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
+
+                        if has_direct_supervisor_payload and supervisor_id_to_set:
+                            cur.execute(
+                                """
+                                SELECT id FROM users
+                                WHERE id=%s AND COALESCE(is_approved, 1)=1
+                                LIMIT 1
+                                """,
+                                (supervisor_id_to_set,),
+                            )
+                            if not cur.fetchone():
+                                return self.send_json({'status': 'error', 'message': '直属上级不存在或未批准'}, start_response)
+
+                        if has_direct_supervisor_payload:
+                            updates.append('direct_supervisor_id=%s')
+                            params.append(supervisor_id_to_set)
 
                         before_audit = {
                             'username': target_row.get('username'),
