@@ -1018,7 +1018,7 @@ class AmazonAdMixin:
             fields['subtype_id'] = self._parse_int(data.get('subtype_id'))
             fields['budget'] = self._parse_budget_value(data.get('budget'))
             bid_strategy, bid_err = self._normalize_campaign_bid_strategy(
-                data.get('bid_strategy'), required=True,
+                data.get('bid_strategy'), required=False,
             )
             if bid_err:
                 return None, bid_err
@@ -1547,7 +1547,7 @@ class AmazonAdMixin:
             ('策略', '—', '必填', '—', '仅活动可填；下拉：BE / BD / PC'),
             ('细分类', '—', '必填', '—', '仅活动可填；下拉为系统细分类'),
             ('预算', '—', '必填', '—', '仅活动可填'),
-            ('竞价策略', '—', '必填', '—', '仅活动可填；下拉：动态竞价-仅降低 / 动态竞价-提高和降低 / 固定竞价'),
+            ('竞价策略', '—', '选填', '—', '仅活动可填；部分类型可不填；下拉：动态竞价-仅降低 / 动态竞价-提高和降低 / 固定竞价'),
             ('归属广告组合名称', '—', '必填', '必填', '活动、组均须填写；下拉为系统广告组合'),
             ('归属广告活动名称', '—', '—', '必填', '仅组可填；须为对应组合下已存在的活动'),
             ('', '', '', '', '第2–4行为示例（彩色底纹），导入时自动跳过；请从第5行填写'),
@@ -1682,7 +1682,7 @@ class AmazonAdMixin:
                             payload['subtype_id'] = subtype_by_key.get(subtype_text)
                             payload['budget'] = cell_value(row, '预算') or ''
                             bid_strategy, bid_err = self._normalize_campaign_bid_strategy(
-                                cell_value(row, '竞价策略'), required=True,
+                                cell_value(row, '竞价策略'), required=False,
                             )
                             if bid_err:
                                 errors.append({'row': row_idx, 'message': bid_err})
