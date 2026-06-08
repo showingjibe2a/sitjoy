@@ -1058,7 +1058,7 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
-                        if (window.showAppToast) window.showAppToast(data.message || '批量保存失败', true, 3200);
+                        window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '批量保存失败', errors: data.errors });
                         return;
                     }
                     items.forEach(up => {
@@ -1072,10 +1072,10 @@
                     });
                     renderSalesGroupedTable(salesProductItems || []);
                     syncSalesPreviewSaveBar();
-                    if (window.showAppToast) window.showAppToast('预览修改已保存', false, 2200);
+                    window.showAppSaveResult({ action: 'save', message: '预览修改已保存' });
                 })
                 .catch(err => {
-                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
                 });
         }
 
@@ -1703,16 +1703,17 @@
             try {
                 const item = await resolveSalesParentRecord(parentId, parentCode);
                 if (!item || !item.id) {
-                    if (window.showAppToast) window.showAppToast('未找到父体记录，请先在父体管理中创建', true, 3200);
-                    else alert('未找到父体记录，请先在父体管理中创建');
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '未找到父体记录，请先在父体管理中创建' });
                     return;
                 }
                 fillSpParentEditForm(item);
                 document.getElementById('spParentEditModal').classList.add('active');
             } catch (err) {
-                const msg = (err && err.message) || '加载父体失败';
-                if (window.showAppToast) window.showAppToast(msg, true, 3200);
-                else alert(msg);
+                window.showAppSaveResult({
+                    action: 'save',
+                    isError: true,
+                    message: (err && err.message) || '加载父体失败',
+                });
             }
         }
 
@@ -1755,7 +1756,7 @@
                 closeSalesParentGroupEditModal();
                 await loadParentOptions();
                 await loadSalesProductList();
-                showTimeoutToast('父体已更新', false);
+                window.showAppSaveResult({ action: 'save', message: '父体已更新' });
             } catch (err) {
                 showSpParentEditStatus((err && err.message) || '保存失败', true);
             }
@@ -2378,7 +2379,7 @@
                 body: JSON.stringify({ id, product_status: normalized })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    showTimeoutToast(data.message || '状态更新失败');
+                    window.showAppSaveResult({ action: 'update', isError: true, message: data.message || '状态更新失败' });
                     return;
                 }
                 if (target) target.product_status = normalized;
@@ -2386,9 +2387,9 @@
                     salesProductDetailCache[String(id)].product_status = normalized;
                 }
                 renderSalesGroupedTable(salesProductItems || []);
-                showTimeoutToast(`状态已更新为：${productStatusLabel(normalized)}`);
+                window.showAppSaveResult({ action: 'update', message: `状态已更新为：${productStatusLabel(normalized)}` });
             }).catch(err => {
-                showTimeoutToast(`状态更新失败：${err}`);
+                window.showAppSaveResult({ action: 'update', isError: true, message: `状态更新失败：${err}` });
             });
         }
 
@@ -2725,7 +2726,7 @@
                                 it.is_deprecated = enabled ? 0 : 1;
                             }
                         });
-                        if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+                        window.showAppSaveResult({ action: 'update', message: enabled ? '已启用' : '已弃用' });
                     },
                 });
             }
@@ -3244,11 +3245,15 @@
                             .then(r => r.json())
                             .then(data => {
                                 if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '替换失败');
-                                window.showAppToast && window.showAppToast(data.message || '替换成功', false, 6000);
+                                window.showAppSaveResult({ action: 'save', message: data.message || '替换成功' });
                                 refreshMainImageList();
                                 if (editId) sjRefreshSalesProductListRowThumb(editId);
                             })
-                            .catch(err => window.showAppToast && window.showAppToast('替换失败：' + (err && err.message ? err.message : err), true, 10000))
+                            .catch(err => window.showAppSaveResult({
+                                action: 'save',
+                                isError: true,
+                                message: '替换失败：' + (err && err.message ? err.message : err),
+                            }))
                             .finally(() => window.hideAppUploadProgress && window.hideAppUploadProgress());
                     }
                 }
@@ -3773,7 +3778,7 @@
                     }
                 }
 
-                if (window.showAppToast) window.showAppToast('保存成功', false, 6000);
+                window.showAppSaveResult({ action: 'save' });
                 closeMainImageDescModal();
                 refreshMainImageList();
                 if (editId) sjRefreshSalesProductListRowThumb(editId);
@@ -3784,7 +3789,7 @@
                     statusDiv.className = 'status-message error';
                     statusDiv.style.display = 'block';
                 }
-                if (window.showAppToast) window.showAppToast(msg, true, 10000);
+                window.showAppSaveResult({ action: 'save', isError: true, message: msg });
             } finally {
                 if (window.hideAppUploadProgress) window.hideAppUploadProgress();
             }
@@ -3840,7 +3845,7 @@
         function toastNasMainImageSuccess(msg) {
             const text = String(msg || '').trim();
             if (!text) return;
-            window.showAppToast && window.showAppToast(text, false, 7000);
+            window.showAppSaveResult({ action: 'import', message: text });
         }
 
         function getNasMainImageModalScrollSnapshot() {
@@ -4884,7 +4889,7 @@
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
                     const rowRefreshId = method === 'PUT' ? Number(editId || 0) : Number(data.id || 0);
-                    try { showTimeoutToast('保存成功'); } catch (e) {}
+                    window.showAppSaveResult({ action: method === 'PUT' ? 'save' : 'create' });
                     closeModal();
                     if (method === 'PUT' && rowRefreshId) {
                         sjPatchSalesProductListRow(rowRefreshId).then((r) => {
@@ -4938,10 +4943,11 @@
                     }).then(r => r.json()).then(data => {
                         if (data.status === 'success') {
                             loadSalesProductList();
+                            window.showAppSaveResult({ action: 'delete' });
                         } else {
-                            showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
+                            window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                         }
-                    }).catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                    }).catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
                 }
             });
         }
@@ -5116,7 +5122,7 @@
                         });
                         loadSalesProductList();
                     } else if (data.status === 'timeout') {
-                        showTimeoutToast(data.message || '请求超时，请稍后刷新核对结果。');
+                        window.showAppSaveResult({ action: 'import', isError: true, message: data.message || '请求超时，请稍后刷新核对结果。' });
                         setTimeout(loadSalesProductList, 10000);
                     } else {
                         let debugMsg = '';

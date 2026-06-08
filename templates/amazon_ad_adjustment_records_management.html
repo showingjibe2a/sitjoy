@@ -103,14 +103,8 @@
             return d.toLocaleString('zh-CN');
         }
 
-        function aaToast(message, isError) {
-            const text = String(message || '').trim();
-            if (!text) return;
-            if (window.showAppToast) {
-                window.showAppToast(text, !!isError, isError ? 6500 : 4000);
-            } else {
-                alert(text);
-            }
+        function aaSaveResult(options) {
+            if (window.showAppSaveResult) window.showAppSaveResult(options);
         }
 
         function recordSearchText(item) {
@@ -213,13 +207,13 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') {
-                    aaToast(data.message || '删除失败', true);
+                    aaSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                     return;
                 }
-                aaToast('已删除', false);
                 loadRecords();
+                aaSaveResult({ action: 'delete' });
             })
-            .catch(err => aaToast('删除失败: ' + err, true));
+            .catch(err => aaSaveResult({ action: 'delete', isError: true, message: '删除失败: ' + err }));
         }
 
         function loadRecords() {
@@ -236,7 +230,7 @@
                         if (tbody) {
                             tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         }
-                        aaToast(data.message || '加载失败', true);
+                        if (window.showAppToast) window.showAppToast(data.message || '加载失败', true, 6500);
                         return;
                     }
                     recordsRaw = data.items || [];
@@ -246,7 +240,7 @@
                     if (tbody) {
                         tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                     }
-                    aaToast('加载失败: ' + err, true);
+                    if (window.showAppToast) window.showAppToast('加载失败: ' + err, true, 6500);
                 });
         }
 
@@ -293,15 +287,15 @@
                     return fd;
                 })() }).then(r => r.json()).then(data => {
                     if (data.status === 'success') {
-                        aaToast(`导入完成：新增 ${data.created || 0} 条`, false);
+                        aaSaveResult({ action: 'import', message: `导入完成：新增 ${data.created || 0} 条` });
                         loadRecords();
                     } else {
-                        aaToast(data.message || '导入失败', true);
+                        aaSaveResult({ action: 'import', isError: true, message: data.message || '导入失败' });
                     }
                     return data;
                 });
 
-            runUpload.catch(err => aaToast('导入失败: ' + err, true));
+            runUpload.catch(err => aaSaveResult({ action: 'import', isError: true, message: '导入失败: ' + err }));
         }
 
         document.getElementById('recordSearchInput')?.addEventListener('keydown', function (e) {

@@ -429,12 +429,13 @@
                 body: JSON.stringify(payload)
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    showStatus(data.message || '保存失败', true);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
                     return;
                 }
                 closeModal();
                 loadList();
-            }).catch(err => showStatus('请求失败: ' + err, true));
+                window.showAppSaveResult({ action: editId ? 'save' : 'create' });
+            }).catch(err => window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err }));
         }
 
         async function deleteItem(id) {
@@ -448,11 +449,12 @@
                 body: JSON.stringify({ id })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    alert(data.message || '删除失败');
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                     return;
                 }
                 loadList();
-            }).catch(err => alert('删除失败: ' + err));
+                window.showAppSaveResult({ action: 'delete' });
+            }).catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '删除失败: ' + err }));
         }
 
         function downloadProductTemplate() {
@@ -469,9 +471,7 @@
         function uploadProductTemplate(file) {
             if (!file) return;
             if (!window.uploadBatchImportFile) {
-                const msg = '批量上传组件未加载，请刷新页面后重试';
-                if (window.showAppToast) window.showAppToast(msg, true);
-                else alert(msg);
+                window.showAppSaveResult({ action: 'import', isError: true, message: '批量上传组件未加载，请刷新页面后重试' });
                 return;
             }
             window.uploadBatchImportFile({
@@ -491,9 +491,11 @@
                     if (!handled && data.status === 'success') loadList();
                 })
                 .catch(err => {
-                    const msg = '导入失败: ' + (err && err.message ? err.message : err);
-                    if (window.showAppToast) window.showAppToast(msg, true, 8000);
-                    else alert(msg);
+                    window.showAppSaveResult({
+                        action: 'import',
+                        isError: true,
+                        message: '导入失败: ' + (err && err.message ? err.message : err),
+                    });
                 });
         }
 

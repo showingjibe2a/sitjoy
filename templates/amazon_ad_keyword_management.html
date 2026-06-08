@@ -291,15 +291,19 @@
         let relevanceWalkQueue = [];
         let relevanceWalkIndex = 0;
 
-        function notifyError(message) {
-            if (window.showAppToast) {
-                window.showAppToast(String(message || '操作失败'), true, 3200);
+        function notifyError(message, action) {
+            if (window.showAppSaveResult) {
+                window.showAppSaveResult({ action: action || 'save', isError: true, message: String(message || '操作失败') });
                 return;
             }
-            console.error(message);
+            if (window.showAppToast) window.showAppToast(String(message || '操作失败'), true, 0);
         }
 
-        function notifySuccess(message) {
+        function notifySuccess(message, action) {
+            if (window.showAppSaveResult) {
+                window.showAppSaveResult({ action: action || 'save', message: String(message || '') });
+                return;
+            }
             if (window.showAppToast) {
                 window.showAppToast(String(message || '操作成功'), false, 2600);
                 return;
@@ -598,6 +602,7 @@
             }
 
             let method = 'POST';
+            const wasEdit = !!editId;
             if (editId) {
                 method = 'PUT';
                 payload.id = editId;
@@ -611,10 +616,17 @@
                 if (data.status === 'success') {
                     closeModal();
                     loadOptions().then(loadKeywordList);
+                    window.showAppSaveResult && window.showAppSaveResult({ action: wasEdit ? 'save' : 'create' });
                 } else {
-                    showModalStatus(data.message || '保存失败', true);
+                    window.showAppSaveResult
+                        ? window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' })
+                        : showModalStatus(data.message || '保存失败', true);
                 }
-            }).catch(err => showModalStatus('请求失败: ' + err, true));
+            }).catch(err => {
+                window.showAppSaveResult
+                    ? window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err })
+                    : showModalStatus('请求失败: ' + err, true);
+            });
         }
 
         async function deleteKeyword(id) {
@@ -630,8 +642,9 @@
                 if (data.status === 'success') {
                     selectedKeywordIds.delete(String(id));
                     loadOptions().then(loadKeywordList);
+                    notifySuccess('', 'delete');
                 } else {
-                    notifyError(data.message || '删除失败');
+                    notifyError(data.message || '删除失败', 'delete');
                 }
             });
         }
@@ -662,8 +675,9 @@
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
                     loadOptions().then(loadKeywordList);
+                    notifySuccess('批量标签已更新', 'update');
                 } else {
-                    notifyError(data.message || '批量标签更新失败');
+                    notifyError(data.message || '批量标签更新失败', 'update');
                 }
             });
         }
@@ -696,8 +710,9 @@
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
                     loadKeywordList();
+                    notifySuccess('批量相关性已更新', 'update');
                 } else {
-                    notifyError(data.message || '批量相关性更新失败');
+                    notifyError(data.message || '批量相关性更新失败', 'update');
                 }
             });
         }

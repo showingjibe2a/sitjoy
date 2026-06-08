@@ -243,11 +243,12 @@
             .then(data => {
                 if (data.status === 'success') {
                     loadShopList();
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
-                    alert(data.message || '删除失败');
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                 }
             })
-            .catch(err => alert('请求失败: ' + err));
+            .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
 
         function renderPlatformTypeRadios(selectedValue) {

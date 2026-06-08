@@ -793,13 +793,15 @@
                 });
         }
 
-        function aaToast(message, isError) {
+        function aaSaveResult(options) {
+            if (window.showAppSaveResult) window.showAppSaveResult(options);
+        }
+
+        function aaValidationToast(message) {
             const text = String(message || '').trim();
             if (!text) return;
             if (window.showAppToast) {
-                window.showAppToast(text, !!isError, isError ? 6500 : 4000);
-            } else {
-                alert(text);
+                window.showAppToast(text, true, 6500);
             }
         }
 
@@ -983,7 +985,7 @@
                         loadAdList();
                     }
                 })
-                .catch(err => aaToast('导入失败: ' + err, true));
+                .catch(err => aaSaveResult({ action: 'import', isError: true, message: '导入失败: ' + err }));
         }
 
         function escapeHtml(text) {
@@ -1360,7 +1362,7 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
-                        aaToast(data.message || '加载默认信息失败', true);
+                        if (window.showAppToast) window.showAppToast(data.message || '加载默认信息失败', true, 6500);
                         return;
                     }
                     const adInfo = data.ad_info || {};
@@ -1390,7 +1392,9 @@
                     setAttributionChecked(false);
                     updateSubmitButtonState();
                 })
-                .catch(err => aaToast('加载默认信息失败: ' + err, true));
+                .catch(err => {
+                    if (window.showAppToast) window.showAppToast('加载默认信息失败: ' + err, true, 6500);
+                });
         }
 
         function buildPayload(isQuickSubmit) {
@@ -1444,10 +1448,13 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') {
-                    aaToast(data.message || '提交失败', true);
+                    aaSaveResult({ action: 'create', isError: true, message: data.message || '提交失败' });
                     return;
                 }
-                aaToast(isQuickSubmit ? '快速提交成功' : '提交并记录成功', false);
+                aaSaveResult({
+                    action: 'create',
+                    message: isQuickSubmit ? '快速提交成功' : '提交并记录成功',
+                });
                 if (typeof onSuccess === 'function') onSuccess();
                 updateRecordsLink();
                 loadAdjustmentPeriodList();
@@ -1463,14 +1470,14 @@
                         });
                 }
             })
-            .catch(err => aaToast('提交失败: ' + err, true))
+            .catch(err => aaSaveResult({ action: 'create', isError: true, message: '提交失败: ' + err }))
             .finally(() => updateSubmitButtonState());
         }
 
         function submitRecord() {
             const errs = validatePhase1();
             if (errs.length) {
-                aaToast(errs[0], true);
+                aaValidationToast(errs[0]);
                 return;
             }
             openFullSubmitModal();
@@ -1479,13 +1486,13 @@
         function confirmFullSubmit() {
             const phase1 = validatePhase1();
             if (phase1.length) {
-                aaToast(phase1[0], true);
+                aaValidationToast(phase1[0]);
                 closeFullSubmitModal();
                 return;
             }
             const phase2 = validatePhase2();
             if (phase2.length) {
-                aaToast(phase2[0], true);
+                aaValidationToast(phase2[0]);
                 return;
             }
             postRecord(false, closeFullSubmitModal);
@@ -1494,7 +1501,7 @@
         function quickSubmit() {
             const errs = validatePhase1();
             if (errs.length) {
-                aaToast(errs[0], true);
+                aaValidationToast(errs[0]);
                 return;
             }
             postRecord(true);
@@ -1544,7 +1551,7 @@
                             if (newId) selectAd(newId);
                         });
                     },
-                    showSuccessToast: (msg) => aaToast(msg || '保存成功', false),
+                    showSuccessToast: (msg) => aaSaveResult({ action: 'save', message: msg || undefined }),
                 });
             }
             loadAdList();

@@ -289,24 +289,14 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
-                    if (typeof window.showAppToast === 'function') {
-                        window.showAppToast('已删除该货号', false, 3200);
-                    }
                     loadSkuList();
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
-                    if (typeof window.showAppToast === 'function') {
-                        window.showAppToast(data.message || '删除失败', true, 0);
-                    } else {
-                        alert(data.message || '删除失败');
-                    }
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                 }
             })
             .catch(err => {
-                if (typeof window.showAppToast === 'function') {
-                    window.showAppToast('请求失败: ' + err, true, 0);
-                } else {
-                    alert('请求失败: ' + err);
-                }
+                window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err });
             });
         }
 

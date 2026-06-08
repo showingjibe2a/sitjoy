@@ -363,8 +363,9 @@
                     renderRegionSegment();
                 }
                 renderDraft(data);
+                window.showAppSaveResult({ action: 'create' });
             } catch (e) {
-                alert(e.message || String(e));
+                window.showAppSaveResult({ action: 'create', isError: true, message: e.message || String(e) });
             } finally {
                 loading.classList.remove('is-open');
             }

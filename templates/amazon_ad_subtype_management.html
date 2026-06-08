@@ -701,6 +701,7 @@
                 if (data.status === 'success') {
                     closeSubtypeModal();
                     loadSubtypeList();
+                    window.showAppSaveResult({ action: subtypeEditId ? 'save' : 'create' });
                 } else {
                     showSubtypeStatus(data.message || '操作失败', true);
                 }
@@ -724,6 +725,7 @@
                 if (data.status === 'success') {
                     closeSubtypeModal();
                     loadSubtypeList();
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
                     showSubtypeStatus(data.message || '删除失败', true);
                 }
@@ -844,6 +846,7 @@
                 if (data.status === 'success') {
                     closeOpTypeModal();
                     Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                    window.showAppSaveResult({ action: opTypeEditId ? 'save' : 'create' });
                 } else {
                     showOpTypeStatus(data.message || '操作失败', true);
                 }
@@ -867,6 +870,7 @@
                 if (data.status === 'success') {
                     closeOpTypeModal();
                     Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
                     showOpTypeStatus(data.message || '删除失败', true);
                 }
@@ -888,11 +892,12 @@
             .then(data => {
                 if (data.status === 'success') {
                     Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
-                    alert(data.message || '删除失败');
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                 }
             })
-            .catch(err => alert('请求失败: ' + err));
+            .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
 
         function setInlineSaveBarVisible(visible) {
@@ -1029,13 +1034,14 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') {
-                    alert(data.message || '保存失败');
+                    window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
                     return;
                 }
                 opTypeInlineDraft = {};
                 Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                window.showAppSaveResult({ action: 'save' });
             })
-            .catch(err => alert('请求失败: ' + err));
+            .catch(err => window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err }));
         }
 
         function renderSubtypeTable() {
@@ -1109,11 +1115,12 @@
             .then(data => {
                 if (data.status === 'success') {
                     loadSubtypeList();
+                    window.showAppSaveResult({ action: 'delete' });
                 } else {
-                    alert(data.message || '删除失败');
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                 }
             })
-            .catch(err => alert('请求失败: ' + err));
+            .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
 
         function initData() {

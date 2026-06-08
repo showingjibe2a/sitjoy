@@ -270,7 +270,7 @@
                 .then(r => r.json())
                 .then(d => {
                     if (d.status !== 'success') {
-                        window.showAppToast && window.showAppToast(d.message || '保存失败', true, 4000);
+                        window.showAppSaveResult({ action: 'save', isError: true, message: d.message || '保存失败', errors: d.errors });
                         if (saveBtn) {
                             saveBtn.disabled = false;
                             saveBtn.textContent = '统一保存';
@@ -278,7 +278,7 @@
                         return;
                     }
                     whWayfairDraft = {};
-                    window.showAppToast && window.showAppToast(`已保存 ${Number(d.updated || items.length)} 条`, false, 2500);
+                    window.showAppSaveResult({ action: 'save', message: `已保存 ${Number(d.updated || items.length)} 条` });
                     loadList();
                     if (saveBtn) {
                         saveBtn.disabled = false;
@@ -286,7 +286,7 @@
                     }
                 })
                 .catch(err => {
-                    window.showAppToast && window.showAppToast('保存失败: ' + err, true, 4000);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '保存失败: ' + err });
                     if (saveBtn) {
                         saveBtn.disabled = false;
                         saveBtn.textContent = '统一保存';
@@ -427,12 +427,13 @@
                         body: JSON.stringify({ ordered_ids: ids.map(x => Number(x)) })
                     }).then(r=>r.json()).then(data=>{
                         if(data.status!=='success'){
-                            window.showAppToast && window.showAppToast(data.message || '区域排序失败', true);
+                            window.showAppSaveResult({ action: 'update', isError: true, message: data.message || '区域排序失败' });
                             return;
                         }
                         loadDestinationRegions().then(loadList);
+                        window.showAppSaveResult({ action: 'update', message: '区域排序已更新' });
                     }).catch(err => {
-                        window.showAppToast && window.showAppToast('区域排序失败: ' + err, true);
+                        window.showAppSaveResult({ action: 'update', isError: true, message: '区域排序失败: ' + err });
                     });
                 });
                 wrap.appendChild(label);
@@ -516,6 +517,7 @@
             fetch('/api/logistics-destination-region', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
                 .then(r=>r.json()).then(data=>{
                     if(data.status!=='success'){ showRegionStatus(data.message||'保存失败', true); return; }
+                    window.showAppSaveResult({ action: regionEditId ? 'save' : 'create' });
                     const targetId = regionEditId || data.id || '';
                     loadDestinationRegions().then(() => {
                         if(targetId){
@@ -537,6 +539,7 @@
             fetch('/api/logistics-supplier', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
                 .then(r=>r.json()).then(data=>{
                     if(data.status!=='success'){ showSupplierStatus(data.message||'保存失败', true); return; }
+                    window.showAppSaveResult({ action: supplierEditId ? 'save' : 'create' });
                     const createdOrEditedId = supplierEditId || data.id || '';
                     loadSuppliers().then(() => {
                         if(createdOrEditedId){
@@ -565,7 +568,14 @@
             let method = 'POST';
             if(editId){ payload.id = editId; method = 'PUT'; }
             fetch('/api/logistics-warehouse', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-                .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status==='success'){
+                        window.showAppSaveResult({ action: editId ? 'save' : 'create' });
+                        setTimeout(()=>{ closeModal(); loadList(); }, 300);
+                    } else {
+                        showStatus(data.message||'操作失败', true);
+                    }
+                })
                 .catch(err=>showStatus('请求失败: '+err, true));
         }
         async function removeItem(id){
@@ -574,8 +584,15 @@
                 : false;
             if(!ok) return;
             fetch('/api/logistics-warehouse', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
-                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message||'删除失败'); })
-                .catch(err=>alert('删除失败: '+err));
+                .then(r=>r.json()).then(data=>{
+                    if(data.status==='success'){
+                        loadList();
+                        window.showAppSaveResult({ action: 'delete' });
+                    } else {
+                        window.showAppSaveResult({ action: 'delete', isError: true, message: data.message||'删除失败' });
+                    }
+                })
+                .catch(err=>window.showAppSaveResult({ action: 'delete', isError: true, message: '删除失败: '+err }));
         }
         function loadSuppliers(){
             return fetch('/api/logistics-supplier').then(r=>r.json()).then(data=>{
@@ -616,14 +633,14 @@
                 body: JSON.stringify({ id, is_enabled: isEnabled ? 1 : 0 })
             }).then(r=>r.json()).then(data=>{
                 if(data.status==='success'){
-                    window.showAppToast && window.showAppToast(`已${isEnabled ? '启用' : '停用'}仓库`, false);
+                    window.showAppSaveResult({ action: 'update', message: `已${isEnabled ? '启用' : '停用'}仓库` });
                     loadList();
                 } else {
-                    window.showAppToast && window.showAppToast(data.message || '更新失败', true);
+                    window.showAppSaveResult({ action: 'update', isError: true, message: data.message || '更新失败' });
                     loadList();
                 }
             }).catch(err=>{
-                window.showAppToast && window.showAppToast('更新失败: '+err, true);
+                window.showAppSaveResult({ action: 'update', isError: true, message: '更新失败: '+err });
                 loadList();
             });
         }

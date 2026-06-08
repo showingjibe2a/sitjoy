@@ -87,8 +87,15 @@
                 : false;
             if (!ok) return;
             fetch('/api/certification', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) })
-                .then(r => r.json()).then(data => { if (data.status === 'success') loadCertificationList(); else alert(data.message || '删除失败'); })
-                .catch(err => alert('请求失败: ' + err));
+                .then(r => r.json()).then(data => {
+                    if (data.status === 'success') {
+                        loadCertificationList();
+                        window.showAppSaveResult({ action: 'delete' });
+                    } else {
+                        window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
+                    }
+                })
+                .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
         function loadCertificationList() {
             const q = document.getElementById('searchInput').value.trim();

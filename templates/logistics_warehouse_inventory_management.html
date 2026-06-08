@@ -192,7 +192,14 @@
             let method = 'POST';
             if(editId){ payload.id = editId; method = 'PUT'; }
             fetch('/api/logistics-warehouse-inventory', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-                .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status==='success'){
+                        window.showAppSaveResult({ action: editId ? 'save' : 'create' });
+                        setTimeout(()=>{ closeModal(); loadList(); }, 300);
+                    } else {
+                        showStatus(data.message||'操作失败', true);
+                    }
+                })
                 .catch(err=>showStatus('请求失败: '+err, true));
         }
         async function removeItem(id){
@@ -201,8 +208,15 @@
                 : false;
             if(!ok) return;
             fetch('/api/logistics-warehouse-inventory', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
-                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message || '删除失败'); })
-                .catch(err=>alert('删除失败: '+err));
+                .then(r=>r.json()).then(data=>{
+                    if(data.status==='success'){
+                        loadList();
+                        window.showAppSaveResult({ action: 'delete' });
+                    } else {
+                        window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
+                    }
+                })
+                .catch(err=>window.showAppSaveResult({ action: 'delete', isError: true, message: '删除失败: '+err }));
         }
         function loadList(){
             const q = document.getElementById('searchInput').value.trim();

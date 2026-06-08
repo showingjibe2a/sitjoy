@@ -3597,8 +3597,7 @@
             });
             const norm = normalizeRegionStockRatios(raw);
             if (Math.abs(norm.sum - 100) >= 0.01) {
-                if (window.showAppToast) window.showAppToast('各区域比例合计须为 100%', true, 0);
-                else alert('各区域比例合计须为 100%');
+                window.showAppToast('各区域比例合计须为 100%', true, 0);
                 return false;
             }
             state.sfShipPlan.regionRatios = norm.ratios;

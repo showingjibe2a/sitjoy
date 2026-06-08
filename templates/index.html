@@ -2122,23 +2122,19 @@
             const related_platform_type_ids = getTodoSelectedPlatformTypeIds();
             
             if (!title || !start_date || !todo_type_id) {
-                if (window.showAppToast) window.showAppToast('请填写事项标题、开始日期，并选择待办类型', true, 0);
-                else alert('请填写事项标题、开始日期，并选择待办类型');
+                window.showAppToast('请填写事项标题、开始日期，并选择待办类型', true, 0);
                 return;
             }
             if (!is_recurring && !due_date) {
-                if (window.showAppToast) window.showAppToast('非循环任务必须填写截止日期', true, 0);
-                else alert('非循环任务必须填写截止日期');
+                window.showAppToast('非循环任务必须填写截止日期', true, 0);
                 return;
             }
             if (is_recurring && (!reminder_interval_days || reminder_interval_days <= 0)) {
-                if (window.showAppToast) window.showAppToast('循环任务必须填写提醒间隔（天）', true, 0);
-                else alert('循环任务必须填写提醒间隔（天）');
+                window.showAppToast('循环任务必须填写提醒间隔（天）', true, 0);
                 return;
             }
             if (is_completed && String(completed_at_local || '').trim() && !completed_at) {
-                if (window.showAppToast) window.showAppToast('完成时间无效，请重新选择或清空', true, 0);
-                else alert('完成时间无效，请重新选择或清空');
+                window.showAppToast('完成时间无效，请重新选择或清空', true, 0);
                 return;
             }
             
@@ -2172,7 +2168,7 @@
                 
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    if (window.showAppToast) window.showAppToast('保存成功', false, 1800);
+                    window.showAppSaveResult({ action: isEdit ? 'save' : 'create' });
                     closeTodoModal();
                     if (data.item) {
                         mergeTodoIntoCaches(data.item);
@@ -2182,14 +2178,14 @@
                         loadTodos().then(() => refreshCalendarFromCache());
                     }
                 } else {
-                    const msg = data.message || '保存失败';
-                    if (window.showAppToast) window.showAppToast(msg, true, 0);
-                    else alert(msg);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
                 }
             } catch (err) {
-                const msg = '请求失败：' + (err && err.message ? err.message : '');
-                if (window.showAppToast) window.showAppToast(msg, true, 0);
-                else alert(msg);
+                window.showAppSaveResult({
+                    action: 'save',
+                    isError: true,
+                    message: '请求失败：' + (err && err.message ? err.message : ''),
+                });
             }
         }
 
@@ -2559,13 +2555,17 @@
                     await loadTodos({ skipRecurringReset: true });
                     refreshCalendarFromCache();
                 }
-                if (window.showAppToast) window.showAppToast('已标记为已完成', false, 1600);
+                window.showAppSaveResult({ action: 'update', message: '已标记为已完成' });
             } catch (err) {
                 if (prev) {
                     mergeTodoIntoCaches(prev);
                     renderTodoTable(window.homeTodosCache || []);
                 }
-                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
+                window.showAppSaveResult({
+                    action: 'update',
+                    isError: true,
+                    message: err && err.message ? err.message : '更新失败',
+                });
             }
         }
 
@@ -2592,9 +2592,13 @@
                     await loadTodos({ skipRecurringReset: true });
                     refreshCalendarFromCache();
                 }
-                if (window.showAppToast) window.showAppToast('完成时间已保存', false, 1400);
+                window.showAppSaveResult({ action: 'save', message: '完成时间已保存' });
             } catch (err) {
-                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '保存失败', true, 0);
+                window.showAppSaveResult({
+                    action: 'save',
+                    isError: true,
+                    message: err && err.message ? err.message : '保存失败',
+                });
             }
         }
 
@@ -3064,16 +3068,18 @@
                                     if (!data || data.status !== 'success') {
                                         throw new Error((data && data.message) || '删除失败');
                                     }
-                                    if (window.showAppToast) {
-                                        const msg = String(data.delete_scope || choice.delete_scope) === 'all'
-                                            ? '任务已删除（含所有被指派人）'
-                                            : '已删除你自己的任务';
-                                        window.showAppToast(msg, false, 1800);
-                                    }
+                                    const msg = String(data.delete_scope || choice.delete_scope) === 'all'
+                                        ? '任务已删除（含所有被指派人）'
+                                        : '已删除你自己的任务';
+                                    window.showAppSaveResult({ action: 'delete', message: msg });
                                     loadTodos().then(() => refreshCalendarFromCache());
                                 })
                                 .catch(err => {
-                                    if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '删除失败', true, 0);
+                                    window.showAppSaveResult({
+                                        action: 'delete',
+                                        isError: true,
+                                        message: err && err.message ? err.message : '删除失败',
+                                    });
                                 });
                         });
                         return;
@@ -3099,10 +3105,14 @@
                                 } else {
                                     loadTodos({ skipRecurringReset: true }).then(() => refreshCalendarFromCache());
                                 }
-                                if (window.showAppToast) window.showAppToast('已更新为未完成', false, 1800);
+                                window.showAppSaveResult({ action: 'update', message: '已更新为未完成' });
                             })
                             .catch(err => {
-                                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
+                                window.showAppSaveResult({
+                                    action: 'update',
+                                    isError: true,
+                                    message: err && err.message ? err.message : '更新失败',
+                                });
                             });
                         return;
                     }

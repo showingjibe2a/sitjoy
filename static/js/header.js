@@ -1135,18 +1135,53 @@
     }
 
     function showAppResultPanel(options){
-        // 已废弃：统一用 toast。错误 toast 不自动关闭（duration=0）。
-        const opt = options && typeof options === 'object' ? options : { title: '处理结果', summary: String(options || '') };
-        const title = String(opt.title || '处理结果').trim();
-        const summary = String(opt.summary || '').trim();
-        const details = Array.isArray(opt.details) ? opt.details : [];
-        const isError = !!opt.isError;
-        const parts = [];
-        if(title) parts.push(title);
-        if(summary) parts.push(summary);
-        if(details.length) parts.push(details.slice(0, 8).map(x => String(x || '')).join('\n'));
-        const msg = parts.filter(Boolean).join('：').replace(/：\n/g, '\n');
-        showAppToast(msg, isError, isError ? 0 : 4200);
+        showAppSaveResult(options);
+    }
+
+    /** 数据写入库后的统一右下角结果提示（成功自动收起，失败常驻可手动关闭） */
+    function showAppSaveResult(options){
+        const opt = options && typeof options === 'object' ? options : { message: String(options || '') };
+        const isError = !!opt.isError || opt.success === false;
+        const actionLabels = {
+            save: ['保存成功', '保存失败'],
+            delete: ['删除成功', '删除失败'],
+            update: ['更新成功', '更新失败'],
+            import: ['导入成功', '导入失败'],
+            create: ['创建成功', '创建失败'],
+        };
+        const action = String(opt.action || 'save').trim().toLowerCase();
+        const labels = actionLabels[action] || ['操作成功', '操作失败'];
+        let title = String(opt.title || '').trim();
+        if(!title) title = isError ? labels[1] : labels[0];
+
+        const message = String(opt.message || opt.summary || '').trim();
+        const details = [];
+        if(Array.isArray(opt.details)){
+            opt.details.forEach(item => {
+                const text = String(item || '').trim();
+                if(text) details.push(text);
+            });
+        }
+        if(Array.isArray(opt.errors)){
+            opt.errors.forEach(err => {
+                if(!err) return;
+                if(typeof err === 'string'){
+                    const text = String(err).trim();
+                    if(text) details.push(text);
+                    return;
+                }
+                const row = err.row || err.id || err.sku || '-';
+                const msg = err.error || err.message || '失败';
+                details.push(`${row}: ${msg}`);
+            });
+        }
+
+        const lines = [title];
+        if(message) lines.push(message);
+        if(details.length) lines.push(details.filter(Boolean).slice(0, 10).join('\n'));
+        const text = lines.filter(Boolean).join('\n');
+        const duration = opt.duration !== undefined ? Number(opt.duration) : (isError ? 0 : 2800);
+        showAppToast(text, isError, Number.isFinite(duration) ? duration : (isError ? 0 : 2800));
     }
 
     function ensureUploadProgressPanel(){
@@ -7242,6 +7277,7 @@
         initOptionalDateInputs(document);
     };
     window.showAppResultPanel = showAppResultPanel;
+    window.showAppSaveResult = showAppSaveResult;
     window.showAppUploadProgress = showAppUploadProgress;
     window.hideAppUploadProgress = hideAppUploadProgress;
     window.uploadBatchImportFile = uploadBatchImportFile;
@@ -8128,6 +8164,7 @@
         window.showAppToast = function(message, isError, duration){
             showAppToast(message, !!isError, duration);
         };
+        window.showAppSaveResult = showAppSaveResult;
         window.downloadTemplateWithIds = function(endpoint, ids, fallbackName){
             downloadTemplateWithIds(endpoint, ids, fallbackName).catch(err => {
                 const msg = err && err.message ? err.message : '下载失败';

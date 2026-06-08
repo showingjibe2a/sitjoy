@@ -240,9 +240,12 @@
                 .then(r => r.json())
                 .then(data => {
                     if (!data || data.status !== 'success') {
-                        const msg = (data && data.message) || '批量保存失败';
-                        if (window.showAppToast) window.showAppToast(msg, true, 3200);
-                        else alert(msg);
+                        window.showAppSaveResult({
+                            action: 'save',
+                            isError: true,
+                            message: (data && data.message) || '批量保存失败',
+                            errors: data && data.errors,
+                        });
                         return;
                     }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
@@ -253,14 +256,15 @@
                     });
                     renderTable(rowsCache);
                     syncDeliveryBidSaveBar();
-                    const summary = `已保存 ${data.updated || 0} 条竞价${errCount ? `，失败 ${errCount} 条` : ''}`;
-                    if (window.showAppToast) window.showAppToast(summary, errCount > 0, 2800);
-                    else alert(summary);
+                    window.showAppSaveResult({
+                        action: 'save',
+                        isError: errCount > 0,
+                        message: `已保存 ${data.updated || 0} 条竞价${errCount ? `，失败 ${errCount} 条` : ''}`,
+                        errors: data.errors,
+                    });
                 })
                 .catch(err => {
-                    const msg = '请求失败: ' + err;
-                    if (window.showAppToast) window.showAppToast(msg, true, 3200);
-                    else alert(msg);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
                 });
         }
 
@@ -418,11 +422,12 @@
                 body: JSON.stringify({ id, status })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    alert(data.message || '状态更新失败');
+                    window.showAppSaveResult({ action: 'update', isError: true, message: data.message || '状态更新失败' });
                     return;
                 }
                 loadList();
-            }).catch(err => alert('状态更新失败: ' + err));
+                window.showAppSaveResult({ action: 'update', message: '状态已更新' });
+            }).catch(err => window.showAppSaveResult({ action: 'update', isError: true, message: '状态更新失败: ' + err }));
         }
 
         function loadList() {
@@ -503,6 +508,7 @@
             lastSelectedAdItemId = String(payload.ad_item_id);
 
             const method = editId ? 'PUT' : 'POST';
+            const wasEdit = !!editId;
             if (editId) payload.id = editId;
             fetch(DELIVERY_API, {
                 method,
@@ -510,12 +516,13 @@
                 body: JSON.stringify(payload)
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    showStatus(data.message || '保存失败', true);
+                    window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
                     return;
                 }
                 closeModal();
                 loadList();
-            }).catch(err => showStatus('请求失败: ' + err, true));
+                window.showAppSaveResult({ action: wasEdit ? 'save' : 'create' });
+            }).catch(err => window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err }));
         }
 
         async function deleteItem(id) {
@@ -529,11 +536,12 @@
                 body: JSON.stringify({ id })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    alert(data.message || '删除失败');
+                    window.showAppSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                     return;
                 }
                 loadList();
-            }).catch(err => alert('删除失败: ' + err));
+                window.showAppSaveResult({ action: 'delete' });
+            }).catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '删除失败: ' + err }));
         }
 
         function downloadDeliveryTemplate() {
@@ -550,9 +558,7 @@
         function uploadDeliveryTemplate(file) {
             if (!file) return;
             if (!window.uploadBatchImportFile) {
-                const msg = '批量上传组件未加载，请刷新页面后重试';
-                if (window.showAppToast) window.showAppToast(msg, true);
-                else alert(msg);
+                window.showAppSaveResult({ action: 'import', isError: true, message: '批量上传组件未加载，请刷新页面后重试' });
                 return;
             }
             window.uploadBatchImportFile({
@@ -572,9 +578,11 @@
                     if (!handled && data.status === 'success') loadList();
                 })
                 .catch(err => {
-                    const msg = '导入失败: ' + (err && err.message ? err.message : err);
-                    if (window.showAppToast) window.showAppToast(msg, true, 8000);
-                    else alert(msg);
+                    window.showAppSaveResult({
+                        action: 'import',
+                        isError: true,
+                        message: '导入失败: ' + (err && err.message ? err.message : err),
+                    });
                 });
         }
 
