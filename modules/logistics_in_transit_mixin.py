@@ -396,6 +396,7 @@ class LogisticsInTransitMixin:
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
                 color_keyword = (query_params.get('color', [''])[0] or '').strip()
+                forwarder_id = self._parse_int(query_params.get('forwarder_id', [''])[0])
                 page = self._parse_int(query_params.get('page', ['1'])[0]) or 1
                 page_size = self._parse_int(query_params.get('page_size', ['50'])[0]) or 50
                 page = max(1, page)
@@ -514,6 +515,9 @@ class LogisticsInTransitMixin:
                                 """
                             )
                             params.append(like_color)
+                        if forwarder_id:
+                            filters.append('t.forwarder_id=%s')
+                            params.append(forwarder_id)
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
 
                         total = None
