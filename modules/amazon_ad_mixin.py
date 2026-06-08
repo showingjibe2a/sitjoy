@@ -78,6 +78,98 @@ class AmazonAdMixin:
             out.append(item)
         return out
 
+    def _parse_subtype_default_targets(self, value):
+        if value is None or value == '':
+            return []
+        if isinstance(value, list):
+            items = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                items = parsed if isinstance(parsed, list) else []
+            except Exception:
+                items = []
+        out = []
+        seen = set()
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            name = str(raw.get('name') or raw.get('target_desc') or '').strip()
+            bid_value = str(raw.get('value') or raw.get('bid_value') or '').strip()
+            if not name or not bid_value:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({'name': name, 'value': bid_value})
+        return out
+
+    def _encode_subtype_default_targets(self, targets):
+        cleaned = self._parse_subtype_default_targets(targets)
+        return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+
+    def _serialize_subtype_row(self, row):
+        item = dict(row) if row else {}
+        item['campaign_default_targets'] = self._parse_subtype_default_targets(
+            item.pop('campaign_default_targets', None)
+        )
+        item['group_default_targets'] = self._parse_subtype_default_targets(
+            item.pop('group_default_targets', None)
+        )
+        return item
+
+    def _fetch_subtype_default_targets(self, cur, subtype_id, ad_level):
+        subtype_id = self._parse_int(subtype_id)
+        if not subtype_id:
+            return []
+        column = 'campaign_default_targets' if ad_level == 'campaign' else 'group_default_targets'
+        if ad_level not in ('campaign', 'group'):
+            return []
+        cur.execute(
+            f'SELECT {column} AS targets_json FROM amazon_ad_subtypes WHERE id=%s LIMIT 1',
+            (subtype_id,),
+        )
+        row = cur.fetchone() or {}
+        return self._parse_subtype_default_targets(row.get('targets_json'))
+
+    def _create_subtype_default_targets_for_ad_item(self, cur, ad_item_id, subtype_id, ad_level):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id or ad_level not in ('campaign', 'group'):
+            return
+        targets = self._fetch_subtype_default_targets(cur, subtype_id, ad_level)
+        if not targets:
+            return
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt = updated_dt or now_text
+        for item in targets:
+            name = item.get('name')
+            bid_value = item.get('value')
+            if not name or not bid_value:
+                continue
+            cur.execute(
+                """
+                SELECT id FROM amazon_ad_targets
+                WHERE ad_item_id=%s AND target_desc=%s LIMIT 1
+                """,
+                (ad_item_id, name),
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                """
+                INSERT INTO amazon_ad_targets (
+                    status, ad_item_id, target_desc, bid_value,
+                    observe_interval, next_observe_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                ('启动', ad_item_id, name, bid_value, interval_text, next_dt, updated_dt),
+            )
+
     def _validate_amazon_ad_subtype_payload(self, cur, description, ad_class, subtype_code, exclude_id=None):
         description = (description or '').strip()
         ad_class = (ad_class or 'SP').strip().upper() or 'SP'
@@ -125,11 +217,16 @@ class AmazonAdMixin:
                         sql += ' ORDER BY id DESC LIMIT 500'
                         cur.execute(sql, tuple(params))
                         rows = self._attach_subtype_operation_type_ids(cur, cur.fetchall() or [])
+                        rows = [self._serialize_subtype_row(r) for r in rows]
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
                 
             if method == 'POST':
                 data = self._read_json_body(environ) or {}
                 op_ids = self._parse_subtype_operation_type_ids(data)
+                campaign_targets = self._encode_subtype_default_targets(
+                    data.get('campaign_default_targets')
+                )
+                group_targets = self._encode_subtype_default_targets(data.get('group_default_targets'))
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         fields, err = self._validate_amazon_ad_subtype_payload(
@@ -142,10 +239,16 @@ class AmazonAdMixin:
                             return self.send_json({'status': 'error', 'message': err}, start_response)
                         cur.execute(
                             """
-                            INSERT INTO amazon_ad_subtypes (description, ad_class, subtype_code)
-                            VALUES (%s, %s, %s)
+                            INSERT INTO amazon_ad_subtypes (
+                                description, ad_class, subtype_code,
+                                campaign_default_targets, group_default_targets
+                            )
+                            VALUES (%s, %s, %s, %s, %s)
                             """,
-                            (fields['description'], fields['ad_class'], fields['subtype_code']),
+                            (
+                                fields['description'], fields['ad_class'], fields['subtype_code'],
+                                campaign_targets, group_targets,
+                            ),
                         )
                         new_id = cur.lastrowid
                         self._sync_amazon_ad_subtype_operation_types(cur, new_id, op_ids)
@@ -157,6 +260,10 @@ class AmazonAdMixin:
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 op_ids = self._parse_subtype_operation_type_ids(data)
+                campaign_targets = self._encode_subtype_default_targets(
+                    data.get('campaign_default_targets')
+                )
+                group_targets = self._encode_subtype_default_targets(data.get('group_default_targets'))
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute('SELECT id FROM amazon_ad_subtypes WHERE id=%s LIMIT 1', (item_id,))
@@ -174,13 +281,16 @@ class AmazonAdMixin:
                         cur.execute(
                             """
                             UPDATE amazon_ad_subtypes
-                            SET description=%s, ad_class=%s, subtype_code=%s
+                            SET description=%s, ad_class=%s, subtype_code=%s,
+                                campaign_default_targets=%s, group_default_targets=%s
                             WHERE id=%s
                             """,
                             (
                                 fields['description'],
                                 fields['ad_class'],
                                 fields['subtype_code'],
+                                campaign_targets,
+                                group_targets,
                                 item_id,
                             ),
                         )
@@ -1037,6 +1147,10 @@ class AmazonAdMixin:
                             )
                         )
                         new_id = cur.lastrowid
+                        if ad_level in ('campaign', 'group'):
+                            self._create_subtype_default_targets_for_ad_item(
+                                cur, new_id, fields.get('subtype_id'), ad_level,
+                            )
                         item = self._fetch_amazon_ad_item_by_id(cur, new_id)
                 return self.send_json({'status': 'success', 'id': new_id, 'item': item}, start_response)
 
@@ -1702,6 +1816,10 @@ class AmazonAdMixin:
                             )
                             new_id = cur.lastrowid
                             created += 1
+                            if ad_level in ('campaign', 'group'):
+                                self._create_subtype_default_targets_for_ad_item(
+                                    cur, new_id, fields.get('subtype_id'), ad_level,
+                                )
                             batch_seen_names.add(self._amazon_ad_batch_scope_key(
                                 ad_level, fields['name'],
                                 portfolio_id=fields.get('portfolio_id'),
@@ -2506,7 +2624,7 @@ class AmazonAdMixin:
                     start_response,
                 )
             wb = self._build_amazon_ad_target_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_target_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, 'amazon_ad_delivery_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

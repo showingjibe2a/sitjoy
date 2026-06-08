@@ -127,6 +127,36 @@
             color: var(--morandi-slate);
             font-size: 0.9rem;
         }
+        .default-target-toolbar {
+            display: grid;
+            grid-template-columns: 1fr 120px auto;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .default-target-list {
+            display: grid;
+            gap: 0.5rem;
+        }
+        .default-target-item {
+            display: grid;
+            grid-template-columns: 1fr 120px auto;
+            gap: 0.55rem;
+            align-items: center;
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.45rem 0.55rem;
+            background: #fff;
+        }
+        .default-target-item-name,
+        .default-target-item-value {
+            color: var(--morandi-ink);
+            font-size: 0.92rem;
+            word-break: break-word;
+        }
+        .default-target-empty {
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+        }
         .inline-switch {
             display: inline-flex;
             align-items: center;
@@ -283,6 +313,40 @@
                     </div>
                 </div>
             </div>
+
+            <div class="pm-section">
+                <h4 class="pm-section-title">创建广告活动时自动投放</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <div class="default-target-toolbar">
+                            <input type="text" id="modalCampaignTargetNameInput" class="optional-field" placeholder="投放描述">
+                            <input type="text" id="modalCampaignTargetValueInput" class="optional-field" placeholder="竞价">
+                            <button class="btn-secondary" type="button" onclick="addCampaignDefaultTargetFromInput()">新增</button>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <div id="modalCampaignDefaultTargetList" class="default-target-list"></div>
+                        <div id="modalCampaignDefaultTargetEmpty" class="default-target-empty">暂无配置，创建广告活动时将不会自动新增投放</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm-section">
+                <h4 class="pm-section-title">创建广告组时自动投放</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <div class="default-target-toolbar">
+                            <input type="text" id="modalGroupTargetNameInput" class="optional-field" placeholder="投放描述">
+                            <input type="text" id="modalGroupTargetValueInput" class="optional-field" placeholder="竞价">
+                            <button class="btn-secondary" type="button" onclick="addGroupDefaultTargetFromInput()">新增</button>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <div id="modalGroupDefaultTargetList" class="default-target-list"></div>
+                        <div id="modalGroupDefaultTargetEmpty" class="default-target-empty">暂无配置，创建广告组时将不会自动新增投放</div>
+                    </div>
+                </div>
+            </div>
             <div id="subtypeModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             </div>
             <div class="pm-modal-actions">
@@ -366,6 +430,8 @@
         let opTypeOptions = [];
         let opTypeInlineDraft = {};
         let modalReasonItems = [];
+        let modalCampaignDefaultTargets = [];
+        let modalGroupDefaultTargets = [];
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
@@ -476,6 +542,104 @@
             return Array.from(idSet);
         }
 
+        function normalizeDefaultTargetItems(items) {
+            const seen = new Set();
+            return (Array.isArray(items) ? items : [])
+                .map(item => ({
+                    name: item && item.name ? String(item.name).trim() : '',
+                    value: item && item.value ? String(item.value).trim() : ''
+                }))
+                .filter(item => item.name && item.value)
+                .filter(item => {
+                    const key = item.name.toLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+        }
+
+        function renderDefaultTargetList(items, listId, emptyId) {
+            const list = document.getElementById(listId);
+            const empty = document.getElementById(emptyId);
+            list.innerHTML = '';
+            items.forEach((item, idx) => {
+                const row = document.createElement('div');
+                row.className = 'default-target-item';
+                row.innerHTML = `
+                    <span class="default-target-item-name">${escapeHtml(item.name)}</span>
+                    <span class="default-target-item-value">${escapeHtml(item.value)}</span>
+                    <button type="button" class="btn-danger">删除</button>
+                `;
+                row.querySelector('button').addEventListener('click', function() {
+                    items.splice(idx, 1);
+                    renderDefaultTargetList(items, listId, emptyId);
+                });
+                list.appendChild(row);
+            });
+            empty.style.display = items.length ? 'none' : '';
+        }
+
+        function renderCampaignDefaultTargets(items) {
+            modalCampaignDefaultTargets = normalizeDefaultTargetItems(items);
+            document.getElementById('modalCampaignTargetNameInput').value = '';
+            document.getElementById('modalCampaignTargetValueInput').value = '';
+            renderDefaultTargetList(
+                modalCampaignDefaultTargets,
+                'modalCampaignDefaultTargetList',
+                'modalCampaignDefaultTargetEmpty'
+            );
+        }
+
+        function renderGroupDefaultTargets(items) {
+            modalGroupDefaultTargets = normalizeDefaultTargetItems(items);
+            document.getElementById('modalGroupTargetNameInput').value = '';
+            document.getElementById('modalGroupTargetValueInput').value = '';
+            renderDefaultTargetList(
+                modalGroupDefaultTargets,
+                'modalGroupDefaultTargetList',
+                'modalGroupDefaultTargetEmpty'
+            );
+        }
+
+        function addDefaultTargetFromInputs(nameInputId, valueInputId, items, renderFn) {
+            const nameInput = document.getElementById(nameInputId);
+            const valueInput = document.getElementById(valueInputId);
+            const name = (nameInput.value || '').trim();
+            const value = (valueInput.value || '').trim();
+            if (!name || !value) {
+                if (!name) nameInput.focus();
+                else valueInput.focus();
+                return;
+            }
+            const exists = items.some(item => String(item.name).toLowerCase() === name.toLowerCase());
+            if (!exists) {
+                items.push({ name, value });
+                renderFn(items);
+            } else {
+                nameInput.value = '';
+                valueInput.value = '';
+                valueInput.focus();
+            }
+        }
+
+        function addCampaignDefaultTargetFromInput() {
+            addDefaultTargetFromInputs(
+                'modalCampaignTargetNameInput',
+                'modalCampaignTargetValueInput',
+                modalCampaignDefaultTargets,
+                renderCampaignDefaultTargets
+            );
+        }
+
+        function addGroupDefaultTargetFromInput() {
+            addDefaultTargetFromInputs(
+                'modalGroupTargetNameInput',
+                'modalGroupTargetValueInput',
+                modalGroupDefaultTargets,
+                renderGroupDefaultTargets
+            );
+        }
+
         function openSubtypeCreateModal() {
             subtypeEditId = null;
             document.getElementById('subtype-modal-title').innerText = '新增广告分类';
@@ -484,6 +648,8 @@
             document.getElementById('modalSubtypeCode').value = '';
             document.getElementById('subtypeDeleteBtn').style.display = 'none';
             renderSubtypeOperationTypeSelector([]);
+            renderCampaignDefaultTargets([]);
+            renderGroupDefaultTargets([]);
             resetSubtypeStatus();
             document.getElementById('subtype-modal').classList.add('active');
         }
@@ -496,6 +662,8 @@
             document.getElementById('modalSubtypeCode').value = item.subtype_code || '';
             document.getElementById('subtypeDeleteBtn').style.display = '';
             renderSubtypeOperationTypeSelector(item.operation_type_ids || []);
+            renderCampaignDefaultTargets(item.campaign_default_targets || []);
+            renderGroupDefaultTargets(item.group_default_targets || []);
             resetSubtypeStatus();
             document.getElementById('subtype-modal').classList.add('active');
         }
@@ -510,7 +678,9 @@
                 description: document.getElementById('modalSubtypeDesc').value.trim(),
                 ad_class: document.getElementById('modalSubtypeClass').value,
                 subtype_code: document.getElementById('modalSubtypeCode').value.trim(),
-                operation_type_ids: getSelectedOperationTypeIds()
+                operation_type_ids: getSelectedOperationTypeIds(),
+                campaign_default_targets: modalCampaignDefaultTargets,
+                group_default_targets: modalGroupDefaultTargets
             };
             if (!payload.description || !payload.subtype_code) {
                 showSubtypeStatus('请填写描述和细分简称', true);

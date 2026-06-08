@@ -123,6 +123,7 @@ class PagePermissionMixin:
         return bool(actor_record.get('is_admin')) and bool(actor_record.get('can_grant_admin'))
 
     _PAGE_PERMISSION_LEGACY_ALIASES = {
+        'amazon_ad_delivery_management': ('amazon_ad_target_management',),
         'amazon_ad_target_management': ('amazon_ad_delivery_management',),
     }
 
