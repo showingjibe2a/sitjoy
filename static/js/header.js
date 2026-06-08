@@ -1143,6 +1143,129 @@
         syncAppToastStackOffset();
     }
 
+    function uploadBatchImportFile(options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const file = opt.file;
+        const url = String(opt.url || '').trim();
+        const title = String(opt.title || '批量上传').trim() || '批量上传';
+        const uploadSummary = String(opt.uploadSummary || '正在上传文件...').trim() || '正在上传文件...';
+        const processSummary = String(opt.processSummary || '正在解析并写入数据...').trim() || '正在解析并写入数据...';
+        if(!file || !url){
+            return Promise.reject(new Error('缺少 file 或 url'));
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        if(opt.extraFormData && typeof opt.extraFormData === 'object'){
+            Object.keys(opt.extraFormData).forEach(key => {
+                formData.append(key, opt.extraFormData[key]);
+            });
+        }
+
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            let processingShown = false;
+            xhr.open('POST', url);
+
+            if(showAppUploadProgress){
+                showAppUploadProgress({ title, summary: uploadSummary, percent: 5 });
+            }
+
+            xhr.upload.addEventListener('progress', evt => {
+                if(!evt.lengthComputable || !showAppUploadProgress) return;
+                const pct = Math.round((evt.loaded / evt.total) * 55) + 5;
+                showAppUploadProgress({
+                    title,
+                    summary: uploadSummary,
+                    percent: Math.max(5, Math.min(60, pct)),
+                });
+            });
+
+            xhr.addEventListener('readystatechange', () => {
+                if(processingShown || !showAppUploadProgress) return;
+                if(xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED || xhr.readyState === XMLHttpRequest.LOADING){
+                    processingShown = true;
+                    showAppUploadProgress({ title, summary: processSummary, percent: 72 });
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if(showAppUploadProgress){
+                    showAppUploadProgress({ title: '即将完成', summary: '正在整理结果...', percent: 92 });
+                }
+                let data = null;
+                try{
+                    data = JSON.parse(xhr.responseText || '{}');
+                }catch(e){
+                    hideAppUploadProgress();
+                    reject(new Error('响应解析失败'));
+                    return;
+                }
+                hideAppUploadProgress();
+                if(xhr.status >= 200 && xhr.status < 300){
+                    resolve(data);
+                    return;
+                }
+                reject(new Error((data && data.message) ? data.message : `请求失败 (${xhr.status})`));
+            });
+
+            xhr.addEventListener('error', () => {
+                hideAppUploadProgress();
+                reject(new Error('网络错误'));
+            });
+
+            xhr.addEventListener('abort', () => {
+                hideAppUploadProgress();
+                reject(new Error('已取消'));
+            });
+
+            xhr.send(formData);
+        });
+    }
+
+    function handleBatchImportResponse(data, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const title = String(opt.title || '批量导入').trim() || '批量导入';
+        const onSuccess = typeof opt.onSuccess === 'function' ? opt.onSuccess : null;
+
+        if(!data || data.status !== 'success'){
+            const msg = (data && data.message) ? data.message : '导入失败';
+            if(showAppResultPanel){
+                showAppResultPanel({
+                    title: '导入失败',
+                    summary: msg,
+                    details: Array.isArray(data && data.errors)
+                        ? data.errors.map(item => `${item.row || '-'}: ${item.error || item.message || '校验失败'}`)
+                        : [],
+                    isError: true,
+                });
+            }else if(showAppToast){
+                showAppToast(msg, true);
+            }
+            return false;
+        }
+
+        const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+        const skipped = Number(data.skipped_sample_rows || 0) > 0
+            ? `，跳过示例 ${data.skipped_sample_rows}`
+            : '';
+        const summary = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${errCount ? `，失败 ${errCount}` : ''}${skipped}`;
+
+        if(errCount && showAppResultPanel){
+            showAppResultPanel({
+                title: '导入完成，但有失败记录',
+                summary,
+                details: data.errors.map(item => `${item.row || '-'}: ${item.error || item.message || '校验失败'}`),
+                isError: true,
+            });
+        }else if(showAppToast){
+            showAppToast(summary, false, errCount ? 6500 : 4200);
+        }
+
+        if(onSuccess) onSuccess(data);
+        return true;
+    }
+
     function syncModalScrollLock(){
         const hasActiveModal = !!document.querySelector('.pm-modal.active');
         document.documentElement.classList.toggle('has-active-modal', hasActiveModal);
@@ -7051,6 +7174,8 @@
     window.showAppResultPanel = showAppResultPanel;
     window.showAppUploadProgress = showAppUploadProgress;
     window.hideAppUploadProgress = hideAppUploadProgress;
+    window.uploadBatchImportFile = uploadBatchImportFile;
+    window.handleBatchImportResponse = handleBatchImportResponse;
 
     function isAuthAdmin(authData){
         if(!authData) return false;

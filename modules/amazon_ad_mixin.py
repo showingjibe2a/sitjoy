@@ -472,6 +472,123 @@ class AmazonAdMixin:
         fields['strategy_code'] = campaign.get('strategy_code')
         fields['subtype_id'] = campaign.get('subtype_id')
 
+    def _inherit_group_fields_from_campaign_record(self, fields, campaign_row):
+        """广告组从内存中的活动记录继承字段（导入批处理用）。"""
+        if fields.get('ad_level') != 'group' or not campaign_row:
+            return
+        if campaign_row.get('portfolio_id'):
+            fields['portfolio_id'] = campaign_row.get('portfolio_id')
+        fields['strategy_code'] = campaign_row.get('strategy_code')
+        fields['subtype_id'] = campaign_row.get('subtype_id')
+
+    def _load_amazon_ad_import_context(self, cur):
+        """一次性加载导入索引，避免逐行 SELECT。"""
+        portfolio_by_name = {}
+        campaign_by_key = {}
+        campaign_by_id = {}
+        campaign_by_name = {}
+        existing_portfolio_by_name = {}
+        existing_campaign_by_key = {}
+        existing_group_by_key = {}
+
+        cur.execute(
+            """
+            SELECT id, ad_level, name, portfolio_id, campaign_id,
+                   sku_family_id, strategy_code, subtype_id, is_shared_budget, status, budget
+            FROM amazon_ad_items
+            WHERE ad_level IN ('portfolio', 'campaign', 'group')
+            """
+        )
+        for row in cur.fetchall() or []:
+            level = row.get('ad_level')
+            name = str(row.get('name') or '').strip()
+            if not name:
+                continue
+            if level == 'portfolio':
+                portfolio_by_name[name] = row['id']
+                existing_portfolio_by_name[name] = row
+            elif level == 'campaign':
+                pid = int(self._parse_int(row.get('portfolio_id')) or 0)
+                campaign_by_key[(pid, name)] = row
+                campaign_by_id[int(row['id'])] = row
+                campaign_by_name.setdefault(name, []).append(row)
+                existing_campaign_by_key[(pid, name)] = row
+            else:
+                cid = int(self._parse_int(row.get('campaign_id')) or 0)
+                existing_group_by_key[(cid, name)] = row
+
+        subtype_by_key = {}
+        cur.execute("SELECT id, ad_class, subtype_code, description FROM amazon_ad_subtypes")
+        for row in cur.fetchall() or []:
+            key = f"{row.get('ad_class')}-{row.get('subtype_code')}"
+            subtype_by_key[key] = row['id']
+            subtype_by_key[str(row.get('description') or '').strip()] = row['id']
+            code = str(row.get('subtype_code') or '').strip()
+            if code:
+                subtype_by_key[code] = row['id']
+
+        sku_by_family = {}
+        cur.execute("SELECT id, sku_family FROM product_families")
+        for row in cur.fetchall() or []:
+            sku_by_family[str(row.get('sku_family') or '').strip()] = row['id']
+
+        return {
+            'portfolio_by_name': portfolio_by_name,
+            'campaign_by_key': campaign_by_key,
+            'campaign_by_id': campaign_by_id,
+            'campaign_by_name': campaign_by_name,
+            'existing_portfolio_by_name': existing_portfolio_by_name,
+            'existing_campaign_by_key': existing_campaign_by_key,
+            'existing_group_by_key': existing_group_by_key,
+            'subtype_by_key': subtype_by_key,
+            'sku_by_family': sku_by_family,
+        }
+
+    def _find_amazon_ad_import_existing(self, ad_level, name, ctx, portfolio_id=None, campaign_id=None):
+        name = (name or '').strip()
+        if not name:
+            return None
+        if ad_level == 'portfolio':
+            return ctx['existing_portfolio_by_name'].get(name)
+        if ad_level == 'campaign':
+            pid = self._parse_int(portfolio_id)
+            if not pid:
+                return None
+            return ctx['existing_campaign_by_key'].get((int(pid), name))
+        cid = self._parse_int(campaign_id)
+        if not cid:
+            return None
+        return ctx['existing_group_by_key'].get((int(cid), name))
+
+    def _register_amazon_ad_import_row(self, ctx, fields, row_id):
+        level = fields['ad_level']
+        name = fields['name']
+        row = {
+            'id': row_id,
+            'ad_level': level,
+            'name': name,
+            'portfolio_id': fields.get('portfolio_id'),
+            'campaign_id': fields.get('campaign_id'),
+            'sku_family_id': fields.get('sku_family_id'),
+            'strategy_code': fields.get('strategy_code'),
+            'subtype_id': fields.get('subtype_id'),
+            'is_shared_budget': fields.get('is_shared_budget'),
+            'status': fields.get('status'),
+            'budget': fields.get('budget'),
+        }
+        if level == 'portfolio':
+            ctx['portfolio_by_name'][name] = row_id
+            ctx['existing_portfolio_by_name'][name] = row
+        elif level == 'campaign':
+            pid = int(self._parse_int(fields.get('portfolio_id')) or 0)
+            ctx['campaign_by_key'][(pid, name)] = row
+            ctx['campaign_by_id'][int(row_id)] = row
+            ctx['campaign_by_name'].setdefault(name, []).append(row)
+            ctx['existing_campaign_by_key'][(pid, name)] = row
+        else:
+            cid = int(self._parse_int(fields.get('campaign_id')) or 0)
+            ctx['existing_group_by_key'][(cid, name)] = row
+
     def _find_amazon_ad_item_by_scoped_name(self, cur, ad_level, name, portfolio_id=None, campaign_id=None, exclude_id=None):
         """按同层级作用域查找：组合全局唯一；活动在同一组合下唯一；组在同一活动下唯一。"""
         name = (name or '').strip()
@@ -1055,32 +1172,13 @@ class AmazonAdMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    portfolio_by_name = {}
-                    campaign_by_key = {}
+                    ctx = self._load_amazon_ad_import_context(cur)
+                    portfolio_by_name = ctx['portfolio_by_name']
+                    campaign_by_key = ctx['campaign_by_key']
+                    campaign_by_name = ctx['campaign_by_name']
+                    subtype_by_key = ctx['subtype_by_key']
+                    sku_by_family = ctx['sku_by_family']
                     batch_seen_names = set()
-                    cur.execute("SELECT id, name FROM amazon_ad_items WHERE ad_level='portfolio'")
-                    for row in cur.fetchall() or []:
-                        portfolio_by_name[str(row.get('name') or '').strip()] = row['id']
-                    cur.execute("SELECT id, name, portfolio_id FROM amazon_ad_items WHERE ad_level='campaign'")
-                    for row in cur.fetchall() or []:
-                        pname = str(row.get('name') or '').strip()
-                        pid = int(self._parse_int(row.get('portfolio_id')) or 0)
-                        campaign_by_key[(pid, pname)] = row
-
-                    subtype_by_key = {}
-                    cur.execute("SELECT id, ad_class, subtype_code, description FROM amazon_ad_subtypes")
-                    for row in cur.fetchall() or []:
-                        key = f"{row.get('ad_class')}-{row.get('subtype_code')}"
-                        subtype_by_key[key] = row['id']
-                        subtype_by_key[str(row.get('description') or '').strip()] = row['id']
-                        code = str(row.get('subtype_code') or '').strip()
-                        if code:
-                            subtype_by_key[code] = row['id']
-
-                    sku_by_family = {}
-                    cur.execute("SELECT id, sku_family FROM product_families")
-                    for row in cur.fetchall() or []:
-                        sku_by_family[str(row.get('sku_family') or '').strip()] = row['id']
 
                     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
                         name = cell_value(row, '名称*') or ''
@@ -1130,10 +1228,7 @@ class AmazonAdMixin:
                                     (int(portfolio_id_for_group), campaign_name.strip())
                                 )
                             if not campaign and campaign_name:
-                                matches = [
-                                    c for (pid, cname), c in campaign_by_key.items()
-                                    if cname == campaign_name.strip()
-                                ]
+                                matches = campaign_by_name.get(campaign_name.strip(), [])
                                 if len(matches) == 1:
                                     campaign = matches[0]
                                 elif len(matches) > 1:
@@ -1156,10 +1251,13 @@ class AmazonAdMixin:
                             errors.append({'row': row_idx, 'message': err})
                             continue
                         if ad_level == 'group':
-                            self._inherit_group_fields_from_campaign(cur, fields)
+                            campaign_row = None
+                            if fields.get('campaign_id'):
+                                campaign_row = ctx['campaign_by_id'].get(int(fields['campaign_id']))
+                            self._inherit_group_fields_from_campaign_record(fields, campaign_row)
 
-                        existing = self._find_amazon_ad_item_by_scoped_name(
-                            cur, ad_level, fields['name'],
+                        existing = self._find_amazon_ad_import_existing(
+                            ad_level, fields['name'], ctx,
                             portfolio_id=fields.get('portfolio_id'),
                             campaign_id=fields.get('campaign_id'),
                         )
@@ -1180,6 +1278,7 @@ class AmazonAdMixin:
                                 )
                             )
                             updated += 1
+                            self._register_amazon_ad_import_row(ctx, fields, existing['id'])
                         else:
                             batch_dup_err = self._validate_amazon_ad_name_unique_in_batch(
                                 ad_level, fields['name'],
@@ -1189,14 +1288,6 @@ class AmazonAdMixin:
                             )
                             if batch_dup_err:
                                 errors.append({'row': row_idx, 'message': batch_dup_err})
-                                continue
-                            dup_err = self._validate_amazon_ad_name_unique(
-                                cur, ad_level, fields['name'],
-                                portfolio_id=fields.get('portfolio_id'),
-                                campaign_id=fields.get('campaign_id'),
-                            )
-                            if dup_err:
-                                errors.append({'row': row_idx, 'message': dup_err})
                                 continue
                             cur.execute(
                                 """
@@ -1218,14 +1309,7 @@ class AmazonAdMixin:
                                 portfolio_id=fields.get('portfolio_id'),
                                 campaign_id=fields.get('campaign_id'),
                             ))
-                            if ad_level == 'portfolio':
-                                portfolio_by_name[fields['name']] = new_id
-                            elif ad_level == 'campaign':
-                                pid = int(self._parse_int(fields['portfolio_id']) or 0)
-                                campaign_by_key[(pid, fields['name'])] = {
-                                    'id': new_id,
-                                    'portfolio_id': fields['portfolio_id'],
-                                }
+                            self._register_amazon_ad_import_row(ctx, fields, new_id)
 
             return self.send_json(
                 {

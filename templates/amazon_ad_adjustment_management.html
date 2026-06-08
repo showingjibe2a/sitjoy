@@ -987,19 +987,31 @@
         }
 
         function uploadAdTemplateFromAdjustment(file) {
-            const formData = new FormData();
-            formData.append('file', file);
-            aaToast('模板上传处理中…', false);
-            fetch('/api/amazon-ad-import', { method: 'POST', body: formData })
-                .then(r => r.json())
+            if (!file) return;
+            const doUpload = window.uploadBatchImportFile
+                ? window.uploadBatchImportFile({
+                    file,
+                    url: '/api/amazon-ad-import',
+                    title: '广告信息批量上传',
+                    uploadSummary: '正在上传模板文件...',
+                    processSummary: '正在解析并写入广告数据...',
+                })
+                : (() => {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    return fetch('/api/amazon-ad-import', { method: 'POST', body: formData }).then(r => r.json());
+                })();
+            doUpload
                 .then(data => {
-                    if (data.status !== 'success') {
-                        aaToast(data.message || '导入失败', true);
-                        return;
+                    const handled = window.handleBatchImportResponse
+                        ? window.handleBatchImportResponse(data, {
+                            title: '广告信息导入',
+                            onSuccess: () => loadAdList(),
+                        })
+                        : false;
+                    if (!handled && data.status === 'success') {
+                        loadAdList();
                     }
-                    const countError = Array.isArray(data.errors) ? data.errors.length : 0;
-                    aaToast(`导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`, !!countError);
-                    loadAdList();
                 })
                 .catch(err => aaToast('导入失败: ' + err, true));
         }

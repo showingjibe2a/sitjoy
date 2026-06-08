@@ -23,19 +23,6 @@
             opacity: 0.65;
             pointer-events: none;
         }
-        .ad-import-status {
-            display: none;
-            font-size: 0.82rem;
-            color: var(--morandi-ink);
-            padding: 0.25rem 0.55rem;
-            border-radius: 999px;
-            border: 1px solid rgba(74, 78, 87, 0.2);
-            background: rgba(236, 231, 223, 0.65);
-        }
-        .ad-import-status.show {
-            display: inline-flex;
-            align-items: center;
-        }
         .toast-notice {
             position: fixed;
             right: 18px;
@@ -78,7 +65,6 @@
                         <button class="btn-secondary" onclick="downloadAdTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerAdUpload()">批量上传</button>
                         <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
-                        <span id="adImportStatus" class="ad-import-status"></span>
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
@@ -263,16 +249,6 @@
             window.__globalTimeoutToastTimer = setTimeout(() => {
                 toast.style.display = 'none';
             }, 5000);
-        }
-
-        function showAdImportStatus(message, isError) {
-            const el = document.getElementById('adImportStatus');
-            if (!el) return;
-            el.textContent = message || '';
-            el.classList.add('show');
-            el.style.color = isError ? '#9b2226' : 'var(--morandi-ink)';
-            el.style.borderColor = isError ? 'rgba(201,29,29,0.35)' : 'rgba(74, 78, 87, 0.2)';
-            el.style.background = isError ? 'rgba(201,29,29,0.12)' : 'rgba(236,231,223,0.65)';
         }
 
         function resetAdStatus() {
@@ -886,22 +862,39 @@
         }
 
         function uploadAdTemplate(file) {
-            const formData = new FormData();
-            formData.append('file', file);
-            showAdImportStatus('上传处理中...', false);
-            fetch('/api/amazon-ad-import', { method: 'POST', body: formData })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status !== 'success') {
-                        showAdImportStatus(data.message || '导入失败', true);
-                        return;
-                    }
-                    const countError = Array.isArray(data.errors) ? data.errors.length : 0;
-                    const msg = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`;
-                    showAdImportStatus(msg, !!countError);
-                    Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+            if (!file) return;
+            const doUpload = window.uploadBatchImportFile
+                ? window.uploadBatchImportFile({
+                    file,
+                    url: '/api/amazon-ad-import',
+                    title: '广告信息批量上传',
+                    uploadSummary: '正在上传模板文件...',
+                    processSummary: '正在解析并写入广告数据...',
                 })
-                .catch(err => showAdImportStatus('导入失败: ' + err, true));
+                : (() => {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    return fetch('/api/amazon-ad-import', { method: 'POST', body: formData }).then(r => r.json());
+                })();
+            doUpload
+                .then(data => {
+                    const handled = window.handleBatchImportResponse
+                        ? window.handleBatchImportResponse(data, {
+                            title: '广告信息导入',
+                            onSuccess: () => Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]),
+                        })
+                        : false;
+                    if (!handled && data.status === 'success') {
+                        Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+                    }
+                })
+                .catch(err => {
+                    if (window.showAppToast) {
+                        window.showAppToast('导入失败: ' + err, true);
+                    } else {
+                        showTimeoutToast('导入失败: ' + err);
+                    }
+                });
         }
 
         async function deleteAd(id) {
