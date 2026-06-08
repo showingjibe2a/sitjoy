@@ -452,6 +452,26 @@ class AmazonAdMixin:
             return '请选择归属广告活动'
         return None
 
+    def _inherit_group_fields_from_campaign(self, cur, fields):
+        """广告组从归属活动继承 portfolio_id / strategy_code / subtype_id。"""
+        if fields.get('ad_level') != 'group':
+            return
+        campaign_id = fields.get('campaign_id')
+        if not campaign_id:
+            return
+        cur.execute(
+            """
+            SELECT portfolio_id, strategy_code, subtype_id
+            FROM amazon_ad_items WHERE id=%s AND ad_level='campaign' LIMIT 1
+            """,
+            (campaign_id,),
+        )
+        campaign = cur.fetchone() or {}
+        if campaign.get('portfolio_id'):
+            fields['portfolio_id'] = campaign.get('portfolio_id')
+        fields['strategy_code'] = campaign.get('strategy_code')
+        fields['subtype_id'] = campaign.get('subtype_id')
+
     def _find_amazon_ad_item_by_scoped_name(self, cur, ad_level, name, portfolio_id=None, campaign_id=None, exclude_id=None):
         """按同层级作用域查找：组合全局唯一；活动在同一组合下唯一；组在同一活动下唯一。"""
         name = (name or '').strip()
@@ -625,13 +645,8 @@ class AmazonAdMixin:
                         if parent_err:
                             return self.send_json({'status': 'error', 'message': parent_err}, start_response)
 
-                        if ad_level == 'group' and not fields.get('portfolio_id') and fields.get('campaign_id'):
-                            cur.execute(
-                                "SELECT portfolio_id FROM amazon_ad_items WHERE id=%s AND ad_level='campaign' LIMIT 1",
-                                (fields['campaign_id'],)
-                            )
-                            campaign = cur.fetchone() or {}
-                            fields['portfolio_id'] = campaign.get('portfolio_id')
+                        if ad_level == 'group':
+                            self._inherit_group_fields_from_campaign(cur, fields)
 
                         dup_err = self._validate_amazon_ad_name_unique(
                             cur, ad_level, fields['name'],
@@ -684,13 +699,8 @@ class AmazonAdMixin:
                         if parent_err:
                             return self.send_json({'status': 'error', 'message': parent_err}, start_response)
 
-                        if ad_level == 'group' and not fields.get('portfolio_id') and fields.get('campaign_id'):
-                            cur.execute(
-                                "SELECT portfolio_id FROM amazon_ad_items WHERE id=%s AND ad_level='campaign' LIMIT 1",
-                                (fields['campaign_id'],)
-                            )
-                            campaign = cur.fetchone() or {}
-                            fields['portfolio_id'] = campaign.get('portfolio_id')
+                        if ad_level == 'group':
+                            self._inherit_group_fields_from_campaign(cur, fields)
 
                         dup_err = self._validate_amazon_ad_name_unique(
                             cur, ad_level, fields['name'],
@@ -1145,6 +1155,8 @@ class AmazonAdMixin:
                         if err:
                             errors.append({'row': row_idx, 'message': err})
                             continue
+                        if ad_level == 'group':
+                            self._inherit_group_fields_from_campaign(cur, fields)
 
                         existing = self._find_amazon_ad_item_by_scoped_name(
                             cur, ad_level, fields['name'],

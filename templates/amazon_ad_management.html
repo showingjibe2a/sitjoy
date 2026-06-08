@@ -831,6 +831,12 @@
                 if (!payload.portfolio_id && selectedCampaign.portfolio_id) {
                     payload.portfolio_id = String(selectedCampaign.portfolio_id);
                 }
+                if (selectedCampaign.strategy_code) {
+                    payload.strategy_code = selectedCampaign.strategy_code;
+                }
+                if (selectedCampaign.subtype_id) {
+                    payload.subtype_id = selectedCampaign.subtype_id;
+                }
             }
 
             const dupMsg = validateAdNameUnique(
