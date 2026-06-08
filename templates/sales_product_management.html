@@ -1801,15 +1801,53 @@
             return Math.round((Math.min(s, 200) * 0.15 + Math.max(s - 200, 0) * 0.10) * 100) / 100;
         }
 
+        function salesPlatformTypeNameOf(itemOrName) {
+            if (itemOrName && typeof itemOrName === 'object') {
+                return String(itemOrName.platform_type_name || '').trim();
+            }
+            return String(itemOrName || '').trim();
+        }
+
+        function isSalesAmazonPlatformName(platformName) {
+            const p = salesPlatformTypeNameOf(platformName).toLowerCase();
+            return p.includes('亚马逊') || p === 'amazon' || p.includes('amazon');
+        }
+
+        function salesUsesAmazonEconomics(item) {
+            return isSalesAmazonPlatformName(salesPlatformTypeNameOf(item));
+        }
+
+        function salesFormatEconLastMile(econ) {
+            if (!econ || !econ.lastMileApplicable) return '-';
+            return formatSalesEconomicsUsd(econ.lastMile, true);
+        }
+
+        function salesFormatEconCommission(econ) {
+            if (!econ || !econ.commissionApplicable || econ.salePrice <= 0) return '-';
+            return formatSalesEconomicsUsd(econ.commission, false);
+        }
+
         function salesComputeRowEconomics(item) {
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
-            const lastMile = Number(item.last_mile_cost_usd || 0);
+            const lastMileRaw = Number(item.last_mile_cost_usd || 0);
+            const amazon = salesUsesAmazonEconomics(item);
+            const lastMile = amazon ? lastMileRaw : 0;
             const totalCost = Math.round((bom + lastMile) * 100) / 100;
-            const commission = salesEstFurnitureCommissionUsd(salePrice);
+            const commission = amazon ? salesEstFurnitureCommissionUsd(salePrice) : 0;
             const grossProfit = Math.round((salePrice - totalCost - commission) * 100) / 100;
             const grossProfitRate = salePrice > 0 ? Math.round((grossProfit / salePrice) * 1e6) / 1e6 : 0;
-            return { salePrice, bom, lastMile, totalCost, commission, grossProfit, grossProfitRate };
+            return {
+                salePrice,
+                bom,
+                lastMile,
+                lastMileApplicable: amazon,
+                commissionApplicable: amazon,
+                totalCost,
+                commission,
+                grossProfit,
+                grossProfitRate,
+            };
         }
 
         function salesEnrichItemEconomics(item) {
@@ -1847,9 +1885,9 @@
                 td.classList.toggle('danger-note', !!extraCls);
             };
             setCell('warehouse', formatSalesEconomicsUsd(econ.bom, true));
-            setCell('last_mile', formatSalesEconomicsUsd(econ.lastMile, true));
+            setCell('last_mile', salesFormatEconLastMile(econ));
             setCell('total_cost', formatSalesEconomicsUsd(econ.totalCost, true));
-            setCell('commission', econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.commission, false) : '-');
+            setCell('commission', salesFormatEconCommission(econ));
             setCell('gross_profit', econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.grossProfit, false) : '-', econ.salePrice > 0 && econ.grossProfit < 0);
             setCell('gross_profit_rate', econ.salePrice > 0 ? formatSalesEconomicsRate(econ.grossProfitRate) : '-', econ.salePrice > 0 && econ.grossProfitRate < 0);
             const salePriceTd = row.querySelector('td.preview-edit-cell[data-field-wrap="sale_price_usd"]');
@@ -1931,8 +1969,12 @@
         }
 
         function isSalesAmazonPlatform(item) {
-            const p = String(item && item.platform_type_name || '').trim().toLowerCase();
-            return p.includes('亚马逊') || p === 'amazon' || p.includes('amazon');
+            return salesUsesAmazonEconomics(item);
+        }
+
+        function salesPlatformTypeNameFromShopId(shopId) {
+            const shop = (shopOptions || []).find(s => String(s.id) === String(shopId || ''));
+            return salesPlatformTypeNameOf(shop || '');
         }
 
         function salesAmazonAsinDpUrl(asin) {
@@ -1983,7 +2025,7 @@
             const rowCls = hidden ? 'sales-row-hidden' : '';
             return `
                 <tr class="${rowCls}" data-group-key="${gk}" data-sj-row-entity-id="${item.id}">
-                    <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
+                    <td style="text-align:center;" data-manage-col-key="__sales_chk__"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"></td>
                     <td class="sj-cell-thumb cell-center" data-manage-col-key="图片" style="text-align:center;" data-sj-preview="1">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
@@ -1998,9 +2040,9 @@
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
                     <td class="preview-edit-cell ${salePriceLow ? 'danger-note' : ''}" data-field-wrap="sale_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="sale_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(salePriceInputVal)}"></td>
                     <td class="sales-econ-cell" data-manage-col-key="产品+头程" data-sales-econ-col="warehouse">${formatSalesEconomicsUsd(econ.bom, true)}</td>
-                    <td class="sales-econ-cell" data-manage-col-key="尾程" data-sales-econ-col="last_mile">${formatSalesEconomicsUsd(econ.lastMile, true)}</td>
+                    <td class="sales-econ-cell" data-manage-col-key="尾程" data-sales-econ-col="last_mile">${salesFormatEconLastMile(econ)}</td>
                     <td class="sales-econ-cell" data-manage-col-key="成本总计" data-sales-econ-col="total_cost">${formatSalesEconomicsUsd(econ.totalCost, true)}</td>
-                    <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.commission, false) : '-'}</td>
+                    <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${salesFormatEconCommission(econ)}</td>
                     <td class="sales-econ-cell ${grossProfitLow ? 'danger-note' : ''}" data-manage-col-key="预估毛利" data-sales-econ-col="gross_profit">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.grossProfit, false) : '-'}</td>
                     <td class="sales-econ-cell ${grossProfitRateLow ? 'danger-note' : ''}" data-manage-col-key="预估毛利率" data-sales-econ-col="gross_profit_rate">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.grossProfitRate) : '-'}</td>
                     <td>${createdDateStr}</td>
@@ -2236,7 +2278,7 @@
                     const editActionsHtml = buildSalesParentGroupEditActionsHtml(headerMeta);
                     html.push(`
                 <tr class="sales-parent-group-row" data-group-key="${safeKey}" data-parent-code="${escapeAttr(headerMeta.code || '')}">
-                    <td style="text-align:center;"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
+                    <td style="text-align:center;" data-manage-col-key="__sales_chk__"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
                     <td colspan="19" class="sales-parent-group-head"><span class="sj-group-row-head">${groupLabelHtml}</span></td>
                     ${editActionsHtml}
@@ -2396,7 +2438,9 @@
         function updateCostWarning() {
             const sale = Number(document.getElementById('modalSalePrice').value || 0);
             const warehouse = Number(document.getElementById('modalWarehouseCost').value || 0);
-            const lastMile = Number(document.getElementById('modalLastMileCost').value || 0);
+            const shopId = document.getElementById('modalParentShop')?.value || '';
+            const amazon = isSalesAmazonPlatformName(salesPlatformTypeNameFromShopId(shopId));
+            const lastMile = amazon ? Number(document.getElementById('modalLastMileCost').value || 0) : 0;
             const warning = document.getElementById('modalCostWarning');
             const risk = sale > 0 && (warehouse + lastMile) > 0 && sale < (warehouse + lastMile);
             warning.style.display = risk ? '' : 'none';
@@ -5457,6 +5501,7 @@
         document.getElementById('modalParentShop').addEventListener('change', function() {
             renderParentCodeSuggestions();
             updateParentSkuMarkerVisibility();
+            updateCostWarning();
         });
         document.getElementById('modalParentCode').addEventListener('input', updateParentSkuMarkerVisibility);
         document.getElementById('modalSalePrice').addEventListener('input', updateCostWarning);

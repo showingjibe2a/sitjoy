@@ -2738,9 +2738,8 @@ button.sj-group-row-edit-btn {
 }
 
 /*
- * 托管表隐藏列：必须用 visibility:collapse，不能用 display:none。
- * display:none 会让表体单元格脱离列网格，而分离表头仍占位 → 串列错位。
- * 隐藏列内子节点须一并收束，否则复杂单元格（如权限编辑器）仍会撑开行高。
+ * 托管表隐藏列：colgroup 占位 + 单元格 visibility:collapse，保持分离表头与表体列索引一致。
+ * display:none 会让表体单元格脱离列网格，表现为「藏一列、后面一列也空/错位」。
  */
 .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col,
 .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col,
@@ -2759,6 +2758,9 @@ button.sj-group-row-edit-btn {
     min-height: 0 !important;
     overflow: hidden !important;
     white-space: nowrap !important;
+    color: transparent !important;
+    pointer-events: none !important;
+    user-select: none !important;
 }
 
 .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col > *,
@@ -2780,6 +2782,7 @@ button.sj-group-row-edit-btn {
 .sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col,
 .sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col.sj-agg-toggle-cell,
 .sj-wip-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col {
+    display: table-cell !important;
     visibility: visible !important;
     width: var(--sj-agg-toggle-w, 1.45rem) !important;
     min-width: var(--sj-agg-toggle-w, 1.45rem) !important;
@@ -2796,6 +2799,7 @@ button.sj-group-row-edit-btn {
 .sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.sj-agg-toggle-col,
 .sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.sj-agg-toggle-cell,
 .sj-wip-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.sj-agg-toggle-col {
+    display: table-cell !important;
     visibility: visible !important;
 }
 

@@ -3289,44 +3289,59 @@
         return map;
     }
 
-    function ensureManagedColumnKeys(state, headerMeta){
-        if(!state || !state.table || !Array.isArray(headerMeta) || !headerMeta.length) return;
+    function buildManagedOriginToKeyMap(state, headerMeta){
         const originToKey = new Map();
-        headerMeta.forEach((meta, idx) => {
-            const origin = Number(meta && meta.origin);
-            const key = String(meta && meta.key || '').trim() || `字段${idx + 1}`;
-            if(Number.isFinite(origin)) originToKey.set(origin, key);
-        });
-
-        const resolveKeyByCell = (cell, idx) => {
-            if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
-            const origin = Number(cell.dataset.manageColOrigin);
-            if(Number.isFinite(origin) && originToKey.has(origin)) return originToKey.get(origin);
-            const fallbackMeta = headerMeta[idx];
-            if(fallbackMeta && String(fallbackMeta.key || '').trim()) return String(fallbackMeta.key || '').trim();
-            return `字段${idx + 1}`;
-        };
-
-        const headerRow = getPrimaryHeaderRow(state);
-        if(headerRow && headerRow.cells){
-            Array.from(headerRow.cells || []).forEach((cell, idx) => {
-                const key = resolveKeyByCell(cell, idx);
-                if(String(cell.dataset.manageColKey || '').trim() !== key) cell.dataset.manageColKey = key;
+        const mainHeadRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(mainHeadRow){
+            Array.from(mainHeadRow.cells || []).forEach((cell, idx) => {
+                if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
+                const origin = Number(cell.dataset.manageColOrigin);
+                const key = String(cell.dataset.manageColKey || '').trim();
+                if(Number.isFinite(origin) && key) originToKey.set(origin, key);
             });
         }
+        (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta, idx) => {
+            const origin = Number(meta && meta.origin);
+            const key = String(meta && meta.key || '').trim();
+            if(Number.isFinite(origin) && key) originToKey.set(origin, key);
+            else if(!originToKey.has(idx) && key) originToKey.set(idx, key);
+        });
+        return originToKey;
+    }
 
-        Array.from(state.table.rows || []).forEach(row => {
-            if((row.cells || []).length !== state.headerCount) return;
-            let needsKeying = false;
+    function ensureManagedColumnKeys(state, headerMeta){
+        if(!state || !state.table || !Array.isArray(headerMeta) || !headerMeta.length) return;
+        const originToKey = buildManagedOriginToKeyMap(state, headerMeta);
+        const colCount = headerMeta.length;
+
+        const stampHeadRowByDom = (row) => {
+            if(!row || (row.cells || []).length !== colCount) return;
             Array.from(row.cells || []).forEach((cell, idx) => {
-                const key = resolveKeyByCell(cell, idx);
-                if(String(cell.dataset.manageColKey || '').trim() !== key) needsKeying = true;
+                const meta = headerMeta[idx];
+                const key = meta && String(meta.key || '').trim();
+                if(key) cell.dataset.manageColKey = key;
             });
-            if(!needsKeying) return;
+        };
+
+        const stampBodyRowByOrigin = (row) => {
+            if(!row || (row.cells || []).length !== colCount) return;
             Array.from(row.cells || []).forEach((cell, idx) => {
-                const key = resolveKeyByCell(cell, idx);
-                if(String(cell.dataset.manageColKey || '').trim() !== key) cell.dataset.manageColKey = key;
+                const key = originToKey.get(idx)
+                    || (headerMeta[idx] && String(headerMeta[idx].key || '').trim())
+                    || `字段${idx + 1}`;
+                cell.dataset.manageColKey = key;
+                cell.dataset.manageColOrigin = String(idx);
             });
+        };
+
+        const mainHeadRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(mainHeadRow) stampHeadRowByDom(mainHeadRow);
+        const detachedHeadRow = state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0];
+        if(detachedHeadRow && detachedHeadRow !== mainHeadRow) stampHeadRowByDom(detachedHeadRow);
+
+        Array.from(state.table.rows || []).forEach((row) => {
+            if(row.parentNode && String(row.parentNode.tagName || '').toUpperCase() === 'THEAD') return;
+            stampBodyRowByOrigin(row);
         });
     }
 
@@ -3698,22 +3713,137 @@
         });
     }
 
+    function isGroupedAggregateTableRow(row){
+        if(!row) return false;
+        if(window.SitjoyGroupedAggregate && typeof window.SitjoyGroupedAggregate.isGroupRow === 'function'){
+            return window.SitjoyGroupedAggregate.isGroupRow(row);
+        }
+        return false;
+    }
+
+    /** 以表头列索引为准判断隐藏（不依赖 tbody 上可能缺失/漂移的 manageColKey） */
+    function managedColumnHiddenAtIndex(state, headerCells, idx){
+        const headerCell = headerCells[idx];
+        if(!headerCell) return true;
+        const key = String(headerCell.dataset.manageColKey || '').trim();
+        return isManagedColumnSlotHidden(state, key, headerCell);
+    }
+
+    function countGroupedAggregateMiddleColspan(state, headerCells, options){
+        const total = headerCells.length;
+        if(total < 3) return 1;
+        const excludeLast = !!(options && options.excludeTrailingAction);
+        const end = excludeLast ? total - 1 : total;
+        let span = 0;
+        for(let i = 2; i < end; i += 1){
+            if(!managedColumnHiddenAtIndex(state, headerCells, i)) span += 1;
+        }
+        return Math.max(1, span);
+    }
+
+    function groupedAggregateRowHasActionsCell(cells){
+        return cells.some((cell) => {
+            if(!cell || !cell.classList) return false;
+            if(cell.classList.contains('sj-group-row-actions-cell')) return true;
+            return String(cell.dataset.manageColKey || '').trim() === '__sj_group_actions__';
+        });
+    }
+
+    function stampManagedCellColumnKey(cell, headerCell){
+        if(!cell || !headerCell) return;
+        const key = String(headerCell.dataset.manageColKey || '').trim();
+        if(key && String(cell.dataset.manageColKey || '').trim() !== key){
+            cell.dataset.manageColKey = key;
+        }
+    }
+
+    function applyManagedRowColumnVisibilityByIndex(row, state, headerCells){
+        const cells = Array.from(row.cells || []);
+        if(cells.length !== headerCells.length) return false;
+        cells.forEach((cell, idx) => {
+            const headerCell = headerCells[idx];
+            stampManagedCellColumnKey(cell, headerCell);
+            cell.classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, idx));
+        });
+        return true;
+    }
+
+    /** 父体/分组行：复选+收起+colspan 中间区+操作列，随可见列更新 colspan 与隐藏状态 */
+    function syncGroupedAggregateRowColumnLayout(state, headerCells){
+        if(!state || !state.table || !headerCells || !headerCells.length) return;
+        const tbody = state.tbody || (state.table.tBodies && state.table.tBodies[0]);
+        if(!tbody || !tbody.rows || !tbody.rows.length) return;
+        const lastIdx = headerCells.length - 1;
+
+        Array.from(tbody.rows || []).forEach((row) => {
+            if(!isGroupedAggregateTableRow(row)) return;
+            const cells = Array.from(row.cells || []);
+            if(!cells.length) return;
+            if(applyManagedRowColumnVisibilityByIndex(row, state, headerCells)) return;
+
+            const hasActionsCell = groupedAggregateRowHasActionsCell(cells);
+            const middleSpan = countGroupedAggregateMiddleColspan(state, headerCells, {
+                excludeTrailingAction: hasActionsCell,
+            });
+
+            if(cells[0] && headerCells[0]){
+                stampManagedCellColumnKey(cells[0], headerCells[0]);
+                cells[0].classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, 0));
+            }
+            if(cells[1] && headerCells[1]){
+                stampManagedCellColumnKey(cells[1], headerCells[1]);
+                cells[1].classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, 1));
+            }
+            const middleCell = cells.find((cell) => Number(cell.colSpan || 1) > 1) || null;
+            const actionsCell = cells.find((cell) => {
+                if(!cell || !cell.classList) return false;
+                if(cell.classList.contains('sj-group-row-actions-cell')) return true;
+                return String(cell.dataset.manageColKey || '').trim() === '__sj_group_actions__';
+            }) || null;
+            if(middleCell){
+                middleCell.colSpan = middleSpan;
+                middleCell.classList.toggle('pm-table-hide-col', middleSpan < 1);
+            }
+            if(actionsCell && headerCells[lastIdx]){
+                stampManagedCellColumnKey(actionsCell, headerCells[lastIdx]);
+                actionsCell.classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, lastIdx));
+            }
+        });
+    }
+
+    function getManagedBodyHeaderCells(state){
+        const row = state && state.table && state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        return row ? Array.from(row.cells || []) : [];
+    }
+
+    function getManagedDetachedHeaderCells(state){
+        const row = state && state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0];
+        if(row) return Array.from(row.cells || []);
+        return getManagedBodyHeaderCells(state);
+    }
+
     function syncManagedColumnVisibilitySlots(state){
         if(!state || !state.table) return;
-        const visible = state.visibleColumns || new Set();
-        const tables = [state.table];
-        if(state.headerTable) tables.push(state.headerTable);
-        tables.forEach((table) => {
-            if(!table) return;
-            Array.from(table.rows || []).forEach(row => {
-                if((row.cells || []).length !== state.headerCount) return;
-                Array.from(row.cells).forEach(cell => {
-                    const key = String(cell.dataset.manageColKey || '').trim();
-                    const hide = !visible.has(key) || isManagedColumnSlotHidden(state, key);
-                    cell.classList.toggle('pm-table-hide-col', hide);
-                });
-            });
+        if(Array.isArray(state.columnOrder) && state.columnOrder.length){
+            applyColumnOrder(state);
+            syncManagedColgroupOrder(state);
+        }
+        const bodyHeaderCells = getManagedBodyHeaderCells(state);
+        if(!bodyHeaderCells.length) return;
+        state.headerCount = bodyHeaderCells.length;
+
+        Array.from(state.table.rows || []).forEach((row) => {
+            applyManagedRowColumnVisibilityByIndex(row, state, bodyHeaderCells);
         });
+        if(state.headerTable){
+            const detachedHeaderCells = getManagedDetachedHeaderCells(state);
+            Array.from(state.headerTable.rows || []).forEach((row) => {
+                applyManagedRowColumnVisibilityByIndex(row, state, detachedHeaderCells);
+            });
+            syncGroupedAggregateRowColumnLayout(state, bodyHeaderCells);
+        } else {
+            syncGroupedAggregateRowColumnLayout(state, bodyHeaderCells);
+        }
         syncManagedColgroupSlotVisibility(state);
         if(state.headerTable){
             syncManagedHeaderColgroupFromMainTable(state);
@@ -3727,12 +3857,37 @@
         applyPinnedColumns(state, { force: true });
         syncManagedTableTotalWidth(state);
         syncTopScroll(state);
+        if(!state || !state.headerTable) return;
+        window.requestAnimationFrame(() => {
+            if(!state || !state.table) return;
+            syncManagedColumnVisibilitySlots(state);
+            syncManagedTableTotalWidth(state);
+            syncTopScroll(state);
+        });
     }
 
     function applyColumnVisibility(state){
+        const headerMeta = getHeaderMeta(state.table);
+        if(headerMeta.length){
+            state.headerCount = headerMeta.length;
+            ensureManagedColumnKeys(state, headerMeta);
+        }
+        if(Array.isArray(state.columnOrder) && state.columnOrder.length){
+            applyColumnOrder(state);
+            syncManagedColgroupOrder(state);
+        }
         syncManagedColumnVisibilitySlots(state);
         if(!state.light && state.headerTable){
             syncDetachedHeader(state);
+            const bodyHeaderCells = getManagedBodyHeaderCells(state);
+            if(bodyHeaderCells.length){
+                const detachedHeaderCells = getManagedDetachedHeaderCells(state);
+                Array.from(state.headerTable.rows || []).forEach((row) => {
+                    applyManagedRowColumnVisibilityByIndex(row, state, detachedHeaderCells);
+                });
+                syncManagedHeaderColgroupFromMainTable(state);
+                syncGroupedAggregateRowColumnLayout(state, bodyHeaderCells);
+            }
             ensureResizeHandles(state);
         }
     }
@@ -5250,6 +5405,10 @@
         if(!headerMeta.length) return;
         state.headerCount = headerMeta.length;
         ensureManagedColumnKeys(state, headerMeta);
+        if(Array.isArray(state.columnOrder) && state.columnOrder.length){
+            applyColumnOrder(state);
+            syncManagedColgroupOrder(state);
+        }
         syncManagedColumnVisibilitySlots(state);
         syncSjAggToggleColumnCssVar(state);
         syncTopScroll(state);
