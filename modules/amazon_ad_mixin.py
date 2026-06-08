@@ -2986,6 +2986,12 @@ class AmazonAdMixin:
         name = row.get('name') or ''
         portfolio_name = self._adjustment_portfolio_name_from_row(row)
         campaign_name = row.get('campaign_name') or ''
+        portfolio_id = self._parse_int(row.get('portfolio_id'))
+        campaign_id = self._parse_int(row.get('campaign_id'))
+        if level == 'portfolio':
+            portfolio_id = self._parse_int(row.get('id'))
+        elif level == 'campaign':
+            campaign_id = self._parse_int(row.get('id'))
         return {
             'id': row.get('id'),
             'ad_name': name,
@@ -2995,6 +3001,8 @@ class AmazonAdMixin:
             'portfolio_name': portfolio_name,
             'campaign_name': campaign_name if level == 'group' else (name if level == 'campaign' else ''),
             'group_name': name if level == 'group' else '',
+            'portfolio_id': portfolio_id,
+            'campaign_id': campaign_id,
         }
 
     def _fetch_adjustment_ad_info(self, cur, ad_item_id):

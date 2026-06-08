@@ -1532,6 +1532,118 @@ section.card.pm-card .pm-toolbar .btn-accent {
     box-shadow: 0 0 0 2px rgba(42, 36, 32, 0.1);
 }
 
+/* 胶囊小号按钮：两端半圆 + 中间矩形，尺寸接近 btn-small */
+.btn-capsule-sm,
+button.btn-capsule-sm {
+    flex: 0 0 auto;
+    min-width: 1.65rem;
+    min-height: var(--ui-control-height-sm);
+    height: var(--ui-control-height-sm);
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--morandi-sand);
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    box-shadow: none;
+}
+.btn-capsule-sm:hover:not(:disabled),
+button.btn-capsule-sm:hover:not(:disabled) {
+    color: var(--morandi-ink);
+    background: rgba(207, 199, 189, 0.55);
+    border-color: var(--morandi-sand);
+}
+.btn-capsule-sm.is-active,
+button.btn-capsule-sm.is-active {
+    background: var(--morandi-ink);
+    border-color: var(--morandi-ink);
+    color: #fff;
+}
+.btn-capsule-sm:disabled,
+button.btn-capsule-sm:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.btn-capsule-sm:hover,
+.btn-capsule-sm:active,
+button.btn-capsule-sm:hover,
+button.btn-capsule-sm:active {
+    transform: none;
+}
+
+/* 输入框旁胶囊按钮 + 悬浮菜单（::before 桥接间距，避免移入菜单时 hover 断裂） */
+.input-capsule-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+.input-capsule-menu-panel {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 5px);
+    z-index: 46;
+    min-width: 108px;
+    padding: 0.3rem;
+    border: 1px solid var(--morandi-sand);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+.input-capsule-menu-panel::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -5px;
+    height: 5px;
+}
+.input-capsule-menu:hover .input-capsule-menu-panel,
+.input-capsule-menu:focus-within .input-capsule-menu-panel {
+    display: block;
+}
+.input-capsule-menu-item,
+button.input-capsule-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 0;
+    height: auto;
+    padding: 0.38rem 0.45rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--morandi-ink);
+    font-size: 0.82rem;
+    font-weight: 500;
+    line-height: 1.25;
+    cursor: pointer;
+    text-align: left;
+    box-shadow: none;
+    transform: none;
+}
+.input-capsule-menu-item:hover,
+.input-capsule-menu-item:focus,
+button.input-capsule-menu-item:hover,
+button.input-capsule-menu-item:focus {
+    background: rgba(247, 244, 239, 0.95);
+    outline: none;
+    transform: none;
+}
+.input-capsule-menu-item .status-pill {
+    pointer-events: none;
+    font-size: 0.72rem;
+    padding: 0.12rem 0.42rem;
+}
+
 /* 原生 date / datetime-local / month：较大触控区 */
 input.optional-field[type="date"],
 input.optional-field[type="datetime-local"],
@@ -5982,7 +6094,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除图标微按钮、小号按钮、状态 pill 等） */
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn) {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -6043,18 +6155,22 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):active {
     transform: translateY(0);
 }
 
 .btn-small:hover,
 .btn-small:active,
 button.btn-small:hover,
-button.btn-small:active {
+button.btn-small:active,
+.btn-capsule-sm:hover,
+.btn-capsule-sm:active,
+button.btn-capsule-sm:hover,
+button.btn-capsule-sm:active {
     transform: none;
 }
 

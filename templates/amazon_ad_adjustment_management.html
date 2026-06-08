@@ -84,6 +84,22 @@
             word-break: break-word;
             min-height: 1.35rem;
         }
+        .aa-info-value-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .aa-info-value-wrap .aa-readonly {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        #infoCampaign,
+        #infoGroup {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            word-break: normal;
+        }
         .aa-field-row select,
         .aa-field-row input[type="text"],
         .aa-field-row input[type="datetime-local"] {
@@ -164,72 +180,9 @@
             min-width: 0;
             width: auto !important;
         }
-        .aa-value-quick {
-            position: relative;
-            flex: 0 0 auto;
-        }
-        .aa-value-input-wrap.aa-value-quick--empty .aa-value-quick-btn {
+        .aa-value-input-wrap.input-capsule-menu--empty .btn-capsule-sm {
             opacity: 0.35;
             pointer-events: none;
-        }
-        .aa-value-quick-btn {
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            border: 1px solid var(--morandi-sand);
-            background: #fff;
-            color: var(--morandi-slate);
-            font-size: 0.95rem;
-            line-height: 1;
-            cursor: pointer;
-            padding: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .aa-value-quick-btn:hover:not(:disabled) {
-            border-color: var(--morandi-ink);
-            color: var(--morandi-ink);
-            background: rgba(247, 244, 239, 0.95);
-        }
-        .aa-value-quick-menu {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: calc(100% + 5px);
-            z-index: 46;
-            min-width: 108px;
-            padding: 0.3rem;
-            border: 1px solid var(--morandi-sand);
-            border-radius: 8px;
-            background: #fff;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-        }
-        .aa-value-quick:hover .aa-value-quick-menu,
-        .aa-value-quick:focus-within .aa-value-quick-menu {
-            display: block;
-        }
-        .aa-value-quick-item {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            width: 100%;
-            padding: 0.38rem 0.45rem;
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-            cursor: pointer;
-            text-align: left;
-        }
-        .aa-value-quick-item:hover,
-        .aa-value-quick-item:focus {
-            background: rgba(247, 244, 239, 0.95);
-            outline: none;
-        }
-        .aa-value-quick-item .status-pill {
-            pointer-events: none;
-            font-size: 0.72rem;
-            padding: 0.12rem 0.42rem;
         }
         .aa-search-card {
             padding: 0.75rem;
@@ -548,15 +501,24 @@
                         </div>
                         <div class="aa-field-row">
                             <label>广告组合</label>
-                            <div class="aa-readonly" id="infoPortfolio">-</div>
+                            <div class="aa-info-value-wrap">
+                                <div class="aa-readonly" id="infoPortfolio">-</div>
+                                <button type="button" class="btn-capsule-sm" id="filterByPortfolioBtn" data-filter-type="portfolio" title="筛选该组合及下属活动/广告组" disabled>筛</button>
+                            </div>
                         </div>
                         <div class="aa-field-row">
                             <label>广告活动</label>
-                            <div class="aa-readonly" id="infoCampaign">-</div>
+                            <div class="aa-info-value-wrap">
+                                <div class="aa-readonly" id="infoCampaign">-</div>
+                                <button type="button" class="btn-capsule-sm" id="filterByCampaignBtn" data-filter-type="campaign" title="筛选该活动及下属广告组" disabled>筛</button>
+                            </div>
                         </div>
                         <div class="aa-field-row">
                             <label>广告组</label>
-                            <div class="aa-readonly" id="infoGroup">-</div>
+                            <div class="aa-info-value-wrap">
+                                <div class="aa-readonly" id="infoGroup">-</div>
+                                <button type="button" class="btn-capsule-sm" id="filterByGroupBtn" data-filter-type="group" title="筛选该广告组" disabled>筛</button>
+                            </div>
                         </div>
 
                         <h4 class="aa-form-block-title">基础调整信息</h4>
@@ -575,21 +537,21 @@
                         </div>
                         <div class="aa-field-row">
                             <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
-                            <div class="aa-value-input-wrap aa-value-quick--empty" data-quick-field="beforeValue">
+                            <div class="aa-value-input-wrap input-capsule-menu--empty" data-quick-field="beforeValue">
                                 <input type="text" id="beforeValue" placeholder="例如：0.75">
-                                <div class="aa-value-quick">
-                                    <button type="button" class="aa-value-quick-btn" aria-label="快速填充修改前" title="快速填充">⋯</button>
-                                    <div class="aa-value-quick-menu" id="beforeValueQuickMenu" role="menu" aria-label="修改前快速填充"></div>
+                                <div class="input-capsule-menu">
+                                    <button type="button" class="btn-capsule-sm" aria-label="快速填充修改前" title="快速填充">⋯</button>
+                                    <div class="input-capsule-menu-panel" id="beforeValueQuickMenu" role="menu" aria-label="修改前快速填充"></div>
                                 </div>
                             </div>
                         </div>
                         <div class="aa-field-row">
                             <label for="afterValue">修改后<span class="required-asterisk">*</span></label>
-                            <div class="aa-value-input-wrap aa-value-quick--empty" data-quick-field="afterValue">
+                            <div class="aa-value-input-wrap input-capsule-menu--empty" data-quick-field="afterValue">
                                 <input type="text" id="afterValue" placeholder="例如：0.95">
-                                <div class="aa-value-quick">
-                                    <button type="button" class="aa-value-quick-btn" aria-label="快速填充修改后" title="快速填充">⋯</button>
-                                    <div class="aa-value-quick-menu" id="afterValueQuickMenu" role="menu" aria-label="修改后快速填充"></div>
+                                <div class="input-capsule-menu">
+                                    <button type="button" class="btn-capsule-sm" aria-label="快速填充修改后" title="快速填充">⋯</button>
+                                    <div class="input-capsule-menu-panel" id="afterValueQuickMenu" role="menu" aria-label="修改后快速填充"></div>
                                 </div>
                             </div>
                         </div>
@@ -739,6 +701,7 @@
         let allowedOperations = [];
         let targetOptionsCache = [];
         let targetSuggestTimer = 0;
+        let hierarchyFilter = null;
 
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
@@ -813,11 +776,94 @@
             return adItemSearchText(item).includes(keyword.toLowerCase());
         }
 
+        function resolveSelectedAdHierarchy(item) {
+            if (!item) return null;
+            const level = String(item.ad_level || '').trim();
+            const id = Number(item.id || 0);
+            if (!id) return null;
+            let portfolioId = 0;
+            let campaignId = 0;
+            let groupId = 0;
+            if (level === 'portfolio') {
+                portfolioId = id;
+            } else if (level === 'campaign') {
+                portfolioId = Number(item.portfolio_id || 0);
+                campaignId = id;
+            } else if (level === 'group') {
+                portfolioId = Number(item.portfolio_id || 0);
+                campaignId = Number(item.campaign_id || 0);
+                groupId = id;
+            }
+            return { level, id, portfolioId, campaignId, groupId };
+        }
+
+        function getItemPortfolioId(item) {
+            const level = String(item.ad_level || '').trim();
+            if (level === 'portfolio') return Number(item.id || 0);
+            return Number(item.portfolio_id || 0);
+        }
+
+        function getItemCampaignId(item) {
+            const level = String(item.ad_level || '').trim();
+            if (level === 'campaign') return Number(item.id || 0);
+            if (level === 'group') return Number(item.campaign_id || 0);
+            return 0;
+        }
+
+        function adItemMatchesHierarchyFilter(item) {
+            if (!hierarchyFilter) return true;
+            if (hierarchyFilter.type === 'portfolio') {
+                return getItemPortfolioId(item) === Number(hierarchyFilter.portfolioId || 0);
+            }
+            if (hierarchyFilter.type === 'campaign') {
+                return getItemCampaignId(item) === Number(hierarchyFilter.campaignId || 0);
+            }
+            if (hierarchyFilter.type === 'group') {
+                return String(item.ad_level || '') === 'group'
+                    && Number(item.id || 0) === Number(hierarchyFilter.groupId || 0);
+            }
+            return true;
+        }
+
+        function syncHierarchyFilterButtons() {
+            const h = resolveSelectedAdHierarchy(selectedAd);
+            const map = {
+                portfolio: { btn: 'filterByPortfolioBtn', enabled: !!(h && h.portfolioId) },
+                campaign: { btn: 'filterByCampaignBtn', enabled: !!(h && h.campaignId) },
+                group: { btn: 'filterByGroupBtn', enabled: !!(h && h.groupId) },
+            };
+            Object.keys(map).forEach((type) => {
+                const btn = document.getElementById(map[type].btn);
+                if (!btn) return;
+                btn.disabled = !map[type].enabled;
+                btn.classList.toggle('is-active', !!(hierarchyFilter && hierarchyFilter.type === type));
+            });
+        }
+
+        function toggleHierarchyFilter(type) {
+            const h = resolveSelectedAdHierarchy(selectedAd);
+            if (!h) return;
+            if (hierarchyFilter && hierarchyFilter.type === type) {
+                hierarchyFilter = null;
+            } else if (type === 'portfolio' && h.portfolioId) {
+                hierarchyFilter = { type: 'portfolio', portfolioId: h.portfolioId };
+            } else if (type === 'campaign' && h.campaignId) {
+                hierarchyFilter = { type: 'campaign', campaignId: h.campaignId };
+            } else if (type === 'group' && h.groupId) {
+                hierarchyFilter = { type: 'group', groupId: h.groupId };
+            } else {
+                return;
+            }
+            syncHierarchyFilterButtons();
+            applyAdListFiltersAndRender();
+        }
+
         function applyAdListFilters(items) {
             const keyword = (document.getElementById('adSearchInput')?.value || '').trim();
             const prefs = getAdSearchPrefs();
             return (items || []).filter(item => {
                 if (!statusAllowed(item.status, prefs)) return false;
+                if (!adItemMatchesHierarchyFilter(item)) return false;
                 return adItemMatchesKeyword(item, keyword, prefs.exactMatch);
             });
         }
@@ -1199,16 +1245,50 @@
             return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
         }
 
+        function placementPercentValueFromBid(bidRaw) {
+            const bid = String(bidRaw || '').trim();
+            if (!bid) return '';
+            if (bid.includes('%')) {
+                const numPart = bid.replace(/%/g, '').replace(/,/g, '').trim();
+                if (!numPart) return '';
+                return `${numPart}%`;
+            }
+            if (/^\d+(\.\d+)?$/.test(bid)) {
+                const parsed = parseFloat(bid);
+                if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return '';
+                if (parsed < 1 && bid.includes('.')) return '';
+                return `${bid}%`;
+            }
+            return '';
+        }
+
         function beforeValueFromTargetOption(target, op) {
             const bid = String((target && target.bid_value) || '').trim();
             if (!bid) return '';
             if (isModifyPlacementOp(op)) {
-                return bid.includes('%') ? bid : '';
+                return placementPercentValueFromBid(bid);
             }
             if (isModifyDeliveryTargetOp(op)) {
                 return bid;
             }
             return '';
+        }
+
+        function refreshBeforeValueForTargetObject() {
+            const op = getSelectedOperationType();
+            if (!needsTargetObjectSuggest(op)) return;
+            const target = getMatchedTargetFromObject();
+            const beforeInput = document.getElementById('beforeValue');
+            if (!beforeInput) return;
+            if (!target) return;
+            const next = beforeValueFromTargetOption(target, op);
+            if (isModifyPlacementOp(op)) {
+                beforeInput.value = next;
+            } else if (!String(beforeInput.value || '').trim()) {
+                beforeInput.value = next;
+            }
+            syncValueQuickMenus();
+            updateSubmitButtonState();
         }
 
         function oppositeDeliveryStatus(status) {
@@ -1270,15 +1350,15 @@
                 const menu = document.getElementById(`${fieldId}QuickMenu`);
                 if (!wrap || !menu) return;
                 const options = buildQuickFillOptions(fieldId);
-                wrap.classList.toggle('aa-value-quick--empty', !options.length);
+                wrap.classList.toggle('input-capsule-menu--empty', !options.length);
                 if (!options.length) {
                     menu.innerHTML = '';
                     return;
                 }
                 menu.innerHTML = options.map((opt, idx) => (
-                    `<button type="button" class="aa-value-quick-item" role="menuitem" data-opt-idx="${idx}">${opt.html}</button>`
+                    `<button type="button" class="input-capsule-menu-item" role="menuitem" data-opt-idx="${idx}">${opt.html}</button>`
                 )).join('');
-                menu.querySelectorAll('.aa-value-quick-item').forEach((btn) => {
+                menu.querySelectorAll('.input-capsule-menu-item').forEach((btn) => {
                     btn.addEventListener('mousedown', (ev) => ev.preventDefault());
                     btn.addEventListener('click', (ev) => {
                         ev.preventDefault();
@@ -1305,8 +1385,7 @@
                 beforeInput.value = beforeValueFromTargetOption(target, op);
             }
             hideTargetObjectSuggest();
-            syncValueQuickMenus();
-            updateSubmitButtonState();
+            refreshBeforeValueForTargetObject();
         }
 
         function filterTargetOptionsForSuggest(query) {
@@ -1399,20 +1478,11 @@
                 hideTargetObjectSuggest();
             }
             syncValueQuickMenus();
+            refreshBeforeValueForTargetObject();
         }
 
         function tryAutofillBeforeValueFromTargetObject() {
-            const op = getSelectedOperationType();
-            if (!needsTargetObjectSuggest(op)) return;
-            const desc = String(document.getElementById('targetObject')?.value || '').trim();
-            if (!desc) return;
-            const target = targetOptionsCache.find(x => String(x.target_desc || '').trim() === desc);
-            if (!target) return;
-            const beforeInput = document.getElementById('beforeValue');
-            if (!beforeInput || String(beforeInput.value || '').trim()) return;
-            beforeInput.value = beforeValueFromTargetOption(target, op);
-            syncValueQuickMenus();
-            updateSubmitButtonState();
+            refreshBeforeValueForTargetObject();
         }
 
         const AA_AD_COL_LS = 'sj.amazonAdAdjustment.adTableCols.v4';
@@ -1704,6 +1774,7 @@
             });
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(reasonSelect);
             syncTargetObjectFieldMode();
+            refreshBeforeValueForTargetObject();
             updateSubmitButtonState();
         }
 
@@ -1740,8 +1811,19 @@
             const info = adInfo || {};
             document.getElementById('infoAdType').innerText = info.ad_type_text || '-';
             document.getElementById('infoPortfolio').innerText = info.portfolio_name || '-';
-            document.getElementById('infoCampaign').innerText = info.campaign_name || '-';
-            document.getElementById('infoGroup').innerText = info.group_name || '-';
+            const campaignText = info.campaign_name || '-';
+            const groupText = info.group_name || '-';
+            const campaignEl = document.getElementById('infoCampaign');
+            const groupEl = document.getElementById('infoGroup');
+            if (campaignEl) {
+                campaignEl.innerText = campaignText;
+                campaignEl.title = campaignText !== '-' ? campaignText : '';
+            }
+            if (groupEl) {
+                groupEl.innerText = groupText;
+                groupEl.title = groupText !== '-' ? groupText : '';
+            }
+            syncHierarchyFilterButtons();
         }
 
         function setFieldValue(id, value) {
@@ -1921,12 +2003,23 @@
         }
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
+        ['filterByPortfolioBtn', 'filterByCampaignBtn', 'filterByGroupBtn'].forEach((btnId) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                const type = String(btn.getAttribute('data-filter-type') || '').trim();
+                if (type) toggleHierarchyFilter(type);
+            });
+        });
         (function initTargetObjectSuggest() {
             const input = document.getElementById('targetObject');
             if (!input) return;
             input.addEventListener('input', () => {
                 scheduleTargetObjectSuggest();
                 syncValueQuickMenus();
+                if (isModifyPlacementOp(getSelectedOperationType())) {
+                    refreshBeforeValueForTargetObject();
+                }
                 updateSubmitButtonState();
             });
             input.addEventListener('focus', () => {
