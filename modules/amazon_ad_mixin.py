@@ -3124,6 +3124,33 @@ class AmazonAdMixin:
                 items = [self._serialize_adjustment_ad_list_item(r) for r in rows]
                 return self.send_json({'status': 'success', 'items': items}, start_response)
 
+            if method == 'GET' and action == 'target-options':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                if not ad_item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, status, target_desc, bid_value
+                            FROM amazon_ad_targets
+                            WHERE ad_item_id=%s
+                            ORDER BY target_desc ASC, id ASC
+                            """,
+                            (ad_item_id,),
+                        )
+                        rows = cur.fetchall() or []
+                items = []
+                for row in rows:
+                    bid_value = str(row.get('bid_value') or '').strip()
+                    items.append({
+                        'id': row.get('id'),
+                        'status': row.get('status') or '启动',
+                        'target_desc': row.get('target_desc') or '',
+                        'bid_value': bid_value,
+                    })
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
             if method == 'GET' and action == 'defaults':
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
                 if not ad_item_id:

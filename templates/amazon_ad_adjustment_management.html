@@ -94,6 +94,66 @@
             border-radius: 6px;
             border: 1px solid var(--morandi-sand);
         }
+        .aa-target-object-wrap {
+            position: relative;
+        }
+        .aa-target-suggest-list {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 4px);
+            z-index: 40;
+            max-height: 220px;
+            overflow: auto;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+        }
+        .aa-target-suggest-list.open {
+            display: block;
+        }
+        .aa-target-suggest-item {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            width: 100%;
+            padding: 0.42rem 0.55rem;
+            border: none;
+            border-bottom: 1px solid var(--morandi-mist);
+            background: #fff;
+            text-align: left;
+            cursor: pointer;
+            font-size: 0.84rem;
+            color: var(--morandi-ink);
+        }
+        .aa-target-suggest-item:last-child {
+            border-bottom: none;
+        }
+        .aa-target-suggest-item:hover,
+        .aa-target-suggest-item:focus {
+            background: rgba(247, 244, 239, 0.95);
+            outline: none;
+        }
+        .aa-target-suggest-item .status-segment {
+            flex: 0 0 auto;
+        }
+        .aa-target-suggest-item .status-pill {
+            pointer-events: none;
+            font-size: 0.72rem;
+            padding: 0.12rem 0.42rem;
+        }
+        .aa-target-suggest-name {
+            flex: 1 1 auto;
+            min-width: 0;
+            word-break: break-word;
+        }
+        .aa-target-suggest-empty {
+            padding: 0.55rem 0.65rem;
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
+        }
         .aa-search-card {
             padding: 0.75rem;
             flex: 0 0 auto;
@@ -431,7 +491,10 @@
                         </div>
                         <div class="aa-field-row">
                             <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
-                            <input type="text" id="targetObject" placeholder="关键词 / 竞价 / 投放位置">
+                            <div class="aa-target-object-wrap">
+                                <input type="text" id="targetObject" placeholder="关键词 / 竞价 / 投放位置" autocomplete="off">
+                                <div id="targetObjectSuggest" class="aa-target-suggest-list" role="listbox" aria-label="投放联想"></div>
+                            </div>
                         </div>
                         <div class="aa-field-row">
                             <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
@@ -585,6 +648,8 @@
         let selectedAd = null;
         let selectedAdId = null;
         let allowedOperations = [];
+        let targetOptionsCache = [];
+        let targetSuggestTimer = 0;
 
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
@@ -1010,11 +1075,174 @@
         }
 
         function adListStatusCell(item) {
-            const status = String(item.status || '启动').trim() || '启动';
+            return renderTargetStatusPill(item && item.status);
+        }
+
+        function renderTargetStatusPill(status) {
+            const text = String(status || '启动').trim() || '启动';
             let pillClass = 'status-pill--enabled';
-            if (status === '暂停') pillClass = 'status-pill--paused';
-            else if (status === '存档') pillClass = 'status-pill--archived';
-            return `<span class="status-segment status-segment--inline readonly" aria-label="状态：${escapeHtml(status)}"><span class="status-pill ${pillClass} is-active">${escapeHtml(status)}</span></span>`;
+            if (text === '暂停') pillClass = 'status-pill--paused';
+            else if (text === '存档') pillClass = 'status-pill--archived';
+            return `<span class="status-segment status-segment--inline readonly" aria-label="状态：${escapeHtml(text)}"><span class="status-pill ${pillClass} is-active">${escapeHtml(text)}</span></span>`;
+        }
+
+        function normalizeOperationTypeName(name) {
+            return String(name || '').replace(/[『』【】「」]/g, '').trim();
+        }
+
+        function getSelectedOperationType() {
+            const opId = String(document.getElementById('operationType')?.value || '');
+            if (!opId) return null;
+            return allowedOperations.find(item => String(item.id) === opId) || null;
+        }
+
+        function isModifyDeliveryTargetOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('投放') && !n.includes('广告位');
+        }
+
+        function isModifyPlacementOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('广告位');
+        }
+
+        function needsTargetObjectSuggest(op) {
+            return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
+        }
+
+        function beforeValueFromTargetOption(target, op) {
+            const bid = String((target && target.bid_value) || '').trim();
+            if (!bid) return '';
+            if (isModifyPlacementOp(op)) {
+                return bid.includes('%') ? bid : '';
+            }
+            if (isModifyDeliveryTargetOp(op)) {
+                return bid;
+            }
+            return '';
+        }
+
+        function hideTargetObjectSuggest() {
+            const panel = document.getElementById('targetObjectSuggest');
+            if (!panel) return;
+            panel.classList.remove('open');
+            panel.innerHTML = '';
+        }
+
+        function applyTargetObjectSelection(target, op) {
+            const input = document.getElementById('targetObject');
+            const beforeInput = document.getElementById('beforeValue');
+            if (!input || !target) return;
+            input.value = String(target.target_desc || '').trim();
+            if (beforeInput) {
+                beforeInput.value = beforeValueFromTargetOption(target, op);
+            }
+            hideTargetObjectSuggest();
+            updateSubmitButtonState();
+        }
+
+        function filterTargetOptionsForSuggest(query) {
+            const q = String(query || '').trim().toLowerCase();
+            const list = Array.isArray(targetOptionsCache) ? targetOptionsCache : [];
+            if (!q) return list.slice(0, 80);
+            return list.filter(item => String(item.target_desc || '').toLowerCase().includes(q)).slice(0, 80);
+        }
+
+        function renderTargetObjectSuggest(query) {
+            const panel = document.getElementById('targetObjectSuggest');
+            const op = getSelectedOperationType();
+            if (!panel || !needsTargetObjectSuggest(op)) {
+                hideTargetObjectSuggest();
+                return;
+            }
+            const matches = filterTargetOptionsForSuggest(query);
+            if (!matches.length) {
+                panel.innerHTML = '<div class="aa-target-suggest-empty">无匹配投放</div>';
+                panel.classList.add('open');
+                return;
+            }
+            panel.innerHTML = matches.map(item => {
+                const desc = String(item.target_desc || '').trim();
+                const enc = encodeURIComponent(desc);
+                return `<button type="button" class="aa-target-suggest-item" role="option" data-target-desc-enc="${enc}">${renderTargetStatusPill(item.status)}<span class="aa-target-suggest-name">${escapeHtml(desc)}</span></button>`;
+            }).join('');
+            panel.querySelectorAll('.aa-target-suggest-item').forEach(btn => {
+                btn.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                });
+                btn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    let desc = '';
+                    try {
+                        desc = decodeURIComponent(String(btn.getAttribute('data-target-desc-enc') || ''));
+                    } catch (_err) {
+                        desc = '';
+                    }
+                    const target = targetOptionsCache.find(x => String(x.target_desc || '').trim() === desc);
+                    if (target) applyTargetObjectSelection(target, op);
+                });
+            });
+            panel.classList.add('open');
+        }
+
+        function scheduleTargetObjectSuggest() {
+            window.clearTimeout(targetSuggestTimer);
+            targetSuggestTimer = window.setTimeout(() => {
+                const op = getSelectedOperationType();
+                if (!needsTargetObjectSuggest(op)) {
+                    hideTargetObjectSuggest();
+                    return;
+                }
+                const query = document.getElementById('targetObject')?.value || '';
+                renderTargetObjectSuggest(query);
+            }, 180);
+        }
+
+        function loadTargetOptionsForSelectedAd() {
+            targetOptionsCache = [];
+            hideTargetObjectSuggest();
+            if (!selectedAdId) return Promise.resolve();
+            return fetch(`/api/amazon-ad-adjustment?action=target-options&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        targetOptionsCache = [];
+                        return;
+                    }
+                    targetOptionsCache = Array.isArray(data.items) ? data.items : [];
+                })
+                .catch(() => {
+                    targetOptionsCache = [];
+                });
+        }
+
+        function syncTargetObjectFieldMode() {
+            const input = document.getElementById('targetObject');
+            const op = getSelectedOperationType();
+            const enabled = needsTargetObjectSuggest(op);
+            if (!input) return;
+            if (enabled) {
+                input.placeholder = '输入投放名称联想选择';
+                if (!targetOptionsCache.length && selectedAdId) {
+                    loadTargetOptionsForSelectedAd().then(() => scheduleTargetObjectSuggest());
+                }
+            } else {
+                input.placeholder = '关键词 / 竞价 / 投放位置';
+                hideTargetObjectSuggest();
+            }
+        }
+
+        function tryAutofillBeforeValueFromTargetObject() {
+            const op = getSelectedOperationType();
+            if (!needsTargetObjectSuggest(op)) return;
+            const desc = String(document.getElementById('targetObject')?.value || '').trim();
+            if (!desc) return;
+            const target = targetOptionsCache.find(x => String(x.target_desc || '').trim() === desc);
+            if (!target) return;
+            const beforeInput = document.getElementById('beforeValue');
+            if (!beforeInput || String(beforeInput.value || '').trim()) return;
+            beforeInput.value = beforeValueFromTargetOption(target, op);
+            updateSubmitButtonState();
         }
 
         const AA_AD_COL_LS = 'sj.amazonAdAdjustment.adTableCols.v4';
@@ -1305,6 +1533,7 @@
                 reasonSelect.appendChild(option);
             });
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(reasonSelect);
+            syncTargetObjectFieldMode();
             updateSubmitButtonState();
         }
 
@@ -1390,7 +1619,9 @@
                     setFieldValue('attributionSales', '');
                     setFieldValue('remark', '');
                     setAttributionChecked(false);
+                    hideTargetObjectSuggest();
                     updateSubmitButtonState();
+                    loadTargetOptionsForSelectedAd().then(() => syncTargetObjectFieldMode());
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('加载默认信息失败: ' + err, true, 6500);
@@ -1520,6 +1751,27 @@
         }
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
+        (function initTargetObjectSuggest() {
+            const input = document.getElementById('targetObject');
+            if (!input) return;
+            input.addEventListener('input', () => {
+                scheduleTargetObjectSuggest();
+                updateSubmitButtonState();
+            });
+            input.addEventListener('focus', () => {
+                scheduleTargetObjectSuggest();
+            });
+            input.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    hideTargetObjectSuggest();
+                    tryAutofillBeforeValueFromTargetObject();
+                }, 160);
+            });
+            document.addEventListener('click', (ev) => {
+                const wrap = input.closest('.aa-target-object-wrap');
+                if (wrap && !wrap.contains(ev.target)) hideTargetObjectSuggest();
+            });
+        })();
         document.getElementById('adUploadInput').addEventListener('change', function(e) {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
