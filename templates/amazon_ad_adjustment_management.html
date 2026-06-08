@@ -143,11 +143,6 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .aa-ad-table thead th.aa-th--portfolio { color: #3d5f82; }
-        .aa-ad-table thead th.aa-th--campaign { color: #7a5528; }
-        .aa-ad-table thead th.aa-th--group { color: #3d6a52; }
-        .aa-ad-table thead th.aa-th--status { color: #5a5f66; }
-        .aa-ad-table thead th.aa-th--ad-type { color: #4a5568; }
         .aa-ad-table thead th {
             position: relative;
         }
@@ -204,30 +199,6 @@
         }
         .aa-ad-table tbody tr:last-child td {
             border-bottom: none;
-        }
-        .aa-ad-table td.aa-td--portfolio {
-            color: #3d5f82;
-            border-left: 3px solid #5b8fc7;
-        }
-        .aa-ad-table td.aa-td--campaign {
-            color: #7a5528;
-            font-weight: 600;
-            border-left: 3px solid #c98a4b;
-        }
-        .aa-ad-table td.aa-td--group {
-            color: #3d6a52;
-            border-left: 3px solid #6a9b6e;
-        }
-        .aa-ad-table td.aa-td--status {
-            border-left: 3px solid #9aa3ad;
-        }
-        .aa-ad-table td.aa-td--ad-type {
-            border-left: 3px solid #7c8a9a;
-            color: var(--morandi-ink);
-        }
-        .aa-ad-table .aa-item-status {
-            font-size: 0.8rem;
-            font-weight: 600;
         }
         .aa-ad-cell-empty { color: var(--morandi-slate); opacity: 0.45; font-weight: 400; }
         .aa-list-empty {
@@ -388,13 +359,6 @@
             align-items: center;
             gap: 0.5rem;
         }
-        .aa-item-status {
-            font-size: 0.78rem;
-            margin-left: 0.35rem;
-            color: var(--morandi-slate);
-        }
-        .aa-item-status.is-paused { color: #8c6a2f; }
-        .aa-item-status.is-archived { color: #6b7280; }
     </style>
 </head>
 <body>
@@ -1036,15 +1000,24 @@
             return escapeHtml(text);
         }
 
-        function adListStatusCell(item) {
-            const status = String(item.status || '启动').trim() || '启动';
-            const cls = status === '暂停' ? 'is-paused' : (status === '存档' ? 'is-archived' : '');
-            return `<span class="aa-item-status ${cls}">${escapeHtml(status)}</span>`;
+        function formatAdListLevelText(item) {
+            const level = String(item.ad_level || 'campaign');
+            if (level === 'portfolio') return '广告组合';
+            if (level === 'group') return '广告组';
+            return '广告活动';
         }
 
-        const AA_AD_COL_LS = 'sj.amazonAdAdjustment.adTableCols.v2';
-        const AA_AD_COL_KEYS = ['portfolio', 'campaign', 'group', 'status', 'ad_type'];
-        const AA_AD_COL_DEFAULTS = { portfolio: 88, campaign: 88, group: 88, status: 62, ad_type: 76 };
+        function adListStatusCell(item) {
+            const status = String(item.status || '启动').trim() || '启动';
+            let pillClass = 'status-pill--enabled';
+            if (status === '暂停') pillClass = 'status-pill--paused';
+            else if (status === '存档') pillClass = 'status-pill--archived';
+            return `<span class="status-segment status-segment--inline readonly" aria-label="状态：${escapeHtml(status)}"><span class="status-pill ${pillClass} is-active">${escapeHtml(status)}</span></span>`;
+        }
+
+        const AA_AD_COL_LS = 'sj.amazonAdAdjustment.adTableCols.v4';
+        const AA_AD_COL_KEYS = ['ad_level', 'ad_name', 'status'];
+        const AA_AD_COL_DEFAULTS = { ad_level: 88, ad_name: 168, status: 80 };
 
         function loadAdTableColWidths() {
             try {
@@ -1246,48 +1219,29 @@
             const widths = loadAdTableColWidths();
             const rows = adItems.map(item => {
                 const active = String(item.id) === String(selectedAdId);
-                const level = String(item.ad_level || 'campaign');
-                let portfolioText = '';
-                let campaignText = '';
-                let groupText = '';
-                if (level === 'portfolio') {
-                    portfolioText = item.ad_name || item.portfolio_name || '';
-                } else if (level === 'group') {
-                    portfolioText = item.portfolio_name || '';
-                    campaignText = item.campaign_name || '';
-                    groupText = item.ad_name || '';
-                } else {
-                    portfolioText = item.portfolio_name || '';
-                    campaignText = item.ad_name || '';
-                }
-                const levelLabel = level === 'portfolio' ? '广告组合' : (level === 'group' ? '广告组' : '广告活动');
-                const rowTitle = `${levelLabel} · ${item.ad_type_text || '-'}`;
+                const adLevelText = formatAdListLevelText(item);
+                const adName = item.ad_name || '';
+                const rowTitle = `${adLevelText} · ${adName || '-'}`;
                 return `
                     <tr data-ad-id="${item.id}" class="${active ? 'is-active' : ''}" tabindex="0" role="row" aria-selected="${active ? 'true' : 'false'}" title="${escapeHtml(rowTitle)}">
-                        <td class="aa-td--portfolio">${adListCellText(portfolioText)}</td>
-                        <td class="aa-td--campaign">${adListCellText(campaignText)}</td>
-                        <td class="aa-td--group">${adListCellText(groupText)}</td>
-                        <td class="aa-td--status">${adListStatusCell(item)}</td>
-                        <td class="aa-td--ad-type">${adListCellText(item.ad_type_text)}</td>
+                        <td>${adListCellText(adLevelText)}</td>
+                        <td>${adListCellText(adName)}</td>
+                        <td>${adListStatusCell(item)}</td>
                     </tr>
                 `;
             }).join('');
             wrap.innerHTML = `
                 <table class="aa-ad-table" id="adListTable">
                     <colgroup>
-                        <col data-col="portfolio" style="width:${widths.portfolio}px">
-                        <col data-col="campaign" style="width:${widths.campaign}px">
-                        <col data-col="group" style="width:${widths.group}px">
+                        <col data-col="ad_level" style="width:${widths.ad_level}px">
+                        <col data-col="ad_name" style="width:${widths.ad_name}px">
                         <col data-col="status" style="width:${widths.status}px">
-                        <col data-col="ad_type" style="width:${widths.ad_type}px">
                     </colgroup>
                     <thead>
                         <tr>
-                            <th class="aa-th--portfolio" data-col-key="portfolio">广告组合<span class="aa-col-resizer" aria-hidden="true"></span></th>
-                            <th class="aa-th--campaign" data-col-key="campaign">活动<span class="aa-col-resizer" aria-hidden="true"></span></th>
-                            <th class="aa-th--group" data-col-key="group">组<span class="aa-col-resizer" aria-hidden="true"></span></th>
-                            <th class="aa-th--status" data-col-key="status">状态<span class="aa-col-resizer" aria-hidden="true"></span></th>
-                            <th class="aa-th--ad-type" data-col-key="ad_type">广告类型<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th data-col-key="ad_level">广告层级<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th data-col-key="ad_name">广告名称<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th data-col-key="status">状态<span class="aa-col-resizer" aria-hidden="true"></span></th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
