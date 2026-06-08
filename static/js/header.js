@@ -1198,7 +1198,11 @@
                     data = JSON.parse(xhr.responseText || '{}');
                 }catch(e){
                     hideAppUploadProgress();
-                    reject(new Error('响应解析失败'));
+                    const snippet = String(xhr.responseText || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+                    const hint = snippet
+                        ? `（HTTP ${xhr.status}，非 JSON 响应：${snippet}）`
+                        : `（HTTP ${xhr.status}，响应为空或非 JSON，可能请求超时）`;
+                    reject(new Error('响应解析失败' + hint));
                     return;
                 }
                 hideAppUploadProgress();
@@ -1249,7 +1253,10 @@
         const skipped = Number(data.skipped_sample_rows || 0) > 0
             ? `，跳过示例 ${data.skipped_sample_rows}`
             : '';
-        const summary = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${errCount ? `，失败 ${errCount}` : ''}${skipped}`;
+        const truncated = data.errors_truncated
+            ? `（${data.errors_message || '错误列表已截断'}）`
+            : '';
+        const summary = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${errCount ? `，失败 ${errCount}` : ''}${skipped}${truncated}`;
 
         if(errCount && showAppResultPanel){
             showAppResultPanel({
@@ -7692,7 +7699,7 @@
                     const elSys = document.querySelector('.nav-system'); if(elSys) elSys.classList.add('active');
                 } else if(path.startsWith('/gallery') || path.startsWith('/spec-main-image-management') || path.startsWith('/image-type-management') || path.startsWith('/aplus-management')){
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
-                } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-adjustment-records-management') || path.startsWith('/amazon-ad-keyword-management')){
+                } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-target-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-adjustment-records-management') || path.startsWith('/amazon-ad-keyword-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
                 } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management') || path.startsWith('/factory-stock-management') || path.startsWith('/factory-wip-management') || path.startsWith('/logistics-warehouse-dashboard')){
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');

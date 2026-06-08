@@ -11,6 +11,7 @@
 </head>
 <body>
     <div id="site-header"></div>
+    <script src="/static/js/header.js"></script>
 
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
@@ -467,20 +468,19 @@
 
         function uploadProductTemplate(file) {
             if (!file) return;
-            const doUpload = window.uploadBatchImportFile
-                ? window.uploadBatchImportFile({
-                    file,
-                    url: '/api/amazon-ad-product-import',
-                    title: '广告商品批量上传',
-                    uploadSummary: '正在上传模板文件...',
-                    processSummary: '正在解析并写入广告商品...',
-                })
-                : (() => {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    return fetch('/api/amazon-ad-product-import', { method: 'POST', body: formData }).then(r => r.json());
-                })();
-            doUpload
+            if (!window.uploadBatchImportFile) {
+                const msg = '批量上传组件未加载，请刷新页面后重试';
+                if (window.showAppToast) window.showAppToast(msg, true);
+                else alert(msg);
+                return;
+            }
+            window.uploadBatchImportFile({
+                file,
+                url: '/api/amazon-ad-product-import',
+                title: '广告商品批量上传',
+                uploadSummary: '正在上传模板文件...',
+                processSummary: '正在解析并批量写入广告商品...',
+            })
                 .then(data => {
                     const handled = window.handleBatchImportResponse
                         ? window.handleBatchImportResponse(data, {
@@ -490,7 +490,11 @@
                         : false;
                     if (!handled && data.status === 'success') loadList();
                 })
-                .catch(err => alert('导入失败: ' + err));
+                .catch(err => {
+                    const msg = '导入失败: ' + (err && err.message ? err.message : err);
+                    if (window.showAppToast) window.showAppToast(msg, true, 8000);
+                    else alert(msg);
+                });
         }
 
         function init() {
@@ -513,10 +517,10 @@
         document.getElementById('productUploadInput').addEventListener('change', function(e) {
             const file = e.target.files && e.target.files[0];
             if (file) uploadProductTemplate(file);
+            e.target.value = '';
         });
         window.addEventListener('load', init);
     </script>
 </body>
-<script src="/static/js/header.js"></script>
 </html>
 

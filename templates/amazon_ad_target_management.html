@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -32,6 +32,7 @@
 </head>
 <body>
     <div id="site-header"></div>
+    <script src="/static/js/header.js"></script>
 
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
@@ -50,16 +51,16 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
-                        <button class="btn-secondary" onclick="downloadDeliveryTemplate()">下载模板</button>
-                        <button class="btn-secondary" onclick="triggerDeliveryUpload()">批量上传</button>
-                        <input type="file" id="deliveryUploadInput" accept=".xlsx" style="display:none;">
+                        <button class="btn-secondary" onclick="downloadTargetTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerTargetUpload()">批量上传</button>
+                        <input type="file" id="targetUploadInput" accept=".xlsx" style="display:none;">
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
             </div>
 
             <div>
-                <table class="pm-table" id="deliveryTable">
+                <table class="pm-table" id="targetTable">
                     <thead>
                         <tr>
                             <th style="width:220px;">状态</th>
@@ -80,7 +81,7 @@
         </section>
     </div>
 
-    <div class="pm-modal" id="delivery-modal">
+    <div class="pm-modal" id="target-modal">
         <div class="pm-modal-content">
             <h3 id="modal-title" style="margin-top:0;">新增投放</h3>
             <div class="pm-form">
@@ -131,6 +132,8 @@
     </footer>
 
     <script>
+        const TARGET_API = '/api/amazon-ad-target';
+
         let editId = null;
         let adOptions = [];
         let rowsCache = [];
@@ -244,7 +247,7 @@
         }
 
         function renderTable(items) {
-            const tbody = document.querySelector('#deliveryTable tbody');
+            const tbody = document.querySelector('#targetTable tbody');
             if (!items.length) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
                 return;
@@ -259,7 +262,7 @@
                         </div>
                     </td>
                     <td>${adRelationText(item)}</td>
-                    <td>${item.delivery_desc || ''}</td>
+                    <td>${item.target_desc || ''}</td>
                     <td>
                         <div class="bid-inline">
                             <input type="text" id="bid-${item.id}" value="${item.bid_value || ''}" placeholder="0.3 / 15%">
@@ -280,7 +283,7 @@
         }
 
         function quickStatus(id, status) {
-            fetch('/api/amazon-ad-delivery', {
+            fetch(TARGET_API, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, status })
@@ -295,7 +298,7 @@
 
         function quickBid(id) {
             const value = document.getElementById(`bid-${id}`)?.value || '';
-            fetch('/api/amazon-ad-delivery', {
+            fetch(TARGET_API, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, bid_value: value })
@@ -310,11 +313,11 @@
 
         function loadList() {
             const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/amazon-ad-delivery?q=${encodeURIComponent(q)}` : '/api/amazon-ad-delivery';
+            const url = q ? `${TARGET_API}?q=${encodeURIComponent(q)}` : TARGET_API;
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
-                    const tbody = document.querySelector('#deliveryTable tbody');
+                    const tbody = document.querySelector('#targetTable tbody');
                     if (data.status !== 'success') {
                         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
@@ -323,7 +326,7 @@
                     renderTable(rowsCache);
                 })
                 .catch(err => {
-                    const tbody = document.querySelector('#deliveryTable tbody');
+                    const tbody = document.querySelector('#targetTable tbody');
                     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
@@ -342,7 +345,7 @@
             recalcNextObserveTime();
             syncStatusButtons();
             resetStatus();
-            document.getElementById('delivery-modal').classList.add('active');
+            document.getElementById('target-modal').classList.add('active');
         }
 
         function openEditModal(id) {
@@ -353,7 +356,7 @@
             document.getElementById('modalStatus').value = item.status || '启动';
             document.getElementById('modalAdItem').value = item.ad_item_id || '';
             lastSelectedAdItemId = item.ad_item_id ? String(item.ad_item_id) : lastSelectedAdItemId;
-            document.getElementById('modalDesc').value = item.delivery_desc || '';
+            document.getElementById('modalDesc').value = item.target_desc || '';
             document.getElementById('modalBid').value = item.bid_value || '';
             document.getElementById('modalObserveDays').value = String(parseObserveDaysFromText(item.observe_interval));
             document.getElementById('modalUpdatedAt').value = toDatetimeLocal(item.updated_at) || nowLocalInputValue();
@@ -361,11 +364,11 @@
             renderAdOptions(item.ad_item_id || '');
             syncStatusButtons();
             resetStatus();
-            document.getElementById('delivery-modal').classList.add('active');
+            document.getElementById('target-modal').classList.add('active');
         }
 
         function closeModal() {
-            document.getElementById('delivery-modal').classList.remove('active');
+            document.getElementById('target-modal').classList.remove('active');
             editId = null;
         }
 
@@ -373,13 +376,13 @@
             const payload = {
                 status: document.getElementById('modalStatus').value,
                 ad_item_id: document.getElementById('modalAdItem').value,
-                delivery_desc: document.getElementById('modalDesc').value.trim(),
+                target_desc: document.getElementById('modalDesc').value.trim(),
                 bid_value: document.getElementById('modalBid').value.trim(),
                 observe_days: document.getElementById('modalObserveDays').value,
                 updated_at: document.getElementById('modalUpdatedAt').value,
                 next_observe_at: document.getElementById('modalNextObserve').value
             };
-            if (!payload.status || !payload.ad_item_id || !payload.delivery_desc || !payload.bid_value || !payload.updated_at) {
+            if (!payload.status || !payload.ad_item_id || !payload.target_desc || !payload.bid_value || !payload.updated_at) {
                 showStatus('请完整填写必填项', true);
                 return;
             }
@@ -387,7 +390,7 @@
 
             const method = editId ? 'PUT' : 'POST';
             if (editId) payload.id = editId;
-            fetch('/api/amazon-ad-delivery', {
+            fetch(TARGET_API, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -406,7 +409,7 @@
                 ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该投放记录？', confirmText: '确认删除' })
                 : false;
             if (!ok) return;
-            fetch('/api/amazon-ad-delivery', {
+            fetch(TARGET_API, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id })
@@ -419,33 +422,32 @@
             }).catch(err => alert('删除失败: ' + err));
         }
 
-        function downloadDeliveryTemplate() {
-            window.location.href = '/api/amazon-ad-delivery-template';
+        function downloadTargetTemplate() {
+            window.location.href = '/api/amazon-ad-target-template';
         }
 
-        function triggerDeliveryUpload() {
-            const input = document.getElementById('deliveryUploadInput');
+        function triggerTargetUpload() {
+            const input = document.getElementById('targetUploadInput');
             if (!input) return;
             input.value = '';
             input.click();
         }
 
-        function uploadDeliveryTemplate(file) {
+        function uploadTargetTemplate(file) {
             if (!file) return;
-            const doUpload = window.uploadBatchImportFile
-                ? window.uploadBatchImportFile({
-                    file,
-                    url: '/api/amazon-ad-delivery-import',
-                    title: '广告投放批量上传',
-                    uploadSummary: '正在上传模板文件...',
-                    processSummary: '正在解析并写入广告投放...',
-                })
-                : (() => {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    return fetch('/api/amazon-ad-delivery-import', { method: 'POST', body: formData }).then(r => r.json());
-                })();
-            doUpload
+            if (!window.uploadBatchImportFile) {
+                const msg = '批量上传组件未加载，请刷新页面后重试';
+                if (window.showAppToast) window.showAppToast(msg, true);
+                else alert(msg);
+                return;
+            }
+            window.uploadBatchImportFile({
+                file,
+                url: '/api/amazon-ad-target-import',
+                title: '广告投放批量上传',
+                uploadSummary: '正在上传模板文件...',
+                processSummary: '正在解析并批量写入广告投放...',
+            })
                 .then(data => {
                     const handled = window.handleBatchImportResponse
                         ? window.handleBatchImportResponse(data, {
@@ -455,7 +457,11 @@
                         : false;
                     if (!handled && data.status === 'success') loadList();
                 })
-                .catch(err => alert('导入失败: ' + err));
+                .catch(err => {
+                    const msg = '导入失败: ' + (err && err.message ? err.message : err);
+                    if (window.showAppToast) window.showAppToast(msg, true, 8000);
+                    else alert(msg);
+                });
         }
 
         function init() {
@@ -466,7 +472,7 @@
             if (e.key === 'Enter') loadList();
         });
         window.setTimeout(function() {
-            var el = document.getElementById('delivery-modal');
+            var el = document.getElementById('target-modal');
             if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
         }, 0);
         document.getElementById('modalAdItem').addEventListener('change', function() {
@@ -474,13 +480,12 @@
         });
         document.getElementById('modalObserveDays').addEventListener('input', recalcNextObserveTime);
         document.getElementById('modalUpdatedAt').addEventListener('change', recalcNextObserveTime);
-        document.getElementById('deliveryUploadInput').addEventListener('change', function(e) {
+        document.getElementById('targetUploadInput').addEventListener('change', function(e) {
             const file = e.target.files && e.target.files[0];
-            if (file) uploadDeliveryTemplate(file);
+            if (file) uploadTargetTemplate(file);
+            e.target.value = '';
         });
         window.addEventListener('load', init);
     </script>
 </body>
-<script src="/static/js/header.js"></script>
 </html>
-

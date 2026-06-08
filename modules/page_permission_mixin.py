@@ -122,6 +122,10 @@ class PagePermissionMixin:
             return True
         return bool(actor_record.get('is_admin')) and bool(actor_record.get('can_grant_admin'))
 
+    _PAGE_PERMISSION_LEGACY_ALIASES = {
+        'amazon_ad_target_management': ('amazon_ad_delivery_management',),
+    }
+
     def _user_has_page_access(self, user_id, permission_key):
         if not user_id:
             return False
@@ -134,7 +138,13 @@ class PagePermissionMixin:
         if permission_key in denied and self._user_is_admin(record):
             return True
         default = 0 if permission_key in denied else 1
-        return bool(record.get('page_permissions', {}).get(permission_key, default))
+        perms = record.get('page_permissions', {})
+        if bool(perms.get(permission_key, default)):
+            return True
+        for legacy_key in self._PAGE_PERMISSION_LEGACY_ALIASES.get(permission_key, ()):
+            if bool(perms.get(legacy_key, default)):
+                return True
+        return False
 
     def _serve_protected_page(self, environ, start_response, template_path, permission_key=None):
         user_id = self._get_session_user(environ)

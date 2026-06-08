@@ -26,6 +26,9 @@ class AmazonAdMixin:
         '动态竞价-提高和降低',
         '固定竞价',
     )
+    _AMAZON_AD_CHILD_IMPORT_MAX_ROWS = 2500
+    _AMAZON_AD_CHILD_IMPORT_MAX_ERRORS = 80
+    _AMAZON_AD_CHILD_IMPORT_BATCH_SIZE = 250
 
     def _parse_subtype_operation_type_ids(self, data):
         raw = data.get('operation_type_ids') if isinstance(data, dict) else None
@@ -608,10 +611,14 @@ class AmazonAdMixin:
         existing_group_by_key = {}
 
         shop_by_name = {}
+        shop_by_id = {}
         shop_rows = []
         cur.execute("SELECT id, shop_name FROM shops ORDER BY id ASC")
         shop_rows = cur.fetchall() or []
         for row in shop_rows:
+            sid = int(self._parse_int(row.get('id')) or 0)
+            if sid:
+                shop_by_id[sid] = sid
             name = str(row.get('shop_name') or '').strip()
             if name:
                 shop_by_name[name] = row['id']
@@ -684,6 +691,7 @@ class AmazonAdMixin:
             'subtype_by_key': subtype_by_key,
             'sku_by_family': sku_by_family,
             'shop_by_name': shop_by_name,
+            'shop_by_id': shop_by_id,
             'default_shop_id': default_shop_id or 1,
         }
 
@@ -1717,10 +1725,6 @@ class AmazonAdMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     _VALID_AD_RECORD_STATUS = ('启动', '暂停', '存档')
-    _DELIVERY_LEVEL_MAP = {
-        '活动': 'campaign', '广告活动': 'campaign', 'campaign': 'campaign',
-        '组': 'group', '广告组': 'group', 'group': 'group',
-    }
 
     _AMAZON_AD_PRODUCT_LIST_SELECT = """
         SELECT p.*, i.name AS ad_name, i.ad_level, sp.platform_sku
@@ -1729,10 +1733,10 @@ class AmazonAdMixin:
         LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
     """
 
-    _AMAZON_AD_DELIVERY_LIST_SELECT = """
-        SELECT d.*, i.name AS ad_name, i.ad_level
-        FROM amazon_ad_deliveries d
-        INNER JOIN amazon_ad_items i ON i.id = d.ad_item_id
+    _AMAZON_AD_TARGET_LIST_SELECT = """
+        SELECT t.*, i.name AS ad_name, i.ad_level
+        FROM amazon_ad_targets t
+        INNER JOIN amazon_ad_items i ON i.id = t.ad_item_id
     """
 
     def _normalize_ad_record_status(self, value):
@@ -1825,24 +1829,173 @@ class AmazonAdMixin:
         return ad_item_id, ad_level, None
 
     def _load_amazon_ad_product_import_context(self, cur):
+        ctx = self._load_amazon_ad_import_context(cur)
         cur.execute(
             """
             SELECT id, platform_sku FROM sales_products
             WHERE platform_sku IS NOT NULL AND TRIM(platform_sku) <> ''
-            ORDER BY platform_sku ASC
             """
         )
         sku_by_platform = {}
-        platform_skus = []
         for row in cur.fetchall() or []:
             sku = str(row.get('platform_sku') or '').strip()
             if sku:
-                sku_by_platform[sku] = row['id']
-                platform_skus.append(sku)
-        return {
-            'sku_by_platform': sku_by_platform,
-            'platform_skus': sorted(set(platform_skus)),
+                sku_by_platform[sku] = int(row['id'])
+        cur.execute("SELECT id, ad_item_id, sales_product_id FROM amazon_ad_products")
+        product_by_key = {}
+        for row in cur.fetchall() or []:
+            key = (int(row['ad_item_id']), int(row['sales_product_id']))
+            product_by_key[key] = int(row['id'])
+        ctx['sku_by_platform'] = sku_by_platform
+        ctx['sales_product_ids'] = set(sku_by_platform.values())
+        ctx['product_by_key'] = product_by_key
+        return ctx
+
+    def _infer_target_import_ad_level(self, campaign_name, group_name):
+        campaign_name = (campaign_name or '').strip()
+        group_name = (group_name or '').strip()
+        if not campaign_name:
+            return None, '请填写广告活动'
+        if group_name:
+            return 'group', None
+        return 'campaign', None
+
+    def _load_amazon_ad_target_import_context(self, cur):
+        ctx = self._load_amazon_ad_import_context(cur)
+        cur.execute("SELECT id, ad_item_id, target_desc FROM amazon_ad_targets")
+        target_by_key = {}
+        for row in cur.fetchall() or []:
+            key = (int(row['ad_item_id']), str(row.get('target_desc') or '').strip())
+            target_by_key[key] = int(row['id'])
+        ctx['target_by_key'] = target_by_key
+        return ctx
+
+    def _append_child_import_error(self, errors, row_idx, message):
+        if len(errors) >= self._AMAZON_AD_CHILD_IMPORT_MAX_ERRORS:
+            return False
+        errors.append({'row': row_idx, 'message': message})
+        return True
+
+    def _child_import_success_payload(self, created, updated, errors, skipped_sample_rows):
+        truncated = len(errors) >= self._AMAZON_AD_CHILD_IMPORT_MAX_ERRORS
+        payload = {
+            'status': 'success',
+            'created': created,
+            'updated': updated,
+            'unchanged': 0,
+            'skipped_sample_rows': skipped_sample_rows,
+            'errors': errors,
         }
+        if truncated:
+            payload['errors_truncated'] = True
+            payload['errors_message'] = f'仅展示前 {self._AMAZON_AD_CHILD_IMPORT_MAX_ERRORS} 条错误'
+        return payload
+
+    def _executemany_in_chunks(self, cur, sql, rows, chunk_size=None):
+        if not rows:
+            return
+        size = int(chunk_size or self._AMAZON_AD_CHILD_IMPORT_BATCH_SIZE)
+        for offset in range(0, len(rows), size):
+            cur.executemany(sql, rows[offset:offset + size])
+
+    def _import_sheet_header_map(self, ws):
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if not header_row:
+            return {}
+        return {
+            str(name or '').strip(): idx
+            for idx, name in enumerate(header_row)
+            if str(name or '').strip()
+        }
+
+    def _import_cell_text(self, row, header_map, name):
+        idx = header_map.get(name)
+        if idx is None or idx >= len(row):
+            return None
+        value = row[idx]
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%d %H:%M:%S')
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if float(value) == int(value):
+                return str(int(value))
+            return str(value)
+        return str(value).strip()
+
+    def _resolve_shop_id_from_import_ctx(self, ctx, shop_text):
+        text = (shop_text or '').strip()
+        if not text:
+            return None, '请填写店铺'
+        shop_id = ctx.get('shop_by_name', {}).get(text)
+        if shop_id:
+            return int(shop_id), None
+        parsed_id = self._parse_int(text)
+        if parsed_id and parsed_id in ctx.get('shop_by_id', {}):
+            return int(parsed_id), None
+        return None, f'未找到店铺: {text}'
+
+    def _resolve_ad_item_by_four_attrs_ctx(
+        self, ctx, shop_text, portfolio_name, campaign_name='', group_name='',
+    ):
+        shop_id, shop_err = self._resolve_shop_id_from_import_ctx(ctx, shop_text)
+        if shop_err:
+            return None, None, shop_err
+        portfolio_name = (portfolio_name or '').strip()
+        campaign_name = (campaign_name or '').strip()
+        group_name = (group_name or '').strip()
+        if not portfolio_name:
+            return None, None, '请填写广告组合'
+
+        portfolio_id = ctx.get('portfolio_by_name', {}).get((int(shop_id), portfolio_name))
+        if not portfolio_id:
+            return None, None, f'未找到该店铺下的广告组合: {portfolio_name}'
+        portfolio_id = int(portfolio_id)
+
+        if group_name:
+            if not campaign_name:
+                return None, None, '填写广告组时须同时填写广告活动'
+            campaign_row = ctx.get('campaign_by_key', {}).get((int(shop_id), portfolio_id, campaign_name))
+            if not campaign_row:
+                return None, None, f'在组合「{portfolio_name}」下未找到广告活动: {campaign_name}'
+            campaign_id = int(campaign_row.get('id') or 0)
+            group_row = ctx.get('existing_group_by_key', {}).get((int(shop_id), campaign_id, group_name))
+            if not group_row:
+                return None, None, f'在活动「{campaign_name}」下未找到广告组: {group_name}'
+            return int(group_row.get('id') or 0), 'group', None
+
+        if campaign_name:
+            campaign_row = ctx.get('campaign_by_key', {}).get((int(shop_id), portfolio_id, campaign_name))
+            if not campaign_row:
+                return None, None, f'在组合「{portfolio_name}」下未找到广告活动: {campaign_name}'
+            return int(campaign_row.get('id') or 0), 'campaign', None
+
+        return portfolio_id, 'portfolio', None
+
+    def _resolve_import_ad_item_level_ctx(
+        self, ctx, shop_text, portfolio_name, campaign_name, group_name='', expected_level=None,
+    ):
+        ad_item_id, ad_level, err = self._resolve_ad_item_by_four_attrs_ctx(
+            ctx, shop_text, portfolio_name, campaign_name, group_name,
+        )
+        if err:
+            return None, None, err
+        if expected_level and ad_level != expected_level:
+            labels = {'campaign': '广告活动', 'group': '广告组'}
+            return None, None, f'须定位到{labels.get(expected_level, expected_level)}层级'
+        return ad_item_id, ad_level, None
+
+    def _resolve_sales_product_id_from_import_ctx(self, sku_text, ctx):
+        text = (sku_text or '').strip()
+        if not text:
+            return None, '请填写投放商品'
+        sku_by_platform = ctx.get('sku_by_platform') or {}
+        if text in sku_by_platform:
+            return sku_by_platform[text], None
+        parsed_id = self._parse_int(text)
+        if parsed_id and int(parsed_id) in (ctx.get('sales_product_ids') or ()):
+            return int(parsed_id), None
+        return None, f'未找到投放商品: {text}'
 
     def _read_batch_import_workbook(self, environ):
         if load_workbook is None:
@@ -1861,7 +2014,7 @@ class AmazonAdMixin:
         file_bytes = file_item.file.read() or b''
         if not file_bytes:
             return None, 'Empty file'
-        return load_workbook(io.BytesIO(file_bytes)), None
+        return load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True), None
 
     def _is_amazon_ad_child_template_sample_row(self, row_idx, marker_text, *, max_example_row=2):
         if row_idx <= max_example_row:
@@ -1875,9 +2028,9 @@ class AmazonAdMixin:
             '最后修改时间*', '下次观察时间间隔（天）', '下次观察时间',
         ]
 
-    def _amazon_ad_delivery_template_headers(self):
+    def _amazon_ad_target_template_headers(self):
         return [
-            '状态*', '广告层级*', '店铺*', '广告组合*', '广告活动*', '广告组',
+            '状态*', '店铺*', '广告组合*', '广告活动*', '广告组',
             '投放描述*', '竞价*', '最后修改时间*', '下次观察时间间隔（天）', '下次观察时间',
         ]
 
@@ -1889,7 +2042,7 @@ class AmazonAdMixin:
             with conn.cursor() as cur:
                 _, _, shop_names, portfolio_names = self._load_amazon_ad_items_template_options()
                 ctx = self._load_amazon_ad_product_import_context(cur)
-                platform_skus = ctx['platform_skus']
+                platform_skus = sorted((ctx.get('sku_by_platform') or {}).keys())
 
         example_shop = shop_names[0] if shop_names else '示例店铺'
         example_port = portfolio_names[0] if portfolio_names else '示例-Short-SKU01'
@@ -1983,7 +2136,7 @@ class AmazonAdMixin:
         guide.column_dimensions['C'].width = 44
         return wb
 
-    def _build_amazon_ad_delivery_import_workbook(self):
+    def _build_amazon_ad_target_import_workbook(self):
         from openpyxl.styles import Font, PatternFill, Alignment
         from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -1998,14 +2151,14 @@ class AmazonAdMixin:
         wb = Workbook()
         ws = wb.active
         ws.title = '广告投放'
-        headers = self._amazon_ad_delivery_template_headers()
+        headers = self._amazon_ad_target_template_headers()
         ws.append(headers)
         ws.append([
-            '启动', '活动', example_shop, example_port, example_camp, '',
+            '启动', example_shop, example_port, example_camp, '',
             '示例投放描述-活动', '0.35', '2026-06-08 10:00', '1', '2026-06-09 10:00',
         ])
         ws.append([
-            '启动', '组', example_shop, example_port, example_camp, example_camp,
+            '启动', example_shop, example_port, example_camp, example_camp,
             '示例投放描述-组', '18%', '2026-06-08 10:00', '3', '2026-06-11 10:00',
         ])
 
@@ -2021,15 +2174,12 @@ class AmazonAdMixin:
         options_ws.cell(row=1, column=1, value='status')
         for idx, status in enumerate(self._VALID_AD_RECORD_STATUS, start=2):
             options_ws.cell(row=idx, column=1, value=status)
-        options_ws.cell(row=1, column=2, value='ad_level')
-        for idx, level in enumerate(('活动', '组'), start=2):
-            options_ws.cell(row=idx, column=2, value=level)
-        options_ws.cell(row=1, column=3, value='shop_name')
+        options_ws.cell(row=1, column=2, value='shop_name')
         for idx, name in enumerate(shop_names, start=2):
-            options_ws.cell(row=idx, column=3, value=name)
-        options_ws.cell(row=1, column=4, value='portfolio_name')
+            options_ws.cell(row=idx, column=2, value=name)
+        options_ws.cell(row=1, column=3, value='portfolio_name')
         for idx, name in enumerate(portfolio_names, start=2):
-            options_ws.cell(row=idx, column=4, value=name)
+            options_ws.cell(row=idx, column=3, value=name)
 
         first_data_row = 4
         data_end = 1200
@@ -2042,59 +2192,56 @@ class AmazonAdMixin:
         dv_status = DataValidation(type='list', formula1="='_options'!$A$2:$A$4", allow_blank=False)
         ws.add_data_validation(dv_status)
         dv_status.add(f'A{first_data_row}:A{data_end}')
-        dv_level = DataValidation(type='list', formula1="='_options'!$B$2:$B$3", allow_blank=False)
-        ws.add_data_validation(dv_level)
-        dv_level.add(f'B{first_data_row}:B{data_end}')
         if shop_names:
             shop_end = len(shop_names) + 1
             dv_shop = DataValidation(
                 type='list',
-                formula1=f"='_options'!$C$2:$C${shop_end}",
+                formula1=f"='_options'!$B$2:$B${shop_end}",
                 allow_blank=False,
             )
             ws.add_data_validation(dv_shop)
-            dv_shop.add(f'C{first_data_row}:C{data_end}')
+            dv_shop.add(f'B{first_data_row}:B{data_end}')
         if portfolio_names:
             port_end = len(portfolio_names) + 1
             dv_port = DataValidation(
                 type='list',
-                formula1=f"='_options'!$D$2:$D${port_end}",
+                formula1=f"='_options'!$C$2:$C${port_end}",
                 allow_blank=False,
             )
             ws.add_data_validation(dv_port)
-            dv_port.add(f'D{first_data_row}:D{data_end}')
+            dv_port.add(f'C{first_data_row}:C{data_end}')
+
+        ws.freeze_panes = f'A{first_data_row}'
 
         guide = wb.create_sheet('填写说明')
         guide.append(['字段', '必填', '说明'])
         for row in [
             ('状态*', '是', '启动 / 暂停 / 存档'),
-            ('广告层级*', '是', '活动 或 组'),
-            ('店铺* / 广告组合*', '是', '下拉选择；活动层级广告组列留空'),
-            ('广告活动*', '是', '活动/组层级均须填写'),
-            ('广告组', '组层级', '广告层级为组时填写'),
+            ('店铺* / 广告组合* / 广告活动*', '是', '下拉选择店铺与组合；活动名称必填'),
+            ('广告组', '组层级', '填写则定位广告组；留空则定位广告活动'),
             ('投放描述* / 竞价*', '是', '竞价支持金额或百分比'),
             ('最后修改时间*', '是', '如 2026-06-08 10:00'),
-            ('', '', '第2–3行为示例，导入从第4行填写'),
+            ('', '', '第2–3行为示例，导入从第4行填写；冻结窗格在示例行下方'),
         ]:
             guide.append(list(row))
-        guide.column_dimensions['A'].width = 24
+        guide.column_dimensions['A'].width = 28
         guide.column_dimensions['B'].width = 10
         guide.column_dimensions['C'].width = 46
         return wb
 
-    def handle_amazon_ad_delivery_api(self, environ, method, start_response):
-        """Amazon 广告投放 API（CRUD）"""
+    def handle_amazon_ad_target_api(self, environ, method, start_response):
+        """Amazon 广告投放（target）API（CRUD）"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
-                sql = self._AMAZON_AD_DELIVERY_LIST_SELECT + ' WHERE 1=1'
+                sql = self._AMAZON_AD_TARGET_LIST_SELECT + ' WHERE 1=1'
                 params = []
                 if keyword:
                     like = f'%{keyword}%'
-                    sql += ' AND (i.name LIKE %s OR d.delivery_desc LIKE %s OR d.bid_value LIKE %s)'
+                    sql += ' AND (i.name LIKE %s OR t.target_desc LIKE %s OR t.bid_value LIKE %s)'
                     params.extend([like, like, like])
-                sql += ' ORDER BY d.id DESC LIMIT 500'
+                sql += ' ORDER BY t.id DESC LIMIT 500'
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(sql, tuple(params))
@@ -2127,7 +2274,7 @@ class AmazonAdMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            f"UPDATE amazon_ad_deliveries SET {', '.join(updates)} WHERE id=%s",
+                            f"UPDATE amazon_ad_targets SET {', '.join(updates)} WHERE id=%s",
                             tuple(params),
                         )
                         if cur.rowcount <= 0:
@@ -2140,7 +2287,7 @@ class AmazonAdMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM amazon_ad_deliveries WHERE id=%s", (item_id,))
+                        cur.execute("DELETE FROM amazon_ad_targets WHERE id=%s", (item_id,))
                         if cur.rowcount <= 0:
                             return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
                 return self.send_json({'status': 'success'}, start_response)
@@ -2148,9 +2295,9 @@ class AmazonAdMixin:
             status, err = self._normalize_ad_record_status(data.get('status'))
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
-            delivery_desc = (data.get('delivery_desc') or '').strip()
+            target_desc = (data.get('target_desc') or data.get('delivery_desc') or '').strip()
             bid_value = (data.get('bid_value') or '').strip()
-            if not delivery_desc or not bid_value:
+            if not target_desc or not bid_value:
                 return self.send_json({'status': 'error', 'message': '投放描述与竞价为必填'}, start_response)
             interval_text, updated_dt, next_dt = self._build_observe_fields(
                 data.get('observe_days'), data.get('updated_at'), data.get('next_observe_at'),
@@ -2169,10 +2316,10 @@ class AmazonAdMixin:
                     if method == 'POST':
                         cur.execute(
                             """
-                            SELECT id FROM amazon_ad_deliveries
-                            WHERE ad_item_id=%s AND delivery_desc=%s LIMIT 1
+                            SELECT id FROM amazon_ad_targets
+                            WHERE ad_item_id=%s AND target_desc=%s LIMIT 1
                             """,
-                            (ad_row['id'], delivery_desc),
+                            (ad_row['id'], target_desc),
                         )
                         if cur.fetchone():
                             return self.send_json(
@@ -2181,13 +2328,13 @@ class AmazonAdMixin:
                             )
                         cur.execute(
                             """
-                            INSERT INTO amazon_ad_deliveries (
-                                status, ad_item_id, delivery_desc, bid_value,
+                            INSERT INTO amazon_ad_targets (
+                                status, ad_item_id, target_desc, bid_value,
                                 observe_interval, next_observe_at, updated_at
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
-                                status, ad_row['id'], delivery_desc, bid_value,
+                                status, ad_row['id'], target_desc, bid_value,
                                 interval_text, next_dt, updated_dt,
                             ),
                         )
@@ -2199,10 +2346,10 @@ class AmazonAdMixin:
                             return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                         cur.execute(
                             """
-                            SELECT id FROM amazon_ad_deliveries
-                            WHERE ad_item_id=%s AND delivery_desc=%s AND id<>%s LIMIT 1
+                            SELECT id FROM amazon_ad_targets
+                            WHERE ad_item_id=%s AND target_desc=%s AND id<>%s LIMIT 1
                             """,
-                            (ad_row['id'], delivery_desc, item_id),
+                            (ad_row['id'], target_desc, item_id),
                         )
                         if cur.fetchone():
                             return self.send_json(
@@ -2211,13 +2358,13 @@ class AmazonAdMixin:
                             )
                         cur.execute(
                             """
-                            UPDATE amazon_ad_deliveries SET
-                                status=%s, ad_item_id=%s, delivery_desc=%s, bid_value=%s,
+                            UPDATE amazon_ad_targets SET
+                                status=%s, ad_item_id=%s, target_desc=%s, bid_value=%s,
                                 observe_interval=%s, next_observe_at=%s, updated_at=%s
                             WHERE id=%s
                             """,
                             (
-                                status, ad_row['id'], delivery_desc, bid_value,
+                                status, ad_row['id'], target_desc, bid_value,
                                 interval_text, next_dt, updated_dt, item_id,
                             ),
                         )
@@ -2348,7 +2495,7 @@ class AmazonAdMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def handle_amazon_ad_delivery_template_api(self, environ, method, start_response):
+    def handle_amazon_ad_target_template_api(self, environ, method, start_response):
         """广告投放批量导入模板下载"""
         try:
             if method != 'GET':
@@ -2358,13 +2505,14 @@ class AmazonAdMixin:
                     {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
                     start_response,
                 )
-            wb = self._build_amazon_ad_delivery_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_delivery_template.xlsx', start_response)
+            wb = self._build_amazon_ad_target_import_workbook()
+            return self._send_excel_workbook(wb, 'amazon_ad_target_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def handle_amazon_ad_delivery_import_api(self, environ, method, start_response):
-        """广告投放批量导入"""
+    def handle_amazon_ad_target_import_api(self, environ, method, start_response):
+        """广告投放批量导入（预加载索引 + 批量写入）"""
+        wb = None
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -2373,118 +2521,139 @@ class AmazonAdMixin:
                 return self.send_json({'status': 'error', 'message': wb_err}, start_response)
 
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
-            header_map = {name: idx for idx, name in enumerate(headers)}
-
-            def cell_at(row, name):
-                idx = header_map.get(name)
-                if idx is None or idx >= len(row):
-                    return None
-                return row[idx]
-
-            def cell_value(row, name):
-                return self._adjustment_import_cell_text(cell_at(row, name))
+            header_map = self._import_sheet_header_map(ws)
+            if not header_map:
+                return self.send_json({'status': 'error', 'message': '模板表头为空'}, start_response)
 
             created = updated = 0
             skipped_sample_rows = 0
             errors = []
+            insert_rows = []
+            update_rows = []
+            batch_keys = set()
+            max_row = min(
+                int(ws.max_row or 2),
+                2 + self._AMAZON_AD_CHILD_IMPORT_MAX_ROWS,
+            )
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                        desc = cell_value(row, '投放描述*') or ''
+                    ctx = self._load_amazon_ad_target_import_context(cur)
+                    target_by_key = ctx.get('target_by_key') or {}
+
+                    for row_idx, row in enumerate(
+                        ws.iter_rows(min_row=2, max_row=max_row, values_only=True),
+                        start=2,
+                    ):
+                        if not any(v is not None and str(v).strip() for v in row):
+                            continue
+
+                        def cell(name, _row=row):
+                            return self._import_cell_text(_row, header_map, name)
+
+                        desc = cell('投放描述*') or ''
                         if self._is_amazon_ad_child_template_sample_row(row_idx, desc, max_example_row=3):
                             skipped_sample_rows += 1
                             continue
-                        if not desc and not (cell_value(row, '店铺*') or ''):
+                        if not desc and not (cell('店铺*') or ''):
                             continue
 
-                        status, status_err = self._normalize_ad_record_status(cell_value(row, '状态*'))
+                        status, status_err = self._normalize_ad_record_status(cell('状态*'))
                         if status_err:
-                            errors.append({'row': row_idx, 'message': status_err})
+                            if not self._append_child_import_error(errors, row_idx, status_err):
+                                break
                             continue
 
-                        level_raw = cell_value(row, '广告层级*') or ''
-                        expected_level = self._DELIVERY_LEVEL_MAP.get(level_raw) or self._DELIVERY_LEVEL_MAP.get(
-                            level_raw.lower()
-                        )
-                        if not expected_level:
-                            errors.append({'row': row_idx, 'message': '广告层级须为「活动」或「组」'})
+                        campaign_name = cell('广告活动*') or ''
+                        group_name = cell('广告组') or ''
+                        expected_level, level_err = self._infer_target_import_ad_level(campaign_name, group_name)
+                        if level_err:
+                            if not self._append_child_import_error(errors, row_idx, level_err):
+                                break
                             continue
 
-                        shop_text = cell_value(row, '店铺*') or ''
-                        portfolio_name = cell_value(row, '广告组合*') or ''
-                        campaign_name = cell_value(row, '广告活动*') or ''
-                        group_name = cell_value(row, '广告组') or ''
-                        ad_item_id, _, ad_err = self._resolve_import_ad_item_level(
-                            cur, shop_text, portfolio_name, campaign_name, group_name, expected_level,
+                        ad_item_id, _, ad_err = self._resolve_import_ad_item_level_ctx(
+                            ctx,
+                            cell('店铺*') or '',
+                            cell('广告组合*') or '',
+                            campaign_name,
+                            group_name,
+                            expected_level,
                         )
                         if ad_err:
-                            errors.append({'row': row_idx, 'message': ad_err})
+                            if not self._append_child_import_error(errors, row_idx, ad_err):
+                                break
                             continue
 
-                        bid_value = (cell_value(row, '竞价*') or '').strip()
+                        bid_value = (cell('竞价*') or '').strip()
                         if not bid_value:
-                            errors.append({'row': row_idx, 'message': '竞价不能为空'})
+                            if not self._append_child_import_error(errors, row_idx, '竞价不能为空'):
+                                break
                             continue
 
-                        updated_at = cell_value(row, '最后修改时间*') or ''
                         interval_text, updated_dt, next_dt = self._build_observe_fields(
-                            cell_value(row, '下次观察时间间隔（天）'),
-                            updated_at,
-                            cell_value(row, '下次观察时间'),
+                            cell('下次观察时间间隔（天）'),
+                            cell('最后修改时间*') or '',
+                            cell('下次观察时间'),
                         )
                         if not updated_dt:
-                            errors.append({'row': row_idx, 'message': '最后修改时间不能为空'})
+                            if not self._append_child_import_error(errors, row_idx, '最后修改时间不能为空'):
+                                break
                             continue
 
-                        cur.execute(
-                            """
-                            SELECT id FROM amazon_ad_deliveries
-                            WHERE ad_item_id=%s AND delivery_desc=%s LIMIT 1
-                            """,
-                            (ad_item_id, desc),
-                        )
-                        existing = cur.fetchone()
-                        if existing:
-                            cur.execute(
-                                """
-                                UPDATE amazon_ad_deliveries SET
-                                    status=%s, bid_value=%s,
-                                    observe_interval=%s, next_observe_at=%s, updated_at=%s
-                                WHERE id=%s
-                                """,
-                                (status, bid_value, interval_text, next_dt, updated_dt, existing['id']),
-                            )
+                        dedupe_key = (int(ad_item_id), desc)
+                        if dedupe_key in batch_keys:
+                            if not self._append_child_import_error(errors, row_idx, '本批导入中广告关联+投放描述重复'):
+                                break
+                            continue
+                        batch_keys.add(dedupe_key)
+
+                        existing_id = target_by_key.get(dedupe_key)
+                        if existing_id:
+                            update_rows.append((
+                                status, bid_value, interval_text, next_dt, updated_dt, existing_id,
+                            ))
                             updated += 1
                         else:
-                            cur.execute(
-                                """
-                                INSERT INTO amazon_ad_deliveries (
-                                    status, ad_item_id, delivery_desc, bid_value,
-                                    observe_interval, next_observe_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    status, ad_item_id, desc, bid_value,
-                                    interval_text, next_dt, updated_dt,
-                                ),
-                            )
+                            insert_rows.append((
+                                status, ad_item_id, desc, bid_value, interval_text, next_dt, updated_dt,
+                            ))
+                            target_by_key[dedupe_key] = None
                             created += 1
 
+                    self._executemany_in_chunks(
+                        cur,
+                        """
+                        INSERT INTO amazon_ad_targets (
+                            status, ad_item_id, target_desc, bid_value,
+                            observe_interval, next_observe_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        insert_rows,
+                    )
+                    self._executemany_in_chunks(
+                        cur,
+                        """
+                        UPDATE amazon_ad_targets SET
+                            status=%s, bid_value=%s,
+                            observe_interval=%s, next_observe_at=%s, updated_at=%s
+                        WHERE id=%s
+                        """,
+                        update_rows,
+                    )
+
             return self.send_json(
-                {
-                    'status': 'success',
-                    'created': created,
-                    'updated': updated,
-                    'unchanged': 0,
-                    'skipped_sample_rows': skipped_sample_rows,
-                    'errors': errors,
-                },
+                self._child_import_success_payload(created, updated, errors, skipped_sample_rows),
                 start_response,
             )
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def handle_amazon_ad_product_template_api(self, environ, method, start_response):
         """广告商品批量导入模板下载"""
@@ -2502,7 +2671,8 @@ class AmazonAdMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_ad_product_import_api(self, environ, method, start_response):
-        """广告商品批量导入"""
+        """广告商品批量导入（预加载索引 + 批量写入）"""
+        wb = None
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -2511,113 +2681,131 @@ class AmazonAdMixin:
                 return self.send_json({'status': 'error', 'message': wb_err}, start_response)
 
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
-            header_map = {name: idx for idx, name in enumerate(headers)}
-
-            def cell_at(row, name):
-                idx = header_map.get(name)
-                if idx is None or idx >= len(row):
-                    return None
-                return row[idx]
-
-            def cell_value(row, name):
-                return self._adjustment_import_cell_text(cell_at(row, name))
+            header_map = self._import_sheet_header_map(ws)
+            if not header_map:
+                return self.send_json({'status': 'error', 'message': '模板表头为空'}, start_response)
 
             created = updated = 0
             skipped_sample_rows = 0
             errors = []
+            insert_rows = []
+            update_rows = []
+            batch_keys = set()
+            max_row = min(
+                int(ws.max_row or 2),
+                2 + self._AMAZON_AD_CHILD_IMPORT_MAX_ROWS,
+            )
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     ctx = self._load_amazon_ad_product_import_context(cur)
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                        sku_text = cell_value(row, '投放商品*') or ''
+                    product_by_key = ctx.get('product_by_key') or {}
+
+                    for row_idx, row in enumerate(
+                        ws.iter_rows(min_row=2, max_row=max_row, values_only=True),
+                        start=2,
+                    ):
+                        if not any(v is not None and str(v).strip() for v in row):
+                            continue
+
+                        def cell(name, _row=row):
+                            return self._import_cell_text(_row, header_map, name)
+
+                        sku_text = cell('投放商品*') or ''
                         if self._is_amazon_ad_child_template_sample_row(row_idx, sku_text):
                             skipped_sample_rows += 1
                             continue
-                        if not sku_text and not (cell_value(row, '店铺*') or ''):
+                        if not sku_text and not (cell('店铺*') or ''):
                             continue
 
-                        status, status_err = self._normalize_ad_record_status(cell_value(row, '状态*'))
+                        status, status_err = self._normalize_ad_record_status(cell('状态*'))
                         if status_err:
-                            errors.append({'row': row_idx, 'message': status_err})
+                            if not self._append_child_import_error(errors, row_idx, status_err):
+                                break
                             continue
 
-                        shop_text = cell_value(row, '店铺*') or ''
-                        portfolio_name = cell_value(row, '广告组合*') or ''
-                        campaign_name = cell_value(row, '广告活动*') or ''
-                        group_name = cell_value(row, '广告组*') or ''
-                        ad_item_id, _, ad_err = self._resolve_import_ad_item_level(
-                            cur, shop_text, portfolio_name, campaign_name, group_name, 'group',
+                        ad_item_id, _, ad_err = self._resolve_import_ad_item_level_ctx(
+                            ctx,
+                            cell('店铺*') or '',
+                            cell('广告组合*') or '',
+                            cell('广告活动*') or '',
+                            cell('广告组*') or '',
+                            'group',
                         )
                         if ad_err:
-                            errors.append({'row': row_idx, 'message': ad_err})
+                            if not self._append_child_import_error(errors, row_idx, ad_err):
+                                break
                             continue
 
-                        sales_product_id, sku_err = self._resolve_sales_product_id_from_import_text(
-                            cur, sku_text, ctx.get('sku_by_platform'),
-                        )
+                        sales_product_id, sku_err = self._resolve_sales_product_id_from_import_ctx(sku_text, ctx)
                         if sku_err:
-                            errors.append({'row': row_idx, 'message': sku_err})
+                            if not self._append_child_import_error(errors, row_idx, sku_err):
+                                break
                             continue
 
-                        updated_at = cell_value(row, '最后修改时间*') or ''
                         interval_text, updated_dt, next_dt = self._build_observe_fields(
-                            cell_value(row, '下次观察时间间隔（天）'),
-                            updated_at,
-                            cell_value(row, '下次观察时间'),
+                            cell('下次观察时间间隔（天）'),
+                            cell('最后修改时间*') or '',
+                            cell('下次观察时间'),
                         )
                         if not updated_dt:
-                            errors.append({'row': row_idx, 'message': '最后修改时间不能为空'})
+                            if not self._append_child_import_error(errors, row_idx, '最后修改时间不能为空'):
+                                break
                             continue
 
-                        cur.execute(
-                            """
-                            SELECT id FROM amazon_ad_products
-                            WHERE ad_item_id=%s AND sales_product_id=%s LIMIT 1
-                            """,
-                            (ad_item_id, sales_product_id),
-                        )
-                        existing = cur.fetchone()
-                        if existing:
-                            cur.execute(
-                                """
-                                UPDATE amazon_ad_products SET
-                                    status=%s, observe_interval=%s,
-                                    next_observe_at=%s, updated_at=%s
-                                WHERE id=%s
-                                """,
-                                (status, interval_text, next_dt, updated_dt, existing['id']),
-                            )
+                        dedupe_key = (int(ad_item_id), int(sales_product_id))
+                        if dedupe_key in batch_keys:
+                            if not self._append_child_import_error(errors, row_idx, '本批导入中广告组+投放商品重复'):
+                                break
+                            continue
+                        batch_keys.add(dedupe_key)
+
+                        existing_id = product_by_key.get(dedupe_key)
+                        if existing_id:
+                            update_rows.append((
+                                status, interval_text, next_dt, updated_dt, existing_id,
+                            ))
                             updated += 1
                         else:
-                            cur.execute(
-                                """
-                                INSERT INTO amazon_ad_products (
-                                    status, ad_item_id, sales_product_id,
-                                    observe_interval, next_observe_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    status, ad_item_id, sales_product_id,
-                                    interval_text, next_dt, updated_dt,
-                                ),
-                            )
+                            insert_rows.append((
+                                status, ad_item_id, sales_product_id, interval_text, next_dt, updated_dt,
+                            ))
+                            product_by_key[dedupe_key] = None
                             created += 1
 
+                    self._executemany_in_chunks(
+                        cur,
+                        """
+                        INSERT INTO amazon_ad_products (
+                            status, ad_item_id, sales_product_id,
+                            observe_interval, next_observe_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        insert_rows,
+                    )
+                    self._executemany_in_chunks(
+                        cur,
+                        """
+                        UPDATE amazon_ad_products SET
+                            status=%s, observe_interval=%s,
+                            next_observe_at=%s, updated_at=%s
+                        WHERE id=%s
+                        """,
+                        update_rows,
+                    )
+
             return self.send_json(
-                {
-                    'status': 'success',
-                    'created': created,
-                    'updated': updated,
-                    'unchanged': 0,
-                    'skipped_sample_rows': skipped_sample_rows,
-                    'errors': errors,
-                },
+                self._child_import_success_payload(created, updated, errors, skipped_sample_rows),
                 start_response,
             )
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def _parse_datetime_local_value(self, value):
         text = (value or '').strip()

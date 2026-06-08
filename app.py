@@ -104,7 +104,7 @@ class WSGIApp(
             'amazon_account_health_management': 'Amazon账户健康',
             'amazon_ad_management': '广告信息管理',
             'amazon_ad_subtype_management': '广告信息分类管理',
-            'amazon_ad_delivery_management': '广告投放管理',
+            'amazon_ad_target_management': '广告投放管理',
             'amazon_ad_product_management': '广告商品管理',
             'amazon_ad_adjustment_management': '广告调整',
             'amazon_ad_adjustment_records_management': '广告调整记录',
@@ -151,7 +151,7 @@ class WSGIApp(
             {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery', 'image_type_management', 'aplus_management']},
             {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management', 'sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'container_draft_management', 'sales_order_registration_management']},
             {'key': 'system_management', 'title': '系统管理', 'page_keys': ['system_employee_management', 'system_audit_log_management']},
-            {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
+            {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_target_management', 'amazon_ad_product_management']},
             {'key': 'about', 'title': '关于', 'page_keys': ['about']},
             {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets', 'widgets_go_play', 'widgets_mahjong']},
         ]
