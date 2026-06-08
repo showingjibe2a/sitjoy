@@ -122,6 +122,15 @@
             '        <label for="modalBudget">预算</label>',
             '        <input type="number" id="modalBudget" step="0.01" placeholder="例如：50.00">',
             '      </div>',
+            '      <div class="form-group level-campaign">',
+            '        <label>竞价策略<span class="required-asterisk">*</span></label>',
+            '        <input type="hidden" id="modalBidStrategy" value="动态竞价-仅降低">',
+            '        <div class="status-segment status-segment--inline">',
+            '          <button type="button" class="status-pill" data-target="modalBidStrategy" data-value="动态竞价-仅降低" onclick="setSegmentValue(\'modalBidStrategy\',\'动态竞价-仅降低\')">动态竞价-仅降低</button>',
+            '          <button type="button" class="status-pill" data-target="modalBidStrategy" data-value="动态竞价-提高和降低" onclick="setSegmentValue(\'modalBidStrategy\',\'动态竞价-提高和降低\')">动态竞价-提高和降低</button>',
+            '          <button type="button" class="status-pill" data-target="modalBidStrategy" data-value="固定竞价" onclick="setSegmentValue(\'modalBidStrategy\',\'固定竞价\')">固定竞价</button>',
+            '        </div>',
+            '      </div>',
             '      <div class="form-group level-group">',
             '        <label>状态<span class="required-asterisk">*</span></label>',
             '        <input type="hidden" id="modalStatusGroup" value="启动">',
@@ -502,6 +511,7 @@
         $('modalCampaignName').value = '';
         $('modalCampaignName').dataset.auto = '1';
         $('modalBudget').value = '';
+        $('modalBidStrategy').value = '动态竞价-仅降低';
         $('modalGroupPortfolio').value = '';
         renderGroupPortfolioSelect('');
         $('modalGroupCampaign').value = '';
@@ -511,6 +521,7 @@
         $('modalStatusGroup').value = '启动';
         renderSubtypeSegment();
         syncSegmentButtons('modalStrategy');
+        syncSegmentButtons('modalBidStrategy');
         syncSegmentButtons('modalStatusPortfolio');
         syncSegmentButtons('modalStatusCampaign');
         syncSegmentButtons('modalStatusGroup');
@@ -559,6 +570,7 @@
                 $('modalCampaignName').value = item.name || '';
                 $('modalCampaignName').dataset.auto = '0';
                 $('modalBudget').value = item.budget === null || item.budget === undefined ? '' : item.budget;
+                $('modalBidStrategy').value = item.bid_strategy || '动态竞价-仅降低';
             } else {
                 $('modalGroupPortfolio').value = item.portfolio_id || '';
                 renderGroupPortfolioSelect(item.portfolio_id || '');
@@ -572,6 +584,7 @@
             }
             renderSubtypeSegment();
             syncSegmentButtons('modalStrategy');
+            syncSegmentButtons('modalBidStrategy');
             syncSegmentButtons('modalStatusPortfolio');
             syncSegmentButtons('modalStatusCampaign');
             syncSegmentButtons('modalStatusGroup');
@@ -644,12 +657,13 @@
             payload.status = $('modalStatusCampaign').value;
             payload.name = $('modalCampaignName').value.trim();
             payload.budget = $('modalBudget').value;
+            payload.bid_strategy = $('modalBidStrategy').value;
             if (!payload.name) {
                 refreshCampaignName();
                 payload.name = $('modalCampaignName').value.trim();
             }
             if (!payload.portfolio_id || !payload.strategy_code || !payload.subtype_id
-                || !payload.status || !payload.name) {
+                || !payload.bid_strategy || !payload.status || !payload.name) {
                 showAdStatus('请完整填写广告活动信息', true);
                 return;
             }
