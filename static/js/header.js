@@ -575,14 +575,69 @@
             return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
         };
 
-        /** 点击点是否落在任一白卡片矩形内（与视觉深色是否在矩形内无关） */
+        const isElementVisibleForHitTest = (el) => {
+            if(!el || typeof el.getBoundingClientRect !== 'function') return false;
+            let style;
+            try { style = window.getComputedStyle(el); } catch(_e4) { return false; }
+            if(!style || style.display === 'none' || style.visibility === 'hidden') return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+        };
+
+        const isMenuOwnedByModal = (menu) => {
+            if(!menu) return false;
+            if(modalEl.contains(menu)){
+                const dd = menu.closest('.feature-category-dropdown');
+                return !!(dd && dd.classList.contains('open'));
+            }
+            if(menu.classList.contains('universal-select-floating-menu')){
+                let owned = false;
+                universalSelectState.forEach((state) => {
+                    if(!state || state.menu !== menu) return;
+                    if(!state.wrapper || !state.wrapper.classList.contains('open')) return;
+                    if(modalEl.contains(state.wrapper)) owned = true;
+                });
+                return owned;
+            }
+            return false;
+        };
+
+        /** 点击点是否落在弹窗安全区：白卡片 + 弹窗内已展开的下拉/多选菜单（菜单常超出 .pm-modal-content 矩形） */
         const isPointInsideAnyContentPanel = (clientX, clientY) => {
             const panels = modalEl.querySelectorAll('.pm-modal-content');
             for(let i = 0; i < panels.length; i++){
                 const r = panels[i].getBoundingClientRect();
                 if(pointInRect(clientX, clientY, r)) return true;
             }
+
+            const openDropdowns = modalEl.querySelectorAll('.feature-category-dropdown.open');
+            for(let i = 0; i < openDropdowns.length; i++){
+                const menu = openDropdowns[i].querySelector('.feature-category-menu');
+                if(!menu || !isElementVisibleForHitTest(menu)) continue;
+                const r = menu.getBoundingClientRect();
+                if(pointInRect(clientX, clientY, r)) return true;
+            }
+
+            let hitFloatingMenu = false;
+            universalSelectState.forEach((state) => {
+                if(hitFloatingMenu || !state || !state.menu || !state.wrapper) return;
+                if(!state.wrapper.classList.contains('open')) return;
+                if(!modalEl.contains(state.wrapper)) return;
+                if(!isElementVisibleForHitTest(state.menu)) return;
+                const r = state.menu.getBoundingClientRect();
+                if(pointInRect(clientX, clientY, r)) hitFloatingMenu = true;
+            });
+            if(hitFloatingMenu) return true;
+
             return false;
+        };
+
+        const isEventTargetInsideModalSafeArea = (e) => {
+            const t = e && e.target;
+            if(!t || typeof t.closest !== 'function') return false;
+            if(t.closest('.pm-modal-content')) return true;
+            const menu = t.closest('.feature-category-menu');
+            return !!(menu && isMenuOwnedByModal(menu));
         };
 
         /** 本次完整按压是否从遮罩（所有 .pm-modal-content 外）开始；由 pointerdown 写入，click 消费 */
@@ -607,6 +662,7 @@
         const onBackdropMouseActivate = (e) => {
             if(!modalEl.classList.contains('active')) return;
             if(!isPrimaryMouseButton(e)) return;
+            if(isEventTargetInsideModalSafeArea(e)) return;
             const x = Number(e.clientX);
             const y = Number(e.clientY);
             if(!Number.isFinite(x) || !Number.isFinite(y)) return;
