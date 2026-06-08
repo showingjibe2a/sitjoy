@@ -154,6 +154,83 @@
             font-size: 0.82rem;
             color: var(--morandi-slate);
         }
+        .aa-value-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .aa-value-input-wrap > input[type="text"] {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: auto !important;
+        }
+        .aa-value-quick {
+            position: relative;
+            flex: 0 0 auto;
+        }
+        .aa-value-input-wrap.aa-value-quick--empty .aa-value-quick-btn {
+            opacity: 0.35;
+            pointer-events: none;
+        }
+        .aa-value-quick-btn {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-slate);
+            font-size: 0.95rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .aa-value-quick-btn:hover:not(:disabled) {
+            border-color: var(--morandi-ink);
+            color: var(--morandi-ink);
+            background: rgba(247, 244, 239, 0.95);
+        }
+        .aa-value-quick-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 5px);
+            z-index: 46;
+            min-width: 108px;
+            padding: 0.3rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+        }
+        .aa-value-quick:hover .aa-value-quick-menu,
+        .aa-value-quick:focus-within .aa-value-quick-menu {
+            display: block;
+        }
+        .aa-value-quick-item {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            width: 100%;
+            padding: 0.38rem 0.45rem;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+        }
+        .aa-value-quick-item:hover,
+        .aa-value-quick-item:focus {
+            background: rgba(247, 244, 239, 0.95);
+            outline: none;
+        }
+        .aa-value-quick-item .status-pill {
+            pointer-events: none;
+            font-size: 0.72rem;
+            padding: 0.12rem 0.42rem;
+        }
         .aa-search-card {
             padding: 0.75rem;
             flex: 0 0 auto;
@@ -498,11 +575,23 @@
                         </div>
                         <div class="aa-field-row">
                             <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
-                            <input type="text" id="beforeValue" placeholder="例如：0.75">
+                            <div class="aa-value-input-wrap aa-value-quick--empty" data-quick-field="beforeValue">
+                                <input type="text" id="beforeValue" placeholder="例如：0.75">
+                                <div class="aa-value-quick">
+                                    <button type="button" class="aa-value-quick-btn" aria-label="快速填充修改前" title="快速填充">⋯</button>
+                                    <div class="aa-value-quick-menu" id="beforeValueQuickMenu" role="menu" aria-label="修改前快速填充"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="aa-field-row">
                             <label for="afterValue">修改后<span class="required-asterisk">*</span></label>
-                            <input type="text" id="afterValue" placeholder="例如：0.95">
+                            <div class="aa-value-input-wrap aa-value-quick--empty" data-quick-field="afterValue">
+                                <input type="text" id="afterValue" placeholder="例如：0.95">
+                                <div class="aa-value-quick">
+                                    <button type="button" class="aa-value-quick-btn" aria-label="快速填充修改后" title="快速填充">⋯</button>
+                                    <div class="aa-value-quick-menu" id="afterValueQuickMenu" role="menu" aria-label="修改后快速填充"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="aa-field-row">
                             <label for="operationReason">修改原因<span class="required-asterisk">*</span></label>
@@ -1122,6 +1211,84 @@
             return '';
         }
 
+        function oppositeDeliveryStatus(status) {
+            const s = String(status || '').trim();
+            if (s === '启动') return '暂停';
+            if (s === '暂停') return '启动';
+            return '';
+        }
+
+        function getMatchedTargetFromObject() {
+            const desc = String(document.getElementById('targetObject')?.value || '').trim();
+            if (!desc) return null;
+            return targetOptionsCache.find(x => String(x.target_desc || '').trim() === desc) || null;
+        }
+
+        function buildQuickFillOptions(fieldId) {
+            const op = getSelectedOperationType();
+            const options = [];
+            if (!isModifyDeliveryTargetOp(op)) return options;
+            const target = getMatchedTargetFromObject();
+            if (!target) return options;
+            const status = String(target.status || '启动').trim() || '启动';
+            if (fieldId === 'beforeValue') {
+                options.push({
+                    value: status,
+                    html: renderTargetStatusPill(status),
+                    fillOppositeAfter: true,
+                });
+            } else if (fieldId === 'afterValue') {
+                const opposite = oppositeDeliveryStatus(status);
+                if (opposite) {
+                    options.push({
+                        value: opposite,
+                        html: renderTargetStatusPill(opposite),
+                        fillOppositeAfter: false,
+                    });
+                }
+            }
+            return options;
+        }
+
+        function applyQuickFillOption(fieldId, opt) {
+            const input = document.getElementById(fieldId);
+            if (!input || !opt) return;
+            input.value = String(opt.value || '').trim();
+            if (opt.fillOppositeAfter && fieldId === 'beforeValue') {
+                const afterInput = document.getElementById('afterValue');
+                if (afterInput) {
+                    const opposite = oppositeDeliveryStatus(opt.value);
+                    afterInput.value = opposite || '';
+                }
+            }
+            updateSubmitButtonState();
+        }
+
+        function syncValueQuickMenus() {
+            ['beforeValue', 'afterValue'].forEach((fieldId) => {
+                const wrap = document.querySelector(`.aa-value-input-wrap[data-quick-field="${fieldId}"]`);
+                const menu = document.getElementById(`${fieldId}QuickMenu`);
+                if (!wrap || !menu) return;
+                const options = buildQuickFillOptions(fieldId);
+                wrap.classList.toggle('aa-value-quick--empty', !options.length);
+                if (!options.length) {
+                    menu.innerHTML = '';
+                    return;
+                }
+                menu.innerHTML = options.map((opt, idx) => (
+                    `<button type="button" class="aa-value-quick-item" role="menuitem" data-opt-idx="${idx}">${opt.html}</button>`
+                )).join('');
+                menu.querySelectorAll('.aa-value-quick-item').forEach((btn) => {
+                    btn.addEventListener('mousedown', (ev) => ev.preventDefault());
+                    btn.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        const idx = Number(btn.getAttribute('data-opt-idx'));
+                        applyQuickFillOption(fieldId, options[idx]);
+                    });
+                });
+            });
+        }
+
         function hideTargetObjectSuggest() {
             const panel = document.getElementById('targetObjectSuggest');
             if (!panel) return;
@@ -1138,6 +1305,7 @@
                 beforeInput.value = beforeValueFromTargetOption(target, op);
             }
             hideTargetObjectSuggest();
+            syncValueQuickMenus();
             updateSubmitButtonState();
         }
 
@@ -1230,6 +1398,7 @@
                 input.placeholder = '关键词 / 竞价 / 投放位置';
                 hideTargetObjectSuggest();
             }
+            syncValueQuickMenus();
         }
 
         function tryAutofillBeforeValueFromTargetObject() {
@@ -1242,6 +1411,7 @@
             const beforeInput = document.getElementById('beforeValue');
             if (!beforeInput || String(beforeInput.value || '').trim()) return;
             beforeInput.value = beforeValueFromTargetOption(target, op);
+            syncValueQuickMenus();
             updateSubmitButtonState();
         }
 
@@ -1756,6 +1926,7 @@
             if (!input) return;
             input.addEventListener('input', () => {
                 scheduleTargetObjectSuggest();
+                syncValueQuickMenus();
                 updateSubmitButtonState();
             });
             input.addEventListener('focus', () => {
@@ -1765,6 +1936,7 @@
                 window.setTimeout(() => {
                     hideTargetObjectSuggest();
                     tryAutofillBeforeValueFromTargetObject();
+                    syncValueQuickMenus();
                 }, 160);
             });
             document.addEventListener('click', (ev) => {
@@ -1795,6 +1967,7 @@
             initAdSearchPrefs();
             initAdjustmentMetricAutoCalc();
             initAttributionCheckedSegment();
+            syncValueQuickMenus();
             if (window.AmazonAdFormModal) {
                 window.AmazonAdFormModal.init({
                     onSaveSuccess: (data) => {
