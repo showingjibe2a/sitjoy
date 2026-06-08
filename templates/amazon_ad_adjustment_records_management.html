@@ -39,6 +39,9 @@
                             <button type="button" class="btn-secondary" onclick="clearRecordFilter()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button type="button" class="btn-secondary" onclick="downloadAdjustmentTemplate()">下载模板</button>
+                        <button type="button" class="btn-secondary" onclick="triggerAdjustmentUpload()">批量上传</button>
+                        <input type="file" id="adjustmentUploadInput" accept=".xlsx" style="display:none;">
                         <button type="button" class="btn-secondary" onclick="loadRecords()">刷新</button>
                         <a href="/amazon-ad-adjustment-management" class="btn-secondary" style="text-decoration:none;">前往广告调整</a>
                     </div>
@@ -257,8 +260,57 @@
             updateFilterHint();
         }
 
+        function downloadAdjustmentTemplate() {
+            window.location.href = '/api/amazon-ad-adjustment-template';
+        }
+
+        function triggerAdjustmentUpload() {
+            document.getElementById('adjustmentUploadInput')?.click();
+        }
+
+        function uploadAdjustmentTemplate(file) {
+            if (!file) return;
+            const runUpload = window.uploadBatchImportFile
+                ? window.uploadBatchImportFile({
+                    file,
+                    url: '/api/amazon-ad-adjustment-import',
+                    title: '广告调整记录导入',
+                    uploadSummary: '正在上传调整记录文件',
+                    processSummary: '正在解析并写入调整记录',
+                }).then(data => {
+                    if (window.handleBatchImportResponse) {
+                        return window.handleBatchImportResponse(data, {
+                            title: '广告调整记录导入',
+                            onSuccess: () => loadRecords(),
+                        });
+                    }
+                    if (data.status === 'success') loadRecords();
+                    return data;
+                })
+                : fetch('/api/amazon-ad-adjustment-import', { method: 'POST', body: (() => {
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    return fd;
+                })() }).then(r => r.json()).then(data => {
+                    if (data.status === 'success') {
+                        aaToast(`导入完成：新增 ${data.created || 0} 条`, false);
+                        loadRecords();
+                    } else {
+                        aaToast(data.message || '导入失败', true);
+                    }
+                    return data;
+                });
+
+            runUpload.catch(err => aaToast('导入失败: ' + err, true));
+        }
+
         document.getElementById('recordSearchInput')?.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') applyRecordFilter();
+        });
+        document.getElementById('adjustmentUploadInput')?.addEventListener('change', function (e) {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadAdjustmentTemplate(file);
+            e.target.value = '';
         });
 
         window.addEventListener('DOMContentLoaded', () => {

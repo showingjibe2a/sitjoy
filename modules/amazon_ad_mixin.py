@@ -1861,6 +1861,490 @@ class AmazonAdMixin:
             print(f'Amazon ad adjustment API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _adjustment_import_level_map(self):
+        return {
+            '广告组合': 'portfolio', 'portfolio': 'portfolio', '组合': 'portfolio',
+            '广告活动': 'campaign', 'campaign': 'campaign', '活动': 'campaign',
+            '广告组': 'group', 'group': 'group', '组': 'group',
+        }
+
+    def _adjustment_import_cell_text(self, cell):
+        if cell is None:
+            return None
+        value = cell.value
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%d %H:%M:%S')
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            num = float(value)
+            text = str(int(num)) if num.is_integer() else str(value)
+            return text.strip()
+        return str(value).strip()
+
+    def _load_amazon_ad_adjustment_template_operations(self, cur):
+        cur.execute(
+            """
+            SELECT id, name, reason_names
+            FROM amazon_ad_operation_types
+            ORDER BY id ASC
+            """
+        )
+        operations = []
+        for row in cur.fetchall() or []:
+            name = str(row.get('name') or '').strip()
+            if not name:
+                continue
+            reason_names = self._parse_operation_type_reason_names(row.get('reason_names'))
+            operations.append({
+                'id': row['id'],
+                'name': name,
+                'reason_names': reason_names,
+            })
+        return operations
+
+    def _amazon_ad_adjustment_template_headers(self):
+        return [
+            '调整日期*', '广告类型*', '关联广告名称*',
+            '归属广告组合名称', '归属广告活动名称',
+            '操作*', '操作原因', '对象*', '修改前*', '修改后*',
+            '开始时间*', '结束时间*',
+            '曝光', '点击', '花费', '订单', '销售额',
+            'ACOS', 'CPC', 'CTR', 'CVR', '首页首位IS',
+            '归因检查', '归因订单', '归因销售额', '备注', '提交类型',
+        ]
+
+    def _build_amazon_ad_adjustment_import_workbook(self):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.formatting.rule import FormulaRule
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.workbook.defined_name import DefinedName
+        from openpyxl.utils import get_column_letter
+
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                operations = self._load_amazon_ad_adjustment_template_operations(cur)
+                _, _, _, portfolio_names = self._load_amazon_ad_items_template_options()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = '调整记录'
+        headers = self._amazon_ad_adjustment_template_headers()
+        ws.append(headers)
+        ws.append([
+            '2026-06-08 10:00', '活动', 'BE-示例组合-SP-KW',
+            '示例-Short-SKU01', '',
+            '示例操作', '示例原因', '关键词A', '1.20', '1.50',
+            '2026-06-01 00:00', '2026-06-08 00:00',
+            '1000', '50', '30', '5', '200',
+            '', '', '', '', '',
+            '否', '', '', '示例备注', '完整',
+        ])
+        ws.append([''] * len(headers))
+        ws.append([''] * len(headers))
+
+        options_ws = wb.create_sheet('_options')
+        options_ws.sheet_state = 'hidden'
+        options_ws.cell(row=1, column=1, value='operation_name')
+        op_names = [op['name'] for op in operations]
+        for idx, name in enumerate(op_names, start=2):
+            options_ws.cell(row=idx, column=1, value=name)
+
+        for op_idx, op in enumerate(operations, start=1):
+            col_idx = op_idx + 1
+            col_letter = get_column_letter(col_idx)
+            options_ws.cell(row=1, column=col_idx, value=f'reasons_{op_idx}')
+            reasons = op.get('reason_names') or []
+            if not reasons:
+                options_ws.cell(row=2, column=col_idx, value='')
+                end_row = 2
+            else:
+                for r_idx, reason in enumerate(reasons, start=2):
+                    options_ws.cell(row=r_idx, column=col_idx, value=reason)
+                end_row = len(reasons) + 1
+            defined_name = f'adj_op_{op_idx}'
+            wb.defined_names.add(DefinedName(
+                name=defined_name,
+                attr_text=f"'_options'!${col_letter}$2:${col_letter}${max(end_row, 2)}",
+            ))
+
+        port_col = len(operations) + 2
+        port_letter = get_column_letter(port_col)
+        options_ws.cell(row=1, column=port_col, value='portfolio_name')
+        for idx, name in enumerate(portfolio_names, start=2):
+            options_ws.cell(row=idx, column=port_col, value=name)
+
+        first_data_row = 5
+        data_end = 1200
+        anchor = first_data_row
+
+        header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+        gray_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = Font(bold=True, color='2A2420')
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+        dv_level = DataValidation(type='list', formula1='"组合,活动,组"', allow_blank=False)
+        ws.add_data_validation(dv_level)
+        dv_level.add(f'B{first_data_row}:B{data_end}')
+
+        if op_names:
+            op_end = len(op_names) + 1
+            dv_op = DataValidation(
+                type='list',
+                formula1=f"='_options'!$A$2:$A${op_end}",
+                allow_blank=False,
+            )
+            dv_op.error = '请从列表选择操作'
+            ws.add_data_validation(dv_op)
+            dv_op.add(f'F{first_data_row}:F{data_end}')
+
+            dv_reason = DataValidation(
+                type='list',
+                formula1=f'=INDIRECT("adj_op_"&MATCH($F{anchor},_options!$A$2:$A${op_end},0))',
+                allow_blank=True,
+            )
+            dv_reason.error = '请先选择操作，再从列表选择原因'
+            ws.add_data_validation(dv_reason)
+            dv_reason.add(f'G{first_data_row}:G{data_end}')
+
+        if portfolio_names:
+            port_end = len(portfolio_names) + 1
+            dv_port = DataValidation(
+                type='list',
+                formula1=f"='_options'!${port_letter}$2:${port_letter}${port_end}",
+                allow_blank=True,
+            )
+            ws.add_data_validation(dv_port)
+            dv_port.add(f'D{first_data_row}:D{data_end}')
+
+        dv_attr = DataValidation(type='list', formula1='"是,否"', allow_blank=True)
+        ws.add_data_validation(dv_attr)
+        dv_attr.add(f'W{first_data_row}:W{data_end}')
+
+        dv_submit = DataValidation(type='list', formula1='"完整,快速"', allow_blank=True)
+        ws.add_data_validation(dv_submit)
+        dv_submit.add(f'AA{first_data_row}:AA{data_end}')
+
+        rules = [
+            ('D', f'OR($B{anchor}="",$B{anchor}="组合")'),
+            ('E', f'OR($B{anchor}="",$B{anchor}<>"组")'),
+        ]
+        for col, formula in rules:
+            ws.conditional_formatting.add(
+                f'{col}{first_data_row}:{col}{data_end}',
+                FormulaRule(formula=[formula], fill=gray_fill),
+            )
+
+        ws.freeze_panes = f'A{first_data_row}'
+        widths = {
+            'A': 18, 'B': 10, 'C': 26, 'D': 20, 'E': 22,
+            'F': 14, 'G': 16, 'H': 14, 'I': 10, 'J': 10,
+            'K': 18, 'L': 18, 'M': 8, 'N': 8, 'O': 8,
+            'P': 8, 'Q': 10, 'R': 8, 'S': 8, 'T': 8,
+            'U': 8, 'V': 12, 'W': 10, 'X': 10, 'Y': 12,
+            'Z': 16, 'AA': 10,
+        }
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
+
+        guide = wb.create_sheet('填写说明')
+        guide.append(['字段', '必填', '说明'])
+        for row in [
+            ('调整日期*', '是', '如 2026-06-08 10:00'),
+            ('广告类型*', '是', '下拉：组合 / 活动 / 组'),
+            ('关联广告名称*', '是', '系统中已存在的广告名称'),
+            ('归属广告组合名称', '活动/组', '活动、组须填写；下拉为系统广告组合'),
+            ('归属广告活动名称', '组', '仅组须填写'),
+            ('操作*', '是', '下拉为系统操作类型'),
+            ('操作原因', '否', '下拉随操作联动（名称管理器 adj_op_N）'),
+            ('对象*', '是', '操作对象'),
+            ('修改前* / 修改后*', '完整提交', '快速提交可留空'),
+            ('开始/结束时间*', '完整提交', '效果区间'),
+            ('提交类型', '否', '完整 / 快速，默认完整'),
+            ('', '', '第2行为示例，导入从第5行填写'),
+        ]:
+            guide.append(list(row))
+        guide.column_dimensions['A'].width = 22
+        guide.column_dimensions['B'].width = 10
+        guide.column_dimensions['C'].width = 48
+        return wb
+
+    def _resolve_adjustment_import_ad_item_id(self, cur, ad_level, name, portfolio_name='', campaign_name=''):
+        name = (name or '').strip()
+        if not name or ad_level not in ('portfolio', 'campaign', 'group'):
+            return None, '广告类型或名称为空'
+        if ad_level == 'portfolio':
+            cur.execute(
+                "SELECT id FROM amazon_ad_items WHERE ad_level='portfolio' AND name=%s LIMIT 1",
+                (name,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None, f'未找到广告组合: {name}'
+            return row['id'], None
+
+        portfolio_name = (portfolio_name or '').strip()
+        if not portfolio_name:
+            return None, '活动/组须填写归属广告组合名称'
+        cur.execute(
+            "SELECT id FROM amazon_ad_items WHERE ad_level='portfolio' AND name=%s LIMIT 1",
+            (portfolio_name,),
+        )
+        portfolio = cur.fetchone()
+        if not portfolio:
+            return None, f'未找到广告组合: {portfolio_name}'
+        portfolio_id = portfolio['id']
+
+        if ad_level == 'campaign':
+            cur.execute(
+                """
+                SELECT id FROM amazon_ad_items
+                WHERE ad_level='campaign' AND name=%s AND portfolio_id=%s LIMIT 1
+                """,
+                (name, portfolio_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None, f'在组合「{portfolio_name}」下未找到广告活动: {name}'
+            return row['id'], None
+
+        campaign_name = (campaign_name or '').strip()
+        if not campaign_name:
+            return None, '广告组须填写归属广告活动名称'
+        cur.execute(
+            """
+            SELECT id FROM amazon_ad_items
+            WHERE ad_level='campaign' AND name=%s AND portfolio_id=%s LIMIT 1
+            """,
+            (campaign_name, portfolio_id),
+        )
+        campaign = cur.fetchone()
+        if not campaign:
+            return None, f'在组合「{portfolio_name}」下未找到广告活动: {campaign_name}'
+        cur.execute(
+            """
+            SELECT id FROM amazon_ad_items
+            WHERE ad_level='group' AND name=%s AND campaign_id=%s LIMIT 1
+            """,
+            (name, campaign['id']),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, f'在活动「{campaign_name}」下未找到广告组: {name}'
+        return row['id'], None
+
+    def _validate_adjustment_import_operation(self, cur, ad_item_id, operation_name, reason_name):
+        operation_name = (operation_name or '').strip()
+        if not operation_name:
+            return None, None, '请填写操作'
+        cur.execute(
+            "SELECT id, ad_level FROM amazon_ad_items WHERE id=%s LIMIT 1",
+            (ad_item_id,),
+        )
+        ad_row = cur.fetchone()
+        if not ad_row:
+            return None, None, '关联广告不存在'
+        allowed = self._fetch_allowed_operations_for_ad(cur, ad_row)
+        op_match = next((x for x in allowed if (x.get('name') or '').strip() == operation_name), None)
+        if not op_match:
+            return None, None, f'操作「{operation_name}」不适用于该广告'
+        reason_name = (reason_name or '').strip() or None
+        if reason_name:
+            valid_reasons = {r.get('reason_name') for r in (op_match.get('reasons') or [])}
+            if reason_name not in valid_reasons:
+                return None, None, f'操作原因「{reason_name}」不属于操作「{operation_name}」'
+        return op_match['id'], reason_name, None
+
+    def handle_amazon_ad_adjustment_template_api(self, environ, method, start_response):
+        """广告调整记录批量导入模板下载"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json(
+                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
+                    start_response,
+                )
+            wb = self._build_amazon_ad_adjustment_import_workbook()
+            return self._send_excel_workbook(wb, 'amazon_ad_adjustment_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_adjustment_import_api(self, environ, method, start_response):
+        """广告调整记录批量导入（新增）"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json(
+                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
+                    start_response,
+                )
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+            level_map = self._adjustment_import_level_map()
+
+            def cell_at(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx]
+
+            def cell_value(row, name):
+                return self._adjustment_import_cell_text(cell_at(row, name))
+
+            created = 0
+            skipped_sample_rows = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
+                        ad_name = cell_value(row, '关联广告名称*') or ''
+                        if row_idx <= 4 or ('示例' in ad_name):
+                            skipped_sample_rows += 1
+                            continue
+                        level_raw = cell_value(row, '广告类型*') or ''
+                        ad_level = level_map.get(level_raw.lower()) or level_map.get(level_raw)
+                        if not level_raw and not ad_name:
+                            continue
+                        if not ad_level or not ad_name:
+                            errors.append({'row': row_idx, 'message': '广告类型或关联广告名称为空'})
+                            continue
+
+                        portfolio_name = cell_value(row, '归属广告组合名称') or ''
+                        campaign_name = cell_value(row, '归属广告活动名称') or ''
+                        ad_item_id, ad_err = self._resolve_adjustment_import_ad_item_id(
+                            cur, ad_level, ad_name, portfolio_name, campaign_name
+                        )
+                        if ad_err:
+                            errors.append({'row': row_idx, 'message': ad_err})
+                            continue
+
+                        operation_name = cell_value(row, '操作*') or ''
+                        reason_name = cell_value(row, '操作原因') or ''
+                        op_id, reason_name, op_err = self._validate_adjustment_import_operation(
+                            cur, ad_item_id, operation_name, reason_name
+                        )
+                        if op_err:
+                            errors.append({'row': row_idx, 'message': op_err})
+                            continue
+
+                        target_object = cell_value(row, '对象*') or ''
+                        if not target_object:
+                            errors.append({'row': row_idx, 'message': '对象不能为空'})
+                            continue
+
+                        submit_type = (cell_value(row, '提交类型') or '完整').strip()
+                        is_quick = 1 if submit_type in ('快速', 'quick') else 0
+                        before_value = cell_value(row, '修改前*') or ''
+                        after_value = cell_value(row, '修改后*') or ''
+                        start_time = cell_value(row, '开始时间*') or ''
+                        end_time = cell_value(row, '结束时间*') or ''
+                        if not is_quick:
+                            missing = []
+                            if not before_value:
+                                missing.append('修改前')
+                            if not after_value:
+                                missing.append('修改后')
+                            if not start_time:
+                                missing.append('开始时间')
+                            if not end_time:
+                                missing.append('结束时间')
+                            if missing:
+                                errors.append({
+                                    'row': row_idx,
+                                    'message': f'完整提交须填写：{", ".join(missing)}',
+                                })
+                                continue
+
+                        adjust_date = self._parse_datetime_local_value(cell_value(row, '调整日期*'))
+                        if not adjust_date:
+                            adjust_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                        attr_raw = (cell_value(row, '归因检查') or '否').strip()
+                        attribution_checked = 1 if attr_raw in ('是', '1', 'true', 'True', 'yes') else 0
+
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_adjustments (
+                                adjust_date, ad_item_id, operation_type_id, target_object,
+                                before_value, after_value, reason_name,
+                                start_time, end_time,
+                                impressions, clicks, cost, orders, sales,
+                                acos, cpc, ctr, cvr, top_of_search_is,
+                                attribution_checked, attribution_orders, attribution_sales,
+                                remark, is_quick_submit
+                            ) VALUES (
+                                %s, %s, %s, %s,
+                                %s, %s, %s,
+                                %s, %s,
+                                %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s,
+                                %s, %s, %s,
+                                %s, %s
+                            )
+                            """,
+                            (
+                                adjust_date, ad_item_id, op_id, target_object,
+                                before_value or None, after_value or None, reason_name,
+                                self._parse_datetime_local_value(start_time),
+                                self._parse_datetime_local_value(end_time),
+                                cell_value(row, '曝光') or None,
+                                cell_value(row, '点击') or None,
+                                cell_value(row, '花费') or None,
+                                cell_value(row, '订单') or None,
+                                cell_value(row, '销售额') or None,
+                                cell_value(row, 'ACOS') or None,
+                                cell_value(row, 'CPC') or None,
+                                cell_value(row, 'CTR') or None,
+                                cell_value(row, 'CVR') or None,
+                                cell_value(row, '首页首位IS') or None,
+                                attribution_checked,
+                                cell_value(row, '归因订单') or None,
+                                cell_value(row, '归因销售额') or None,
+                                cell_value(row, '备注') or None,
+                                is_quick,
+                            ),
+                        )
+                        created += 1
+
+            return self.send_json(
+                {
+                    'status': 'success',
+                    'created': created,
+                    'updated': 0,
+                    'unchanged': 0,
+                    'skipped_sample_rows': skipped_sample_rows,
+                    'errors': errors,
+                },
+                start_response,
+            )
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_amazon_ad_keyword_api(self, environ, method, start_response):
         """Amazon 广告关键词 API"""
         try:

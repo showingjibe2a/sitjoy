@@ -59,6 +59,8 @@ API_PERMISSION_MAP = {
     '/api/amazon-ad-delivery': 'amazon_ad_delivery_management',
     '/api/amazon-ad-product': 'amazon_ad_product_management',
     '/api/amazon-ad-adjustment': 'amazon_ad_adjustment_management',
+    '/api/amazon-ad-adjustment-template': 'amazon_ad_adjustment_records_management',
+    '/api/amazon-ad-adjustment-import': 'amazon_ad_adjustment_records_management',
     '/api/amazon-ad-keyword': 'amazon_ad_keyword_management',
     '/api/amazon-ad-keyword-template': 'amazon_ad_keyword_management',
     '/api/amazon-ad-keyword-import': 'amazon_ad_keyword_management',
@@ -209,6 +211,8 @@ API_ROUTE_MAP = {
     '/api/amazon-ad-delivery': ('method', 'handle_amazon_ad_delivery_api'),
     '/api/amazon-ad-product': ('method', 'handle_amazon_ad_product_api'),
     '/api/amazon-ad-adjustment': ('method', 'handle_amazon_ad_adjustment_api'),
+    '/api/amazon-ad-adjustment-template': ('method', 'handle_amazon_ad_adjustment_template_api'),
+    '/api/amazon-ad-adjustment-import': ('method', 'handle_amazon_ad_adjustment_import_api'),
     '/api/amazon-ad-keyword': ('method', 'handle_amazon_ad_keyword_api'),
     '/api/amazon-ad-keyword-template': ('method', 'handle_amazon_ad_keyword_template_api'),
     '/api/amazon-ad-keyword-import': ('method', 'handle_amazon_ad_keyword_import_api'),
@@ -390,6 +394,14 @@ class RequestRoutingMixin:
             '/api/spec-main-image-variants-batch-delete': ('gallery', 'sales_product_management'),
             '/api/gallery-sku-family-picker': ('gallery', 'sales_product_management'),
             '/api/amazon-ad-adjustment': (
+                'amazon_ad_adjustment_management',
+                'amazon_ad_adjustment_records_management',
+            ),
+            '/api/amazon-ad-adjustment-template': (
+                'amazon_ad_adjustment_management',
+                'amazon_ad_adjustment_records_management',
+            ),
+            '/api/amazon-ad-adjustment-import': (
                 'amazon_ad_adjustment_management',
                 'amazon_ad_adjustment_records_management',
             ),
