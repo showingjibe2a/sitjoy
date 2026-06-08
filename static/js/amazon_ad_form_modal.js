@@ -83,6 +83,10 @@
             '          <span id="modalSharedBudgetLabel">是</span>',
             '        </div>',
             '      </div>',
+            '      <div class="form-group level-portfolio">',
+            '        <label for="modalPortfolioShop">关联店铺<span class="required-asterisk">*</span></label>',
+            '        <select id="modalPortfolioShop" data-search-placeholder="搜索店铺"></select>',
+            '      </div>',
             '      <div class="form-group level-campaign">',
             '        <label>状态<span class="required-asterisk">*</span></label>',
             '        <input type="hidden" id="modalStatusCampaign" value="启动">',
@@ -117,10 +121,6 @@
             '      <div class="form-group level-campaign">',
             '        <label for="modalBudget">预算</label>',
             '        <input type="number" id="modalBudget" step="0.01" placeholder="例如：50.00">',
-            '      </div>',
-            '      <div class="form-group level-campaign">',
-            '        <label for="modalCampaignShop">关联店铺<span class="required-asterisk">*</span></label>',
-            '        <select id="modalCampaignShop" data-search-placeholder="搜索店铺"></select>',
             '      </div>',
             '      <div class="form-group level-group">',
             '        <label>状态<span class="required-asterisk">*</span></label>',
@@ -288,13 +288,13 @@
             .then(r => r.json())
             .then(data => {
                 shopOptions = data.status === 'success' ? (data.items || []) : [];
-                renderCampaignShopSelect();
+                renderPortfolioShopSelect();
             })
             .catch(() => { shopOptions = []; });
     }
 
-    function renderCampaignShopSelect(selectedValue) {
-        const select = $('modalCampaignShop');
+    function renderPortfolioShopSelect(selectedValue) {
+        const select = $('modalPortfolioShop');
         const current = String(
             selectedValue !== undefined ? selectedValue : (select?.value || '1')
         );
@@ -492,6 +492,7 @@
         $('modalPortfolioName').dataset.auto = '1';
         $('modalSharedBudgetSwitch').checked = true;
         onSharedBudgetSwitchChange();
+        renderPortfolioShopSelect('1');
         $('modalStatusPortfolio').value = '启动';
         $('modalStatusCampaign').value = '启动';
         $('modalCampaignPortfolio').value = '';
@@ -501,7 +502,6 @@
         $('modalCampaignName').value = '';
         $('modalCampaignName').dataset.auto = '1';
         $('modalBudget').value = '';
-        renderCampaignShopSelect('1');
         $('modalGroupPortfolio').value = '';
         renderGroupPortfolioSelect('');
         $('modalGroupCampaign').value = '';
@@ -549,6 +549,7 @@
                 const autoName = buildPortfolioNameBySkuId(item.sku_family_id || '');
                 nameInput.value = item.name || '';
                 nameInput.dataset.auto = (autoName && (item.name || '') === autoName) ? '1' : '0';
+                renderPortfolioShopSelect(item.shop_id || '1');
             } else if (item.ad_level === 'campaign') {
                 $('modalCampaignPortfolio').value = item.portfolio_id || '';
                 renderCampaignPortfolioSelect(item.portfolio_id || '');
@@ -558,7 +559,6 @@
                 $('modalCampaignName').value = item.name || '';
                 $('modalCampaignName').dataset.auto = '0';
                 $('modalBudget').value = item.budget === null || item.budget === undefined ? '' : item.budget;
-                renderCampaignShopSelect(item.shop_id || '1');
             } else {
                 $('modalGroupPortfolio').value = item.portfolio_id || '';
                 renderGroupPortfolioSelect(item.portfolio_id || '');
@@ -632,7 +632,8 @@
             payload.status = $('modalStatusPortfolio').value;
             const portfolioName = ($('modalPortfolioName').value || '').trim();
             payload.name = portfolioName;
-            if (!payload.is_shared_budget || !payload.status || !portfolioName) {
+            payload.shop_id = $('modalPortfolioShop').value;
+            if (!payload.is_shared_budget || !payload.status || !portfolioName || !payload.shop_id) {
                 showAdStatus('请完整填写广告组合信息', true);
                 return;
             }
@@ -643,13 +644,12 @@
             payload.status = $('modalStatusCampaign').value;
             payload.name = $('modalCampaignName').value.trim();
             payload.budget = $('modalBudget').value;
-            payload.shop_id = $('modalCampaignShop').value;
             if (!payload.name) {
                 refreshCampaignName();
                 payload.name = $('modalCampaignName').value.trim();
             }
             if (!payload.portfolio_id || !payload.strategy_code || !payload.subtype_id
-                || !payload.status || !payload.name || !payload.shop_id) {
+                || !payload.status || !payload.name) {
                 showAdStatus('请完整填写广告活动信息', true);
                 return;
             }
