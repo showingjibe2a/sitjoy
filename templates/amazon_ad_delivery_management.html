@@ -11,12 +11,7 @@
         .status-pill--enabled.is-active { background: #7fa88b; }
         .status-pill--paused.is-active { background: #b07b7b; }
         .status-pill--archived.is-active { background: #8f82b5; }
-        .bid-inline {
-            display: inline-flex;
-            gap: 0.4rem;
-            align-items: center;
-        }
-        .bid-inline input {
+        .delivery-bid-input {
             width: 110px;
             padding: 0.35rem 0.45rem;
             border-radius: 6px;
@@ -24,9 +19,23 @@
             background: #fff;
             color: var(--morandi-ink);
         }
-        .bid-inline button {
-            padding: 0.35rem 0.5rem;
-            font-size: 0.8rem;
+        .preview-savebar {
+            position: fixed;
+            left: 50%;
+            bottom: 20px;
+            transform: translateX(-50%);
+            z-index: 55;
+            display: none;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.65rem 0.95rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+        }
+        .preview-savebar.active {
+            display: inline-flex;
         }
     </style>
 </head>
@@ -127,6 +136,12 @@
         </div>
     </div>
 
+    <div id="deliveryBidSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="deliveryBidSaveText">已修改 0 条竞价</span>
+        <button type="button" class="btn-secondary" onclick="cancelDeliveryBidEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveDeliveryBidEdits()">统一保存</button>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -138,6 +153,116 @@
         let adOptions = [];
         let rowsCache = [];
         let lastSelectedAdItemId = '';
+        let deliveryBidDraft = {};
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function normalizeDeliveryBidValue(rawValue) {
+            return String(rawValue == null ? '' : rawValue).trim();
+        }
+
+        function getDeliveryBidEffectiveValue(item) {
+            const id = String(item.id);
+            if (deliveryBidDraft[id] !== undefined) {
+                return deliveryBidDraft[id];
+            }
+            return item.bid_value || '';
+        }
+
+        function countDeliveryBidEditedRows() {
+            return Object.keys(deliveryBidDraft).length;
+        }
+
+        function syncDeliveryBidSaveBar() {
+            const bar = document.getElementById('deliveryBidSaveBar');
+            const text = document.getElementById('deliveryBidSaveText');
+            if (!bar || !text) return;
+            const count = countDeliveryBidEditedRows();
+            text.textContent = `已修改 ${count} 条竞价`;
+            bar.classList.toggle('active', count > 0);
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+        }
+
+        function updateDeliveryBidDraft(itemId, rawValue) {
+            const item = rowsCache.find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const id = String(itemId);
+            const normalized = normalizeDeliveryBidValue(rawValue);
+            const original = normalizeDeliveryBidValue(item.bid_value);
+            if (normalized === original) {
+                delete deliveryBidDraft[id];
+            } else {
+                deliveryBidDraft[id] = normalized;
+            }
+            syncDeliveryBidSaveBar();
+        }
+
+        function bindDeliveryBidEvents() {
+            document.querySelectorAll('#deliveryTable .delivery-bid-input').forEach(el => {
+                if (el.dataset._deliveryBidBound === '1') return;
+                el.dataset._deliveryBidBound = '1';
+                const handler = function() {
+                    updateDeliveryBidDraft(this.getAttribute('data-id'), this.value);
+                };
+                el.addEventListener('input', handler);
+                el.addEventListener('change', handler);
+            });
+        }
+
+        function cancelDeliveryBidEdits() {
+            deliveryBidDraft = {};
+            renderTable(rowsCache);
+            syncDeliveryBidSaveBar();
+        }
+
+        function saveDeliveryBidEdits() {
+            const ids = Object.keys(deliveryBidDraft);
+            if (!ids.length) {
+                syncDeliveryBidSaveBar();
+                return;
+            }
+            const items = ids.map(id => ({
+                id: Number(id),
+                bid_value: normalizeDeliveryBidValue(deliveryBidDraft[id]),
+            }));
+            fetch(DELIVERY_API, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        const msg = (data && data.message) || '批量保存失败';
+                        if (window.showAppToast) window.showAppToast(msg, true, 3200);
+                        else alert(msg);
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    items.forEach(up => {
+                        const row = rowsCache.find(x => String(x.id) === String(up.id));
+                        if (row) row.bid_value = up.bid_value;
+                        delete deliveryBidDraft[String(up.id)];
+                    });
+                    renderTable(rowsCache);
+                    syncDeliveryBidSaveBar();
+                    const summary = `已保存 ${data.updated || 0} 条竞价${errCount ? `，失败 ${errCount} 条` : ''}`;
+                    if (window.showAppToast) window.showAppToast(summary, errCount > 0, 2800);
+                    else alert(summary);
+                })
+                .catch(err => {
+                    const msg = '请求失败: ' + err;
+                    if (window.showAppToast) window.showAppToast(msg, true, 3200);
+                    else alert(msg);
+                });
+        }
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
@@ -248,8 +373,13 @@
 
         function renderTable(items) {
             const tbody = document.querySelector('#deliveryTable tbody');
+            const availableIds = new Set((items || []).map(x => String(x.id)));
+            Object.keys(deliveryBidDraft).forEach(id => {
+                if (!availableIds.has(String(id))) delete deliveryBidDraft[id];
+            });
             if (!items.length) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+                syncDeliveryBidSaveBar();
                 return;
             }
             tbody.innerHTML = items.map(item => `
@@ -261,17 +391,14 @@
                             <button type="button" class="status-pill status-pill--archived ${item.status === '存档' ? 'is-active' : ''}" onclick="quickStatus(${item.id}, '存档')">存档</button>
                         </div>
                     </td>
-                    <td>${adRelationText(item)}</td>
-                    <td>${item.target_desc || item.delivery_desc || ''}</td>
+                    <td>${escapeHtml(adRelationText(item))}</td>
+                    <td>${escapeHtml(item.target_desc || item.delivery_desc || '')}</td>
                     <td>
-                        <div class="bid-inline">
-                            <input type="text" id="bid-${item.id}" value="${item.bid_value || ''}" placeholder="0.3 / 15%">
-                            <button class="btn-secondary" onclick="quickBid(${item.id})">保存</button>
-                        </div>
+                        <input type="text" class="delivery-bid-input" data-id="${item.id}" value="${escapeHtml(getDeliveryBidEffectiveValue(item))}" placeholder="0.3 / 15%">
                     </td>
-                    <td>${formatDateTime(item.updated_at)}</td>
-                    <td>${item.observe_interval || ''}</td>
-                    <td>${formatDateTime(item.next_observe_at)}</td>
+                    <td>${escapeHtml(formatDateTime(item.updated_at))}</td>
+                    <td>${escapeHtml(item.observe_interval || '')}</td>
+                    <td>${escapeHtml(formatDateTime(item.next_observe_at))}</td>
                     <td>
                         <div class="pm-actions">
                             <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
@@ -280,6 +407,8 @@
                     </td>
                 </tr>
             `).join('');
+            bindDeliveryBidEvents();
+            syncDeliveryBidSaveBar();
         }
 
         function quickStatus(id, status) {
@@ -294,21 +423,6 @@
                 }
                 loadList();
             }).catch(err => alert('状态更新失败: ' + err));
-        }
-
-        function quickBid(id) {
-            const value = document.getElementById(`bid-${id}`)?.value || '';
-            fetch(DELIVERY_API, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, bid_value: value })
-            }).then(r => r.json()).then(data => {
-                if (data.status !== 'success') {
-                    alert(data.message || '竞价更新失败');
-                    return;
-                }
-                loadList();
-            }).catch(err => alert('竞价更新失败: ' + err));
         }
 
         function loadList() {

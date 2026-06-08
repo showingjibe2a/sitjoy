@@ -2369,6 +2369,38 @@ class AmazonAdMixin:
             data = self._read_json_body(environ) or {}
 
             if method == 'PATCH':
+                batch_items = data.get('items')
+                if isinstance(batch_items, list) and batch_items:
+                    updated = 0
+                    errors = []
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            for raw in batch_items:
+                                item_id = self._parse_int((raw or {}).get('id'))
+                                bid_value = str((raw or {}).get('bid_value') or '').strip()
+                                if not item_id:
+                                    errors.append({'id': 0, 'error': 'Missing id'})
+                                    continue
+                                if not bid_value:
+                                    errors.append({'id': item_id, 'error': '竞价不能为空'})
+                                    continue
+                                try:
+                                    cur.execute(
+                                        'UPDATE amazon_ad_targets SET bid_value=%s WHERE id=%s',
+                                        (bid_value, item_id),
+                                    )
+                                    if cur.rowcount <= 0:
+                                        errors.append({'id': item_id, 'error': '记录不存在'})
+                                    else:
+                                        updated += 1
+                                except Exception as ex:
+                                    errors.append({'id': item_id, 'error': str(ex)})
+                    return self.send_json({
+                        'status': 'success',
+                        'updated': updated,
+                        'errors': errors,
+                    }, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
