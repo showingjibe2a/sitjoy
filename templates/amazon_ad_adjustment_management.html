@@ -1245,19 +1245,19 @@
             return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
         }
 
-        function placementPercentValueFromBid(bidRaw) {
+        function placementValueFromBid(bidRaw) {
             const bid = String(bidRaw || '').trim();
             if (!bid) return '';
             if (bid.includes('%')) {
                 const numPart = bid.replace(/%/g, '').replace(/,/g, '').trim();
-                if (!numPart) return '';
-                return `${numPart}%`;
+                const parsed = parseFloat(numPart);
+                if (!Number.isFinite(parsed) || parsed < 0) return '';
+                return formatDecimalMetric(parsed / 100, 4);
             }
             if (/^\d+(\.\d+)?$/.test(bid)) {
                 const parsed = parseFloat(bid);
-                if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return '';
-                if (parsed < 1 && bid.includes('.')) return '';
-                return `${bid}%`;
+                if (!Number.isFinite(parsed) || parsed < 0) return '';
+                return formatDecimalMetric(parsed, 4);
             }
             return '';
         }
@@ -1266,7 +1266,7 @@
             const bid = String((target && target.bid_value) || '').trim();
             if (!bid) return '';
             if (isModifyPlacementOp(op)) {
-                return placementPercentValueFromBid(bid);
+                return placementValueFromBid(bid);
             }
             if (isModifyDeliveryTargetOp(op)) {
                 return bid;
