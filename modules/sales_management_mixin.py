@@ -959,7 +959,7 @@ class SalesManagementMixin:
                 dv_yes_no.add(f'O{row}')
 
             ws.freeze_panes = 'A4'
-            return self._send_excel_workbook(wb, 'sales_order_registration_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '订单登记导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

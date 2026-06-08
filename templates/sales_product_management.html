@@ -4949,7 +4949,7 @@
         function downloadSalesProductTemplate() {
             const ids = Array.from(selectedSalesProductIds);
             if (typeof window.downloadTemplateWithIds === 'function') {
-                window.downloadTemplateWithIds('/api/sales-product-template', ids, 'sales_product_template.xlsx');
+                window.downloadTemplateWithIds('/api/sales-product-template', ids, '销售产品导入模板.xlsx');
                 return;
             }
             const safeIds = ids.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0);
@@ -4973,7 +4973,7 @@
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'sales_product_template.xlsx';
+                    a.download = '销售产品导入模板.xlsx';
                     document.body.appendChild(a);
                     a.click();
                     if (a.parentNode) a.parentNode.removeChild(a);

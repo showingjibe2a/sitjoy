@@ -608,7 +608,7 @@ function loadOptions(){
 function downloadTemplate(){
   const ids = Array.from(selectedWipIds).map(v => Number(v)).filter(v => v > 0);
   if (typeof window.downloadTemplateWithIds === 'function') {
-    window.downloadTemplateWithIds('/api/factory-wip-template', ids, 'factory_wip_template.xlsx');
+    window.downloadTemplateWithIds('/api/factory-wip-template', ids, '工厂在制库存导入模板.xlsx');
     return;
   }
   const query = ids.length ? `?ids=${ids.join(',')}` : '';

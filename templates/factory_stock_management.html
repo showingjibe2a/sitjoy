@@ -243,7 +243,7 @@ function loadOptions(){
 function downloadTemplate(){
   const ids = Array.from(selectedStockIds).map(v => Number(v)).filter(v => v > 0);
   if (typeof window.downloadTemplateWithIds === 'function') {
-    window.downloadTemplateWithIds('/api/factory-stock-template', ids, 'factory_stock_template.xlsx');
+    window.downloadTemplateWithIds('/api/factory-stock-template', ids, '工厂在库库存导入模板.xlsx');
     return;
   }
   const query = ids.length ? `?ids=${ids.join(',')}` : '';

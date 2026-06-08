@@ -1572,7 +1572,7 @@ class AmazonAdMixin:
                     start_response
                 )
             wb = self._build_amazon_ad_items_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_items_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '广告信息导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -2624,7 +2624,7 @@ class AmazonAdMixin:
                     start_response,
                 )
             wb = self._build_amazon_ad_target_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_delivery_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '广告投放导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -2784,7 +2784,7 @@ class AmazonAdMixin:
                     start_response,
                 )
             wb = self._build_amazon_ad_product_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_product_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '广告商品导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -3600,7 +3600,7 @@ class AmazonAdMixin:
                     start_response,
                 )
             wb = self._build_amazon_ad_adjustment_import_workbook()
-            return self._send_excel_workbook(wb, 'amazon_ad_adjustment_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '广告调整记录导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

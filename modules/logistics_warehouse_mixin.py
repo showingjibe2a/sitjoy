@@ -1419,7 +1419,7 @@ class LogisticsWarehouseMixin:
                     write_row += 1
 
             ws.freeze_panes = 'A4'
-            return self._send_excel_workbook(wb, 'factory_stock_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '工厂在库库存导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -1722,7 +1722,7 @@ class LogisticsWarehouseMixin:
                     write_row += 1
 
             ws.freeze_panes = 'A4'
-            return self._send_excel_workbook(wb, 'factory_wip_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '工厂在制库存导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -2581,7 +2581,7 @@ class LogisticsWarehouseMixin:
                 ws.add_data_validation(dv_region)
                 dv_region.add('D4:D1000')
 
-            return self._send_excel_workbook(wb, 'logistics_warehouse_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '海外仓仓库导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -2914,7 +2914,7 @@ class LogisticsWarehouseMixin:
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
             ws.freeze_panes = 'A4'
-            return self._send_excel_workbook(wb, 'warehouse_inventory_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '海外仓库存导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -3498,7 +3498,7 @@ class LogisticsWarehouseMixin:
                     for col, value in enumerate(data_line, start=1):
                         ws.cell(row=line, column=col, value=value)
                     line += 1
-                return self._send_excel_workbook(wb, 'logistics_warehouse_dashboard.xlsx', start_response)
+                return self._send_excel_workbook(wb, '仓储看板导出.xlsx', start_response)
 
             return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'region_order': ordered_region_names, 'items': rows}, start_response)
         except Exception as e:

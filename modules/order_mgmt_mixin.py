@@ -1909,7 +1909,7 @@ class OrderManagementMixin:
             # 冻结表头
             ws.freeze_panes = 'A4'
             
-            return self._send_excel_workbook(wb, 'order_product_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '下单产品导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -3037,7 +3037,7 @@ class OrderManagementMixin:
                 ws.add_data_validation(factory_dv)
                 factory_dv.add(f'B3:B1000')
 
-            return self._send_excel_workbook(wb, 'order_product_factory_links_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, 'SKU工厂关联导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

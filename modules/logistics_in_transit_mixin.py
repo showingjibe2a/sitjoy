@@ -1583,7 +1583,7 @@ class LogisticsInTransitMixin:
 
             ws_info.freeze_panes = 'A4'
             ws_items.freeze_panes = 'A4'
-            return self._send_excel_workbook(wb, 'logistics_in_transit_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '在途物流导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

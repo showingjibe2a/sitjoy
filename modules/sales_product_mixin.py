@@ -3682,7 +3682,7 @@ class SalesProductMixin:
             
             ws.freeze_panes = 'A4'
             
-            return self._send_excel_workbook(wb, 'sales_product_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '销售产品导入模板.xlsx', start_response)
         except Exception as e:
             # 下载接口兜底：即使数据查询异常，也返回可打开的模板文件，避免浏览器进入 500 错误页
             try:
@@ -3693,7 +3693,7 @@ class SalesProductMixin:
                     ws.append(['提示'])
                     ws.append(['模板已降级生成，请联系管理员检查服务器日志'])
                     ws.append([f'错误信息: {str(e)}'])
-                    return self._send_excel_workbook(wb, 'sales_product_template_fallback.xlsx', start_response)
+                    return self._send_excel_workbook(wb, '销售产品导入模板.xlsx', start_response)
             except Exception:
                 pass
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -8904,7 +8904,7 @@ class SalesProductMixin:
                     sku_validation.add(f'A{row_idx}')
 
             ws.freeze_panes = 'A3'
-            return self._send_excel_workbook(wb, 'sales_product_performance_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, '产品表现导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

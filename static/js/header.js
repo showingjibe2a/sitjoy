@@ -458,7 +458,7 @@
     }
 
     function parseDownloadFilename(contentDisposition, fallbackName){
-        const fallback = String(fallbackName || 'template.xlsx');
+        const fallback = String(fallbackName || '导入模板.xlsx');
         const header = String(contentDisposition || '');
         if(!header) return fallback;
         const starMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
@@ -517,7 +517,7 @@
         }
 
         const blob = await resp.blob();
-        const filename = parseDownloadFilename(resp.headers.get('content-disposition'), fallbackName || 'template.xlsx');
+        const filename = parseDownloadFilename(resp.headers.get('content-disposition'), fallbackName || '导入模板.xlsx');
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;

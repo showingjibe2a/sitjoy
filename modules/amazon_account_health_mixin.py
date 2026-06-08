@@ -408,7 +408,7 @@ class AmazonAccountHealthMixin:
                     shop_validation.add(f'A{row_idx}')
 
             ws.freeze_panes = 'A3'
-            return self._send_excel_workbook(wb, 'amazon_account_health_template.xlsx', start_response)
+            return self._send_excel_workbook(wb, 'Amazon账户健康导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

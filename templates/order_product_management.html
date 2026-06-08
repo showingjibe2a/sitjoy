@@ -5158,7 +5158,7 @@
         function downloadOrderProductTemplate() {
             const ids = Array.from(selectedOrderProductIds);
             if (typeof window.downloadTemplateWithIds === 'function') {
-                window.downloadTemplateWithIds('/api/order-product-template', ids, 'order_product_template.xlsx');
+                window.downloadTemplateWithIds('/api/order-product-template', ids, '下单产品导入模板.xlsx');
                 return;
             }
             const query = ids.length ? `?ids=${ids.join(',')}` : '';

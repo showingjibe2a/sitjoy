@@ -2,6 +2,7 @@
 import re
 import zipfile
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 
 try:
     from openpyxl import Workbook
@@ -14,9 +15,11 @@ class ExcelToolsMixin:
         output = io.BytesIO()
         workbook.save(output)
         data = output.getvalue()
+        safe_name = str(filename or '导入模板.xlsx').replace('\r', '').replace('\n', '')
+        encoded_name = quote(safe_name)
         start_response('200 OK', [
             ('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
-            ('Content-Disposition', f'attachment; filename="{filename}"'),
+            ('Content-Disposition', f"attachment; filename*=UTF-8''{encoded_name}"),
             ('Content-Length', str(len(data)))
         ])
         return [data]
