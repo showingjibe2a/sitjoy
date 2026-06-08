@@ -11,14 +11,6 @@
         .status-pill--enabled.is-active { background: #7fa88b; }
         .status-pill--paused.is-active { background: #b07b7b; }
         .status-pill--archived.is-active { background: #8f82b5; }
-        .delivery-bid-input {
-            width: 110px;
-            padding: 0.35rem 0.45rem;
-            border-radius: 6px;
-            border: 1px solid rgba(207, 199, 189, 0.8);
-            background: #fff;
-            color: var(--morandi-ink);
-        }
         .preview-savebar {
             position: fixed;
             left: 50%;
@@ -75,7 +67,7 @@
                             <th style="width:220px;">状态</th>
                             <th>广告关联</th>
                             <th>投放描述</th>
-                            <th style="width:190px;">竞价</th>
+                            <th data-manage-col-key="竞价" style="width:190px;">竞价</th>
                             <th style="width:170px;">最后修改时间</th>
                             <th style="width:160px;">下次观察时间间隔</th>
                             <th style="width:170px;">下次观察时间</th>
@@ -397,8 +389,8 @@
                     </td>
                     <td>${escapeHtml(adRelationText(item))}</td>
                     <td>${escapeHtml(item.target_desc || item.delivery_desc || '')}</td>
-                    <td>
-                        <input type="text" class="delivery-bid-input" data-id="${item.id}" value="${escapeHtml(getDeliveryBidEffectiveValue(item))}" placeholder="0.3 / 15%">
+                    <td data-manage-col-key="竞价">
+                        <input type="text" class="inline-input delivery-bid-input" data-id="${item.id}" value="${escapeHtml(getDeliveryBidEffectiveValue(item))}" placeholder="0.3 / 15%">
                     </td>
                     <td>${escapeHtml(formatDateTime(item.updated_at))}</td>
                     <td>${escapeHtml(item.observe_interval || '')}</td>
