@@ -50,6 +50,9 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadDeliveryTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerDeliveryUpload()">批量上传</button>
+                        <input type="file" id="deliveryUploadInput" accept=".xlsx" style="display:none;">
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
@@ -416,6 +419,45 @@
             }).catch(err => alert('删除失败: ' + err));
         }
 
+        function downloadDeliveryTemplate() {
+            window.location.href = '/api/amazon-ad-delivery-template';
+        }
+
+        function triggerDeliveryUpload() {
+            const input = document.getElementById('deliveryUploadInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        }
+
+        function uploadDeliveryTemplate(file) {
+            if (!file) return;
+            const doUpload = window.uploadBatchImportFile
+                ? window.uploadBatchImportFile({
+                    file,
+                    url: '/api/amazon-ad-delivery-import',
+                    title: '广告投放批量上传',
+                    uploadSummary: '正在上传模板文件...',
+                    processSummary: '正在解析并写入广告投放...',
+                })
+                : (() => {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    return fetch('/api/amazon-ad-delivery-import', { method: 'POST', body: formData }).then(r => r.json());
+                })();
+            doUpload
+                .then(data => {
+                    const handled = window.handleBatchImportResponse
+                        ? window.handleBatchImportResponse(data, {
+                            title: '广告投放导入',
+                            onSuccess: () => loadList(),
+                        })
+                        : false;
+                    if (!handled && data.status === 'success') loadList();
+                })
+                .catch(err => alert('导入失败: ' + err));
+        }
+
         function init() {
             Promise.all([loadAdOptions(), loadList()]).then(() => syncStatusButtons());
         }
@@ -432,6 +474,10 @@
         });
         document.getElementById('modalObserveDays').addEventListener('input', recalcNextObserveTime);
         document.getElementById('modalUpdatedAt').addEventListener('change', recalcNextObserveTime);
+        document.getElementById('deliveryUploadInput').addEventListener('change', function(e) {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadDeliveryTemplate(file);
+        });
         window.addEventListener('load', init);
     </script>
 </body>

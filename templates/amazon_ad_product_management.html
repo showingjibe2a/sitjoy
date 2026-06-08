@@ -29,6 +29,9 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadProductTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerProductUpload()">批量上传</button>
+                        <input type="file" id="productUploadInput" accept=".xlsx" style="display:none;">
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
@@ -451,6 +454,45 @@
             }).catch(err => alert('删除失败: ' + err));
         }
 
+        function downloadProductTemplate() {
+            window.location.href = '/api/amazon-ad-product-template';
+        }
+
+        function triggerProductUpload() {
+            const input = document.getElementById('productUploadInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        }
+
+        function uploadProductTemplate(file) {
+            if (!file) return;
+            const doUpload = window.uploadBatchImportFile
+                ? window.uploadBatchImportFile({
+                    file,
+                    url: '/api/amazon-ad-product-import',
+                    title: '广告商品批量上传',
+                    uploadSummary: '正在上传模板文件...',
+                    processSummary: '正在解析并写入广告商品...',
+                })
+                : (() => {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    return fetch('/api/amazon-ad-product-import', { method: 'POST', body: formData }).then(r => r.json());
+                })();
+            doUpload
+                .then(data => {
+                    const handled = window.handleBatchImportResponse
+                        ? window.handleBatchImportResponse(data, {
+                            title: '广告商品导入',
+                            onSuccess: () => loadList(),
+                        })
+                        : false;
+                    if (!handled && data.status === 'success') loadList();
+                })
+                .catch(err => alert('导入失败: ' + err));
+        }
+
         function init() {
             loadList();
             syncStatusButtons();
@@ -468,6 +510,10 @@
         });
         document.getElementById('modalObserveDays').addEventListener('input', recalcNextObserveTime);
         document.getElementById('modalUpdatedAt').addEventListener('change', recalcNextObserveTime);
+        document.getElementById('productUploadInput').addEventListener('change', function(e) {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadProductTemplate(file);
+        });
         window.addEventListener('load', init);
     </script>
 </body>
