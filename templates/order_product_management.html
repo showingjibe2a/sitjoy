@@ -4658,10 +4658,38 @@
             });
         }
 
+        function isOrderProductRowVisibleForSelection(row) {
+            if (!row || String(row.tagName || '').toUpperCase() !== 'TR') return false;
+            if (String(row.dataset.pmFilterHidden || '0') === '1') return false;
+            if (row.style && row.style.display === 'none') return false;
+            return true;
+        }
+
+        function getOrderProductSelectionCheckboxes() {
+            return Array.from(document.querySelectorAll('#orderProductTable .order-row-checkbox')).filter((cb) => {
+                const row = cb.closest('tr');
+                return row && isOrderProductRowVisibleForSelection(row);
+            });
+        }
+
+        function readSelectedOrderProductIdsFromDom() {
+            const api = orderManagedTableBodyApi();
+            if (api && typeof api.getSelectedIds === 'function') {
+                return api.getSelectedIds(document.getElementById('orderProductTable')) || [];
+            }
+            const ids = [];
+            getOrderProductSelectionCheckboxes().forEach((cb) => {
+                if (!cb.checked) return;
+                const id = String(cb.getAttribute('data-id') || '').trim();
+                if (id) ids.push(id);
+            });
+            return ids;
+        }
+
         function syncSelectAllCheckbox() {
             const master = document.getElementById('orderSelectAll');
             if (!master) return;
-            const checkboxes = Array.from(document.querySelectorAll('.order-row-checkbox'));
+            const checkboxes = getOrderProductSelectionCheckboxes();
             if (!checkboxes.length) {
                 master.checked = false;
                 master.indeterminate = false;
@@ -4673,7 +4701,7 @@
         }
 
         function toggleSelectAllOrderRows(checked) {
-            document.querySelectorAll('.order-row-checkbox').forEach(el => {
+            getOrderProductSelectionCheckboxes().forEach(el => {
                 const id = String(el.getAttribute('data-id') || '');
                 el.checked = !!checked;
                 if (!id) return;
@@ -4682,6 +4710,10 @@
             });
             syncSelectAllCheckbox();
             syncOrderBatchFloatBar();
+            const api = orderManagedTableBodyApi();
+            if (api && typeof api.syncBatchBar === 'function') {
+                api.syncBatchBar(document.getElementById('orderProductTable'));
+            }
         }
 
         function findOrderProductManagedBatchBar() {
@@ -4999,7 +5031,7 @@
         }
 
         function getSelectedOrderProductIdsOrWarn() {
-            const ids = Array.from(selectedOrderProductIds);
+            const ids = readSelectedOrderProductIdsFromDom();
             if (!ids.length) {
                 if (window.showAppToast) window.showAppToast('请先勾选要处理的 SKU', true, 2600);
                 else showUploadDialog({ title: '提示', message: '请先勾选要处理的 SKU' });
@@ -5024,17 +5056,23 @@
                         else showUploadDialog({ title: '预览失败', message: (data && data.message) || '预览失败' });
                         return;
                     }
-                    orderBatchCalcState = { kind: 'carton', endpoint: '/api/order-product-carton-calc', ids };
+                    const previewRows = Array.isArray(data.rows) ? data.rows : [];
+                    const changedIds = previewRows
+                        .filter((row) => String(row.carton_qty_old ?? '') !== String(row.carton_qty_new ?? ''))
+                        .map((row) => row.id)
+                        .filter((id) => id != null && id !== '');
+                    orderBatchCalcState = { kind: 'carton', endpoint: '/api/order-product-carton-calc', ids: changedIds };
                     const sel = Number(data.selected_count || 0);
                     const ok = Number(data.updatable_count || 0);
                     const miss = Number(data.missing_info_count || 0);
-                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可更新 <strong>${ok}</strong> 条；无完整包裹尺寸（长宽高均为正数）<strong>${miss}</strong> 条。装箱量按 40HQ=69m³ 体积折算。`;
+                    const unchanged = Math.max(0, ok - changedIds.length);
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无完整包裹尺寸（长宽高均为正数）<strong>${miss}</strong> 条。装箱量按 40HQ=69m³ 体积折算。`;
                     const thead = '<tr><th>SKU</th><th>包裹长(in)</th><th>包裹宽(in)</th><th>包裹高(in)</th><th>当前装箱量</th><th>新装箱量</th></tr>';
-                    const rows = (data.rows || []).map(row => {
+                    const rows = previewRows.map(row => {
                         const sku = escapeHtml(row.sku || '');
                         return `<tr><td>${sku}</td><td>${escapeHtml(String(row.package_length_in ?? ''))}</td><td>${escapeHtml(String(row.package_width_in ?? ''))}</td><td>${escapeHtml(String(row.package_height_in ?? ''))}</td><td>${escapeHtml(String(row.carton_qty_old ?? ''))}</td><td>${escapeHtml(String(row.carton_qty_new ?? ''))}</td></tr>`;
                     }).join('');
-                    openOrderBatchCalcModal('批量更新装箱量', summary, thead, rows || '<tr><td colspan="6" style="text-align:center;">无待更新行</td></tr>', ok > 0);
+                    openOrderBatchCalcModal('批量更新装箱量', summary, thead, rows || '<tr><td colspan="6" style="text-align:center;">无待更新行</td></tr>', changedIds.length > 0);
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
@@ -5058,19 +5096,25 @@
                         else showUploadDialog({ title: '预览失败', message: (data && data.message) || '预览失败' });
                         return;
                     }
-                    orderBatchCalcState = { kind: 'package', endpoint: '/api/order-product-package-class-batch', ids };
+                    const previewRows = Array.isArray(data.rows) ? data.rows : [];
+                    const changedIds = previewRows
+                        .filter((row) => String(row.package_class_old ?? '') !== String(row.package_class_new ?? ''))
+                        .map((row) => row.id)
+                        .filter((id) => id != null && id !== '');
+                    orderBatchCalcState = { kind: 'package', endpoint: '/api/order-product-package-class-batch', ids: changedIds };
                     const sel = Number(data.selected_count || 0);
                     const ok = Number(data.updatable_count || 0);
                     const miss = Number(data.missing_info_count || 0);
-                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可更新 <strong>${ok}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 最长）；长+围长 G=L+2(S+M)；体积 V=S×M×L（立方英寸）。顺序：G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
+                    const unchanged = Math.max(0, ok - changedIds.length);
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 最长）；长+围长 G=L+2(S+M)；体积 V=S×M×L（立方英寸）。顺序：G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
                     const thead = '<tr><th>SKU</th><th>最长边(in)</th><th>次长边(in)</th><th>最短边(in)</th><th>毛重(lb↑)</th><th>当前归类</th><th>新归类</th></tr>';
-                    const rows = (data.rows || []).map(row => {
+                    const rows = previewRows.map(row => {
                         const sku = escapeHtml(row.sku || '');
                         const o = escapeHtml(String(row.package_class_old || '—'));
                         const n = escapeHtml(String(row.package_class_new || ''));
                         return `<tr><td>${sku}</td><td>${escapeHtml(String(row.edge_long_in ?? ''))}</td><td>${escapeHtml(String(row.edge_mid_in ?? ''))}</td><td>${escapeHtml(String(row.edge_short_in ?? ''))}</td><td>${escapeHtml(String(row.gross_weight_lb_ceiled ?? ''))}</td><td>${o}</td><td>${n}</td></tr>`;
                     }).join('');
-                    openOrderBatchCalcModal('批量更新包裹归类', summary, thead, rows || '<tr><td colspan="7" style="text-align:center;">无待更新行</td></tr>', ok > 0);
+                    openOrderBatchCalcModal('批量更新包裹归类', summary, thead, rows || '<tr><td colspan="7" style="text-align:center;">无待更新行</td></tr>', changedIds.length > 0);
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
@@ -5156,7 +5200,7 @@
         }
 
         function downloadOrderProductTemplate() {
-            const ids = Array.from(selectedOrderProductIds);
+            const ids = readSelectedOrderProductIdsFromDom();
             if (typeof window.downloadTemplateWithIds === 'function') {
                 window.downloadTemplateWithIds('/api/order-product-template', ids, '下单产品导入模板.xlsx');
                 return;

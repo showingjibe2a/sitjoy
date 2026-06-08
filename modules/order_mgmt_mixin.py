@@ -1266,7 +1266,8 @@ class OrderManagementMixin:
                         'carton_qty_old': old_q,
                         'carton_qty_new': qty_new,
                     })
-                    apply_payload.append((qty_new, rid))
+                    if qty_new != old_q:
+                        apply_payload.append((qty_new, rid))
 
                 updatable_count = len(preview_rows)
                 missing_info_count = len(ids) - updatable_count
@@ -1352,7 +1353,8 @@ class OrderManagementMixin:
                         'package_class_old': old_cls,
                         'package_class_new': cls,
                     })
-                    apply_payload.append((cls, rid))
+                    if cls != old_cls:
+                        apply_payload.append((cls, rid))
 
                 updatable_count = len(preview_rows)
                 missing_info_count = len(ids) - updatable_count
