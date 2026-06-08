@@ -14,6 +14,7 @@
     let portfolioOptions = [];
     let campaignOptions = [];
     let subtypeOptions = [];
+    let shopOptions = [];
     let eventsBound = false;
 
     function $(id) { return document.getElementById(id); }
@@ -116,6 +117,10 @@
             '      <div class="form-group level-campaign">',
             '        <label for="modalBudget">预算</label>',
             '        <input type="number" id="modalBudget" step="0.01" placeholder="例如：50.00">',
+            '      </div>',
+            '      <div class="form-group level-campaign">',
+            '        <label for="modalCampaignShop">关联店铺<span class="required-asterisk">*</span></label>',
+            '        <select id="modalCampaignShop" data-search-placeholder="搜索店铺"></select>',
             '      </div>',
             '      <div class="form-group level-group">',
             '        <label>状态<span class="required-asterisk">*</span></label>',
@@ -276,6 +281,42 @@
             const text = `${item.ad_class}-${item.subtype_code}`;
             return `<button type="button" class="status-pill ${active}" data-target="modalSubtype" data-value="${value}" onclick="setSegmentValue('modalSubtype','${value}', true)">${text}</button>`;
         }).join('');
+    }
+
+    function loadShopOptions() {
+        return fetch('/api/shop')
+            .then(r => r.json())
+            .then(data => {
+                shopOptions = data.status === 'success' ? (data.items || []) : [];
+                renderCampaignShopSelect();
+            })
+            .catch(() => { shopOptions = []; });
+    }
+
+    function renderCampaignShopSelect(selectedValue) {
+        const select = $('modalCampaignShop');
+        const current = String(
+            selectedValue !== undefined ? selectedValue : (select?.value || '1')
+        );
+        if (!select) return;
+        select.innerHTML = '<option value="">请选择店铺</option>';
+        let hasCurrent = false;
+        (shopOptions || []).forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.shop_name || '';
+            if (current && String(item.id) === current) {
+                option.selected = true;
+                hasCurrent = true;
+            }
+            select.appendChild(option);
+        });
+        if (current && !hasCurrent) {
+            select.value = shopOptions.length ? String(shopOptions[0].id) : '1';
+        } else if (!current) {
+            select.value = '1';
+        }
+        if (global.refreshUniversalSingleSelect) global.refreshUniversalSingleSelect(select);
     }
 
     function loadPortfolioOptions() {
@@ -460,6 +501,7 @@
         $('modalCampaignName').value = '';
         $('modalCampaignName').dataset.auto = '1';
         $('modalBudget').value = '';
+        renderCampaignShopSelect('1');
         $('modalGroupPortfolio').value = '';
         renderGroupPortfolioSelect('');
         $('modalGroupCampaign').value = '';
@@ -516,6 +558,7 @@
                 $('modalCampaignName').value = item.name || '';
                 $('modalCampaignName').dataset.auto = '0';
                 $('modalBudget').value = item.budget === null || item.budget === undefined ? '' : item.budget;
+                renderCampaignShopSelect(item.shop_id || '1');
             } else {
                 $('modalGroupPortfolio').value = item.portfolio_id || '';
                 renderGroupPortfolioSelect(item.portfolio_id || '');
@@ -600,11 +643,13 @@
             payload.status = $('modalStatusCampaign').value;
             payload.name = $('modalCampaignName').value.trim();
             payload.budget = $('modalBudget').value;
+            payload.shop_id = $('modalCampaignShop').value;
             if (!payload.name) {
                 refreshCampaignName();
                 payload.name = $('modalCampaignName').value.trim();
             }
-            if (!payload.portfolio_id || !payload.strategy_code || !payload.subtype_id || !payload.status || !payload.name) {
+            if (!payload.portfolio_id || !payload.strategy_code || !payload.subtype_id
+                || !payload.status || !payload.name || !payload.shop_id) {
                 showAdStatus('请完整填写广告活动信息', true);
                 return;
             }
@@ -717,6 +762,7 @@
             loadCategoryMap(),
             loadSkuOptions(),
             loadSubtypeOptions(),
+            loadShopOptions(),
             loadPortfolioOptions(),
             loadCampaignOptions(),
             loadAdItemsCache(),
