@@ -972,7 +972,13 @@
         }
 
         function openAdCreateFromAdjustment() {
-            window.open('/amazon-ad-management?openCreate=1', '_blank');
+            if (window.AmazonAdFormModal) {
+                window.AmazonAdFormModal.openCreateModal();
+                return;
+            }
+            if (window.openCreateModal) {
+                window.openCreateModal();
+            }
         }
 
         function downloadAdTemplateFromAdjustment() {
@@ -1293,7 +1299,7 @@
         }
 
         function loadAdList() {
-            fetch('/api/amazon-ad-adjustment?action=ad-search')
+            return fetch('/api/amazon-ad-adjustment?action=ad-search')
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
@@ -1574,6 +1580,17 @@
             initAdSearchPrefs();
             initAdjustmentMetricAutoCalc();
             initAttributionCheckedSegment();
+            if (window.AmazonAdFormModal) {
+                window.AmazonAdFormModal.init({
+                    onSaveSuccess: (data) => {
+                        const newId = data && (data.item?.id || data.id);
+                        return loadAdList().then(() => {
+                            if (newId) selectAd(newId);
+                        });
+                    },
+                    showSuccessToast: (msg) => aaToast(msg || '保存成功', false),
+                });
+            }
             loadAdList();
             updateRecordsLink();
             const fullModal = document.getElementById('aaFullSubmitModal');
@@ -1584,6 +1601,7 @@
     </script>
 
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/amazon_ad_form_modal.js"></script>
 </body>
 </html>
 
