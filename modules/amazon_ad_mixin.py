@@ -3,6 +3,7 @@
 
 import cgi
 import io
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qs
@@ -209,9 +210,49 @@ class AmazonAdMixin:
         parsed = self._parse_int(value)
         return 1 if parsed else 0
 
-    def _serialize_operation_type_row(self, row, reasons=None):
+    def _parse_operation_type_reason_names(self, value):
+        if value is None or value == '':
+            return []
+        if isinstance(value, list):
+            names = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                names = parsed if isinstance(parsed, list) else []
+            except Exception:
+                names = [part.strip() for part in text.split('\n') if part.strip()]
+        out = []
+        seen = set()
+        for raw in names:
+            name = (raw if isinstance(raw, str) else (raw.get('reason_name') if isinstance(raw, dict) else ''))
+            name = str(name or '').strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(name)
+        return out
+
+    def _normalize_operation_type_reasons_payload(self, payload):
+        if payload is None:
+            return []
+        if isinstance(payload, list):
+            return self._parse_operation_type_reason_names(payload)
+        return []
+
+    def _encode_operation_type_reason_names(self, names):
+        cleaned = self._parse_operation_type_reason_names(names)
+        return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+
+    def _serialize_operation_type_row(self, row):
         item = dict(row) if row else {}
-        item['reasons'] = list(reasons or [])
+        reason_names = self._parse_operation_type_reason_names(item.pop('reason_names', None))
+        item['reasons'] = [{'reason_name': name} for name in reason_names]
         for key in ('apply_portfolio', 'apply_campaign', 'apply_group'):
             if key in item and item[key] is not None:
                 item[key] = int(item[key])
@@ -219,52 +260,7 @@ class AmazonAdMixin:
 
     def _fetch_all_operation_types_with_reasons(self, cur):
         cur.execute("SELECT * FROM amazon_ad_operation_types ORDER BY id DESC LIMIT 500")
-        rows = cur.fetchall() or []
-        if not rows:
-            return []
-        type_ids = [int(r['id']) for r in rows if r.get('id') is not None]
-        reasons_by_type = {tid: [] for tid in type_ids}
-        if type_ids:
-            placeholders = ','.join(['%s'] * len(type_ids))
-            cur.execute(
-                "SELECT id, operation_type_id, reason_name FROM amazon_ad_operation_reasons "
-                f"WHERE operation_type_id IN ({placeholders}) ORDER BY id ASC",
-                tuple(type_ids),
-            )
-            for rr in cur.fetchall() or []:
-                tid = int(rr['operation_type_id'])
-                reasons_by_type.setdefault(tid, []).append({
-                    'id': rr['id'],
-                    'reason_name': rr.get('reason_name') or '',
-                })
-        return [
-            self._serialize_operation_type_row(r, reasons_by_type.get(int(r['id']), []))
-            for r in rows
-        ]
-
-    def _sync_operation_type_reasons(self, cur, operation_type_id, reasons_payload):
-        cur.execute(
-            "DELETE FROM amazon_ad_operation_reasons WHERE operation_type_id=%s",
-            (operation_type_id,),
-        )
-        seen = set()
-        for raw in reasons_payload or []:
-            if isinstance(raw, str):
-                name = raw.strip()
-            elif isinstance(raw, dict):
-                name = (raw.get('reason_name') or '').strip()
-            else:
-                name = ''
-            if not name:
-                continue
-            key = name.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            cur.execute(
-                "INSERT INTO amazon_ad_operation_reasons (operation_type_id, reason_name) VALUES (%s, %s)",
-                (operation_type_id, name),
-            )
+        return [self._serialize_operation_type_row(r) for r in (cur.fetchall() or [])]
 
     def handle_amazon_ad_operation_type_api(self, environ, method, start_response):
         """Amazon 广告操作类型 API（含操作原因 CRUD）"""
@@ -284,18 +280,20 @@ class AmazonAdMixin:
                 apply_portfolio = self._parse_apply_flag(data.get('apply_portfolio'), 1)
                 apply_campaign = self._parse_apply_flag(data.get('apply_campaign'), 1)
                 apply_group = self._parse_apply_flag(data.get('apply_group'), 1)
+                reason_names = self._encode_operation_type_reason_names(
+                    self._normalize_operation_type_reasons_payload(data.get('reasons'))
+                )
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_operation_types (
-                                name, apply_portfolio, apply_campaign, apply_group
-                            ) VALUES (%s, %s, %s, %s)
+                                name, apply_portfolio, apply_campaign, apply_group, reason_names
+                            ) VALUES (%s, %s, %s, %s, %s)
                             """,
-                            (name, apply_portfolio, apply_campaign, apply_group),
+                            (name, apply_portfolio, apply_campaign, apply_group, reason_names),
                         )
                         new_id = cur.lastrowid
-                        self._sync_operation_type_reasons(cur, new_id, data.get('reasons'))
                     conn.commit()
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -335,6 +333,9 @@ class AmazonAdMixin:
                 apply_portfolio = self._parse_apply_flag(data.get('apply_portfolio'), 1)
                 apply_campaign = self._parse_apply_flag(data.get('apply_campaign'), 1)
                 apply_group = self._parse_apply_flag(data.get('apply_group'), 1)
+                reason_names = self._encode_operation_type_reason_names(
+                    self._normalize_operation_type_reasons_payload(data.get('reasons'))
+                )
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -346,13 +347,12 @@ class AmazonAdMixin:
                         cur.execute(
                             """
                             UPDATE amazon_ad_operation_types
-                            SET name=%s, apply_portfolio=%s, apply_campaign=%s, apply_group=%s
+                            SET name=%s, apply_portfolio=%s, apply_campaign=%s, apply_group=%s,
+                                reason_names=%s
                             WHERE id=%s
                             """,
-                            (name, apply_portfolio, apply_campaign, apply_group, item_id),
+                            (name, apply_portfolio, apply_campaign, apply_group, reason_names, item_id),
                         )
-                        # 仅改操作原因时字段未变，MySQL 可能 rowcount=0，不能据此判不存在
-                        self._sync_operation_type_reasons(cur, item_id, data.get('reasons'))
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -1432,7 +1432,7 @@ class AmazonAdMixin:
         if subtype_id:
             cur.execute(
                 """
-                SELECT ot.id, ot.name, ot.apply_portfolio, ot.apply_campaign, ot.apply_group
+                SELECT ot.id, ot.name, ot.apply_portfolio, ot.apply_campaign, ot.apply_group, ot.reason_names
                 FROM amazon_ad_operation_types ot
                 INNER JOIN amazon_ad_subtype_operation_types link ON link.operation_type_id = ot.id
                 WHERE link.subtype_id = %s
@@ -1442,18 +1442,18 @@ class AmazonAdMixin:
             )
         elif level == 'portfolio':
             cur.execute(
-                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
-                "WHERE apply_portfolio=1 ORDER BY id ASC"
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
+                "FROM amazon_ad_operation_types WHERE apply_portfolio=1 ORDER BY id ASC"
             )
         elif level == 'campaign':
             cur.execute(
-                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
-                "WHERE apply_campaign=1 ORDER BY id ASC"
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
+                "FROM amazon_ad_operation_types WHERE apply_campaign=1 ORDER BY id ASC"
             )
         else:
             cur.execute(
-                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
-                "WHERE apply_group=1 ORDER BY id ASC"
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
+                "FROM amazon_ad_operation_types WHERE apply_group=1 ORDER BY id ASC"
             )
         ops = cur.fetchall() or []
         result = []
@@ -1464,19 +1464,11 @@ class AmazonAdMixin:
                 continue
             if level == 'group' and not int(op.get('apply_group') or 0):
                 continue
-            cur.execute(
-                "SELECT id, reason_name FROM amazon_ad_operation_reasons "
-                "WHERE operation_type_id=%s ORDER BY id ASC",
-                (op['id'],)
-            )
-            reasons = [
-                {'id': r['id'], 'reason_name': r.get('reason_name') or ''}
-                for r in (cur.fetchall() or [])
-            ]
+            reason_names = self._parse_operation_type_reason_names(op.get('reason_names'))
             result.append({
                 'id': op['id'],
                 'name': op.get('name') or '',
-                'reasons': reasons,
+                'reasons': [{'reason_name': name} for name in reason_names],
             })
         return result
 
@@ -1551,12 +1543,10 @@ class AmazonAdMixin:
                         a.*,
                         i.name AS ad_name,
                         i.ad_level,
-                        ot.name AS operation_name,
-                        r.reason_name
+                        ot.name AS operation_name
                     FROM amazon_ad_adjustments a
                     INNER JOIN amazon_ad_items i ON i.id = a.ad_item_id
                     LEFT JOIN amazon_ad_operation_types ot ON ot.id = a.operation_type_id
-                    LEFT JOIN amazon_ad_operation_reasons r ON r.id = a.reason_id
                     WHERE 1=1
                 """
                 params = []
@@ -1575,7 +1565,7 @@ class AmazonAdMixin:
             if method == 'POST':
                 ad_item_id = self._parse_int(data.get('ad_item_id'))
                 operation_type_id = self._parse_int(data.get('operation_type_id'))
-                reason_id = self._parse_int(data.get('reason_id'))
+                reason_name = (data.get('reason_name') or '').strip() or None
                 target_object = (data.get('target_object') or '').strip()
                 is_quick = int(data.get('is_quick_submit') or 0)
                 if not ad_item_id or not operation_type_id or not target_object:
@@ -1592,7 +1582,7 @@ class AmazonAdMixin:
                             """
                             INSERT INTO amazon_ad_adjustments (
                                 adjust_date, ad_item_id, operation_type_id, target_object,
-                                before_value, after_value, reason_id,
+                                before_value, after_value, reason_name,
                                 start_time, end_time,
                                 impressions, clicks, cost, orders, sales,
                                 acos, cpc, ctr, cvr, top_of_search_is,
@@ -1612,7 +1602,7 @@ class AmazonAdMixin:
                                 adjust_date, ad_item_id, operation_type_id, target_object,
                                 (data.get('before_value') or '').strip() or None,
                                 (data.get('after_value') or '').strip() or None,
-                                reason_id,
+                                reason_name,
                                 self._parse_datetime_local_value(data.get('start_time')),
                                 self._parse_datetime_local_value(data.get('end_time')),
                                 (data.get('impressions') or '').strip() or None,

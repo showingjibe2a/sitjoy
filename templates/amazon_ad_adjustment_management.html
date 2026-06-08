@@ -1295,9 +1295,11 @@
             const op = allowedOperations.find(item => String(item.id) === opId);
             const reasons = op ? (op.reasons || []) : [];
             reasons.forEach(reason => {
+                const name = String(reason.reason_name || '').trim();
+                if (!name) return;
                 const option = document.createElement('option');
-                option.value = reason.id;
-                option.textContent = reason.reason_name || `原因${reason.id}`;
+                option.value = name;
+                option.textContent = name;
                 reasonSelect.appendChild(option);
             });
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(reasonSelect);
@@ -1396,7 +1398,7 @@
                 is_quick_submit: isQuickSubmit ? 1 : 0,
                 ad_item_id: selectedAdId,
                 operation_type_id: document.getElementById('operationType').value,
-                reason_id: document.getElementById('operationReason').value,
+                reason_name: document.getElementById('operationReason').value,
                 target_object: document.getElementById('targetObject').value.trim(),
                 before_value: document.getElementById('beforeValue').value.trim(),
                 after_value: document.getElementById('afterValue').value.trim(),
