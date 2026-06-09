@@ -3671,20 +3671,42 @@ class AmazonAdMixin:
             return '投放写入失败'
         return None
 
-    def _resolve_new_delivery_target_fields(self, cur, ad_item_id, after_value):
+    def _resolve_new_delivery_target_fields(self, after_value):
         after_value = (after_value or '').strip()
         status, status_err = self._normalize_ad_record_status(after_value)
         if not status_err:
-            bid_value = self._fetch_ad_item_default_bid(cur, ad_item_id)
-            if not bid_value:
-                bid_value = '0'
-            return bid_value, status, None
+            return None, status, None
         if self._is_numeric_bid_text(after_value):
             return after_value, '启动', None
-        default_bid = self._fetch_ad_item_default_bid(cur, ad_item_id)
-        if default_bid:
-            return default_bid, '启动', None
         return None, None, '新建投放须填写合法竞价或状态'
+
+    def _apply_existing_delivery_target_update(self, cur, row_id, after_value):
+        status, status_err = self._normalize_ad_record_status(after_value)
+        if not status_err:
+            cur.execute(
+                """
+                UPDATE amazon_ad_targets
+                SET status=%s, updated_at=NOW()
+                WHERE id=%s
+                """,
+                (status, row_id),
+            )
+            if cur.rowcount <= 0:
+                return '投放更新失败'
+            return None
+        if self._is_numeric_bid_text(after_value):
+            cur.execute(
+                """
+                UPDATE amazon_ad_targets
+                SET bid_value=%s, updated_at=NOW()
+                WHERE id=%s
+                """,
+                (after_value, row_id),
+            )
+            if cur.rowcount <= 0:
+                return '投放更新失败'
+            return None
+        return status_err
 
     def _apply_adjustment_to_target(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
@@ -3706,24 +3728,9 @@ class AmazonAdMixin:
         )
         row = cur.fetchone()
         if self._is_modify_delivery_target_operation(operation_name):
-            status, status_err = self._normalize_ad_record_status(after_value)
             if row:
-                if status_err:
-                    return status_err
-                cur.execute(
-                    """
-                    UPDATE amazon_ad_targets
-                    SET status=%s, updated_at=NOW()
-                    WHERE id=%s
-                    """,
-                    (status, row['id']),
-                )
-                if cur.rowcount <= 0:
-                    return '投放更新失败'
-                return None
-            bid_value, target_status, err = self._resolve_new_delivery_target_fields(
-                cur, ad_item_id, after_value,
-            )
+                return self._apply_existing_delivery_target_update(cur, row['id'], after_value)
+            bid_value, target_status, err = self._resolve_new_delivery_target_fields(after_value)
             if err:
                 return err
             return self._insert_amazon_ad_target_row(
