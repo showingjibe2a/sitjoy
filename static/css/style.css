@@ -1579,16 +1579,25 @@ button.btn-capsule-sm:active {
     transform: none;
 }
 
-/* 输入框旁胶囊按钮 + 悬浮菜单（::before 桥接间距，避免移入菜单时 hover 断裂） */
+/* 输入框旁胶囊按钮 + 悬浮菜单（::after 桥接按钮与面板间距，::before 延伸面板热区） */
 .input-capsule-menu {
     position: relative;
     flex: 0 0 auto;
+}
+.input-capsule-menu::after {
+    content: '';
+    position: absolute;
+    left: -6px;
+    right: -6px;
+    top: 100%;
+    height: 10px;
+    z-index: 45;
 }
 .input-capsule-menu-panel {
     display: none;
     position: absolute;
     right: 0;
-    top: calc(100% + 5px);
+    top: calc(100% + 2px);
     z-index: 46;
     min-width: 108px;
     padding: 0.3rem;
@@ -1602,8 +1611,8 @@ button.btn-capsule-sm:active {
     position: absolute;
     left: 0;
     right: 0;
-    top: -5px;
-    height: 5px;
+    top: -10px;
+    height: 10px;
 }
 .input-capsule-menu:hover .input-capsule-menu-panel,
 .input-capsule-menu:focus-within .input-capsule-menu-panel {
