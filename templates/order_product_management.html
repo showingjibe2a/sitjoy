@@ -225,6 +225,9 @@
             background: rgba(247, 244, 239, 0.92);
             cursor: default;
         }
+        .preview-edit-input.package-class-clickable[readonly] {
+            cursor: pointer;
+        }
         .preview-edit-cell {
             min-width: 118px;
             width: 118px;
@@ -759,7 +762,7 @@
                         </div>
                         <div class="form-group">
                             <label for="modalPackageClass">包裹大小归类（FedEx/UPS 阈值，自动）</label>
-                            <input type="text" id="modalPackageClass" class="optional-field" readonly title="随包裹三边与毛重自动计算，与列表批量归类规则一致">
+                            <input type="text" id="modalPackageClass" class="optional-field package-class-clickable" readonly title="点击查看计算逻辑；随包裹三边与毛重自动计算">
                         </div>
                     </div>
                 </div>
@@ -959,6 +962,41 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="packageClassCalcModal">
+        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 680px;">
+            <h3 id="packageClassCalcTitle" style="margin-top:0;">包裹归类计算逻辑</h3>
+            <div id="packageClassCalcForm">
+                <div class="pm-section" style="margin-bottom:0;">
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="pkgClassCalcLength">包裹长 (inch)</label>
+                            <input type="number" step="0.01" min="0" id="pkgClassCalcLength" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="pkgClassCalcWidth">包裹宽 (inch)</label>
+                            <input type="number" step="0.01" min="0" id="pkgClassCalcWidth" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="pkgClassCalcHeight">包裹高 (inch)</label>
+                            <input type="number" step="0.01" min="0" id="pkgClassCalcHeight" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="pkgClassCalcGross">毛重 (lbs)</label>
+                            <input type="number" step="0.01" min="0" id="pkgClassCalcGross" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+                <div class="pm-modal-actions" style="margin-top:0.65rem;padding-top:0;border-top:none;justify-content:flex-start;">
+                    <button type="button" class="btn-primary" id="pkgClassCalcSubmitBtn">计算</button>
+                </div>
+            </div>
+            <div id="packageClassCalcResult"></div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" id="packageClassCalcCloseBtn">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <div class="pm-modal" id="orderBatchShipPlanVerifyModal">
         <div class="pm-modal-content pm-modal-content--wide" style="max-width: 1100px;">
             <h3 id="orderBatchShipPlanVerifyTitle" style="margin-top:0;">批量核验发货方案</h3>
@@ -1105,6 +1143,7 @@
 
     <div id="timeoutToast" class="toast-notice"></div>
 
+    <script src="/static/js/package_class_calculator.js"></script>
     <script>
         let editId = null;
         let skuOptions = [];
@@ -2556,12 +2595,14 @@
         }
 
         function orderProductCeilingPositiveInt(value) {
+            if (window.SitjoyPackageClass) return window.SitjoyPackageClass.ceilingPositiveInt(value);
             const v = parseNumber(value);
             if (v === null || v <= 0) return null;
             return Math.ceil(v - 1e-9);
         }
 
         function orderProductSortedCeiledDims(lengthIn, widthIn, heightIn) {
+            if (window.SitjoyPackageClass) return window.SitjoyPackageClass.sortedCeiledDims(lengthIn, widthIn, heightIn);
             const a = orderProductCeilingPositiveInt(lengthIn);
             const b = orderProductCeilingPositiveInt(widthIn);
             const c = orderProductCeilingPositiveInt(heightIn);
@@ -2572,6 +2613,9 @@
 
         /** 与后端 _order_product_classify_fedex_package 一致（三边与毛重均向上取整） */
         function classifyOrderProductPackage(lengthIn, widthIn, heightIn, grossLbs) {
+            if (window.SitjoyPackageClass) {
+                return window.SitjoyPackageClass.classifyPackage(lengthIn, widthIn, heightIn, grossLbs);
+            }
             const dims = orderProductSortedCeiledDims(lengthIn, widthIn, heightIn);
             const wInt = orderProductCeilingPositiveInt(grossLbs);
             if (!dims || wInt === null) return null;
@@ -2583,9 +2627,51 @@
             const W = wInt;
             if (W > 150 || L > 108 || G > 165) return 'LTL';
             if (L > 96 || G > 130 || V > 17280 || W > 110) return 'Oversize';
-            if (V > 10368 || L > 48 || M > 30) return 'AHS-D';
+            if (V > 10368 || L > 48 || M > 30 || G > 105) return 'AHS-D';
             if (W >= 50) return 'AHS';
             return '小件';
+        }
+
+        function openOrderProductPackageClassExplain(itemId) {
+            const item = orderProductItemsCache.find(x => String(x.id) === String(itemId));
+            if (!item || !window.SitjoyPackageClass) return;
+            window.SitjoyPackageClass.openPackageClassExplainModal({
+                sku: item.sku || '',
+                length: getPreviewEffectiveValue(item, 'package_length_in'),
+                width: getPreviewEffectiveValue(item, 'package_width_in'),
+                height: getPreviewEffectiveValue(item, 'package_height_in'),
+                gross: getPreviewEffectiveValue(item, 'gross_weight_lbs')
+            });
+        }
+
+        function openModalPackageClassExplain() {
+            if (!window.SitjoyPackageClass) return;
+            const sku = (document.getElementById('modalSku') && document.getElementById('modalSku').value || '').trim();
+            window.SitjoyPackageClass.openPackageClassExplainModal({
+                sku: sku,
+                length: document.getElementById('modalPackageLength') && document.getElementById('modalPackageLength').value,
+                width: document.getElementById('modalPackageWidth') && document.getElementById('modalPackageWidth').value,
+                height: document.getElementById('modalPackageHeight') && document.getElementById('modalPackageHeight').value,
+                gross: document.getElementById('modalGrossWeight') && document.getElementById('modalGrossWeight').value
+            });
+        }
+
+        function bindOrderProductPackageClassExplainClicks() {
+            document.querySelectorAll('.preview-edit-field[data-field="package_size_class"]').forEach(el => {
+                if (el.dataset.pkgClassBound === '1') return;
+                el.dataset.pkgClassBound = '1';
+                el.classList.add('package-class-clickable');
+                el.title = '点击查看包裹归类计算逻辑';
+                el.addEventListener('click', function () {
+                    const itemId = this.getAttribute('data-id');
+                    if (itemId) openOrderProductPackageClassExplain(itemId);
+                });
+            });
+            const modalCls = document.getElementById('modalPackageClass');
+            if (modalCls && modalCls.dataset.pkgClassBound !== '1') {
+                modalCls.dataset.pkgClassBound = '1';
+                modalCls.addEventListener('click', openModalPackageClassExplain);
+            }
         }
 
         function syncModalPackageClassFromInputs() {
@@ -4575,7 +4661,7 @@
                                 <td class="preview-edit-cell" data-manage-col-key="包裹高(in)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_height_in" type="number" step="0.01" min="0" value="${packageHeiText ?? ''}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="净重(lbs)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="net_weight_lbs" type="number" step="0.01" min="0" value="${netWeightText ?? ''}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="毛重(lbs)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gross_weight_lbs" type="number" step="0.01" min="0" value="${grossWeightText ?? ''}"></td>
-                                <td class="preview-edit-cell" data-manage-col-key="包裹归类"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_size_class" type="text" readonly title="根据包裹三边与毛重自动计算" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell" data-manage-col-key="包裹归类"><input class="inline-input preview-edit-input preview-edit-field package-class-clickable" data-id="${item.id}" data-field="package_size_class" type="text" readonly title="点击查看包裹归类计算逻辑" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="装箱量"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="carton_qty" type="number" step="1" min="0" value="${cartonQtyText ?? ''}"></td>
                                 <td data-manage-col-key="创建时间">${dateText}</td>
                                 <td data-manage-col-key="操作">
@@ -4590,6 +4676,7 @@
                     }).join('');
             bindRowSelectionEvents();
             bindPreviewEditEvents();
+            bindOrderProductPackageClassExplainClicks();
             syncSelectAllCheckbox();
             syncPreviewSaveBar();
             syncOrderBatchFloatBar();
@@ -5106,7 +5193,7 @@
                     const ok = Number(data.updatable_count || 0);
                     const miss = Number(data.missing_info_count || 0);
                     const unchanged = Math.max(0, ok - changedIds.length);
-                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 最长）；长+围长 G=L+2(S+M)；体积 V=S×M×L（立方英寸）。顺序：G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 为长）；围长 G=长+(宽+高)×2；体积 V=S×M×L（立方英寸）。顺序：围长>165 或 L>108 或 W>150 → LTL；否则 L>96 或 围长>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 或 围长>105 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
                     const thead = '<tr><th>SKU</th><th>最长边(in)</th><th>次长边(in)</th><th>最短边(in)</th><th>毛重(lb↑)</th><th>当前归类</th><th>新归类</th></tr>';
                     const rows = previewRows.map(row => {
                         const sku = escapeHtml(row.sku || '');
@@ -5756,6 +5843,9 @@
             if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
             var batchEl = document.getElementById('orderBatchCalcModal');
             if (batchEl && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(batchEl, closeOrderBatchCalcModal);
+            if (window.SitjoyPackageClass && typeof window.SitjoyPackageClass.bindPackageClassModal === 'function') {
+                window.SitjoyPackageClass.bindPackageClassModal();
+            }
         }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {

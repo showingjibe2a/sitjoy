@@ -1145,8 +1145,8 @@ class OrderManagementMixin:
     def _order_product_classify_fedex_package(self, S, M, L, weight_lb_int):
         """美国小件网络尺寸类归类（与 FedEx / UPS Service Guide 常见阈值对齐，用于内部标签）。
 
-        S,M,L 为三边向上取整后的升序（英寸），故 L 为最长边；毛重 W 为向上取整磅数。
-        G = L + 2*(S+M) 为「最长边 + 围长」(length + girth)；V = S*M*L 为立方英寸。
+        S,M,L 为三边向上取整后的升序（英寸），故 L 为长边；毛重 W 为向上取整磅数。
+        G = L + (M+S)*2 为围长（长+(宽+高)×2，其中宽=M、高=S）；V = S*M*L 为立方英寸。
 
         判定顺序（后者不得越过前者已命中项）：
         1) LTL：超出小件承运上限（与 FedEx Ground Unauthorized / UPS 包裹上限同向）——
@@ -1154,7 +1154,8 @@ class OrderManagementMixin:
         2) Oversize：仍属小件网络内，但命中「大件费 / Large-Oversize」类触发条件之一即可
            （条件之间为「或」）—— L>96 或 G>130 或 V>17280 或 W>110。
         3) AHS-D：未命中以上，但命中附加操作「尺寸类」常见触发之一——
-           V>10368 或 L>48 或 M>30（M 为次长边，对应 UPS 第二边>30\" 规则）。
+           V>10368 或 L>48 或 M>30 或 G>105（FedEx AHS-Dimension：长+围长>105\"；
+           M 为次长边/宽，对应第二边>30\" 规则）。
         4) AHS：毛重 W>=50 且无上述情形（重量带附加操作，与尺寸类区分）。
         5) 小件：其余。
 
@@ -1170,7 +1171,7 @@ class OrderManagementMixin:
             return 'LTL'
         if L > 96 or G > 130 or V > 17280 or W > 110:
             return 'Oversize'
-        if V > 10368 or L > 48 or M > 30:
+        if V > 10368 or L > 48 or M > 30 or G > 105:
             return 'AHS-D'
         if W >= 50:
             return 'AHS'

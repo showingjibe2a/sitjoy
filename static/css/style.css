@@ -5158,6 +5158,7 @@ a.nas-main-image-crumb:hover {
     align-self: stretch;
     display: flex;
     align-items: center;
+    gap: 1rem;
     padding-left: 0.75rem;
     margin-left: auto;
     border-left: 1px solid rgba(207, 199, 189, 0.45);
@@ -6784,4 +6785,122 @@ select.pm-inline-compact-select,
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 12rem;
+}
+
+/* 包裹归类计算器 / 说明弹窗 */
+.pkg-class-explain-result {
+    margin: 0 0 0.85rem;
+    font-size: 1rem;
+}
+.pkg-class-explain-badge {
+    display: inline-block;
+    padding: 0.12rem 0.55rem;
+    border-radius: 6px;
+    background: rgba(212, 165, 116, 0.22);
+    color: #5c4a32;
+}
+.pkg-class-explain-sku {
+    margin: 0 0 0.45rem;
+    font-size: 0.88rem;
+    color: var(--sj-color-muted, #666);
+}
+.pkg-class-explain-section {
+    margin-bottom: 0.85rem;
+}
+.pkg-class-explain-section h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.82rem;
+    color: #555;
+    font-weight: 600;
+}
+.pkg-class-metrics-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+.pkg-class-metrics-table th,
+.pkg-class-metrics-table td {
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    padding: 0.35rem 0.5rem;
+    text-align: left;
+}
+.pkg-class-metrics-table th {
+    background: rgba(245, 239, 229, 0.85);
+    font-weight: 600;
+    width: 22%;
+}
+.pkg-class-prep-steps,
+.pkg-class-rule-steps {
+    margin: 0;
+    padding-left: 1.15rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+.pkg-class-prep-steps li,
+.pkg-class-rule-steps li {
+    margin-bottom: 0.55rem;
+}
+.pkg-class-step-line {
+    margin-top: 0.2rem;
+    color: #555;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+}
+.pkg-class-rule-step.is-matched {
+    color: #2d5a3a;
+}
+.pkg-class-rule-step.is-skipped {
+    color: #888;
+}
+.pkg-class-rule-hit {
+    font-weight: 700;
+    color: #2d5a3a;
+}
+.pkg-class-rule-sub {
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+    color: #777;
+}
+.pkg-class-conds {
+    margin: 0.25rem 0 0;
+    padding-left: 1rem;
+    list-style: disc;
+}
+.pkg-class-conds .is-hit {
+    color: #2d5a3a;
+    font-weight: 600;
+}
+.pkg-class-conds .is-miss {
+    color: #999;
+}
+.pkg-class-footnote {
+    margin: 0.5rem 0 0;
+    font-size: 0.76rem;
+    color: #999;
+}
+.pkg-class-explain-error {
+    margin: 0;
+    color: #a44;
+    font-size: 0.88rem;
+}
+.package-class-clickable {
+    cursor: pointer !important;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+.package-class-clickable:hover {
+    background: rgba(212, 165, 116, 0.18) !important;
+}
+#packageClassCalcResult {
+    margin-top: 0.75rem;
+    max-height: 52vh;
+    overflow-y: auto;
+}
+#packageClassCalcForm .pm-section-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem 0.85rem;
+}
+#packageClassCalcForm .form-group {
+    margin-bottom: 0;
 }
