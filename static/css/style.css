@@ -2311,7 +2311,8 @@ button.sj-group-row-edit-btn {
 .pm-table-reset-item {
     font-size: inherit;
 }
-.pm-table-reset-group.is-open .pm-table-reset-menu {
+.pm-table-reset-group.is-open .pm-table-reset-menu,
+.pm-table-reset-menu.is-open {
     display: grid;
     visibility: visible;
     pointer-events: auto;

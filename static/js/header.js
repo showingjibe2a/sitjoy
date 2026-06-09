@@ -4289,12 +4289,14 @@
 
     function repositionResetMenu(state){
         if(!state || !state.resetWrap || !state.resetMenu || !state.resetBtn) return;
-        if(!state.resetWrap.classList.contains('is-open')) return;
+        if(!state.resetWrap.classList.contains('is-open') && !state.resetMenu.classList.contains('is-open')) return;
         positionAppAnchorPanel(state.resetBtn, state.resetMenu, {
             gap: 6,
             align: 'left',
             measureDisplay: 'grid'
         });
+        state.resetMenu.classList.add('is-open');
+        state.resetMenu.style.pointerEvents = 'auto';
     }
 
     function closeColumnsPanel(state){
@@ -4319,19 +4321,34 @@
         repositionColumnsPanel(state);
     }
 
+    function hideResetMenuPanel(menu){
+        if(!menu) return;
+        menu.classList.remove('is-open');
+        menu.style.visibility = 'hidden';
+        menu.style.display = 'none';
+        menu.style.pointerEvents = 'none';
+    }
+
     function closeResetMenu(state){
         if(!state || !state.resetWrap) return;
         state.resetWrap.classList.remove('is-open');
+        hideResetMenuPanel(state.resetMenu);
         if(activeResetMenuState === state) activeResetMenuState = null;
     }
 
     function closeAllResetMenus(exceptWrap){
         const keep = exceptWrap && exceptWrap.classList ? exceptWrap : null;
+        managedTableState.forEach((state) => {
+            if(keep && state.resetWrap === keep) return;
+            closeResetMenu(state);
+        });
         document.querySelectorAll('.pm-table-reset-group.is-open').forEach((wrap) => {
             if(keep && keep === wrap) return;
             wrap.classList.remove('is-open');
         });
-        if(!keep || (activeResetMenuState && activeResetMenuState.resetWrap !== keep)){
+        if(!keep){
+            activeResetMenuState = null;
+        } else if(activeResetMenuState && activeResetMenuState.resetWrap !== keep){
             activeResetMenuState = null;
         }
     }
@@ -6618,8 +6635,11 @@
                     if(nextOpen){
                         activeResetMenuState = state;
                         repositionResetMenu(state);
-                    } else if(activeResetMenuState === state){
-                        activeResetMenuState = null;
+                    } else {
+                        hideResetMenuPanel(state.resetMenu);
+                        if(activeResetMenuState === state){
+                            activeResetMenuState = null;
+                        }
                     }
                 });
             }
