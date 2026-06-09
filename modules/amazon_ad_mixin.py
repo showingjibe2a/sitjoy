@@ -3179,6 +3179,33 @@ class AmazonAdMixin:
             text = text + ':00'
         return text.replace('T', ' ')
 
+    def _adjustment_patch_text_value(self, value):
+        return (value or '').strip() or None
+
+    def _build_adjustment_patch_fields(self, raw):
+        if not isinstance(raw, dict):
+            return {}
+        datetime_fields = {'start_time', 'end_time'}
+        text_fields = {
+            'impressions', 'clicks', 'cost', 'orders', 'sales',
+            'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
+            'attribution_orders', 'attribution_sales', 'remark',
+        }
+        patch = {}
+        for field in datetime_fields:
+            if field in raw:
+                patch[field] = self._parse_datetime_local_value(raw.get(field))
+        for field in text_fields:
+            if field in raw:
+                patch[field] = self._adjustment_patch_text_value(raw.get(field))
+        if 'attribution_checked' in raw:
+            patch['attribution_checked'] = 1 if str(raw.get('attribution_checked')) in ('1', 'true', 'True') else 0
+        elif 'attribution_orders' in raw or 'attribution_sales' in raw:
+            orders = patch.get('attribution_orders')
+            sales = patch.get('attribution_sales')
+            patch['attribution_checked'] = 1 if (orders or sales) else 0
+        return patch
+
     def _adjustment_portfolio_name_from_row(self, row):
         if not row:
             return ''
@@ -3918,23 +3945,15 @@ class AmazonAdMixin:
                             if not item_id:
                                 errors.append({'id': raw.get('id'), 'message': '无效 id'})
                                 continue
-                            attrib_orders = (raw.get('attribution_orders') or '').strip() or None
-                            attrib_sales = (raw.get('attribution_sales') or '').strip() or None
-                            remark = (raw.get('remark') or '').strip() or None
-                            if raw.get('attribution_checked') is None:
-                                attrib_checked = 1 if (attrib_orders or attrib_sales) else 0
-                            else:
-                                attrib_checked = 1 if str(raw.get('attribution_checked')) in ('1', 'true', 'True') else 0
+                            patch_fields = self._build_adjustment_patch_fields(raw)
+                            if not patch_fields:
+                                errors.append({'id': item_id, 'message': '无可更新字段'})
+                                continue
+                            set_sql = ', '.join(f'{col}=%s' for col in patch_fields)
+                            values = list(patch_fields.values()) + [item_id]
                             cur.execute(
-                                """
-                                UPDATE amazon_ad_adjustments
-                                SET attribution_checked=%s,
-                                    attribution_orders=%s,
-                                    attribution_sales=%s,
-                                    remark=%s
-                                WHERE id=%s
-                                """,
-                                (attrib_checked, attrib_orders, attrib_sales, remark, item_id),
+                                f'UPDATE amazon_ad_adjustments SET {set_sql} WHERE id=%s',
+                                values,
                             )
                             if cur.rowcount:
                                 updated += 1

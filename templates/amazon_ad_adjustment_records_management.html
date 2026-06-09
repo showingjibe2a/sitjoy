@@ -17,6 +17,12 @@
             color: var(--morandi-slate);
             margin: 0.35rem 0 0;
         }
+        #recordTable .preview-edit-cell input[type="datetime-local"] {
+            min-width: 11.5rem;
+        }
+        #recordTable .preview-edit-cell select.record-edit-field {
+            min-width: 3.5rem;
+        }
     </style>
 </head>
 <body>
@@ -91,16 +97,239 @@
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
+    <div id="recordSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="recordSaveText">已修改 0 条预览数据</span>
+        <button type="button" class="btn-secondary" onclick="cancelRecordEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveRecordEdits()">统一保存</button>
+    </div>
+
     <script>
         let recordsRaw = [];
         let recordsFiltered = [];
         let filterAdItemId = '';
+        let recordEditDraft = {};
+
+        const RECORD_EDIT_FIELDS = [
+            'start_time', 'end_time',
+            'impressions', 'clicks', 'cost', 'orders', 'sales',
+            'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
+            'attribution_checked', 'attribution_orders', 'attribution_sales', 'remark',
+        ];
+        const RECORD_RATIO_FIELDS = new Set(['acos', 'ctr', 'cvr']);
 
         function formatDateTime(value) {
             if (!value) return '';
             const d = new Date(value);
             if (Number.isNaN(d.getTime())) return value;
             return d.toLocaleString('zh-CN');
+        }
+
+        function toDatetimeLocal(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function formatPercentFromRatio(ratio) {
+            if (ratio == null || !Number.isFinite(ratio)) return '';
+            return (ratio * 100).toFixed(2) + '%';
+        }
+
+        function formatComputedRatioMetricDisplay(raw) {
+            const text = String(raw ?? '').trim();
+            if (!text) return '-';
+            if (text.includes('%')) {
+                const parsed = parseFloat(text.replace(/%/g, '').replace(/,/g, '').trim());
+                if (!Number.isFinite(parsed)) return text;
+                return formatPercentFromRatio(parsed / 100);
+            }
+            const parsed = parseFloat(text.replace(/,/g, ''));
+            if (!Number.isFinite(parsed)) return text;
+            if (parsed <= 1) {
+                return formatPercentFromRatio(parsed);
+            }
+            return formatPercentFromRatio(parsed / 100);
+        }
+
+        function ratioMetricInputValue(raw) {
+            const disp = formatComputedRatioMetricDisplay(raw);
+            return disp === '-' ? '' : disp;
+        }
+
+        function normalizeRatioMetricCompare(raw) {
+            const disp = formatComputedRatioMetricDisplay(raw);
+            return disp === '-' ? '' : disp;
+        }
+
+        function normalizeRecordDraftValue(field, rawValue) {
+            if (field === 'attribution_checked') {
+                return String(rawValue || '0') === '1' ? '1' : '0';
+            }
+            if (field === 'start_time' || field === 'end_time') {
+                return String(rawValue || '').trim();
+            }
+            return String(rawValue ?? '').trim();
+        }
+
+        function getRecordEditableValue(item, field) {
+            if (field === 'start_time' || field === 'end_time') return toDatetimeLocal(item[field]);
+            if (RECORD_RATIO_FIELDS.has(field)) return ratioMetricInputValue(item[field]);
+            if (field === 'attribution_checked') return String(item.attribution_checked || '0') === '1' ? '1' : '0';
+            return String(item[field] ?? '').trim();
+        }
+
+        function buildRecordDraftFromItem(item) {
+            const draft = {};
+            RECORD_EDIT_FIELDS.forEach(field => {
+                draft[field] = getRecordEditableValue(item, field);
+            });
+            return draft;
+        }
+
+        function getRecordRowDraft(item) {
+            const draft = recordEditDraft[String(item.id)];
+            return draft ? { ...buildRecordDraftFromItem(item), ...draft } : buildRecordDraftFromItem(item);
+        }
+
+        function recordDraftUnchanged(item, draft) {
+            return RECORD_EDIT_FIELDS.every(field => {
+                const orig = getRecordEditableValue(item, field);
+                const next = normalizeRecordDraftValue(field, draft[field]);
+                if (RECORD_RATIO_FIELDS.has(field)) {
+                    return normalizeRatioMetricCompare(orig) === normalizeRatioMetricCompare(next);
+                }
+                return orig === next;
+            });
+        }
+
+        function updateRecordDraft(itemId, field, rawValue) {
+            const item = recordsRaw.find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const key = String(itemId);
+            const draft = recordEditDraft[key] || buildRecordDraftFromItem(item);
+            draft[field] = normalizeRecordDraftValue(field, rawValue);
+            if (recordDraftUnchanged(item, draft)) {
+                delete recordEditDraft[key];
+            } else {
+                recordEditDraft[key] = draft;
+            }
+            syncRecordSaveBar();
+        }
+
+        function countRecordEditedRows() {
+            return Object.keys(recordEditDraft).length;
+        }
+
+        function syncRecordSaveBar() {
+            const bar = document.getElementById('recordSaveBar');
+            const text = document.getElementById('recordSaveText');
+            if (!bar || !text) return;
+            const count = countRecordEditedRows();
+            text.textContent = `已修改 ${count} 条预览数据`;
+            bar.classList.toggle('active', count > 0);
+        }
+
+        function cancelRecordEdits() {
+            recordEditDraft = {};
+            renderRecordTable();
+            syncRecordSaveBar();
+        }
+
+        function collectRecordUpdateItems() {
+            return Object.keys(recordEditDraft).map(id => ({
+                id: Number(id),
+                ...recordEditDraft[id],
+            }));
+        }
+
+        function saveRecordEdits() {
+            const items = collectRecordUpdateItems();
+            if (!items.length) {
+                syncRecordSaveBar();
+                return;
+            }
+            const bar = document.getElementById('recordSaveBar');
+            const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+            }
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        aaSaveResult({
+                            action: 'save',
+                            isError: true,
+                            message: (data && data.message) || '批量保存失败',
+                            errors: data && data.errors,
+                        });
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    recordEditDraft = {};
+                    loadRecords();
+                    syncRecordSaveBar();
+                    aaSaveResult({
+                        action: 'save',
+                        isError: errCount > 0,
+                        message: `已保存 ${data.updated || 0} 条区间/归因数据${errCount ? `，失败 ${errCount} 条` : ''}`,
+                        errors: data.errors,
+                    });
+                })
+                .catch(err => {
+                    aaSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
+                })
+                .finally(() => {
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '统一保存';
+                    }
+                });
+        }
+
+        function bindRecordEditEvents() {
+            const table = document.getElementById('recordTable');
+            if (!table || table.dataset.editBound === '1') return;
+            table.dataset.editBound = '1';
+            const onFieldChange = (e) => {
+                const el = e.target;
+                if (!el || !el.classList || !el.classList.contains('record-edit-field')) return;
+                updateRecordDraft(el.getAttribute('data-id'), el.getAttribute('data-field'), el.value);
+            };
+            table.addEventListener('input', onFieldChange);
+            table.addEventListener('change', onFieldChange);
+        }
+
+        function recordEditInput(field, itemId, value) {
+            const safe = String(value ?? '').replace(/"/g, '&quot;');
+            return `<input type="text" class="inline-input preview-edit-input record-edit-field" data-id="${itemId}" data-field="${field}" value="${safe}">`;
+        }
+
+        function recordEditDatetime(field, itemId, value) {
+            const safe = String(value ?? '').replace(/"/g, '&quot;');
+            return `<input type="datetime-local" class="inline-input preview-edit-input record-edit-field" data-id="${itemId}" data-field="${field}" value="${safe}">`;
+        }
+
+        function recordEditAttribChecked(itemId, value) {
+            const checked = String(value || '0') === '1';
+            return `
+                <select class="inline-input preview-edit-input record-edit-field" data-id="${itemId}" data-field="attribution_checked">
+                    <option value="0"${checked ? '' : ' selected'}>否</option>
+                    <option value="1"${checked ? ' selected' : ''}>是</option>
+                </select>
+            `;
+        }
+
+        function recordSortMetricValue(field, raw) {
+            if (RECORD_RATIO_FIELDS.has(field)) return normalizeRatioMetricCompare(raw);
+            return raw === null || raw === undefined ? '' : String(raw).trim();
         }
 
         function aaSaveResult(options) {
@@ -195,7 +424,8 @@
             tbody.innerHTML = items.map(item => {
                 const adName = item.ad_name || '';
                 const levelText = item.ad_level === 'group' ? '广告组' : (item.ad_level === 'campaign' ? '广告活动' : item.ad_level || '');
-                const attrChecked = String(item.attribution_checked || '0') === '1' ? '是' : '否';
+                const draft = getRecordRowDraft(item);
+                const itemId = item.id;
                 return `
                     <tr>
                         <td data-manage-col-key="调整日期"${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
@@ -205,28 +435,29 @@
                         <td data-manage-col-key="修改前"${sortCell(item.before_value)}>${escapeHtml(item.before_value || '')}</td>
                         <td data-manage-col-key="修改后"${sortCell(item.after_value)}>${escapeHtml(item.after_value || '')}</td>
                         <td data-manage-col-key="原因"${sortCell(item.reason_name)}>${escapeHtml(item.reason_name || '')}</td>
-                        <td data-manage-col-key="开始时间"${sortCell(item.start_time)}>${formatDateTime(item.start_time)}</td>
-                        <td data-manage-col-key="结束时间"${sortCell(item.end_time)}>${formatDateTime(item.end_time)}</td>
-                        <td data-manage-col-key="曝光"${sortCell(item.impressions)}>${escapeHtml(item.impressions || '')}</td>
-                        <td data-manage-col-key="点击"${sortCell(item.clicks)}>${escapeHtml(item.clicks || '')}</td>
-                        <td data-manage-col-key="花费"${sortCell(item.cost)}>${escapeHtml(item.cost || '')}</td>
-                        <td data-manage-col-key="订单"${sortCell(item.orders)}>${escapeHtml(item.orders || '')}</td>
-                        <td data-manage-col-key="销售额"${sortCell(item.sales)}>${escapeHtml(item.sales || '')}</td>
-                        <td data-manage-col-key="ACOS"${sortCell(item.acos)}>${escapeHtml(item.acos || '')}</td>
-                        <td data-manage-col-key="CPC"${sortCell(item.cpc)}>${escapeHtml(item.cpc || '')}</td>
-                        <td data-manage-col-key="CTR"${sortCell(item.ctr)}>${escapeHtml(item.ctr || '')}</td>
-                        <td data-manage-col-key="CVR"${sortCell(item.cvr)}>${escapeHtml(item.cvr || '')}</td>
-                        <td data-manage-col-key="首页首位IS"${sortCell(item.top_of_search_is)}>${escapeHtml(item.top_of_search_is || '')}</td>
-                        <td data-manage-col-key="归因检查"${sortCell(attrChecked === '是' ? '1' : '0')}>${attrChecked}</td>
-                        <td data-manage-col-key="归因订单"${sortCell(item.attribution_orders)}>${escapeHtml(item.attribution_orders || '')}</td>
-                        <td data-manage-col-key="归因销售额"${sortCell(item.attribution_sales)}>${escapeHtml(item.attribution_sales || '')}</td>
-                        <td data-manage-col-key="备注"${sortCell(item.remark)}>${escapeHtml(item.remark || '')}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="开始时间"${sortCell(draft.start_time || item.start_time)}>${recordEditDatetime('start_time', itemId, draft.start_time)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="结束时间"${sortCell(draft.end_time || item.end_time)}>${recordEditDatetime('end_time', itemId, draft.end_time)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="曝光"${sortCell(draft.impressions || item.impressions)}>${recordEditInput('impressions', itemId, draft.impressions)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="点击"${sortCell(draft.clicks || item.clicks)}>${recordEditInput('clicks', itemId, draft.clicks)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="花费"${sortCell(draft.cost || item.cost)}>${recordEditInput('cost', itemId, draft.cost)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="订单"${sortCell(draft.orders || item.orders)}>${recordEditInput('orders', itemId, draft.orders)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="销售额"${sortCell(draft.sales || item.sales)}>${recordEditInput('sales', itemId, draft.sales)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="ACOS"${sortCell(recordSortMetricValue('acos', draft.acos || item.acos))}>${recordEditInput('acos', itemId, draft.acos)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="CPC"${sortCell(draft.cpc || item.cpc)}>${recordEditInput('cpc', itemId, draft.cpc)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="CTR"${sortCell(recordSortMetricValue('ctr', draft.ctr || item.ctr))}>${recordEditInput('ctr', itemId, draft.ctr)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="CVR"${sortCell(recordSortMetricValue('cvr', draft.cvr || item.cvr))}>${recordEditInput('cvr', itemId, draft.cvr)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="首页首位IS"${sortCell(draft.top_of_search_is || item.top_of_search_is)}>${recordEditInput('top_of_search_is', itemId, draft.top_of_search_is)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="归因检查"${sortCell(draft.attribution_checked)}>${recordEditAttribChecked(itemId, draft.attribution_checked)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="归因订单"${sortCell(draft.attribution_orders || item.attribution_orders)}>${recordEditInput('attribution_orders', itemId, draft.attribution_orders)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="归因销售额"${sortCell(draft.attribution_sales || item.attribution_sales)}>${recordEditInput('attribution_sales', itemId, draft.attribution_sales)}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="备注"${sortCell(draft.remark || item.remark)}>${recordEditInput('remark', itemId, draft.remark)}</td>
                         <td data-manage-col-key="提交类型"${sortCell(String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交')}>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
                         <td data-manage-col-key="行操作"><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
                     </tr>
                 `;
             }).join('');
             endRecordTableBodyUpdate();
+            syncRecordSaveBar();
         }
 
         async function deleteRecord(id) {
@@ -273,6 +504,7 @@
                         return;
                     }
                     recordsRaw = data.items || [];
+                    recordEditDraft = {};
                     applyRecordFilter();
                 })
                 .catch(err => {
@@ -350,6 +582,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             parseUrlFilter();
+            bindRecordEditEvents();
             const table = document.getElementById('recordTable');
             if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
                 window.SitjoyManagedPmTable.invalidateLayout(table);
