@@ -509,6 +509,9 @@
             text-align: center;
             word-break: break-word;
         }
+        .aa-period-grid-val--span-daily {
+            grid-column: 2 / -1;
+        }
         .aa-period-attrib-stack {
             display: flex;
             flex-direction: column;
@@ -529,35 +532,6 @@
         }
         .aa-period-attrib-checked strong {
             color: var(--morandi-ink);
-        }
-        .aa-period-metric-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem 0.4rem;
-        }
-        .aa-period-metric {
-            flex: 1 1 4.8rem;
-            min-width: 4.2rem;
-            padding: 0.22rem 0.3rem;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.72);
-            border: 1px solid rgba(207, 199, 189, 0.35);
-        }
-        .aa-period-metric-k {
-            display: block;
-            font-size: 0.66rem;
-            color: var(--morandi-slate);
-            font-weight: 600;
-        }
-        .aa-period-metric-v {
-            display: block;
-            font-size: 0.78rem;
-            color: var(--morandi-ink);
-            font-weight: 600;
-            word-break: break-word;
-        }
-        .aa-interval-daily-preview {
-            margin-top: 0.15rem;
         }
         .btn-quick-small {
             padding: 0.3rem 0.55rem;
@@ -781,10 +755,6 @@
                                 <div class="form-group">
                                     <label for="topOfSearchIs">首页首位IS</label>
                                     <input type="text" id="topOfSearchIs" placeholder="如 35.20%">
-                                </div>
-                                <div class="aa-period-block aa-period-block--daily aa-interval-daily-preview" id="aaIntervalDailyPreview">
-                                    <div class="aa-period-block-title">日均数据预览</div>
-                                    <div class="aa-period-metric-row" id="aaIntervalDailyPreviewBody"></div>
                                 </div>
                             </div>
                         </div>
@@ -1190,14 +1160,6 @@
             return String(Math.max(1, Math.ceil(days - 1e-9)));
         }
 
-        function formatDailyMetricPlain(value, startTime, endTime) {
-            return escapeHtml(formatDailyMetricText(value, startTime, endTime));
-        }
-
-        function renderPeriodMetric(label, html) {
-            return `<div class="aa-period-metric"><span class="aa-period-metric-k">${escapeHtml(label)}</span><span class="aa-period-metric-v">${html}</span></div>`;
-        }
-
         function normalizeAdjustmentAttribState(item) {
             return {
                 attribution_checked: String(item?.attribution_checked || '0') === '1' ? '1' : '0',
@@ -1393,6 +1355,10 @@
                 <div class="aa-period-grid-val">${escapeHtml(val)}</div>
                 <div class="aa-period-grid-daily">${escapeHtml(daily)}</div>
             `).join('');
+            const topIsRow = `
+                <div class="aa-period-grid-label">首页首位IS</div>
+                <div class="aa-period-grid-val aa-period-grid-val--span-daily">${formatMetricPlain(item.top_of_search_is)}</div>
+            `;
             return `
                 <div class="aa-period-block">
                     <div class="aa-period-block-title">区间数据</div>
@@ -1403,6 +1369,7 @@
                         <div class="aa-period-grid-label">结束时间</div>
                         <div class="aa-period-grid-val">${escapeHtml(formatDateTime(end) || '-')}</div>
                         ${metricBody}
+                        ${topIsRow}
                     </div>
                 </div>
             `;
@@ -1414,7 +1381,6 @@
                 ['CPC', formatMetricPlainText(item.cpc)],
                 ['CTR', formatMetricPlainText(item.ctr)],
                 ['CVR', formatMetricPlainText(item.cvr)],
-                ['首页首位IS', formatMetricPlainText(item.top_of_search_is)],
             ];
             const body = rows.map(([label, val]) => `
                 <div class="aa-period-grid-label">${escapeHtml(label)}</div>
@@ -1638,26 +1604,6 @@
             if (orders != null && clicks != null && clicks > 0) {
                 setFieldValue('cvr', formatPercentFromRatio(orders / clicks));
             }
-            syncIntervalDailyPreview();
-        }
-
-        function syncIntervalDailyPreview() {
-            const body = document.getElementById('aaIntervalDailyPreviewBody');
-            if (!body) return;
-            const start = document.getElementById('startTime')?.value || '';
-            const end = document.getElementById('endTime')?.value || '';
-            const fields = [
-                ['曝光', 'impressions'],
-                ['点击', 'clicks'],
-                ['花费', 'cost'],
-                ['订单', 'orders'],
-                ['销售额', 'sales'],
-            ];
-            body.innerHTML = fields.map(([label, id]) => {
-                const raw = document.getElementById(id)?.value || '';
-                const daily = formatDailyMetricPlain(raw, start, end);
-                return renderPeriodMetric(label, daily);
-            }).join('');
         }
 
         function syncAttributionCheckedButtons() {
@@ -1703,12 +1649,6 @@
                 if (!el) return;
                 el.addEventListener('input', recalcAdjustmentDerivedMetrics);
                 el.addEventListener('change', recalcAdjustmentDerivedMetrics);
-            });
-            ['startTime', 'endTime'].forEach(id => {
-                const el = document.getElementById(id);
-                if (!el) return;
-                el.addEventListener('input', syncIntervalDailyPreview);
-                el.addEventListener('change', syncIntervalDailyPreview);
             });
         }
 
@@ -2672,6 +2612,10 @@
 
         function syncReasonOptions() {
             const opId = String(document.getElementById('operationType').value || '');
+            setFieldValue('targetObject', '');
+            setFieldValue('beforeValue', '');
+            setFieldValue('afterValue', '');
+            hideTargetObjectSuggest();
             const reasonSelect = document.getElementById('operationReason');
             reasonSelect.innerHTML = '<option value="">请选择修改原因</option>';
             const op = allowedOperations.find(item => String(item.id) === opId);
@@ -2817,8 +2761,8 @@
                 before_value: resolveAdjustmentValueForSubmit('beforeValue', document.getElementById('beforeValue').value),
                 after_value: resolveAdjustmentValueForSubmit('afterValue', document.getElementById('afterValue').value),
                 adjust_date: document.getElementById('adjustDate').value,
-                start_time: document.getElementById('startTime').value,
-                end_time: document.getElementById('endTime').value,
+                start_time: isQuickSubmit ? '' : document.getElementById('startTime').value,
+                end_time: isQuickSubmit ? '' : document.getElementById('endTime').value,
                 impressions: document.getElementById('impressions').value.trim(),
                 clicks: document.getElementById('clicks').value.trim(),
                 cost: document.getElementById('cost').value.trim(),
