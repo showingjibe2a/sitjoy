@@ -1761,7 +1761,8 @@
         if(!col) return;
         if(hidden){
             col.setAttribute('data-pm-col-hidden', '1');
-            col.style.setProperty('visibility', 'collapse', 'important');
+            try { col.setAttribute('width', '0'); } catch (_eAttr) {}
+            col.style.setProperty('visibility', 'hidden', 'important');
             col.style.setProperty('width', '0px', 'important');
             col.style.setProperty('min-width', '0px', 'important');
             col.style.setProperty('max-width', '0px', 'important');
@@ -1770,12 +1771,37 @@
             return;
         }
         col.removeAttribute('data-pm-col-hidden');
+        try { col.removeAttribute('width'); } catch (_eAttr2) {}
         col.style.removeProperty('visibility');
         col.style.removeProperty('width');
         col.style.removeProperty('min-width');
         col.style.removeProperty('max-width');
         col.style.removeProperty('padding');
         col.style.removeProperty('border-width');
+    }
+
+    function setManagedCellHiddenState(cell, hidden){
+        if(!cell) return;
+        if(hidden){
+            cell.setAttribute('data-pm-col-hidden-cell', '1');
+            try {
+                cell.style.setProperty('width', '0px', 'important');
+                cell.style.setProperty('min-width', '0px', 'important');
+                cell.style.setProperty('max-width', '0px', 'important');
+                cell.style.setProperty('padding', '0', 'important');
+                cell.style.setProperty('border-width', '0', 'important');
+            } catch (_e) {}
+            return;
+        }
+        cell.removeAttribute('data-pm-col-hidden-cell');
+        clearManagedCellInlineColumnSize(cell);
+        try {
+            cell.style.removeProperty('width');
+            cell.style.removeProperty('min-width');
+            cell.style.removeProperty('max-width');
+            cell.style.removeProperty('padding');
+            cell.style.removeProperty('border-width');
+        } catch (_e2) {}
     }
 
     function isManagedThumbColumnKey(state, columnKey, headerCell){
@@ -3686,18 +3712,19 @@
         if(!state || !state.table) return;
         const sum = sumManagedColgroupVisibleWidthPx(state);
         if(sum < 1) {
-            try {
-                state.table.style.removeProperty('--pm-managed-table-width');
-                state.table.removeAttribute('data-pm-col-width-sum');
-            } catch (_e) {
-            }
-            if(state.headerTable){
+            const tables = [state.table];
+            if(state.headerTable) tables.push(state.headerTable);
+            tables.forEach((table) => {
+                if(!table) return;
                 try {
-                    state.headerTable.style.removeProperty('--pm-managed-table-width');
-                    state.headerTable.removeAttribute('data-pm-col-width-sum');
-                } catch (_e2) {
+                    table.style.removeProperty('--pm-managed-table-width');
+                    table.style.removeProperty('width');
+                    table.style.removeProperty('min-width');
+                    table.style.removeProperty('max-width');
+                    table.removeAttribute('data-pm-col-width-sum');
+                } catch (_e) {
                 }
-            }
+            });
             return;
         }
         const px = `${sum}px`;
@@ -3707,6 +3734,9 @@
             if(!table) return;
             try {
                 table.style.setProperty('--pm-managed-table-width', px);
+                table.style.setProperty('width', px, 'important');
+                table.style.setProperty('min-width', px, 'important');
+                table.style.setProperty('max-width', px, 'important');
                 table.setAttribute('data-pm-col-width-sum', '1');
             } catch (_e) {
             }
@@ -3763,7 +3793,9 @@
         cells.forEach((cell, idx) => {
             const headerCell = headerCells[idx];
             stampManagedCellColumnKey(cell, headerCell);
-            cell.classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, idx));
+            const hide = managedColumnHiddenAtIndex(state, headerCells, idx);
+            cell.classList.toggle('pm-table-hide-col', hide);
+            setManagedCellHiddenState(cell, hide);
         });
         return true;
     }
@@ -3786,13 +3818,18 @@
                 excludeTrailingAction: hasActionsCell,
             });
 
+            const toggleGroupedCellHide = (cell, hide) => {
+                if(!cell) return;
+                cell.classList.toggle('pm-table-hide-col', hide);
+                setManagedCellHiddenState(cell, hide);
+            };
             if(cells[0] && headerCells[0]){
                 stampManagedCellColumnKey(cells[0], headerCells[0]);
-                cells[0].classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, 0));
+                toggleGroupedCellHide(cells[0], managedColumnHiddenAtIndex(state, headerCells, 0));
             }
             if(cells[1] && headerCells[1]){
                 stampManagedCellColumnKey(cells[1], headerCells[1]);
-                cells[1].classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, 1));
+                toggleGroupedCellHide(cells[1], managedColumnHiddenAtIndex(state, headerCells, 1));
             }
             const middleCell = cells.find((cell) => Number(cell.colSpan || 1) > 1) || null;
             const actionsCell = cells.find((cell) => {
@@ -3802,11 +3839,11 @@
             }) || null;
             if(middleCell){
                 middleCell.colSpan = middleSpan;
-                middleCell.classList.toggle('pm-table-hide-col', middleSpan < 1);
+                toggleGroupedCellHide(middleCell, middleSpan < 1);
             }
             if(actionsCell && headerCells[lastIdx]){
                 stampManagedCellColumnKey(actionsCell, headerCells[lastIdx]);
-                actionsCell.classList.toggle('pm-table-hide-col', managedColumnHiddenAtIndex(state, headerCells, lastIdx));
+                toggleGroupedCellHide(actionsCell, managedColumnHiddenAtIndex(state, headerCells, lastIdx));
             }
         });
     }

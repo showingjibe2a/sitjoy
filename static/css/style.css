@@ -2820,12 +2820,38 @@ button.sj-group-row-edit-btn {
 
 .pm-table.is-managed-table col[data-pm-col-hidden="1"],
 .pm-managed-head-table.is-managed-table col[data-pm-col-hidden="1"] {
-    visibility: collapse !important;
+    visibility: hidden !important;
     width: 0 !important;
     min-width: 0 !important;
     max-width: 0 !important;
     padding: 0 !important;
     border-width: 0 !important;
+}
+
+/* WebKit/Safari：visibility:collapse 常只藏内容不收回列宽；colgroup 已占位时用 display:none 清零列槽 */
+@supports (-webkit-touch-callout: none) {
+    .pm-table.is-managed-table[data-pm-col-width-sum="1"] col[data-pm-col-hidden="1"],
+    .pm-managed-head-table.is-managed-table[data-pm-col-width-sum="1"] col[data-pm-col-hidden="1"] {
+        visibility: hidden !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+    }
+
+    .pm-table.is-managed-table[data-pm-col-width-sum="1"] > thead > tr > th.pm-table-hide-col,
+    .pm-table.is-managed-table[data-pm-col-width-sum="1"] > tbody > tr > td.pm-table-hide-col,
+    .pm-managed-head-table.is-managed-table[data-pm-col-width-sum="1"] > thead > tr > th.pm-table-hide-col,
+    .pm-table.is-managed-table[data-pm-col-width-sum="1"] > thead > tr > th[data-pm-col-hidden-cell="1"],
+    .pm-table.is-managed-table[data-pm-col-width-sum="1"] > tbody > tr > td[data-pm-col-hidden-cell="1"],
+    .pm-managed-head-table.is-managed-table[data-pm-col-width-sum="1"] > thead > tr > th[data-pm-col-hidden-cell="1"] {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        padding: 0 !important;
+        border-width: 0 !important;
+    }
 }
 
 .pm-actions {
