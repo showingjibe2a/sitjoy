@@ -377,56 +377,141 @@
         .aa-period-list-wrap {
             flex: 1 1 auto;
             min-height: 0;
-            overflow-y: auto;
+            overflow-x: auto;
+            overflow-y: hidden;
             -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            gap: 0.55rem;
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
             padding: 0.45rem;
+            scroll-behavior: smooth;
         }
         .aa-period-empty {
+            flex: 1 1 auto;
+            min-width: 100%;
             padding: 0.75rem;
             text-align: center;
             color: var(--morandi-slate);
             font-size: 0.86rem;
         }
         .aa-period-card {
+            flex: 0 0 auto;
+            width: min(360px, 82vw);
             border: 1px solid rgba(207, 199, 189, 0.55);
-            border-radius: 8px;
-            padding: 0.5rem 0.55rem;
-            margin-bottom: 0.5rem;
-            background: rgba(255, 255, 255, 0.92);
+            border-radius: 10px;
+            padding: 0.55rem 0.6rem;
+            background: rgba(255, 255, 255, 0.96);
             font-size: 0.78rem;
             line-height: 1.35;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
         }
-        .aa-period-card:last-child { margin-bottom: 0; }
         .aa-period-card-head {
             font-weight: 700;
             color: var(--morandi-ink);
-            margin-bottom: 0.35rem;
-            padding-bottom: 0.3rem;
+            padding-bottom: 0.32rem;
             border-bottom: 1px dashed rgba(207, 199, 189, 0.5);
             font-size: 0.8rem;
         }
-        .aa-period-dl {
-            display: grid;
-            grid-template-columns: 5.2rem 1fr;
-            gap: 0.2rem 0.45rem;
-            margin: 0;
+        .aa-period-chip-row,
+        .aa-period-metric-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.4rem;
         }
-        .aa-period-dl dt {
-            margin: 0;
-            color: var(--morandi-slate);
+        .aa-period-chip {
+            flex: 1 1 7.2rem;
+            min-width: 0;
+            padding: 0.28rem 0.38rem;
+            border-radius: 8px;
+            background: rgba(236, 231, 223, 0.42);
+            border: 1px solid rgba(207, 199, 189, 0.45);
+        }
+        .aa-period-chip-k {
+            display: block;
+            font-size: 0.68rem;
             font-weight: 600;
+            color: var(--morandi-slate);
+            margin-bottom: 0.12rem;
         }
-        .aa-period-dl dd {
-            margin: 0;
+        .aa-period-chip-v {
+            display: block;
             color: var(--morandi-ink);
             word-break: break-word;
         }
-        .aa-metric-daily {
-            color: var(--morandi-slate);
+        .aa-period-range-line {
             font-size: 0.74rem;
+            color: var(--morandi-slate);
+            padding: 0.2rem 0.35rem;
+            border-radius: 7px;
+            background: rgba(248, 246, 242, 0.9);
+        }
+        .aa-period-block {
+            border: 1px solid rgba(207, 199, 189, 0.42);
+            border-radius: 8px;
+            padding: 0.38rem 0.42rem;
+            background: rgba(255, 255, 255, 0.88);
+        }
+        .aa-period-block--daily {
+            background: rgba(236, 231, 223, 0.28);
+            border-color: rgba(188, 180, 170, 0.55);
+        }
+        .aa-period-block-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--morandi-slate);
+            margin-bottom: 0.3rem;
+            letter-spacing: 0.02em;
+        }
+        .aa-period-metric {
+            flex: 1 1 4.8rem;
+            min-width: 4.2rem;
+            padding: 0.22rem 0.3rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(207, 199, 189, 0.35);
+        }
+        .aa-period-block--daily .aa-period-metric {
+            background: rgba(255, 255, 255, 0.55);
+        }
+        .aa-period-metric-k {
+            display: block;
+            font-size: 0.66rem;
+            color: var(--morandi-slate);
+            font-weight: 600;
+        }
+        .aa-period-metric-v {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--morandi-ink);
+            font-weight: 600;
+            word-break: break-word;
+        }
+        .aa-period-foot-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem 0.38rem;
+            font-size: 0.72rem;
+            color: var(--morandi-slate);
+        }
+        .aa-period-foot-item {
+            flex: 1 1 6.5rem;
+            min-width: 0;
+        }
+        .aa-period-foot-item strong {
+            color: var(--morandi-ink);
+            font-weight: 600;
+        }
+        .aa-interval-daily-preview {
+            margin-top: 0.15rem;
+        }
+        .aa-extra-modal .aa-interval-daily-preview .aa-period-metric-row {
+            margin-top: 0;
         }
         .btn-quick-small {
             padding: 0.3rem 0.55rem;
@@ -650,6 +735,10 @@
                                 <div class="form-group">
                                     <label for="topOfSearchIs">首页首位IS</label>
                                     <input type="text" id="topOfSearchIs" placeholder="如 35.20%">
+                                </div>
+                                <div class="aa-period-block aa-period-block--daily aa-interval-daily-preview" id="aaIntervalDailyPreview">
+                                    <div class="aa-period-block-title">日均数据预览</div>
+                                    <div class="aa-period-metric-row" id="aaIntervalDailyPreviewBody"></div>
                                 </div>
                             </div>
                         </div>
@@ -1024,50 +1113,88 @@
             }
         }
 
-        function formatMetricWithDaily(value, startTime, endTime) {
+        function formatDailyMetricPlain(value, startTime, endTime) {
             const text = String(value ?? '').trim();
-            if (!text) return '<span class="aa-ad-cell-empty">-</span>';
+            if (!text) return '-';
             const days = periodDayCount(startTime, endTime);
             const num = parseFloat(text.replace(/,/g, ''));
-            if (days == null || !Number.isFinite(num)) return escapeHtml(text);
+            if (days == null || !Number.isFinite(num)) return '-';
             const daily = num / days;
             const dailyStr = Math.abs(daily - Math.round(daily)) < 0.005
                 ? String(Math.round(daily))
                 : daily.toFixed(2);
-            return `${escapeHtml(text)}<span class="aa-metric-daily">（日均 ${escapeHtml(dailyStr)}）</span>`;
+            return escapeHtml(dailyStr);
         }
 
-        function renderPeriodRow(label, html) {
-            return `<dt>${escapeHtml(label)}</dt><dd>${html}</dd>`;
+        function renderPeriodChip(label, html) {
+            return `<div class="aa-period-chip"><span class="aa-period-chip-k">${escapeHtml(label)}</span><span class="aa-period-chip-v">${html}</span></div>`;
+        }
+
+        function renderPeriodMetric(label, html) {
+            return `<div class="aa-period-metric"><span class="aa-period-metric-k">${escapeHtml(label)}</span><span class="aa-period-metric-v">${html}</span></div>`;
         }
 
         function renderAdjustmentPeriodCard(item, index) {
             const start = item.start_time;
             const end = item.end_time;
-            const head = `区间 #${index + 1} · ${formatDateTime(start) || '-'} ~ ${formatDateTime(end) || '-'}`;
-            const rows = [
-                renderPeriodRow('修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name)),
-                renderPeriodRow('修改后', formatAdjustmentValueDisplay(item.after_value, item.operation_name)),
-                renderPeriodRow('原因', formatMetricPlain(item.reason_name)),
-                renderPeriodRow('修改日期', formatMetricPlain(formatDateTime(item.adjust_date))),
-                renderPeriodRow('开始时间', formatMetricPlain(formatDateTime(start))),
-                renderPeriodRow('结束时间', formatMetricPlain(formatDateTime(end))),
-                renderPeriodRow('曝光', formatMetricWithDaily(item.impressions, start, end)),
-                renderPeriodRow('点击', formatMetricWithDaily(item.clicks, start, end)),
-                renderPeriodRow('花费', formatMetricWithDaily(item.cost, start, end)),
-                renderPeriodRow('订单', formatMetricWithDaily(item.orders, start, end)),
-                renderPeriodRow('销售额', formatMetricWithDaily(item.sales, start, end)),
-                renderPeriodRow('ACOS', formatMetricPlain(item.acos)),
-                renderPeriodRow('CPC', formatMetricPlain(item.cpc)),
-                renderPeriodRow('CTR', formatMetricPlain(item.ctr)),
-                renderPeriodRow('CVR', formatMetricPlain(item.cvr)),
-                renderPeriodRow('首页首位IS', formatMetricPlain(item.top_of_search_is)),
-                renderPeriodRow('是否归因', formatMetricPlain(String(item.attribution_checked || '0') === '1' ? '是' : '否')),
-                renderPeriodRow('归因订单', formatMetricPlain(item.attribution_orders)),
-                renderPeriodRow('归因销售额', formatMetricPlain(item.attribution_sales)),
-                renderPeriodRow('备注', formatMetricPlain(item.remark)),
-            ].join('');
-            return `<article class="aa-period-card"><div class="aa-period-card-head">${escapeHtml(head)}</div><dl class="aa-period-dl">${rows}</dl></article>`;
+            const head = `区间 #${index + 1} · ${formatDateTime(item.adjust_date) || '-'}`;
+            const rangeLine = `${formatDateTime(start) || '-'} ~ ${formatDateTime(end) || '-'}`;
+            const intervalMetrics = [
+                ['曝光', formatMetricPlain(item.impressions)],
+                ['点击', formatMetricPlain(item.clicks)],
+                ['花费', formatMetricPlain(item.cost)],
+                ['订单', formatMetricPlain(item.orders)],
+                ['销售额', formatMetricPlain(item.sales)],
+            ].map(([k, v]) => renderPeriodMetric(k, v)).join('');
+            const dailyMetrics = [
+                ['曝光', formatDailyMetricPlain(item.impressions, start, end)],
+                ['点击', formatDailyMetricPlain(item.clicks, start, end)],
+                ['花费', formatDailyMetricPlain(item.cost, start, end)],
+                ['订单', formatDailyMetricPlain(item.orders, start, end)],
+                ['销售额', formatDailyMetricPlain(item.sales, start, end)],
+            ].map(([k, v]) => renderPeriodMetric(k, v)).join('');
+            const footItems = [
+                ['ACOS', formatMetricPlain(item.acos)],
+                ['CPC', formatMetricPlain(item.cpc)],
+                ['CTR', formatMetricPlain(item.ctr)],
+                ['CVR', formatMetricPlain(item.cvr)],
+                ['首页首位IS', formatMetricPlain(item.top_of_search_is)],
+                ['归因', formatMetricPlain(String(item.attribution_checked || '0') === '1' ? '是' : '否')],
+                ['归因订单', formatMetricPlain(item.attribution_orders)],
+                ['归因销售额', formatMetricPlain(item.attribution_sales)],
+            ].map(([k, v]) => `<span class="aa-period-foot-item">${escapeHtml(k)} <strong>${v}</strong></span>`).join('');
+            const remark = formatMetricPlain(item.remark);
+            return `
+                <article class="aa-period-card">
+                    <div class="aa-period-card-head">${escapeHtml(head)}</div>
+                    <div class="aa-period-chip-row">
+                        ${renderPeriodChip('修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name))}
+                        ${renderPeriodChip('修改后', formatAdjustmentValueDisplay(item.after_value, item.operation_name))}
+                        ${renderPeriodChip('原因', formatMetricPlain(item.reason_name))}
+                    </div>
+                    <div class="aa-period-range-line">效果区间 ${escapeHtml(rangeLine)}</div>
+                    <div class="aa-period-block">
+                        <div class="aa-period-block-title">区间数据</div>
+                        <div class="aa-period-metric-row">${intervalMetrics}</div>
+                    </div>
+                    <div class="aa-period-block aa-period-block--daily">
+                        <div class="aa-period-block-title">日均数据</div>
+                        <div class="aa-period-metric-row">${dailyMetrics}</div>
+                    </div>
+                    <div class="aa-period-foot-row">${footItems}</div>
+                    <div class="aa-period-foot-row"><span class="aa-period-foot-item">备注 <strong>${remark}</strong></span></div>
+                </article>
+            `;
+        }
+
+        function scrollPeriodListToLatest() {
+            const wrap = document.getElementById('aaPeriodList');
+            if (!wrap) return;
+            const scroll = () => {
+                wrap.scrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+            };
+            scroll();
+            requestAnimationFrame(scroll);
         }
 
         function renderAdjustmentPeriodList(items) {
@@ -1077,12 +1204,13 @@
                 wrap.innerHTML = '<div class="aa-period-empty">请先在左侧选择广告</div>';
                 return;
             }
-            const list = Array.isArray(items) ? items : [];
+            const list = Array.isArray(items) ? items.slice().reverse() : [];
             if (!list.length) {
                 wrap.innerHTML = '<div class="aa-period-empty">该广告暂无调整记录</div>';
                 return;
             }
             wrap.innerHTML = list.map((item, idx) => renderAdjustmentPeriodCard(item, idx)).join('');
+            scrollPeriodListToLatest();
         }
 
         function loadAdjustmentPeriodList() {
@@ -1193,6 +1321,26 @@
             if (orders != null && clicks != null && clicks > 0) {
                 setFieldValue('cvr', formatPercentFromRatio(orders / clicks));
             }
+            syncIntervalDailyPreview();
+        }
+
+        function syncIntervalDailyPreview() {
+            const body = document.getElementById('aaIntervalDailyPreviewBody');
+            if (!body) return;
+            const start = document.getElementById('startTime')?.value || '';
+            const end = document.getElementById('endTime')?.value || '';
+            const fields = [
+                ['曝光', 'impressions'],
+                ['点击', 'clicks'],
+                ['花费', 'cost'],
+                ['订单', 'orders'],
+                ['销售额', 'sales'],
+            ];
+            body.innerHTML = fields.map(([label, id]) => {
+                const raw = document.getElementById(id)?.value || '';
+                const daily = formatDailyMetricPlain(raw, start, end);
+                return renderPeriodMetric(label, daily);
+            }).join('');
         }
 
         function syncAttributionCheckedButtons() {
@@ -1238,6 +1386,12 @@
                 if (!el) return;
                 el.addEventListener('input', recalcAdjustmentDerivedMetrics);
                 el.addEventListener('change', recalcAdjustmentDerivedMetrics);
+            });
+            ['startTime', 'endTime'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', syncIntervalDailyPreview);
+                el.addEventListener('change', syncIntervalDailyPreview);
             });
         }
 
@@ -1473,11 +1627,16 @@
         }
 
         function fillAfterValueFromObjectSelection(target, op) {
+            const beforeInput = document.getElementById('beforeValue');
             const afterInput = document.getElementById('afterValue');
             if (!afterInput || !target) return;
             if (isModifyProductOp(op)) {
-                afterInput.value = statusFromObjectOption(target);
+                const status = targetObjectCurrentStatus(target);
+                if (beforeInput) beforeInput.value = status;
+                afterInput.value = firstAlternateTargetStatus(status) || status;
+                return;
             }
+            syncAfterValueWhenBeforeIsCurrentStatus();
         }
 
         function refreshBeforeValueForTargetObject() {
@@ -1499,11 +1658,38 @@
             updateSubmitButtonState();
         }
 
-        function oppositeDeliveryStatus(status) {
-            const s = String(status || '').trim();
-            if (s === '启动') return '暂停';
-            if (s === '暂停') return '启动';
-            return '';
+        function otherTargetStatusesExcluding(excludeStatus) {
+            const s = String(excludeStatus || '').trim();
+            return AA_TARGET_STATUSES.filter(st => st !== s);
+        }
+
+        function firstAlternateTargetStatus(fromStatus) {
+            const others = otherTargetStatusesExcluding(fromStatus);
+            return others.length ? others[0] : '';
+        }
+
+        function targetObjectCurrentStatus(target) {
+            return statusFromObjectOption(target);
+        }
+
+        function isBeforeValueTargetStatus(target, op, raw) {
+            const val = String(raw || '').trim();
+            if (!isValidTargetStatus(val) || !target) return false;
+            return val === targetObjectCurrentStatus(target);
+        }
+
+        function syncAfterValueWhenBeforeIsCurrentStatus() {
+            const op = getSelectedOperationType();
+            if (!isModifyProductOp(op) && !isModifyDeliveryTargetOp(op) && !isModifyPlacementOp(op)) return;
+            const target = getMatchedTargetFromObject();
+            if (!target) return;
+            const beforeInput = document.getElementById('beforeValue');
+            const afterInput = document.getElementById('afterValue');
+            if (!beforeInput || !afterInput) return;
+            const beforeVal = String(beforeInput.value || '').trim();
+            if (!isBeforeValueTargetStatus(target, op, beforeVal)) return;
+            const nextAfter = firstAlternateTargetStatus(beforeVal);
+            if (nextAfter) afterInput.value = nextAfter;
         }
 
         function isValidTargetStatus(text) {
@@ -1557,54 +1743,65 @@
             return false;
         }
 
-        function buildTargetObjectValueAlternates(target, op, currentRaw) {
+        function buildTargetObjectValueAlternates(target, op, fieldId, currentRaw) {
             const current = String(currentRaw || '').trim();
             const alternates = [];
             if (!target) return alternates;
 
-            if (isModifyProductOp(op)) {
-                AA_TARGET_STATUSES.forEach((st) => {
-                    if (targetObjectValueMatchesCurrent(st, current, op)) return;
-                    alternates.push({
-                        value: st,
-                        html: renderTargetStatusPill(st),
-                        fillOppositeAfter: false,
-                    });
-                });
-                return alternates;
-            }
-
-            const status = statusFromObjectOption(target);
+            const objectStatus = targetObjectCurrentStatus(target);
             const bid = String(target.bid_value || '').trim();
             const pctDisplay = bid ? placementDisplayFromBid(bid) : '';
 
-            if (isModifyPlacementOp(op)) {
-                if (pctDisplay && !targetObjectValueMatchesCurrent(pctDisplay, current, op)) {
-                    alternates.push({
-                        value: pctDisplay,
-                        html: escapeHtml(pctDisplay),
-                        fillOppositeAfter: false,
-                    });
+            if (fieldId === 'beforeValue') {
+                if (isModifyProductOp(op)) {
+                    if (!targetObjectValueMatchesCurrent(objectStatus, current, op)) {
+                        alternates.push({
+                            value: objectStatus,
+                            html: renderTargetStatusPill(objectStatus),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                    return alternates;
                 }
-                AA_TARGET_STATUSES.forEach((st) => {
-                    if (targetObjectValueMatchesCurrent(st, current, op)) return;
-                    alternates.push({
-                        value: st,
-                        html: renderTargetStatusPill(st),
-                        fillOppositeAfter: false,
-                    });
-                });
+
+                if (isModifyPlacementOp(op)) {
+                    if (pctDisplay && !targetObjectValueMatchesCurrent(pctDisplay, current, op)) {
+                        alternates.push({
+                            value: pctDisplay,
+                            html: escapeHtml(pctDisplay),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                    if (!targetObjectValueMatchesCurrent(objectStatus, current, op)) {
+                        alternates.push({
+                            value: objectStatus,
+                            html: renderTargetStatusPill(objectStatus),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                    return alternates;
+                }
+
+                if (isModifyDeliveryTargetOp(op)) {
+                    if (bid && !targetObjectValueMatchesCurrent(bid, current, op)) {
+                        alternates.push({
+                            value: bid,
+                            html: escapeHtml(bid),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                    if (!targetObjectValueMatchesCurrent(objectStatus, current, op)) {
+                        alternates.push({
+                            value: objectStatus,
+                            html: renderTargetStatusPill(objectStatus),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                }
                 return alternates;
             }
 
-            if (isModifyDeliveryTargetOp(op)) {
-                if (bid && !targetObjectValueMatchesCurrent(bid, current, op)) {
-                    alternates.push({
-                        value: bid,
-                        html: escapeHtml(bid),
-                        fillOppositeAfter: false,
-                    });
-                }
+            if (fieldId === 'afterValue') {
                 AA_TARGET_STATUSES.forEach((st) => {
                     if (targetObjectValueMatchesCurrent(st, current, op)) return;
                     alternates.push({
@@ -1667,7 +1864,7 @@
             if (isModifyProductOp(op) || isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op)) {
                 const target = getMatchedTargetFromObject();
                 if (!target) return options;
-                return buildTargetObjectValueAlternates(target, op, currentValue);
+                return buildTargetObjectValueAlternates(target, op, fieldId, currentValue);
             }
             return options;
         }
@@ -1676,12 +1873,8 @@
             const input = document.getElementById(fieldId);
             if (!input || !opt) return;
             input.value = String(opt.value || '').trim();
-            if (opt.fillOppositeAfter && fieldId === 'beforeValue') {
-                const afterInput = document.getElementById('afterValue');
-                if (afterInput) {
-                    const opposite = oppositeDeliveryStatus(opt.value);
-                    afterInput.value = opposite || '';
-                }
+            if (fieldId === 'beforeValue') {
+                syncAfterValueWhenBeforeIsCurrentStatus();
             }
             syncValueQuickMenus();
             updateSubmitButtonState();
@@ -2459,11 +2652,21 @@
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('input', () => {
-                if (id === 'beforeValue' || id === 'afterValue') syncValueQuickMenus();
+                if (id === 'beforeValue') {
+                    syncAfterValueWhenBeforeIsCurrentStatus();
+                    syncValueQuickMenus();
+                } else if (id === 'afterValue') {
+                    syncValueQuickMenus();
+                }
                 updateSubmitButtonState();
             });
             el.addEventListener('change', () => {
-                if (id === 'beforeValue' || id === 'afterValue') syncValueQuickMenus();
+                if (id === 'beforeValue') {
+                    syncAfterValueWhenBeforeIsCurrentStatus();
+                    syncValueQuickMenus();
+                } else if (id === 'afterValue') {
+                    syncValueQuickMenus();
+                }
                 updateSubmitButtonState();
             });
         });

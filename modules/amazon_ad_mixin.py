@@ -3093,28 +3093,27 @@ class AmazonAdMixin:
         now = datetime.now().replace(second=0, microsecond=0)
         cur.execute(
             """
-            SELECT adjust_date, end_time FROM amazon_ad_adjustments
+            SELECT adjust_date FROM amazon_ad_adjustments
             WHERE ad_item_id=%s ORDER BY id DESC LIMIT 1
             """,
             (ad_item_id,)
         )
         last = cur.fetchone() or {}
-        end_time = last.get('end_time')
-        if end_time and not isinstance(end_time, datetime):
+        last_adjust = last.get('adjust_date')
+        if last_adjust and not isinstance(last_adjust, datetime):
             try:
-                end_time = datetime.fromisoformat(str(end_time).replace(' ', 'T', 1))
+                last_adjust = datetime.fromisoformat(str(last_adjust).replace(' ', 'T', 1))
             except Exception:
-                end_time = None
-        if isinstance(end_time, datetime):
-            start_time = end_time
-            end_default = end_time + timedelta(days=7)
+                last_adjust = None
+        if isinstance(last_adjust, datetime):
+            start_time = last_adjust.replace(second=0, microsecond=0)
         else:
             start_time = now - timedelta(days=7)
-            end_default = now
+        end_time = now
         return {
             'adjust_date': now.strftime('%Y-%m-%d %H:%M:%S'),
             'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'end_time': end_default.strftime('%Y-%m-%d %H:%M:%S'),
+            'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
         }
 
     def _normalize_adjustment_operation_type_name(self, name):
