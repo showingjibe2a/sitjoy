@@ -3490,7 +3490,7 @@ class AmazonAdMixin:
         if not last_adjust:
             last_adjust = self._fetch_last_adjustment_datetime(cur, None, None)
         if last_adjust:
-            start_time = last_adjust
+            start_time = last_adjust.replace(hour=0, minute=0, second=0, microsecond=0)
         else:
             start_time = now - timedelta(days=7)
         end_time = now
