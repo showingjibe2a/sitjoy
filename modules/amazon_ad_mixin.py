@@ -3546,13 +3546,13 @@ class AmazonAdMixin:
                 if cur.rowcount <= 0:
                     return '投放更新失败'
                 return None
-            bid_value, new_status, err = self._resolve_new_delivery_target_fields(
+            bid_value, target_status, err = self._resolve_new_delivery_target_fields(
                 cur, ad_item_id, after_value,
             )
             if err:
                 return err
             return self._insert_amazon_ad_target_row(
-                cur, ad_item_id, target_object, new_status, bid_value,
+                cur, ad_item_id, target_object, target_status, bid_value,
             )
 
         if row:
@@ -3621,6 +3621,7 @@ class AmazonAdMixin:
         if status_err:
             return status_err
 
+        product_status = status
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
         updated_dt = updated_dt or now_text
@@ -3632,7 +3633,7 @@ class AmazonAdMixin:
             ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
-                status, ad_item_id, sales_product_id,
+                product_status, ad_item_id, sales_product_id,
                 interval_text, next_dt, updated_dt,
             ),
         )

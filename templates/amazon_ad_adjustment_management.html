@@ -1518,10 +1518,10 @@
 
         function renderPeriodComputedBlock(item) {
             const rows = [
-                ['ACOS', formatMetricPlainText(item.acos)],
+                ['ACOS', formatComputedRatioMetricDisplay(item.acos)],
                 ['CPC', formatMetricPlainText(item.cpc)],
-                ['CTR', formatMetricPlainText(item.ctr)],
-                ['CVR', formatMetricPlainText(item.cvr)],
+                ['CTR', formatComputedRatioMetricDisplay(item.ctr)],
+                ['CVR', formatComputedRatioMetricDisplay(item.cvr)],
             ];
             const body = rows.map(([label, val]) => `
                 <div class="aa-period-grid-label">${escapeHtml(label)}</div>
@@ -1722,6 +1722,22 @@
         function formatPercentFromRatio(ratio) {
             if (ratio == null || !Number.isFinite(ratio)) return '';
             return (ratio * 100).toFixed(2) + '%';
+        }
+
+        function formatComputedRatioMetricDisplay(raw) {
+            const text = String(raw ?? '').trim();
+            if (!text) return '-';
+            if (text.includes('%')) {
+                const parsed = parseFloat(text.replace(/%/g, '').replace(/,/g, '').trim());
+                if (!Number.isFinite(parsed)) return text;
+                return formatPercentFromRatio(parsed / 100);
+            }
+            const parsed = parseFloat(text.replace(/,/g, ''));
+            if (!Number.isFinite(parsed)) return text;
+            if (parsed <= 1) {
+                return formatPercentFromRatio(parsed);
+            }
+            return formatPercentFromRatio(parsed / 100);
         }
 
         function formatDecimalMetric(n, digits) {
