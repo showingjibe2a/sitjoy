@@ -1560,7 +1560,7 @@
     function getHeaderMeta(table){
         if(!table.tHead || !table.tHead.rows.length) return [];
         const cells = Array.from(table.tHead.rows[0].cells || []);
-        return cells.map((cell, idx) => {
+        const meta = cells.map((cell, idx) => {
             if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
             const origin = Number(cell.dataset.manageColOrigin);
             const rawLabel = extractHeaderLabelText(cell);
@@ -1576,6 +1576,7 @@
                 cell
             };
         });
+        return disambiguateDuplicateManagedHeaderLabels(meta);
     }
 
     function extractHeaderLabelText(cell){
@@ -1588,6 +1589,34 @@
             .replace(/[↕↑↓▲▼▴▾]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    /** 表头可见文案重复时，用 manageColKey 区分，避免列筛选/字段面板与持久化键冲突 */
+    function disambiguateDuplicateManagedHeaderLabels(meta){
+        if(!Array.isArray(meta) || meta.length < 2) return meta;
+        const groups = new Map();
+        meta.forEach((entry, idx) => {
+            const lbl = String(entry.label || '').trim();
+            if(!lbl) return;
+            if(!groups.has(lbl)) groups.set(lbl, []);
+            groups.get(lbl).push({ entry, idx });
+        });
+        groups.forEach((items) => {
+            if(items.length <= 1) return;
+            items.forEach(({ entry }, dupIdx) => {
+                const lbl = String(entry.label || '').trim();
+                const key = String(entry.key || '').trim();
+                const nextLabel = (key && key !== lbl)
+                    ? key
+                    : `${lbl}${items.length > 1 ? String(dupIdx + 1) : ''}`;
+                entry.label = nextLabel;
+                const cell = entry.cell;
+                if(!cell || cell.querySelector('input[type="checkbox"]')) return;
+                if(cell.querySelector('button, select, textarea, .help-dot, .pm-col-resizer')) return;
+                cell.textContent = nextLabel;
+            });
+        });
+        return meta;
     }
 
     function measureManagedHeaderMinWidthPx(th){
@@ -5646,6 +5675,15 @@
             if(!state) return [];
             return getManagedSelectedIds(state);
         },
+        syncSelectAllMasters(tableOrSelector){
+            const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            if(table) syncPmTableSelectAllMasters(table);
+        },
+        /** 全选/取消全选当前可见行（列筛选隐藏行、分页隐藏行不计入，除非表声明 data-pm-skip-client-pagination="1"） */
+        toggleSelectAll(tableOrSelector, checked){
+            const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            if(table) togglePmTableSelectAll(table, checked);
+        },
         /** 表体 DOM 重绘后按当前列筛选状态重新隐藏行（一般由 refreshManagedTable 自动调用） */
         reapplyColumnFilters(tableOrSelector){
             const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
@@ -5778,6 +5816,156 @@
             entries.push({ id: resolveCheckboxSelectionId(cb, idx), row, checkbox: cb });
         });
         return entries;
+    }
+
+    const pmRowCheckAnchorByTbody = new WeakMap();
+
+    function resolvePmBatchCheckboxTable(el){
+        if(!el) return null;
+        const tableId = String(el.getAttribute && el.getAttribute('data-table-id') || '').trim();
+        if(tableId){
+            const byId = document.getElementById(tableId);
+            if(byId) return byId;
+        }
+        const cell = el.closest ? el.closest('th,td') : null;
+        if(cell){
+            const fromTh = resolveBodyTableFromHeaderTh(cell);
+            if(fromTh) return fromTh;
+        }
+        const table = el.closest ? el.closest('table') : null;
+        if(table && table.classList && table.classList.contains('pm-managed-head-table')){
+            let found = null;
+            managedTableState.forEach((state) => {
+                if(found) return;
+                if(state && state.headerTable === table) found = state.table || null;
+            });
+            if(found) return found;
+        }
+        return table;
+    }
+
+    function getPmTableVisibleBatchCheckboxes(tableOrTbody){
+        const root = tableOrTbody || null;
+        if(!root) return [];
+        const tbody = String(root.tagName || '').toUpperCase() === 'TBODY'
+            ? root
+            : (root.tBodies && root.tBodies[0] ? root.tBodies[0] : null);
+        if(!tbody) return [];
+        return Array.from(tbody.querySelectorAll('input[type="checkbox"]')).filter(cb => {
+            if(!isManagedRowBatchCheckboxInput(cb)) return false;
+            const row = cb.closest('tr');
+            return isManagedTableRowVisibleForSelection(row);
+        });
+    }
+
+    function getPmTableSelectAllInputs(table){
+        if(!table || !table.id) return [];
+        const id = String(table.id).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        return Array.from(document.querySelectorAll(`input.pm-table-select-all[data-table-id="${id}"]`));
+    }
+
+    function syncPmTableSelectAllMasters(table){
+        if(!table) return;
+        const masters = getPmTableSelectAllInputs(table);
+        if(!masters.length) return;
+        const rows = getPmTableVisibleBatchCheckboxes(table);
+        if(!rows.length){
+            masters.forEach(master => {
+                master.checked = false;
+                master.indeterminate = false;
+            });
+            return;
+        }
+        const checkedCount = rows.filter(cb => cb.checked).length;
+        const allChecked = checkedCount === rows.length;
+        const partial = checkedCount > 0 && checkedCount < rows.length;
+        masters.forEach(master => {
+            master.checked = allChecked;
+            master.indeterminate = partial;
+        });
+    }
+
+    function togglePmTableSelectAll(table, checked){
+        if(!table) return;
+        getPmTableVisibleBatchCheckboxes(table).forEach(cb => {
+            const next = !!checked;
+            if(cb.checked === next) return;
+            cb.checked = next;
+            try {
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch(_e){}
+        });
+        syncPmTableSelectAllMasters(table);
+        const state = managedTableState.get(table);
+        if(state) syncManagedBatchBarAsync(state);
+    }
+
+    function initPmTableBatchCheckboxSelection(){
+        if(initPmTableBatchCheckboxSelection._on) return;
+        initPmTableBatchCheckboxSelection._on = true;
+
+        document.addEventListener('change', (event) => {
+            const target = event.target;
+            if(!target || !(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+            if(target.classList.contains('pm-table-select-all')){
+                const table = resolvePmBatchCheckboxTable(target);
+                if(table) togglePmTableSelectAll(table, target.checked);
+                return;
+            }
+            if(isManagedRowBatchCheckboxInput(target)){
+                const table = target.closest('table');
+                if(table) syncPmTableSelectAllMasters(table);
+            }
+        }, false);
+
+        document.addEventListener('mousedown', (event) => {
+            if(!event || event.button !== 0) return;
+            const target = event.target;
+            if(!target || !(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+            if(!isManagedRowBatchCheckboxInput(target)) return;
+            if(!event.shiftKey) return;
+            const row = target.closest('tr');
+            const tbody = row ? row.parentElement : null;
+            if(!tbody || String(tbody.tagName || '').toUpperCase() !== 'TBODY') return;
+            if(!isManagedTableRowVisibleForSelection(row)) return;
+            const boxes = getPmTableVisibleBatchCheckboxes(tbody);
+            const idx = boxes.indexOf(target);
+            if(idx < 0) return;
+            const anchor = pmRowCheckAnchorByTbody.get(tbody);
+            if(anchor == null || anchor === idx) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const lo = Math.min(anchor, idx);
+            const hi = Math.max(anchor, idx);
+            const targetChecked = !target.checked;
+            for(let i = lo; i <= hi; i += 1){
+                const cb = boxes[i];
+                if(!cb || cb.checked === targetChecked) continue;
+                cb.checked = targetChecked;
+                try {
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch(_e){}
+            }
+            pmRowCheckAnchorByTbody.set(tbody, idx);
+            const table = tbody.closest('table');
+            if(table){
+                syncPmTableSelectAllMasters(table);
+                const state = managedTableState.get(table);
+                if(state) syncManagedBatchBarAsync(state);
+            }
+        }, true);
+
+        document.addEventListener('click', (event) => {
+            if(!event || event.shiftKey) return;
+            const target = event.target;
+            if(!target || !(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+            if(!isManagedRowBatchCheckboxInput(target)) return;
+            const tbody = target.closest('tbody');
+            if(!tbody) return;
+            const boxes = getPmTableVisibleBatchCheckboxes(tbody);
+            const idx = boxes.indexOf(target);
+            if(idx >= 0) pmRowCheckAnchorByTbody.set(tbody, idx);
+        }, false);
     }
 
     function csvEscape(value){
@@ -6832,6 +7020,14 @@
                 const sourceCheckbox = sourceCell.querySelector('input[type="checkbox"]');
                 if(!sourceCheckbox || sourceCheckbox === target) return;
                 sourceCheckbox.checked = target.checked;
+                if(sourceCheckbox.classList.contains('pm-table-select-all')){
+                    const bodyTable = resolvePmBatchCheckboxTable(sourceCheckbox) || state.table;
+                    if(bodyTable){
+                        togglePmTableSelectAll(bodyTable, !!target.checked);
+                        event.stopPropagation();
+                        return;
+                    }
+                }
                 sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
                 syncManagedBatchBarAsync(state);
             });
@@ -6841,6 +7037,9 @@
                 if(!target || !(target instanceof HTMLInputElement)) return;
                 if(target.type !== 'checkbox') return;
                 syncManagedBatchBarAsync(state);
+                if(isManagedRowBatchCheckboxInput(target)){
+                    syncPmTableSelectAllMasters(state.table);
+                }
             });
 
             state.table.addEventListener('click', (event) => {
@@ -8471,6 +8670,7 @@
         loadHeader();
         loadSitjoyCellSelectionStats();
         initGlobalTableCheckboxCellToggle();
+        initPmTableBatchCheckboxSelection();
         initUniversalSingleSelects(document);
         enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);

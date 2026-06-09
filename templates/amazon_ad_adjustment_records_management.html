@@ -31,7 +31,7 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1.2rem;">
             <h2>Amazon广告管理 - 广告调整记录</h2>
-            <p>查看与管理广告调整提交记录，支持按广告筛选与关键字搜索</p>
+            <p>查看与管理广告调整提交记录，支持多选批量下载/删除、字段批量编辑与关键字搜索</p>
         </section>
 
         <section class="pm-layout">
@@ -53,10 +53,11 @@
                     </div>
                 </div>
                 <p class="aar-filter-hint" id="recordFilterHint" style="display:none;"></p>
-                <div style="overflow:auto;">
-                    <table class="pm-table" id="recordTable" style="min-width: 1600px;">
+                <p class="aar-filter-hint" id="recordCountHint"></p>
+                    <table class="pm-table" id="recordTable" style="min-width: 1600px;" data-batch-delete-handler="handleAdjustmentRecordBatchDelete">
                         <thead>
                             <tr>
+                                <th style="width:54px; text-align:center;" class="sj-toggle-cb-cell" data-manage-col-key="__record_chk__" data-disable-sort="1"><input type="checkbox" class="pm-table-select-all" data-table-id="recordTable" aria-label="全选"></th>
                                 <th data-manage-col-key="调整日期">调整日期</th>
                                 <th data-manage-col-key="关联广告">关联广告</th>
                                 <th data-manage-col-key="操作类型">操作类型</th>
@@ -80,15 +81,15 @@
                                 <th data-manage-col-key="归因订单">归因订单</th>
                                 <th data-manage-col-key="归因销售额">归因销售额</th>
                                 <th data-manage-col-key="备注">备注</th>
-                                <th data-manage-col-key="提交类型">类型</th>
-                                <th data-manage-col-key="行操作" data-disable-sort="1">操作</th>
+                                <th data-manage-col-key="提交类型">提交类型</th>
+                                <th data-manage-col-key="创建时间">创建时间</th>
+                                <th data-manage-col-key="行操作" data-disable-sort="1">行操作</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="25" style="text-align:center;">加载中...</td></tr>
+                            <tr><td colspan="27" style="text-align:center;">加载中...</td></tr>
                         </tbody>
                     </table>
-                </div>
             </div>
         </section>
     </div>
@@ -103,13 +104,17 @@
         <button type="button" class="btn-primary" onclick="saveRecordEdits()">统一保存</button>
     </div>
 
+    <script src="/static/js/header.js"></script>
     <script>
         let recordsRaw = [];
         let recordsFiltered = [];
         let filterAdItemId = '';
         let recordEditDraft = {};
+        let selectedRecordIds = new Set();
 
+        const RECORD_TABLE_COLSPAN = 27;
         const RECORD_EDIT_FIELDS = [
+            'adjust_date',
             'target_object',
             'start_time', 'end_time',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
@@ -168,14 +173,16 @@
             if (field === 'attribution_checked') {
                 return String(rawValue || '0') === '1' ? '1' : '0';
             }
-            if (field === 'start_time' || field === 'end_time') {
+            if (field === 'adjust_date' || field === 'start_time' || field === 'end_time') {
                 return String(rawValue || '').trim();
             }
             return String(rawValue ?? '').trim();
         }
 
         function getRecordEditableValue(item, field) {
-            if (field === 'start_time' || field === 'end_time') return toDatetimeLocal(item[field]);
+            if (field === 'adjust_date' || field === 'start_time' || field === 'end_time') {
+                return toDatetimeLocal(item[field]);
+            }
             if (RECORD_RATIO_FIELDS.has(field)) return ratioMetricInputValue(item[field]);
             if (field === 'attribution_checked') return String(item.attribution_checked || '0') === '1' ? '1' : '0';
             return String(item[field] ?? '').trim();
@@ -372,6 +379,7 @@
                 if (!keyword) return true;
                 return recordSearchText(item).includes(keyword);
             });
+            updateRecordCountHint();
             renderRecordTable();
         }
 
@@ -392,6 +400,106 @@
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
+        }
+
+        function updateRecordCountHint() {
+            const el = document.getElementById('recordCountHint');
+            if (!el) return;
+            const total = (recordsRaw || []).length;
+            const shown = (recordsFiltered || []).length;
+            if (!total) {
+                el.textContent = '';
+                return;
+            }
+            if (shown === total) {
+                el.textContent = `共 ${total} 条记录`;
+            } else {
+                el.textContent = `当前显示 ${shown} / 共 ${total} 条记录`;
+            }
+        }
+
+        function syncRecordSelectAll() {
+            const table = document.getElementById('recordTable');
+            if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.syncSelectAllMasters === 'function') {
+                window.SitjoyManagedPmTable.syncSelectAllMasters(table);
+            }
+        }
+
+        function syncSelectedRecordIdsFromDom() {
+            const api = recordManagedTableApi();
+            if (!api || typeof api.getSelectedIds !== 'function') return;
+            const ids = api.getSelectedIds('recordTable') || [];
+            selectedRecordIds = new Set(ids.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0));
+        }
+
+        function onRecordRowCheckboxChange(el) {
+            if (!el || !el.classList) return;
+            const id = Number(el.getAttribute('data-id') || 0);
+            if (!id) return;
+            if (el.checked) selectedRecordIds.add(id);
+            else selectedRecordIds.delete(id);
+            syncRecordSelectAll();
+            syncRecordBatchBar();
+        }
+
+        function bindRecordSelectEvents() {
+            const table = document.getElementById('recordTable');
+            if (!table || table.dataset.selectBound === '1') return;
+            table.dataset.selectBound = '1';
+            table.addEventListener('change', (e) => {
+                const el = e.target;
+                if (!el || !el.classList || !el.classList.contains('record-row-checkbox')) return;
+                onRecordRowCheckboxChange(el);
+            });
+            if (document.body.dataset.recordSelectAllBound !== '1') {
+                document.body.dataset.recordSelectAllBound = '1';
+                document.addEventListener('change', (e) => {
+                    const el = e.target;
+                    if (!el || !el.classList || !el.classList.contains('pm-table-select-all')) return;
+                    if (String(el.getAttribute('data-table-id') || '') !== 'recordTable') return;
+                    window.setTimeout(() => {
+                        syncSelectedRecordIdsFromDom();
+                        syncRecordSelectAll();
+                        syncRecordBatchBar();
+                    }, 0);
+                }, false);
+            }
+        }
+
+        function syncRecordBatchBar() {
+            const table = document.getElementById('recordTable');
+            if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.syncBatchBar === 'function') {
+                window.SitjoyManagedPmTable.syncBatchBar(table);
+            }
+        }
+
+        function handleAdjustmentRecordBatchDelete(ids) {
+            const payloadIds = (Array.isArray(ids) ? ids : [])
+                .map(v => Number(v))
+                .filter(v => Number.isFinite(v) && v > 0);
+            if (!payloadIds.length) {
+                if (window.showAppToast) window.showAppToast('没有可删除的有效记录', true, 2400);
+                return;
+            }
+            fetch('/api/amazon-ad-adjustment?action=bulk_delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: payloadIds }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        aaSaveResult({ action: 'delete', isError: true, message: data.message || '批量删除失败' });
+                        return;
+                    }
+                    payloadIds.forEach(id => selectedRecordIds.delete(id));
+                    loadRecords();
+                    aaSaveResult({
+                        action: 'delete',
+                        message: `批量删除成功：${Number(data.deleted || payloadIds.length)} 条`,
+                    });
+                })
+                .catch(err => aaSaveResult({ action: 'delete', isError: true, message: '批量删除失败: ' + err }));
         }
 
         function recordManagedTableApi() {
@@ -418,8 +526,10 @@
             const items = recordsFiltered || [];
             beginRecordTableBodyUpdate();
             if (!items.length) {
-                tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">暂无调整记录</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center;">暂无调整记录</td></tr>`;
                 endRecordTableBodyUpdate();
+                syncRecordSelectAll();
+                syncRecordBatchBar();
                 return;
             }
             tbody.innerHTML = items.map(item => {
@@ -427,9 +537,13 @@
                 const levelText = item.ad_level === 'group' ? '广告组' : (item.ad_level === 'campaign' ? '广告活动' : item.ad_level || '');
                 const draft = getRecordRowDraft(item);
                 const itemId = item.id;
+                const checked = selectedRecordIds.has(Number(itemId));
                 return `
-                    <tr>
-                        <td data-manage-col-key="调整日期"${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
+                    <tr data-record-id="${itemId}">
+                        <td class="sj-toggle-cb-cell" style="text-align:center;" data-manage-col-key="__record_chk__">
+                            <input type="checkbox" class="record-row-checkbox row-check" data-id="${itemId}"${checked ? ' checked' : ''}>
+                        </td>
+                        <td class="preview-edit-cell" data-manage-col-key="调整日期"${sortCell(draft.adjust_date || item.adjust_date)}>${recordEditDatetime('adjust_date', itemId, draft.adjust_date)}</td>
                         <td data-manage-col-key="关联广告"${sortCell(`${adName}（${levelText}）`)}>${escapeHtml(adName)}（${escapeHtml(levelText)}）</td>
                         <td data-manage-col-key="操作类型"${sortCell(item.operation_name)}>${escapeHtml(item.operation_name || '')}</td>
                         <td class="preview-edit-cell" data-manage-col-key="对象"${sortCell(draft.target_object || item.target_object)}>${recordEditInput('target_object', itemId, draft.target_object)}</td>
@@ -453,11 +567,14 @@
                         <td class="preview-edit-cell" data-manage-col-key="归因销售额"${sortCell(draft.attribution_sales || item.attribution_sales)}>${recordEditInput('attribution_sales', itemId, draft.attribution_sales)}</td>
                         <td class="preview-edit-cell" data-manage-col-key="备注"${sortCell(draft.remark || item.remark)}>${recordEditInput('remark', itemId, draft.remark)}</td>
                         <td data-manage-col-key="提交类型"${sortCell(String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交')}>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
+                        <td data-manage-col-key="创建时间"${sortCell(item.created_at)}>${formatDateTime(item.created_at)}</td>
                         <td data-manage-col-key="行操作"><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
                     </tr>
                 `;
             }).join('');
             endRecordTableBodyUpdate();
+            syncRecordSelectAll();
+            syncRecordBatchBar();
             syncRecordSaveBar();
         }
 
@@ -477,6 +594,7 @@
                     aaSaveResult({ action: 'delete', isError: true, message: data.message || '删除失败' });
                     return;
                 }
+                selectedRecordIds.delete(Number(id));
                 loadRecords();
                 aaSaveResult({ action: 'delete' });
             })
@@ -489,7 +607,7 @@
             const tbody = document.querySelector('#recordTable tbody');
             if (tbody) {
                 beginRecordTableBodyUpdate();
-                tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">加载中...</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center;">加载中...</td></tr>`;
                 endRecordTableBodyUpdate();
             }
             fetch(url)
@@ -498,7 +616,7 @@
                     if (data.status !== 'success') {
                         if (tbody) {
                             beginRecordTableBodyUpdate();
-                            tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                            tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
                             endRecordTableBodyUpdate();
                         }
                         if (window.showAppToast) window.showAppToast(data.message || '加载失败', true, 6500);
@@ -506,12 +624,14 @@
                     }
                     recordsRaw = data.items || [];
                     recordEditDraft = {};
+                    const availableIds = new Set((recordsRaw || []).map(item => Number(item.id)).filter(id => id > 0));
+                    selectedRecordIds = new Set(Array.from(selectedRecordIds).filter(id => availableIds.has(id)));
                     applyRecordFilter();
                 })
                 .catch(err => {
                     if (tbody) {
                         beginRecordTableBodyUpdate();
-                        tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${escapeHtml(String(err))}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${escapeHtml(String(err))}</td></tr>`;
                         endRecordTableBodyUpdate();
                     }
                     if (window.showAppToast) window.showAppToast('加载失败: ' + err, true, 6500);
@@ -584,6 +704,7 @@
         window.addEventListener('DOMContentLoaded', () => {
             parseUrlFilter();
             bindRecordEditEvents();
+            bindRecordSelectEvents();
             const table = document.getElementById('recordTable');
             if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
                 window.SitjoyManagedPmTable.invalidateLayout(table);
@@ -591,7 +712,5 @@
             loadRecords();
         });
     </script>
-
-    <script src="/static/js/header.js"></script>
 </body>
 </html>

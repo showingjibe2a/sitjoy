@@ -3185,7 +3185,7 @@ class AmazonAdMixin:
     def _build_adjustment_patch_fields(self, raw):
         if not isinstance(raw, dict):
             return {}
-        datetime_fields = {'start_time', 'end_time'}
+        datetime_fields = {'adjust_date', 'start_time', 'end_time'}
         text_fields = {
             'target_object',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
@@ -3974,12 +3974,12 @@ class AmazonAdMixin:
                 if ad_item_id:
                     sql += ' AND a.ad_item_id=%s'
                     params.append(ad_item_id)
-                sql += ' ORDER BY a.id DESC LIMIT 500'
+                sql += ' ORDER BY a.id DESC'
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(sql, tuple(params))
                         rows = cur.fetchall() or []
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
+                return self.send_json({'status': 'success', 'items': rows, 'total': len(rows)}, start_response)
 
             data = self._read_json_body(environ)
 
@@ -4092,6 +4092,9 @@ class AmazonAdMixin:
                             if 'target_object' in raw and not (raw.get('target_object') or '').strip():
                                 errors.append({'id': item_id, 'message': '对象不能为空'})
                                 continue
+                            if 'adjust_date' in raw and not self._parse_datetime_local_value(raw.get('adjust_date')):
+                                errors.append({'id': item_id, 'message': '调整日期不能为空'})
+                                continue
                             patch_fields = self._build_adjustment_patch_fields(raw)
                             if not patch_fields:
                                 errors.append({'id': item_id, 'message': '无可更新字段'})
@@ -4109,6 +4112,38 @@ class AmazonAdMixin:
                 return self.send_json({'status': 'success', 'updated': updated, 'errors': errors}, start_response)
 
             if method == 'DELETE':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'bulk_delete':
+                    raw_ids = data.get('ids') if isinstance(data, dict) else None
+                    if not isinstance(raw_ids, list) or not raw_ids:
+                        return self.send_json({'status': 'error', 'message': '缺少有效 ids'}, start_response)
+                    id_list = []
+                    for raw in raw_ids:
+                        item_id = self._parse_int(raw)
+                        if item_id and item_id not in id_list:
+                            id_list.append(item_id)
+                    if not id_list:
+                        return self.send_json({'status': 'error', 'message': '缺少有效 ids'}, start_response)
+                    placeholders = ','.join(['%s'] * len(id_list))
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f'SELECT id FROM amazon_ad_adjustments WHERE id IN ({placeholders})',
+                                tuple(id_list),
+                            )
+                            found = {self._parse_int(r.get('id')) for r in (cur.fetchall() or [])}
+                            missing = [item_id for item_id in id_list if item_id not in found]
+                            if missing:
+                                return self.send_json(
+                                    {'status': 'error', 'message': f'记录不存在: {missing[0]}'},
+                                    start_response,
+                                )
+                            cur.execute(
+                                f'DELETE FROM amazon_ad_adjustments WHERE id IN ({placeholders})',
+                                tuple(id_list),
+                            )
+                    return self.send_json({'status': 'success', 'deleted': len(id_list)}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
