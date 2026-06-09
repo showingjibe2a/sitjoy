@@ -1618,6 +1618,9 @@ button.btn-capsule-sm:active {
 .input-capsule-menu:focus-within .input-capsule-menu-panel {
     display: block;
 }
+.input-capsule-menu--closed .input-capsule-menu-panel {
+    display: none !important;
+}
 .input-capsule-menu-item,
 button.input-capsule-menu-item {
     display: flex;
