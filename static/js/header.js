@@ -1345,10 +1345,13 @@
         const skipped = Number(data.skipped_sample_rows || 0) > 0
             ? `，跳过示例 ${data.skipped_sample_rows}`
             : '';
+        const skippedExisting = Number(data.skipped_existing || 0) > 0
+            ? `，跳过已存在 ${data.skipped_existing}`
+            : '';
         const truncated = data.errors_truncated
             ? `（${data.errors_message || '错误列表已截断'}）`
             : '';
-        const summary = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${errCount ? `，失败 ${errCount}` : ''}${skipped}${truncated}`;
+        const summary = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${errCount ? `，失败 ${errCount}` : ''}${skipped}${skippedExisting}${truncated}`;
 
         if(errCount && showAppResultPanel){
             showAppResultPanel({

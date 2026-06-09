@@ -29,6 +29,8 @@ class AmazonAdMixin:
     _AMAZON_AD_CHILD_IMPORT_MAX_ROWS = 2500
     _AMAZON_AD_CHILD_IMPORT_MAX_ERRORS = 80
     _AMAZON_AD_CHILD_IMPORT_BATCH_SIZE = 250
+    _AMAZON_AD_ADJUSTMENT_IMPORT_MAX_ROWS = 10000
+    _AMAZON_AD_ADJUSTMENT_IMPORT_BATCH_SIZE = 500
 
     def _parse_subtype_operation_type_ids(self, data):
         raw = data.get('operation_type_ids') if isinstance(data, dict) else None
@@ -1988,6 +1990,184 @@ class AmazonAdMixin:
         ctx['target_by_key'] = target_by_key
         return ctx
 
+    def _load_amazon_ad_adjustment_import_context(self, cur):
+        """预加载广告项与操作类型索引，避免逐行 SELECT。"""
+        ctx = self._load_amazon_ad_import_context(cur)
+
+        ad_item_by_id = {}
+        cur.execute(
+            """
+            SELECT id, ad_level, subtype_id, campaign_id
+            FROM amazon_ad_items
+            WHERE ad_level IN ('portfolio', 'campaign', 'group')
+            """
+        )
+        for row in cur.fetchall() or []:
+            rid = int(self._parse_int(row.get('id')) or 0)
+            if not rid:
+                continue
+            ad_item_by_id[rid] = {
+                'id': rid,
+                'ad_level': str(row.get('ad_level') or '').strip(),
+                'subtype_id': self._parse_int(row.get('subtype_id')),
+                'campaign_id': self._parse_int(row.get('campaign_id')),
+            }
+        ctx['ad_item_by_id'] = ad_item_by_id
+
+        all_ops = []
+        op_by_id = {}
+        cur.execute(
+            """
+            SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names
+            FROM amazon_ad_operation_types
+            ORDER BY id ASC
+            """
+        )
+        for row in cur.fetchall() or []:
+            reason_names = self._parse_operation_type_reason_names(row.get('reason_names'))
+            op = {
+                'id': int(row['id']),
+                'name': str(row.get('name') or '').strip(),
+                'apply_portfolio': int(row.get('apply_portfolio') or 0),
+                'apply_campaign': int(row.get('apply_campaign') or 0),
+                'apply_group': int(row.get('apply_group') or 0),
+                'reason_names': reason_names,
+                'reason_set': set(reason_names),
+            }
+            all_ops.append(op)
+            op_by_id[op['id']] = op
+
+        ops_by_subtype = {}
+        cur.execute(
+            "SELECT subtype_id, operation_type_id FROM amazon_ad_subtype_operation_types"
+        )
+        for row in cur.fetchall() or []:
+            sid = int(self._parse_int(row.get('subtype_id')) or 0)
+            oid = int(self._parse_int(row.get('operation_type_id')) or 0)
+            if not sid or oid not in op_by_id:
+                continue
+            ops_by_subtype.setdefault(sid, []).append(op_by_id[oid])
+
+        ctx['all_ops'] = all_ops
+        ctx['op_by_id'] = op_by_id
+        ctx['ops_by_subtype'] = ops_by_subtype
+        ctx['portfolio_ops'] = [o for o in all_ops if o['apply_portfolio']]
+        ctx['campaign_ops'] = [o for o in all_ops if o['apply_campaign']]
+        ctx['group_ops'] = [o for o in all_ops if o['apply_group']]
+        ctx['allowed_ops_by_ad'] = {}
+        return ctx
+
+    def _get_adjustment_allowed_ops_for_ad_ctx(self, ctx, ad_item_id):
+        ad_item_id = int(ad_item_id)
+        cache = ctx.get('allowed_ops_by_ad') or {}
+        if ad_item_id in cache:
+            return cache[ad_item_id]
+
+        ad_row = (ctx.get('ad_item_by_id') or {}).get(ad_item_id)
+        if not ad_row:
+            cache[ad_item_id] = None
+            ctx['allowed_ops_by_ad'] = cache
+            return None
+
+        level = ad_row.get('ad_level')
+        subtype_id = ad_row.get('subtype_id')
+        if level == 'group' and ad_row.get('campaign_id'):
+            camp = (ctx.get('ad_item_by_id') or {}).get(int(ad_row['campaign_id']))
+            if camp and camp.get('subtype_id'):
+                subtype_id = camp.get('subtype_id')
+
+        if subtype_id:
+            raw_ops = (ctx.get('ops_by_subtype') or {}).get(int(subtype_id), [])
+        elif level == 'portfolio':
+            raw_ops = ctx.get('portfolio_ops') or []
+        elif level == 'campaign':
+            raw_ops = ctx.get('campaign_ops') or []
+        else:
+            raw_ops = ctx.get('group_ops') or []
+
+        allowed = []
+        for op in raw_ops:
+            if level == 'portfolio' and not op.get('apply_portfolio'):
+                continue
+            if level == 'campaign' and not op.get('apply_campaign'):
+                continue
+            if level == 'group' and not op.get('apply_group'):
+                continue
+            allowed.append(op)
+
+        cache[ad_item_id] = allowed
+        ctx['allowed_ops_by_ad'] = cache
+        return allowed
+
+    def _validate_adjustment_import_operation_ctx(self, ctx, ad_item_id, operation_name, reason_name):
+        operation_name = (operation_name or '').strip()
+        if not operation_name:
+            return None, None, '请填写操作'
+        allowed = self._get_adjustment_allowed_ops_for_ad_ctx(ctx, ad_item_id)
+        if allowed is None:
+            return None, None, '关联广告不存在'
+        op_match = next((x for x in allowed if (x.get('name') or '').strip() == operation_name), None)
+        if not op_match:
+            return None, None, f'操作「{operation_name}」不适用于该广告'
+        reason_name = (reason_name or '').strip() or None
+        if reason_name and reason_name not in op_match.get('reason_set', set()):
+            return None, None, f'操作原因「{reason_name}」不属于操作「{operation_name}」'
+        return op_match['id'], reason_name, None
+
+    def _adjustment_import_dedupe_key(
+        self, ad_item_id, op_id, target_object, adjust_date, before_value, after_value, reason_name,
+    ):
+        def norm_text(value):
+            return str(value or '').strip()
+
+        adj = adjust_date
+        if isinstance(adj, datetime):
+            adj = adj.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            adj = norm_text(adj)
+        return (
+            int(ad_item_id),
+            int(op_id),
+            norm_text(target_object),
+            adj,
+            norm_text(before_value),
+            norm_text(after_value),
+            norm_text(reason_name),
+        )
+
+    def _load_adjustment_import_existing_keys(self, cur, ad_item_ids):
+        ids = sorted({int(x) for x in (ad_item_ids or []) if int(x or 0) > 0})
+        if not ids:
+            return set()
+        keys = set()
+        chunk_size = 500
+        for offset in range(0, len(ids), chunk_size):
+            part = ids[offset:offset + chunk_size]
+            placeholders = ','.join(['%s'] * len(part))
+            cur.execute(
+                f"""
+                SELECT ad_item_id, operation_type_id, target_object, adjust_date,
+                       before_value, after_value, reason_name
+                FROM amazon_ad_adjustments
+                WHERE ad_item_id IN ({placeholders})
+                """,
+                tuple(part),
+            )
+            for row in cur.fetchall() or []:
+                adj = row.get('adjust_date')
+                if isinstance(adj, datetime):
+                    adj = adj.strftime('%Y-%m-%d %H:%M:%S')
+                keys.add(self._adjustment_import_dedupe_key(
+                    row.get('ad_item_id'),
+                    row.get('operation_type_id'),
+                    row.get('target_object'),
+                    adj,
+                    row.get('before_value'),
+                    row.get('after_value'),
+                    row.get('reason_name'),
+                ))
+        return keys
+
     def _append_child_import_error(self, errors, row_idx, message):
         if len(errors) >= self._AMAZON_AD_CHILD_IMPORT_MAX_ERRORS:
             return False
@@ -3347,9 +3527,9 @@ class AmazonAdMixin:
                 if not ad_item_id or not operation_type_id or not target_object:
                     return self.send_json({'status': 'error', 'message': '缺少必填字段'}, start_response)
                 if not is_quick:
-                    for field in ('before_value', 'after_value', 'start_time', 'end_time'):
+                    for field in ('before_value', 'after_value'):
                         if not (data.get(field) or '').strip():
-                            return self.send_json({'status': 'error', 'message': '完整提交请填写修改前/后及效果区间时间'}, start_response)
+                            return self.send_json({'status': 'error', 'message': '完整提交请填写修改前/后'}, start_response)
 
                 adjust_date = self._parse_datetime_local_value(data.get('adjust_date')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 with self._get_db_connection() as conn:
@@ -3511,7 +3691,7 @@ class AmazonAdMixin:
         return [
             '调整日期*', '店铺ID*', '广告组合*', '广告活动', '广告组',
             '操作*', '操作原因', '对象*', '修改前*', '修改后*',
-            '开始时间*', '结束时间*',
+            '开始时间', '结束时间',
             '曝光', '点击', '花费', '订单', '销售额',
             'ACOS', 'CPC', 'CTR', 'CVR', '首页首位IS',
             '归因检查', '归因订单', '归因销售额', '备注', '提交类型',
@@ -3707,7 +3887,7 @@ class AmazonAdMixin:
             ('操作原因', '否', '下拉随操作联动（名称管理器 adj_op_N）'),
             ('对象*', '是', '操作对象'),
             ('修改前* / 修改后*', '完整提交', '快速提交可留空'),
-            ('开始/结束时间*', '完整提交', '效果区间'),
+            ('开始/结束时间', '否', '效果区间，选填'),
             ('提交类型', '否', '完整 / 快速，默认完整'),
             ('', '', '第2–4行为示例（组合/活动/组），导入从第5行填写'),
             ('', '', '唯一性：店铺+组合+活动+组四元组定位广告，各层级不可重复'),
@@ -3859,171 +4039,185 @@ class AmazonAdMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_ad_adjustment_import_api(self, environ, method, start_response):
-        """广告调整记录批量导入（新增）"""
+        """广告调整记录批量导入（预加载索引 + 批量写入）"""
+        wb = None
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
-            if load_workbook is None:
-                return self.send_json(
-                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
-                    start_response,
-                )
+            wb, wb_err = self._read_batch_import_workbook(environ)
+            if wb_err:
+                return self.send_json({'status': 'error', 'message': wb_err}, start_response)
 
-            content_type = environ.get('CONTENT_TYPE', '')
-            if 'multipart/form-data' not in content_type:
-                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
-
-            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
-            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
-            env_copy = dict(environ)
-            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
-            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
-            file_item = form['file'] if 'file' in form else None
-            if file_item is None or getattr(file_item, 'file', None) is None:
-                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
-            file_bytes = file_item.file.read() or b''
-            if not file_bytes:
-                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
-
-            wb = load_workbook(io.BytesIO(file_bytes))
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
-            header_map = {name: idx for idx, name in enumerate(headers)}
+            header_map = self._import_sheet_header_map(ws)
+            if not header_map:
+                return self.send_json({'status': 'error', 'message': '模板表头为空'}, start_response)
 
-            def cell_at(row, name):
-                idx = header_map.get(name)
-                if idx is None or idx >= len(row):
-                    return None
-                return row[idx]
-
-            def cell_value(row, name):
-                return self._adjustment_import_cell_text(cell_at(row, name))
-
-            created = 0
             skipped_sample_rows = 0
+            skipped_existing = 0
             errors = []
+            pending_rows = []
+            ad_item_ids = set()
+            insert_rows = []
+            max_row = min(
+                int(ws.max_row or 2),
+                2 + self._AMAZON_AD_ADJUSTMENT_IMPORT_MAX_ROWS,
+            )
+            insert_sql = """
+                INSERT INTO amazon_ad_adjustments (
+                    adjust_date, ad_item_id, operation_type_id, target_object,
+                    before_value, after_value, reason_name,
+                    start_time, end_time,
+                    impressions, clicks, cost, orders, sales,
+                    acos, cpc, ctr, cvr, top_of_search_is,
+                    attribution_checked, attribution_orders, attribution_sales,
+                    remark, is_quick_submit
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s
+                )
+            """
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
-                        portfolio_name = cell_value(row, '广告组合*') or ''
-                        if row_idx <= 4 or ('示例' in (portfolio_name or '')):
+                    ctx = self._load_amazon_ad_adjustment_import_context(cur)
+
+                    for row_idx, row in enumerate(
+                        ws.iter_rows(min_row=2, max_row=max_row, values_only=True),
+                        start=2,
+                    ):
+                        if not any(v is not None and str(v).strip() for v in row):
+                            continue
+
+                        def cell(name, _row=row):
+                            return self._import_cell_text(_row, header_map, name)
+
+                        portfolio_name = cell('广告组合*') or ''
+                        if row_idx <= 4 or ('示例' in portfolio_name):
                             skipped_sample_rows += 1
                             continue
-                        shop_text = cell_value(row, '店铺ID*') or ''
-                        campaign_name = cell_value(row, '广告活动') or ''
-                        group_name = cell_value(row, '广告组') or ''
+
+                        shop_text = cell('店铺ID*') or ''
+                        campaign_name = cell('广告活动') or ''
+                        group_name = cell('广告组') or ''
                         if not shop_text and not portfolio_name:
                             continue
 
-                        ad_item_id, ad_level, ad_err = self._resolve_ad_item_by_four_attrs(
-                            cur, shop_text, portfolio_name, campaign_name, group_name
+                        ad_item_id, _, ad_err = self._resolve_ad_item_by_four_attrs_ctx(
+                            ctx, shop_text, portfolio_name, campaign_name, group_name,
                         )
                         if ad_err:
-                            errors.append({'row': row_idx, 'message': ad_err})
+                            if not self._append_child_import_error(errors, row_idx, ad_err):
+                                break
                             continue
 
-                        operation_name = cell_value(row, '操作*') or ''
-                        reason_name = cell_value(row, '操作原因') or ''
-                        op_id, reason_name, op_err = self._validate_adjustment_import_operation(
-                            cur, ad_item_id, operation_name, reason_name
+                        operation_name = cell('操作*') or ''
+                        reason_name = cell('操作原因') or ''
+                        op_id, reason_name, op_err = self._validate_adjustment_import_operation_ctx(
+                            ctx, ad_item_id, operation_name, reason_name,
                         )
                         if op_err:
-                            errors.append({'row': row_idx, 'message': op_err})
+                            if not self._append_child_import_error(errors, row_idx, op_err):
+                                break
                             continue
 
-                        target_object = cell_value(row, '对象*') or ''
+                        target_object = cell('对象*') or ''
                         if not target_object:
-                            errors.append({'row': row_idx, 'message': '对象不能为空'})
+                            if not self._append_child_import_error(errors, row_idx, '对象不能为空'):
+                                break
                             continue
 
-                        submit_type = (cell_value(row, '提交类型') or '完整').strip()
+                        submit_type = (cell('提交类型') or '完整').strip()
                         is_quick = 1 if submit_type in ('快速', 'quick') else 0
-                        before_value = cell_value(row, '修改前*') or ''
-                        after_value = cell_value(row, '修改后*') or ''
-                        start_time = cell_value(row, '开始时间*') or ''
-                        end_time = cell_value(row, '结束时间*') or ''
+                        before_value = cell('修改前*') or ''
+                        after_value = cell('修改后*') or ''
+                        start_time = cell('开始时间') or cell('开始时间*') or ''
+                        end_time = cell('结束时间') or cell('结束时间*') or ''
                         if not is_quick:
                             missing = []
                             if not before_value:
                                 missing.append('修改前')
                             if not after_value:
                                 missing.append('修改后')
-                            if not start_time:
-                                missing.append('开始时间')
-                            if not end_time:
-                                missing.append('结束时间')
                             if missing:
-                                errors.append({
-                                    'row': row_idx,
-                                    'message': f'完整提交须填写：{", ".join(missing)}',
-                                })
+                                msg = f'完整提交须填写：{", ".join(missing)}'
+                                if not self._append_child_import_error(errors, row_idx, msg):
+                                    break
                                 continue
 
-                        adjust_date = self._parse_datetime_local_value(cell_value(row, '调整日期*'))
+                        adjust_date = self._parse_datetime_local_value(cell('调整日期*'))
                         if not adjust_date:
                             adjust_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                        attr_raw = (cell_value(row, '归因检查') or '否').strip()
+                        attr_raw = (cell('归因检查') or '否').strip()
                         attribution_checked = 1 if attr_raw in ('是', '1', 'true', 'True', 'yes') else 0
 
-                        cur.execute(
-                            """
-                            INSERT INTO amazon_ad_adjustments (
-                                adjust_date, ad_item_id, operation_type_id, target_object,
-                                before_value, after_value, reason_name,
-                                start_time, end_time,
-                                impressions, clicks, cost, orders, sales,
-                                acos, cpc, ctr, cvr, top_of_search_is,
-                                attribution_checked, attribution_orders, attribution_sales,
-                                remark, is_quick_submit
-                            ) VALUES (
-                                %s, %s, %s, %s,
-                                %s, %s, %s,
-                                %s, %s,
-                                %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s, %s,
-                                %s, %s, %s,
-                                %s, %s
-                            )
-                            """,
-                            (
+                        dedupe_key = self._adjustment_import_dedupe_key(
+                            ad_item_id, op_id, target_object, adjust_date,
+                            before_value, after_value, reason_name,
+                        )
+                        pending_rows.append({
+                            'key': dedupe_key,
+                            'insert': (
                                 adjust_date, ad_item_id, op_id, target_object,
                                 before_value or None, after_value or None, reason_name,
-                                self._parse_datetime_local_value(start_time),
-                                self._parse_datetime_local_value(end_time),
-                                cell_value(row, '曝光') or None,
-                                cell_value(row, '点击') or None,
-                                cell_value(row, '花费') or None,
-                                cell_value(row, '订单') or None,
-                                cell_value(row, '销售额') or None,
-                                cell_value(row, 'ACOS') or None,
-                                cell_value(row, 'CPC') or None,
-                                cell_value(row, 'CTR') or None,
-                                cell_value(row, 'CVR') or None,
-                                cell_value(row, '首页首位IS') or None,
+                                self._parse_datetime_local_value(start_time) if (not is_quick and start_time) else None,
+                                self._parse_datetime_local_value(end_time) if (not is_quick and end_time) else None,
+                                cell('曝光') or None,
+                                cell('点击') or None,
+                                cell('花费') or None,
+                                cell('订单') or None,
+                                cell('销售额') or None,
+                                cell('ACOS') or None,
+                                cell('CPC') or None,
+                                cell('CTR') or None,
+                                cell('CVR') or None,
+                                cell('首页首位IS') or None,
                                 attribution_checked,
-                                cell_value(row, '归因订单') or None,
-                                cell_value(row, '归因销售额') or None,
-                                cell_value(row, '备注') or None,
+                                cell('归因订单') or None,
+                                cell('归因销售额') or None,
+                                cell('备注') or None,
                                 is_quick,
                             ),
-                        )
-                        created += 1
+                        })
+                        ad_item_ids.add(int(ad_item_id))
 
-            return self.send_json(
-                {
-                    'status': 'success',
-                    'created': created,
-                    'updated': 0,
-                    'unchanged': 0,
-                    'skipped_sample_rows': skipped_sample_rows,
-                    'errors': errors,
-                },
-                start_response,
+                    existing_keys = self._load_adjustment_import_existing_keys(cur, ad_item_ids)
+                    batch_keys = set()
+                    insert_rows = []
+                    for item in pending_rows:
+                        key = item['key']
+                        if key in existing_keys or key in batch_keys:
+                            skipped_existing += 1
+                            continue
+                        batch_keys.add(key)
+                        insert_rows.append(item['insert'])
+
+                    self._executemany_in_chunks(
+                        cur,
+                        insert_sql,
+                        insert_rows,
+                        chunk_size=self._AMAZON_AD_ADJUSTMENT_IMPORT_BATCH_SIZE,
+                    )
+
+            payload = self._child_import_success_payload(
+                len(insert_rows), 0, errors, skipped_sample_rows,
             )
+            payload['skipped_existing'] = skipped_existing
+            return self.send_json(payload, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def handle_amazon_ad_keyword_api(self, environ, method, start_response):
         """Amazon 广告关键词 API"""

@@ -725,11 +725,11 @@
                             <h4>效果区间数据</h4>
                             <div class="pm-section-body">
                                 <div class="form-group">
-                                    <label for="startTime">开始时间<span class="required-asterisk">*</span></label>
+                                    <label for="startTime">开始时间</label>
                                     <input type="datetime-local" id="startTime">
                                 </div>
                                 <div class="form-group">
-                                    <label for="endTime">结束时间<span class="required-asterisk">*</span></label>
+                                    <label for="endTime">结束时间</label>
                                     <input type="datetime-local" id="endTime">
                                 </div>
                                 <div class="form-group">
@@ -1552,8 +1552,6 @@
             const errors = [];
             const start = document.getElementById('startTime').value;
             const end = document.getElementById('endTime').value;
-            if (!start) errors.push('请填写效果区间开始时间');
-            if (!end) errors.push('请填写效果区间结束时间');
             if (start && end) {
                 const s = new Date(start).getTime();
                 const e = new Date(end).getTime();
