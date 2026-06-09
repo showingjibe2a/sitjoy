@@ -3204,6 +3204,7 @@ class AmazonAdMixin:
             'campaign_name': item.get('campaign_name') if level == 'group' else (item.get('name') if level == 'campaign' else ''),
             'group_name': item.get('name') if level == 'group' else '',
             'ad_name': item.get('name') or '',
+            'status': item.get('status') or '启动',
             'budget': item.get('budget'),
             'bid_strategy': item.get('bid_strategy') or '',
         }
@@ -3212,6 +3213,122 @@ class AmazonAdMixin:
             ad_info['campaign_name'] = ''
             ad_info['group_name'] = ''
         return item, ad_info
+
+    def _resolve_ad_item_shop_id(self, cur, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id:
+            return None
+        cur.execute(
+            """
+            SELECT COALESCE(
+                CASE WHEN i.ad_level = 'portfolio' THEN i.shop_id END,
+                p.shop_id
+            ) AS shop_id
+            FROM amazon_ad_items i
+            LEFT JOIN amazon_ad_items c ON i.campaign_id = c.id AND c.ad_level = 'campaign'
+            LEFT JOIN amazon_ad_items p ON p.id = COALESCE(NULLIF(i.portfolio_id, 0), c.portfolio_id)
+                AND p.ad_level = 'portfolio'
+            WHERE i.id=%s
+            LIMIT 1
+            """,
+            (ad_item_id,),
+        )
+        row = cur.fetchone() or {}
+        shop_id = self._parse_int(row.get('shop_id'))
+        return shop_id or None
+
+    def _fetch_shop_platform_skus(self, cur, shop_id):
+        shop_id = self._parse_int(shop_id)
+        if not shop_id:
+            return set()
+        cur.execute(
+            """
+            SELECT platform_sku
+            FROM sales_products
+            WHERE shop_id=%s AND platform_sku IS NOT NULL AND TRIM(platform_sku) <> ''
+            """,
+            (shop_id,),
+        )
+        out = set()
+        for row in cur.fetchall() or []:
+            sku = str(row.get('platform_sku') or '').strip()
+            if sku:
+                out.add(sku)
+        return out
+
+    def _fetch_ad_item_default_bid(self, cur, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id:
+            return ''
+        cur.execute(
+            """
+            SELECT bid_value
+            FROM amazon_ad_targets
+            WHERE ad_item_id=%s AND bid_value IS NOT NULL AND TRIM(bid_value) <> ''
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (ad_item_id,),
+        )
+        row = cur.fetchone() or {}
+        bid = str(row.get('bid_value') or '').strip()
+        if bid:
+            return bid
+        cur.execute(
+            """
+            SELECT i.ad_level, i.campaign_id
+            FROM amazon_ad_items i
+            WHERE i.id=%s
+            LIMIT 1
+            """,
+            (ad_item_id,),
+        )
+        ad_row = cur.fetchone() or {}
+        campaign_id = self._parse_int(ad_row.get('campaign_id'))
+        if str(ad_row.get('ad_level') or '').strip() == 'group' and campaign_id:
+            cur.execute(
+                """
+                SELECT bid_value
+                FROM amazon_ad_targets
+                WHERE ad_item_id=%s AND bid_value IS NOT NULL AND TRIM(bid_value) <> ''
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (campaign_id,),
+            )
+            camp_row = cur.fetchone() or {}
+            return str(camp_row.get('bid_value') or '').strip()
+        return ''
+
+    def _resolve_sales_product_id_for_ad_shop(self, cur, ad_item_id, platform_sku):
+        platform_sku = (platform_sku or '').strip()
+        if not platform_sku:
+            return None, '请填写操作对象'
+        shop_id = self._resolve_ad_item_shop_id(cur, ad_item_id)
+        if not shop_id:
+            return None, '无法解析广告归属店铺'
+        cur.execute(
+            """
+            SELECT id FROM sales_products
+            WHERE shop_id=%s AND platform_sku=%s
+            LIMIT 1
+            """,
+            (shop_id, platform_sku),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, f'未找到店铺销售平台SKU: {platform_sku}'
+        return int(row['id']), None
+
+    def _is_numeric_bid_text(self, value):
+        text = str(value or '').strip().replace(',', '')
+        if not text or not re.fullmatch(r'-?\d+(\.\d+)?', text):
+            return False
+        try:
+            float(text)
+            return True
+        except (TypeError, ValueError):
+            return False
 
     def _fetch_allowed_operations_for_ad(self, cur, ad_row):
         if not ad_row:
@@ -3311,6 +3428,64 @@ class AmazonAdMixin:
         n = self._normalize_adjustment_operation_type_name(op_name)
         return '修改' in n and '商品' in n
 
+    def _is_archive_operation(self, op_name):
+        return self._normalize_adjustment_operation_type_name(op_name) == '存档'
+
+    def _apply_adjustment_to_ad_item(self, cur, ad_item_id, operation_name, target_object, after_value):
+        if not self._is_archive_operation(operation_name):
+            return None
+        target_object = (target_object or '').strip()
+        if target_object != '-':
+            return None
+        after_value = (after_value or '').strip()
+        if not after_value:
+            return None
+        status, err = self._normalize_ad_record_status(after_value)
+        if err:
+            return err
+        cur.execute(
+            "UPDATE amazon_ad_items SET status=%s, updated_at=NOW() WHERE id=%s",
+            (status, ad_item_id),
+        )
+        if cur.rowcount <= 0:
+            return '广告状态更新失败'
+        return None
+
+    def _insert_amazon_ad_target_row(self, cur, ad_item_id, target_desc, status, bid_value):
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt = updated_dt or now_text
+        cur.execute(
+            """
+            INSERT INTO amazon_ad_targets (
+                status, ad_item_id, target_desc, bid_value,
+                observe_interval, next_observe_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                status, ad_item_id, target_desc, bid_value,
+                interval_text, next_dt, updated_dt,
+            ),
+        )
+        if cur.rowcount <= 0:
+            return '投放写入失败'
+        return None
+
+    def _resolve_new_delivery_target_fields(self, cur, ad_item_id, after_value):
+        after_value = (after_value or '').strip()
+        status, status_err = self._normalize_ad_record_status(after_value)
+        if not status_err:
+            bid_value = self._fetch_ad_item_default_bid(cur, ad_item_id)
+            if not bid_value:
+                bid_value = '0'
+            return bid_value, status, None
+        if self._is_numeric_bid_text(after_value):
+            return after_value, '启动', None
+        default_bid = self._fetch_ad_item_default_bid(cur, ad_item_id)
+        if default_bid:
+            return default_bid, '启动', None
+        return None, None, '新建投放须填写合法竞价或状态'
+
     def _apply_adjustment_to_target(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
         target_object = (target_object or '').strip()
@@ -3330,30 +3505,52 @@ class AmazonAdMixin:
             (ad_item_id, target_object),
         )
         row = cur.fetchone()
-        if not row:
-            return f'未找到投放：{target_object}'
-        target_id = row['id']
-        updates = []
-        params = []
         if self._is_modify_delivery_target_operation(operation_name):
-            status, err = self._normalize_ad_record_status(after_value)
+            status, status_err = self._normalize_ad_record_status(after_value)
+            if row:
+                if status_err:
+                    return status_err
+                cur.execute(
+                    """
+                    UPDATE amazon_ad_targets
+                    SET status=%s, updated_at=NOW()
+                    WHERE id=%s
+                    """,
+                    (status, row['id']),
+                )
+                if cur.rowcount <= 0:
+                    return '投放更新失败'
+                return None
+            bid_value, new_status, err = self._resolve_new_delivery_target_fields(
+                cur, ad_item_id, after_value,
+            )
             if err:
                 return err
-            updates.extend(['status=%s', 'updated_at=NOW()'])
-            params.append(status)
-        elif self._is_modify_placement_operation(operation_name):
-            updates.extend(['bid_value=%s', 'updated_at=NOW()'])
-            params.append(after_value)
-        if not updates:
+            return self._insert_amazon_ad_target_row(
+                cur, ad_item_id, target_object, new_status, bid_value,
+            )
+
+        if row:
+            cur.execute(
+                """
+                UPDATE amazon_ad_targets
+                SET bid_value=%s, updated_at=NOW()
+                WHERE id=%s
+                """,
+                (after_value, row['id']),
+            )
+            if cur.rowcount <= 0:
+                return '投放更新失败'
             return None
-        params.append(target_id)
-        cur.execute(
-            f"UPDATE amazon_ad_targets SET {', '.join(updates)} WHERE id=%s",
-            tuple(params),
+
+        bid_value = after_value
+        if not bid_value:
+            bid_value = self._fetch_ad_item_default_bid(cur, ad_item_id)
+        if not bid_value:
+            return '新建广告位须填写合法百分比或竞价'
+        return self._insert_amazon_ad_target_row(
+            cur, ad_item_id, target_object, '启动', bid_value,
         )
-        if cur.rowcount <= 0:
-            return '投放更新失败'
-        return None
 
     def _apply_adjustment_to_product(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
@@ -3362,12 +3559,10 @@ class AmazonAdMixin:
             return None
         if not self._is_modify_product_operation(operation_name):
             return None
-        status, err = self._normalize_ad_record_status(after_value)
-        if err:
-            return err
+
         cur.execute(
             """
-            SELECT p.id
+            SELECT p.id, p.status
             FROM amazon_ad_products p
             LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
             WHERE p.ad_item_id=%s AND sp.platform_sku=%s
@@ -3376,21 +3571,57 @@ class AmazonAdMixin:
             (ad_item_id, target_object),
         )
         row = cur.fetchone()
-        if not row:
-            return f'未找到商品：{target_object}'
+        status, status_err = self._normalize_ad_record_status(after_value)
+        if row:
+            if status_err:
+                return None
+            cur.execute(
+                """
+                UPDATE amazon_ad_products
+                SET status=%s, updated_at=NOW()
+                WHERE id=%s
+                """,
+                (status, row['id']),
+            )
+            if cur.rowcount <= 0:
+                return '商品更新失败'
+            return None
+
+        sales_product_id, sp_err = self._resolve_sales_product_id_for_ad_shop(
+            cur, ad_item_id, target_object,
+        )
+        if sp_err:
+            return sp_err
+
+        new_status = status if not status_err else '启动'
+        if status_err and not self._is_numeric_bid_text(after_value):
+            return status_err
+
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt = updated_dt or now_text
         cur.execute(
             """
-            UPDATE amazon_ad_products
-            SET status=%s, updated_at=NOW()
-            WHERE id=%s
+            INSERT INTO amazon_ad_products (
+                status, ad_item_id, sales_product_id,
+                observe_interval, next_observe_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (status, row['id']),
+            (
+                new_status, ad_item_id, sales_product_id,
+                interval_text, next_dt, updated_dt,
+            ),
         )
         if cur.rowcount <= 0:
-            return '商品更新失败'
+            return '商品写入失败'
         return None
 
     def _apply_adjustment_sync(self, cur, ad_item_id, operation_name, target_object, after_value):
+        ad_err = self._apply_adjustment_to_ad_item(
+            cur, ad_item_id, operation_name, target_object, after_value,
+        )
+        if ad_err:
+            return ad_err
         product_err = self._apply_adjustment_to_product(
             cur, ad_item_id, operation_name, target_object, after_value,
         )
@@ -3424,6 +3655,7 @@ class AmazonAdMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        default_bid = self._fetch_ad_item_default_bid(cur, ad_item_id)
                         cur.execute(
                             """
                             SELECT id, status, target_desc, bid_value
@@ -3443,7 +3675,11 @@ class AmazonAdMixin:
                         'target_desc': row.get('target_desc') or '',
                         'bid_value': bid_value,
                     })
-                return self.send_json({'status': 'success', 'items': items}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'items': items,
+                    'default_bid': default_bid,
+                }, start_response)
 
             if method == 'GET' and action == 'product-options':
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
@@ -3451,6 +3687,9 @@ class AmazonAdMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        shop_id = self._resolve_ad_item_shop_id(cur, ad_item_id)
+                        platform_skus = sorted(self._fetch_shop_platform_skus(cur, shop_id))
+                        default_bid = self._fetch_ad_item_default_bid(cur, ad_item_id)
                         cur.execute(
                             """
                             SELECT p.id, p.status, sp.platform_sku
@@ -3472,7 +3711,12 @@ class AmazonAdMixin:
                         'status': row.get('status') or '启动',
                         'target_desc': sku,
                     })
-                return self.send_json({'status': 'success', 'items': items}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'items': items,
+                    'platform_skus': platform_skus,
+                    'default_bid': default_bid,
+                }, start_response)
 
             if method == 'GET' and action == 'defaults':
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())

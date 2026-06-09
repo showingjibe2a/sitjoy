@@ -207,6 +207,27 @@
             opacity: 0.35;
             pointer-events: none;
         }
+        .aa-target-object-wrap .btn-capsule-sm.aa-sku-indicator {
+            font-weight: 700;
+            line-height: 1;
+            min-width: 1.65rem;
+            padding-left: 0.35rem;
+            padding-right: 0.35rem;
+        }
+        .aa-target-object-wrap .btn-capsule-sm.aa-sku-indicator--valid {
+            color: #fff;
+            background: #16a34a;
+            border-color: #15803d;
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .aa-target-object-wrap .btn-capsule-sm.aa-sku-indicator--invalid {
+            color: #fff;
+            background: #dc2626;
+            border-color: #b91c1c;
+            opacity: 1;
+            pointer-events: auto;
+        }
         .aa-search-card {
             padding: 0.75rem;
             flex: 0 0 auto;
@@ -664,7 +685,7 @@
                                     <div id="targetObjectSuggest" class="aa-target-suggest-list" role="listbox" aria-label="投放联想"></div>
                                 </div>
                                 <div class="input-capsule-menu">
-                                    <button type="button" class="btn-capsule-sm" aria-label="选择操作对象" title="全部可选项">⋯</button>
+                                    <button type="button" class="btn-capsule-sm" id="targetObjectPickBtn" aria-label="选择操作对象" title="全部可选项">⋯</button>
                                     <div class="input-capsule-menu-panel" id="targetObjectPickMenu" role="menu" aria-label="操作对象可选项"></div>
                                 </div>
                             </div>
@@ -841,6 +862,7 @@
         let allowedOperations = [];
         let selectedAdDetail = null;
         let targetOptionsCache = [];
+        let objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
         let objectOptionsLoadedAction = '';
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
@@ -1545,6 +1567,13 @@
                 if (beforeErr) errors.push(beforeErr);
                 if (afterErr) errors.push(afterErr);
             }
+            const opForSku = getSelectedOperationType();
+            if (isModifyProductOp(opForSku)) {
+                const sku = document.getElementById('targetObject')?.value.trim() || '';
+                if (sku && !isProductSkuInShop(sku)) {
+                    errors.push('操作对象须为当前广告归属店铺的销售平台SKU');
+                }
+            }
             return errors;
         }
 
@@ -1776,6 +1805,99 @@
             return n.includes('修改') && n.includes('商品');
         }
 
+        function isProductSkuInShop(sku) {
+            const s = String(sku || '').trim();
+            if (!s) return false;
+            return objectOptionsContext.platformSkus && objectOptionsContext.platformSkus.has(s);
+        }
+
+        function isTargetDescLinkedToAd(desc) {
+            const s = String(desc || '').trim();
+            if (!s) return false;
+            return targetOptionsCache.some(x => String(x.target_desc || '').trim() === s);
+        }
+
+        function isNewTargetDescToAd(desc) {
+            const s = String(desc || '').trim();
+            if (!s) return false;
+            return !isTargetDescLinkedToAd(s);
+        }
+
+        function isNewProductSkuToAd(sku) {
+            return isProductSkuInShop(sku) && isNewTargetDescToAd(sku);
+        }
+
+        function getTargetDefaultBid() {
+            return String(objectOptionsContext.defaultBid || '').trim();
+        }
+
+        function getDefaultAfterForNewTarget(op) {
+            const bid = getTargetDefaultBid();
+            if (isModifyProductOp(op) || isModifyDeliveryTargetOp(op)) return bid;
+            if (isModifyPlacementOp(op)) return bid ? placementDisplayFromBid(bid) : '';
+            return '';
+        }
+
+        function syncTargetObjectSkuIndicator(mode) {
+            const btn = document.getElementById('targetObjectPickBtn');
+            if (!btn) return;
+            btn.classList.remove('aa-sku-indicator', 'aa-sku-indicator--valid', 'aa-sku-indicator--invalid');
+            if (mode === 'valid') {
+                btn.classList.add('aa-sku-indicator', 'aa-sku-indicator--valid');
+                btn.textContent = '✓';
+                btn.title = 'SKU 存在于当前店铺销售平台';
+                btn.setAttribute('aria-label', 'SKU 校验通过');
+            } else if (mode === 'invalid') {
+                btn.classList.add('aa-sku-indicator', 'aa-sku-indicator--invalid');
+                btn.textContent = '✕';
+                btn.title = 'SKU 不存在于当前店铺销售平台';
+                btn.setAttribute('aria-label', 'SKU 校验失败');
+            } else {
+                btn.textContent = '⋯';
+                btn.title = '全部可选项';
+                btn.setAttribute('aria-label', '选择操作对象');
+            }
+        }
+
+        function syncTargetObjectState() {
+            const op = getSelectedOperationType();
+            const desc = String(document.getElementById('targetObject')?.value || '').trim();
+            const beforeInput = document.getElementById('beforeValue');
+            const afterInput = document.getElementById('afterValue');
+
+            if (isModifyProductOp(op)) {
+                if (!desc) {
+                    syncTargetObjectSkuIndicator(null);
+                    return;
+                }
+                const inShop = isProductSkuInShop(desc);
+                syncTargetObjectSkuIndicator(inShop ? 'valid' : 'invalid');
+                if (!inShop || isNewProductSkuToAd(desc)) {
+                    if (beforeInput) beforeInput.value = '-';
+                    if (afterInput) afterInput.value = getDefaultAfterForNewTarget(op);
+                    syncValueQuickMenus();
+                    updateSubmitButtonState();
+                    return;
+                }
+                refreshBeforeValueForTargetObject();
+                return;
+            }
+
+            syncTargetObjectSkuIndicator(null);
+
+            if (isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op)) {
+                if (!desc) return;
+                if (isNewTargetDescToAd(desc)) {
+                    if (beforeInput) beforeInput.value = '-';
+                    if (afterInput) afterInput.value = getDefaultAfterForNewTarget(op);
+                    syncValueQuickMenus();
+                    updateSubmitButtonState();
+                    return;
+                }
+                refreshBeforeValueForTargetObject();
+            }
+        }
+
         function isModifyBudgetOp(op) {
             const n = normalizeOperationTypeName(op && op.name);
             return n.includes('修改') && n.includes('预算');
@@ -1791,8 +1913,22 @@
             return n.includes('修改') && n.includes('名称');
         }
 
+        function isArchiveOp(op) {
+            const raw = String(op && op.name || '').trim();
+            if (raw === '【存档】') return true;
+            return normalizeOperationTypeName(op && op.name) === '存档';
+        }
+
+        function selectedAdCurrentStatus() {
+            const fromDetail = String(selectedAdDetail?.status || '').trim();
+            if (fromDetail) return fromDetail;
+            const fromSelected = String(selectedAd?.status || '').trim();
+            if (fromSelected) return fromSelected;
+            return '启动';
+        }
+
         function isFixedTargetObjectDashOp(op) {
-            return isModifyBudgetOp(op) || isModifyBidStrategyOp(op) || isModifyNameOp(op);
+            return isModifyBudgetOp(op) || isModifyBidStrategyOp(op) || isModifyNameOp(op) || isArchiveOp(op);
         }
 
         function needsTargetObjectSuggest(op) {
@@ -1854,6 +1990,9 @@
                 const name = String(selectedAdDetail.ad_name || '').trim();
                 if (beforeInput) beforeInput.value = name;
                 if (afterInput) afterInput.value = name;
+            } else if (isArchiveOp(op)) {
+                if (beforeInput) beforeInput.value = selectedAdCurrentStatus();
+                if (afterInput) afterInput.value = '存档';
             }
             syncValueQuickMenus();
             syncPlacementFieldHints();
@@ -1898,6 +2037,15 @@
             const op = getSelectedOperationType();
             if (isFixedTargetObjectDashOp(op)) return;
             if (!needsTargetObjectSuggest(op)) return;
+            const desc = String(document.getElementById('targetObject')?.value || '').trim();
+            if (isModifyProductOp(op) && desc && isNewProductSkuToAd(desc)) {
+                syncTargetObjectState();
+                return;
+            }
+            if ((isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op)) && desc && isNewTargetDescToAd(desc)) {
+                syncTargetObjectState();
+                return;
+            }
             const target = getMatchedTargetFromObject();
             const beforeInput = document.getElementById('beforeValue');
             if (!beforeInput) return;
@@ -2075,6 +2223,11 @@
             if (!val) return null;
 
             if (isModifyProductOp(op)) {
+                const sku = String(document.getElementById('targetObject')?.value || '').trim();
+                if (isNewProductSkuToAd(sku)) {
+                    if (fieldId === 'beforeValue' && val === '-') return null;
+                    if (fieldId === 'afterValue' && isNumericBidValue(val)) return null;
+                }
                 if (!isValidTargetStatus(val)) {
                     return `${label}须为合法状态（启动/暂停/存档）`;
                 }
@@ -2082,11 +2235,21 @@
             }
 
             if (isModifyDeliveryTargetOp(op)) {
+                const desc = String(document.getElementById('targetObject')?.value || '').trim();
+                if (isNewTargetDescToAd(desc)) {
+                    if (fieldId === 'beforeValue' && val === '-') return null;
+                    if (fieldId === 'afterValue' && (isNumericBidValue(val) || isValidTargetStatus(val))) return null;
+                }
                 if (isNumericBidValue(val) || isValidTargetStatus(val)) return null;
                 return `${label}须为合法竞价数值或状态（启动/暂停/存档）`;
             }
 
             if (isModifyPlacementOp(op)) {
+                const desc = String(document.getElementById('targetObject')?.value || '').trim();
+                if (isNewTargetDescToAd(desc)) {
+                    if (fieldId === 'beforeValue' && val === '-') return null;
+                    if (fieldId === 'afterValue' && (isPlacementPercentValue(val) || isValidTargetStatus(val))) return null;
+                }
                 if (isPlacementPercentValue(val) || isValidTargetStatus(val)) return null;
                 return `${label}须为合法百分比或状态（启动/暂停/存档）`;
             }
@@ -2214,12 +2377,16 @@
             const beforeInput = document.getElementById('beforeValue');
             if (!input || !target) return;
             input.value = String(target.target_desc || '').trim();
-            if (beforeInput) {
-                beforeInput.value = beforeValueFromTargetOption(target, op);
-            }
-            fillAfterValueFromObjectSelection(target, op);
             hideTargetObjectSuggest();
-            refreshBeforeValueForTargetObject();
+            if (isModifyProductOp(op)) {
+                syncTargetObjectState();
+            } else {
+                if (beforeInput) {
+                    beforeInput.value = beforeValueFromTargetOption(target, op);
+                }
+                fillAfterValueFromObjectSelection(target, op);
+                refreshBeforeValueForTargetObject();
+            }
             applyAdjustmentPeriodFilter();
         }
 
@@ -2282,6 +2449,7 @@
 
         function loadTargetOptionsForSelectedAd() {
             targetOptionsCache = [];
+            objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
             objectOptionsLoadedAction = '';
             hideTargetObjectSuggest();
             syncTargetObjectPickMenu();
@@ -2293,18 +2461,29 @@
                 .then(data => {
                     if (!data || data.status !== 'success') {
                         targetOptionsCache = [];
+                        objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
                         objectOptionsLoadedAction = '';
                         syncTargetObjectPickMenu();
+                        syncTargetObjectState();
                         return;
                     }
                     targetOptionsCache = Array.isArray(data.items) ? data.items : [];
+                    objectOptionsContext = {
+                        platformSkus: action === 'product-options'
+                            ? new Set(Array.isArray(data.platform_skus) ? data.platform_skus : [])
+                            : new Set(),
+                        defaultBid: String(data.default_bid || '').trim(),
+                    };
                     objectOptionsLoadedAction = action;
                     syncTargetObjectPickMenu();
+                    syncTargetObjectState();
                 })
                 .catch(() => {
                     targetOptionsCache = [];
+                    objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
                     objectOptionsLoadedAction = '';
                     syncTargetObjectPickMenu();
+                    syncTargetObjectState();
                 });
         }
 
@@ -2329,6 +2508,7 @@
             syncTargetObjectPickMenu();
             syncPlacementFieldHints();
             refreshBeforeValueForTargetObject();
+            syncTargetObjectState();
         }
 
         function tryAutofillBeforeValueFromTargetObject() {
@@ -2710,6 +2890,7 @@
                     const adInfo = data.ad_info || {};
                     selectedAdDetail = {
                         ad_name: adInfo.ad_name || '',
+                        status: adInfo.status || selectedAd?.status || '启动',
                         budget: adInfo.budget,
                         bid_strategy: adInfo.bid_strategy || '',
                     };
@@ -2888,9 +3069,7 @@
                 if (input.readOnly) return;
                 scheduleTargetObjectSuggest();
                 syncValueQuickMenus();
-                if (isModifyPlacementOp(getSelectedOperationType())) {
-                    refreshBeforeValueForTargetObject();
-                }
+                syncTargetObjectState();
                 updateSubmitButtonState();
                 applyAdjustmentPeriodFilter();
             });
@@ -2903,6 +3082,7 @@
                     hideTargetObjectSuggest();
                     tryAutofillBeforeValueFromTargetObject();
                     syncValueQuickMenus();
+                    syncTargetObjectState();
                     applyAdjustmentPeriodFilter();
                 }, 160);
             });
