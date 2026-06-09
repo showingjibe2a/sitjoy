@@ -51,31 +51,31 @@
                     <table class="pm-table" id="recordTable" style="min-width: 1600px;">
                         <thead>
                             <tr>
-                                <th>调整日期</th>
-                                <th>关联广告</th>
-                                <th>操作</th>
-                                <th>对象</th>
-                                <th>修改前</th>
-                                <th>修改后</th>
-                                <th>原因</th>
-                                <th>开始时间</th>
-                                <th>结束时间</th>
-                                <th>曝光</th>
-                                <th>点击</th>
-                                <th>花费</th>
-                                <th>订单</th>
-                                <th>销售额</th>
-                                <th>ACOS</th>
-                                <th>CPC</th>
-                                <th>CTR</th>
-                                <th>CVR</th>
-                                <th>首页首位IS</th>
-                                <th>归因检查</th>
-                                <th>归因订单</th>
-                                <th>归因销售额</th>
-                                <th>备注</th>
-                                <th>类型</th>
-                                <th>操作</th>
+                                <th data-manage-col-key="调整日期">调整日期</th>
+                                <th data-manage-col-key="关联广告">关联广告</th>
+                                <th data-manage-col-key="操作类型">操作</th>
+                                <th data-manage-col-key="对象">对象</th>
+                                <th data-manage-col-key="修改前">修改前</th>
+                                <th data-manage-col-key="修改后">修改后</th>
+                                <th data-manage-col-key="原因">原因</th>
+                                <th data-manage-col-key="开始时间">开始时间</th>
+                                <th data-manage-col-key="结束时间">结束时间</th>
+                                <th data-manage-col-key="曝光">曝光</th>
+                                <th data-manage-col-key="点击">点击</th>
+                                <th data-manage-col-key="花费">花费</th>
+                                <th data-manage-col-key="订单">订单</th>
+                                <th data-manage-col-key="销售额">销售额</th>
+                                <th data-manage-col-key="ACOS">ACOS</th>
+                                <th data-manage-col-key="CPC">CPC</th>
+                                <th data-manage-col-key="CTR">CTR</th>
+                                <th data-manage-col-key="CVR">CVR</th>
+                                <th data-manage-col-key="首页首位IS">首页首位IS</th>
+                                <th data-manage-col-key="归因检查">归因检查</th>
+                                <th data-manage-col-key="归因订单">归因订单</th>
+                                <th data-manage-col-key="归因销售额">归因销售额</th>
+                                <th data-manage-col-key="备注">备注</th>
+                                <th data-manage-col-key="提交类型">类型</th>
+                                <th data-manage-col-key="行操作" data-disable-sort="1">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -151,47 +151,82 @@
             applyRecordFilter();
         }
 
+        function sortCell(value) {
+            const text = value === null || value === undefined ? '' : String(value).trim();
+            return text ? ` data-sort-value="${escapeHtml(text)}"` : '';
+        }
+
+        function escapeHtml(text) {
+            return String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function recordManagedTableApi() {
+            return window.SitjoyManagedPmTable || null;
+        }
+
+        function beginRecordTableBodyUpdate() {
+            const api = recordManagedTableApi();
+            if (api && typeof api.beginBodyUpdate === 'function') {
+                api.beginBodyUpdate(document.getElementById('recordTable'));
+            }
+        }
+
+        function endRecordTableBodyUpdate() {
+            const api = recordManagedTableApi();
+            if (api && typeof api.endBodyUpdate === 'function') {
+                api.endBodyUpdate(document.getElementById('recordTable'));
+            }
+        }
+
         function renderRecordTable() {
             const tbody = document.querySelector('#recordTable tbody');
             if (!tbody) return;
             const items = recordsFiltered || [];
+            beginRecordTableBodyUpdate();
             if (!items.length) {
                 tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">暂无调整记录</td></tr>';
+                endRecordTableBodyUpdate();
                 return;
             }
             tbody.innerHTML = items.map(item => {
                 const adName = item.ad_name || '';
                 const levelText = item.ad_level === 'group' ? '广告组' : (item.ad_level === 'campaign' ? '广告活动' : item.ad_level || '');
+                const attrChecked = String(item.attribution_checked || '0') === '1' ? '是' : '否';
                 return `
                     <tr>
-                        <td>${formatDateTime(item.adjust_date)}</td>
-                        <td>${adName}（${levelText}）</td>
-                        <td>${item.operation_name || ''}</td>
-                        <td>${item.target_object || ''}</td>
-                        <td>${item.before_value || ''}</td>
-                        <td>${item.after_value || ''}</td>
-                        <td>${item.reason_name || ''}</td>
-                        <td>${formatDateTime(item.start_time)}</td>
-                        <td>${formatDateTime(item.end_time)}</td>
-                        <td>${item.impressions || ''}</td>
-                        <td>${item.clicks || ''}</td>
-                        <td>${item.cost || ''}</td>
-                        <td>${item.orders || ''}</td>
-                        <td>${item.sales || ''}</td>
-                        <td>${item.acos || ''}</td>
-                        <td>${item.cpc || ''}</td>
-                        <td>${item.ctr || ''}</td>
-                        <td>${item.cvr || ''}</td>
-                        <td>${item.top_of_search_is || ''}</td>
-                        <td>${String(item.attribution_checked || '0') === '1' ? '是' : '否'}</td>
-                        <td>${item.attribution_orders || ''}</td>
-                        <td>${item.attribution_sales || ''}</td>
-                        <td>${item.remark || ''}</td>
-                        <td>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
+                        <td${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
+                        <td${sortCell(`${adName}（${levelText}）`)}>${escapeHtml(adName)}（${escapeHtml(levelText)}）</td>
+                        <td${sortCell(item.operation_name)}>${escapeHtml(item.operation_name || '')}</td>
+                        <td${sortCell(item.target_object)}>${escapeHtml(item.target_object || '')}</td>
+                        <td${sortCell(item.before_value)}>${escapeHtml(item.before_value || '')}</td>
+                        <td${sortCell(item.after_value)}>${escapeHtml(item.after_value || '')}</td>
+                        <td${sortCell(item.reason_name)}>${escapeHtml(item.reason_name || '')}</td>
+                        <td${sortCell(item.start_time)}>${formatDateTime(item.start_time)}</td>
+                        <td${sortCell(item.end_time)}>${formatDateTime(item.end_time)}</td>
+                        <td${sortCell(item.impressions)}>${escapeHtml(item.impressions || '')}</td>
+                        <td${sortCell(item.clicks)}>${escapeHtml(item.clicks || '')}</td>
+                        <td${sortCell(item.cost)}>${escapeHtml(item.cost || '')}</td>
+                        <td${sortCell(item.orders)}>${escapeHtml(item.orders || '')}</td>
+                        <td${sortCell(item.sales)}>${escapeHtml(item.sales || '')}</td>
+                        <td${sortCell(item.acos)}>${escapeHtml(item.acos || '')}</td>
+                        <td${sortCell(item.cpc)}>${escapeHtml(item.cpc || '')}</td>
+                        <td${sortCell(item.ctr)}>${escapeHtml(item.ctr || '')}</td>
+                        <td${sortCell(item.cvr)}>${escapeHtml(item.cvr || '')}</td>
+                        <td${sortCell(item.top_of_search_is)}>${escapeHtml(item.top_of_search_is || '')}</td>
+                        <td${sortCell(attrChecked === '是' ? '1' : '0')}>${attrChecked}</td>
+                        <td${sortCell(item.attribution_orders)}>${escapeHtml(item.attribution_orders || '')}</td>
+                        <td${sortCell(item.attribution_sales)}>${escapeHtml(item.attribution_sales || '')}</td>
+                        <td${sortCell(item.remark)}>${escapeHtml(item.remark || '')}</td>
+                        <td${sortCell(String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交')}>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
                         <td><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
                     </tr>
                 `;
             }).join('');
+            endRecordTableBodyUpdate();
         }
 
         async function deleteRecord(id) {
@@ -221,14 +256,18 @@
             const url = filterAdItemId ? `${base}?ad_item_id=${encodeURIComponent(filterAdItemId)}` : base;
             const tbody = document.querySelector('#recordTable tbody');
             if (tbody) {
+                beginRecordTableBodyUpdate();
                 tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">加载中...</td></tr>';
+                endRecordTableBodyUpdate();
             }
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
                         if (tbody) {
-                            tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                            beginRecordTableBodyUpdate();
+                            tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                            endRecordTableBodyUpdate();
                         }
                         if (window.showAppToast) window.showAppToast(data.message || '加载失败', true, 6500);
                         return;
@@ -238,7 +277,9 @@
                 })
                 .catch(err => {
                     if (tbody) {
-                        tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                        beginRecordTableBodyUpdate();
+                        tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${escapeHtml(String(err))}</td></tr>`;
+                        endRecordTableBodyUpdate();
                     }
                     if (window.showAppToast) window.showAppToast('加载失败: ' + err, true, 6500);
                 });
@@ -309,6 +350,10 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             parseUrlFilter();
+            const table = document.getElementById('recordTable');
+            if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
+                window.SitjoyManagedPmTable.invalidateLayout(table);
+            }
             loadRecords();
         });
     </script>

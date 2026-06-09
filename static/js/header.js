@@ -5455,6 +5455,10 @@
     function finishManagedTableBodyUpdate(state){
         if(!state || !state.table) return;
         syncManagedTableBodyLayout(state);
+        ensureRowSortOrigin(state);
+        if(state.sortOrigin && state.sortDir){
+            applySort(state);
+        }
         applyPagination(state);
         syncManagedBatchBar(state);
     }
