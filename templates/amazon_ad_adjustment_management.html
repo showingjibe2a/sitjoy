@@ -400,16 +400,16 @@
         }
         .aa-period-card {
             flex: 0 0 auto;
-            width: min(360px, 82vw);
+            width: min(300px, 78vw);
             border: 1px solid rgba(207, 199, 189, 0.55);
             border-radius: 10px;
-            padding: 0.55rem 0.6rem;
+            padding: 0.5rem 0.55rem;
             background: rgba(255, 255, 255, 0.96);
-            font-size: 0.78rem;
-            line-height: 1.35;
+            font-size: 0.76rem;
+            line-height: 1.32;
             display: flex;
             flex-direction: column;
-            gap: 0.45rem;
+            gap: 0.38rem;
         }
         .aa-period-card-head {
             font-weight: 700;
@@ -418,48 +418,11 @@
             border-bottom: 1px dashed rgba(207, 199, 189, 0.5);
             font-size: 0.8rem;
         }
-        .aa-period-chip-row,
-        .aa-period-metric-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem 0.4rem;
-        }
-        .aa-period-chip {
-            flex: 1 1 7.2rem;
-            min-width: 0;
-            padding: 0.28rem 0.38rem;
-            border-radius: 8px;
-            background: rgba(236, 231, 223, 0.42);
-            border: 1px solid rgba(207, 199, 189, 0.45);
-        }
-        .aa-period-chip-k {
-            display: block;
-            font-size: 0.68rem;
-            font-weight: 600;
-            color: var(--morandi-slate);
-            margin-bottom: 0.12rem;
-        }
-        .aa-period-chip-v {
-            display: block;
-            color: var(--morandi-ink);
-            word-break: break-word;
-        }
-        .aa-period-range-line {
-            font-size: 0.74rem;
-            color: var(--morandi-slate);
-            padding: 0.2rem 0.35rem;
-            border-radius: 7px;
-            background: rgba(248, 246, 242, 0.9);
-        }
         .aa-period-block {
             border: 1px solid rgba(207, 199, 189, 0.42);
             border-radius: 8px;
             padding: 0.38rem 0.42rem;
             background: rgba(255, 255, 255, 0.88);
-        }
-        .aa-period-block--daily {
-            background: rgba(236, 231, 223, 0.28);
-            border-color: rgba(188, 180, 170, 0.55);
         }
         .aa-period-block-title {
             font-size: 0.7rem;
@@ -468,6 +431,122 @@
             margin-bottom: 0.3rem;
             letter-spacing: 0.02em;
         }
+        .aa-period-field-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.24rem;
+        }
+        .aa-period-field-row {
+            display: grid;
+            grid-template-columns: 4.4rem minmax(0, 1fr);
+            gap: 0.28rem 0.35rem;
+            align-items: start;
+        }
+        .aa-period-field-k {
+            font-size: 0.66rem;
+            font-weight: 600;
+            color: var(--morandi-slate);
+            padding-top: 0.12rem;
+        }
+        .aa-period-field-v {
+            font-size: 0.75rem;
+            color: var(--morandi-ink);
+            word-break: break-word;
+            padding: 0.12rem 0.2rem;
+            border-radius: 4px;
+            background: rgba(248, 246, 242, 0.65);
+        }
+        .aa-period-data-grid {
+            display: grid;
+            grid-template-columns: 4.4rem minmax(0, 1fr) 4.2rem;
+            gap: 0.2rem 0.32rem;
+            align-items: stretch;
+        }
+        .aa-period-grid-head {
+            font-size: 0.66rem;
+            font-weight: 700;
+            color: var(--morandi-slate);
+            padding: 0.12rem 0.2rem;
+        }
+        .aa-period-daily-head {
+            text-align: center;
+            line-height: 1.25;
+            border-radius: 6px;
+            background: rgba(236, 231, 223, 0.45);
+            border: 1px solid rgba(188, 180, 170, 0.45);
+            padding: 0.2rem 0.18rem;
+            font-size: 0.68rem;
+        }
+        .aa-period-daily-head .aa-period-daily-sub {
+            display: block;
+            margin-top: 0.15rem;
+            font-weight: 700;
+            color: var(--morandi-ink);
+        }
+        .aa-period-grid-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: var(--morandi-slate);
+            padding: 0.14rem 0;
+        }
+        .aa-period-grid-val {
+            font-size: 0.76rem;
+            color: var(--morandi-ink);
+            padding: 0.14rem 0.2rem;
+            word-break: break-word;
+            border-radius: 4px;
+            background: rgba(248, 246, 242, 0.65);
+        }
+        .aa-period-grid-daily {
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: var(--morandi-ink);
+            padding: 0.14rem 0.1rem;
+            text-align: center;
+            word-break: break-word;
+        }
+        .aa-period-attrib-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.28rem;
+        }
+        .aa-period-attrib-field label {
+            display: block;
+            font-size: 0.66rem;
+            font-weight: 600;
+            color: var(--morandi-slate);
+            margin-bottom: 0.1rem;
+        }
+        .aa-period-input-sm,
+        .aa-period-attrib-stack input.aa-period-input-sm,
+        .aa-period-attrib-stack textarea.aa-period-input-sm {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 0.74rem;
+            line-height: 1.25;
+            padding: 0.18rem 0.32rem;
+            min-height: 26px;
+            border-radius: 6px;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            background: #fff;
+        }
+        .aa-period-attrib-stack textarea.aa-period-input-sm {
+            min-height: 2.1rem;
+            resize: vertical;
+        }
+        .aa-period-attrib-checked {
+            font-size: 0.7rem;
+            color: var(--morandi-slate);
+            padding-bottom: 0.08rem;
+        }
+        .aa-period-attrib-checked strong {
+            color: var(--morandi-ink);
+        }
+        .aa-period-metric-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.4rem;
+        }
         .aa-period-metric {
             flex: 1 1 4.8rem;
             min-width: 4.2rem;
@@ -475,9 +554,6 @@
             border-radius: 6px;
             background: rgba(255, 255, 255, 0.72);
             border: 1px solid rgba(207, 199, 189, 0.35);
-        }
-        .aa-period-block--daily .aa-period-metric {
-            background: rgba(255, 255, 255, 0.55);
         }
         .aa-period-metric-k {
             display: block;
@@ -492,26 +568,8 @@
             font-weight: 600;
             word-break: break-word;
         }
-        .aa-period-foot-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.3rem 0.38rem;
-            font-size: 0.72rem;
-            color: var(--morandi-slate);
-        }
-        .aa-period-foot-item {
-            flex: 1 1 6.5rem;
-            min-width: 0;
-        }
-        .aa-period-foot-item strong {
-            color: var(--morandi-ink);
-            font-weight: 600;
-        }
         .aa-interval-daily-preview {
             margin-top: 0.15rem;
-        }
-        .aa-extra-modal .aa-interval-daily-preview .aa-period-metric-row {
-            margin-top: 0;
         }
         .btn-quick-small {
             padding: 0.3rem 0.55rem;
@@ -807,6 +865,12 @@
         </section>
     </div>
 
+    <div id="aaAttribSaveBar" class="pm-batch-float-bar" aria-live="polite">
+        <span class="pm-batch-float-count" id="aaAttribSaveText">已修改 0 条归因/备注</span>
+        <button type="button" class="btn-secondary" onclick="cancelAdjustmentAttribEdits()">取消</button>
+        <button type="button" class="btn-primary" onclick="saveAdjustmentAttribEdits()">批量保存</button>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -822,6 +886,8 @@
         let objectOptionsLoadedAction = '';
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
+        let adjustmentPeriodCache = [];
+        let adjustmentAttribDraft = {};
 
         const AA_BID_STRATEGIES = [
             '动态竞价-仅降低',
@@ -1113,76 +1179,284 @@
             }
         }
 
-        function formatDailyMetricPlain(value, startTime, endTime) {
+        function formatMetricPlainText(value) {
+            const text = String(value ?? '').trim();
+            return text || '-';
+        }
+
+        function formatDailyMetricText(value, startTime, endTime) {
             const text = String(value ?? '').trim();
             if (!text) return '-';
             const days = periodDayCount(startTime, endTime);
             const num = parseFloat(text.replace(/,/g, ''));
             if (days == null || !Number.isFinite(num)) return '-';
             const daily = num / days;
-            const dailyStr = Math.abs(daily - Math.round(daily)) < 0.005
-                ? String(Math.round(daily))
-                : daily.toFixed(2);
-            return escapeHtml(dailyStr);
+            if (Math.abs(daily - Math.round(daily)) < 0.005) return String(Math.round(daily));
+            return daily.toFixed(2);
         }
 
-        function renderPeriodChip(label, html) {
-            return `<div class="aa-period-chip"><span class="aa-period-chip-k">${escapeHtml(label)}</span><span class="aa-period-chip-v">${html}</span></div>`;
+        function formatPeriodDayCountText(startTime, endTime) {
+            const days = periodDayCount(startTime, endTime);
+            if (days == null) return '-';
+            return String(Math.max(1, Math.ceil(days - 1e-9)));
+        }
+
+        function formatDailyMetricPlain(value, startTime, endTime) {
+            return escapeHtml(formatDailyMetricText(value, startTime, endTime));
         }
 
         function renderPeriodMetric(label, html) {
             return `<div class="aa-period-metric"><span class="aa-period-metric-k">${escapeHtml(label)}</span><span class="aa-period-metric-v">${html}</span></div>`;
         }
 
-        function renderAdjustmentPeriodCard(item, index) {
+        function normalizeAdjustmentAttribState(item) {
+            return {
+                attribution_checked: String(item?.attribution_checked || '0') === '1' ? '1' : '0',
+                attribution_orders: String(item?.attribution_orders || '').trim(),
+                attribution_sales: String(item?.attribution_sales || '').trim(),
+                remark: String(item?.remark || '').trim(),
+            };
+        }
+
+        function getAdjustmentAttribEffective(item) {
+            const id = String(item?.id || '');
+            if (id && adjustmentAttribDraft[id]) return { ...adjustmentAttribDraft[id] };
+            return normalizeAdjustmentAttribState(item);
+        }
+
+        function attribStatesEqual(a, b) {
+            const left = normalizeAdjustmentAttribState(a || {});
+            const right = normalizeAdjustmentAttribState(b || {});
+            return left.attribution_checked === right.attribution_checked
+                && left.attribution_orders === right.attribution_orders
+                && left.attribution_sales === right.attribution_sales
+                && left.remark === right.remark;
+        }
+
+        function countAdjustmentAttribEditedRows() {
+            return Object.keys(adjustmentAttribDraft).length;
+        }
+
+        function syncAdjustmentAttribSaveBar() {
+            const bar = document.getElementById('aaAttribSaveBar');
+            const text = document.getElementById('aaAttribSaveText');
+            if (!bar || !text) return;
+            const count = countAdjustmentAttribEditedRows();
+            text.textContent = `已修改 ${count} 条归因/备注`;
+            bar.classList.toggle('active', count > 0);
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+        }
+
+        function updateAdjustmentAttribDraft(recordId, field, rawValue) {
+            const item = adjustmentPeriodCache.find(x => String(x.id) === String(recordId));
+            if (!item) return;
+            const id = String(recordId);
+            const next = { ...getAdjustmentAttribEffective(item) };
+            const f = String(field || '').trim();
+            if (f === 'attribution_orders' || f === 'attribution_sales' || f === 'remark') {
+                next[f] = String(rawValue ?? '').trim();
+            }
+            if (f === 'attribution_orders' || f === 'attribution_sales') {
+                if (next.attribution_orders || next.attribution_sales) {
+                    next.attribution_checked = '1';
+                }
+            }
+            if (attribStatesEqual(next, item)) {
+                delete adjustmentAttribDraft[id];
+            } else {
+                adjustmentAttribDraft[id] = next;
+            }
+            const card = document.querySelector(`.aa-period-card[data-record-id="${id}"]`);
+            const checkedEl = card?.querySelector('[data-role="attrib-checked-text"]');
+            if (checkedEl) {
+                checkedEl.textContent = next.attribution_checked === '1' ? '是' : '否';
+            }
+            syncAdjustmentAttribSaveBar();
+        }
+
+        function cancelAdjustmentAttribEdits() {
+            adjustmentAttribDraft = {};
+            renderAdjustmentPeriodList(adjustmentPeriodCache);
+            syncAdjustmentAttribSaveBar();
+        }
+
+        function saveAdjustmentAttribEdits() {
+            const ids = Object.keys(adjustmentAttribDraft);
+            if (!ids.length) {
+                syncAdjustmentAttribSaveBar();
+                return;
+            }
+            const items = ids.map((id) => ({
+                id: Number(id),
+                ...adjustmentAttribDraft[id],
+            }));
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        aaSaveResult({
+                            action: 'save',
+                            isError: true,
+                            message: (data && data.message) || '批量保存失败',
+                            errors: data && data.errors,
+                        });
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    items.forEach((up) => {
+                        const row = adjustmentPeriodCache.find(x => String(x.id) === String(up.id));
+                        if (!row) return;
+                        row.attribution_checked = up.attribution_checked === '1' ? 1 : 0;
+                        row.attribution_orders = up.attribution_orders || '';
+                        row.attribution_sales = up.attribution_sales || '';
+                        row.remark = up.remark || '';
+                        delete adjustmentAttribDraft[String(up.id)];
+                    });
+                    renderAdjustmentPeriodList(adjustmentPeriodCache);
+                    syncAdjustmentAttribSaveBar();
+                    aaSaveResult({
+                        action: 'save',
+                        isError: errCount > 0,
+                        message: `已保存 ${data.updated || 0} 条归因/备注${errCount ? `，失败 ${errCount} 条` : ''}`,
+                        errors: data.errors,
+                    });
+                })
+                .catch(err => {
+                    aaSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
+                });
+        }
+
+        function bindAdjustmentPeriodEvents() {
+            const wrap = document.getElementById('aaPeriodList');
+            if (!wrap || wrap.dataset.attribBound === '1') return;
+            wrap.dataset.attribBound = '1';
+            wrap.addEventListener('input', (e) => {
+                const el = e.target;
+                if (!el || !el.classList || !el.classList.contains('aa-period-attrib-input')) return;
+                updateAdjustmentAttribDraft(el.dataset.recordId, el.dataset.field, el.value);
+            });
+            wrap.addEventListener('change', (e) => {
+                const el = e.target;
+                if (!el || !el.classList || !el.classList.contains('aa-period-attrib-input')) return;
+                updateAdjustmentAttribDraft(el.dataset.recordId, el.dataset.field, el.value);
+            });
+        }
+
+        function renderPeriodFieldList(rows) {
+            return rows.map(([label, valueHtml]) => `
+                <div class="aa-period-field-row">
+                    <span class="aa-period-field-k">${escapeHtml(label)}</span>
+                    <span class="aa-period-field-v">${valueHtml}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderPeriodDataGrid(blockTitle, midHead, rightHeadHtml, rightHeadClass, rows) {
+            const body = rows.map(([label, val, extra]) => `
+                <div class="aa-period-grid-label">${escapeHtml(label)}</div>
+                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
+                <div class="aa-period-grid-daily">${extra ? escapeHtml(extra) : ''}</div>
+            `).join('');
+            return `
+                <div class="aa-period-block">
+                    <div class="aa-period-block-title">${escapeHtml(blockTitle)}</div>
+                    <div class="aa-period-data-grid">
+                        <div class="aa-period-grid-head"></div>
+                        <div class="aa-period-grid-head">${escapeHtml(midHead)}</div>
+                        <div class="aa-period-grid-head ${rightHeadClass || ''}">${rightHeadHtml}</div>
+                        ${body}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPeriodMetricsBlock(item) {
             const start = item.start_time;
             const end = item.end_time;
-            const head = `区间 #${index + 1} · ${formatDateTime(item.adjust_date) || '-'}`;
-            const rangeLine = `${formatDateTime(start) || '-'} ~ ${formatDateTime(end) || '-'}`;
-            const intervalMetrics = [
-                ['曝光', formatMetricPlain(item.impressions)],
-                ['点击', formatMetricPlain(item.clicks)],
-                ['花费', formatMetricPlain(item.cost)],
-                ['订单', formatMetricPlain(item.orders)],
-                ['销售额', formatMetricPlain(item.sales)],
-            ].map(([k, v]) => renderPeriodMetric(k, v)).join('');
-            const dailyMetrics = [
-                ['曝光', formatDailyMetricPlain(item.impressions, start, end)],
-                ['点击', formatDailyMetricPlain(item.clicks, start, end)],
-                ['花费', formatDailyMetricPlain(item.cost, start, end)],
-                ['订单', formatDailyMetricPlain(item.orders, start, end)],
-                ['销售额', formatDailyMetricPlain(item.sales, start, end)],
-            ].map(([k, v]) => renderPeriodMetric(k, v)).join('');
-            const footItems = [
-                ['ACOS', formatMetricPlain(item.acos)],
-                ['CPC', formatMetricPlain(item.cpc)],
-                ['CTR', formatMetricPlain(item.ctr)],
-                ['CVR', formatMetricPlain(item.cvr)],
-                ['首页首位IS', formatMetricPlain(item.top_of_search_is)],
-                ['归因', formatMetricPlain(String(item.attribution_checked || '0') === '1' ? '是' : '否')],
-                ['归因订单', formatMetricPlain(item.attribution_orders)],
-                ['归因销售额', formatMetricPlain(item.attribution_sales)],
-            ].map(([k, v]) => `<span class="aa-period-foot-item">${escapeHtml(k)} <strong>${v}</strong></span>`).join('');
-            const remark = formatMetricPlain(item.remark);
+            const daysText = formatPeriodDayCountText(start, end);
+            const rows = [
+                ['开始时间', formatDateTime(start) || '-', ''],
+                ['结束时间', formatDateTime(end) || '-', ''],
+                ['曝光', formatMetricPlainText(item.impressions), formatDailyMetricText(item.impressions, start, end)],
+                ['点击', formatMetricPlainText(item.clicks), formatDailyMetricText(item.clicks, start, end)],
+                ['花费', formatMetricPlainText(item.cost), formatDailyMetricText(item.cost, start, end)],
+                ['订单', formatMetricPlainText(item.orders), formatDailyMetricText(item.orders, start, end)],
+                ['销售额', formatMetricPlainText(item.sales), formatDailyMetricText(item.sales, start, end)],
+            ];
+            const rightHead = `共 ${escapeHtml(daysText)} 日<span class="aa-period-daily-sub">日均</span>`;
+            return renderPeriodDataGrid('区间数据', '区间数据', rightHead, 'aa-period-daily-head', rows);
+        }
+
+        function renderPeriodComputedBlock(item) {
+            const rows = [
+                ['ACOS', formatMetricPlainText(item.acos), ''],
+                ['CPC', formatMetricPlainText(item.cpc), ''],
+                ['CTR', formatMetricPlainText(item.ctr), ''],
+                ['CVR', formatMetricPlainText(item.cvr), ''],
+                ['首页首位IS', formatMetricPlainText(item.top_of_search_is), ''],
+            ];
+            return renderPeriodDataGrid('计算字段', '数值', '', '', rows);
+        }
+
+        function renderPeriodAttribBlock(item) {
+            const eff = getAdjustmentAttribEffective(item);
+            const rid = escapeHtml(String(item.id));
+            const checkedText = eff.attribution_checked === '1' ? '是' : '否';
             return `
-                <article class="aa-period-card">
+                <div class="aa-period-block">
+                    <div class="aa-period-block-title">归因与备注</div>
+                    <div class="aa-period-attrib-stack">
+                        <div class="aa-period-attrib-checked">归因已检查：<strong data-role="attrib-checked-text">${checkedText}</strong></div>
+                        <div class="aa-period-attrib-field">
+                            <label>归因订单</label>
+                            <input type="text" class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="attribution_orders"
+                                value="${escapeHtml(eff.attribution_orders)}" placeholder="选填">
+                        </div>
+                        <div class="aa-period-attrib-field">
+                            <label>归因销售额</label>
+                            <input type="text" class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="attribution_sales"
+                                value="${escapeHtml(eff.attribution_sales)}" placeholder="选填">
+                        </div>
+                        <div class="aa-period-attrib-field">
+                            <label>备注</label>
+                            <textarea class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="remark"
+                                placeholder="选填">${escapeHtml(eff.remark)}</textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAdjustmentPeriodCard(item, index) {
+            const opName = formatMetricPlainText(item.operation_name);
+            const head = `修改 #${index + 1} · ${opName} · ${formatDateTime(item.adjust_date) || '-'}`;
+            const metaRows = [
+                ['操作类型', escapeHtml(opName)],
+                ['操作对象', escapeHtml(formatMetricPlainText(item.target_object))],
+                ['操作原因', escapeHtml(formatMetricPlainText(item.reason_name))],
+            ];
+            const changeRows = [
+                ['修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name)],
+                ['修改后', formatAdjustmentValueDisplay(item.after_value, item.operation_name)],
+            ];
+            return `
+                <article class="aa-period-card" data-record-id="${escapeHtml(String(item.id))}">
                     <div class="aa-period-card-head">${escapeHtml(head)}</div>
-                    <div class="aa-period-chip-row">
-                        ${renderPeriodChip('修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name))}
-                        ${renderPeriodChip('修改后', formatAdjustmentValueDisplay(item.after_value, item.operation_name))}
-                        ${renderPeriodChip('原因', formatMetricPlain(item.reason_name))}
-                    </div>
-                    <div class="aa-period-range-line">效果区间 ${escapeHtml(rangeLine)}</div>
                     <div class="aa-period-block">
-                        <div class="aa-period-block-title">区间数据</div>
-                        <div class="aa-period-metric-row">${intervalMetrics}</div>
+                        <div class="aa-period-block-title">操作信息</div>
+                        <div class="aa-period-field-list">${renderPeriodFieldList(metaRows)}</div>
                     </div>
-                    <div class="aa-period-block aa-period-block--daily">
-                        <div class="aa-period-block-title">日均数据</div>
-                        <div class="aa-period-metric-row">${dailyMetrics}</div>
+                    <div class="aa-period-block">
+                        <div class="aa-period-block-title">修改前后</div>
+                        <div class="aa-period-field-list">${renderPeriodFieldList(changeRows)}</div>
                     </div>
-                    <div class="aa-period-foot-row">${footItems}</div>
-                    <div class="aa-period-foot-row"><span class="aa-period-foot-item">备注 <strong>${remark}</strong></span></div>
+                    ${renderPeriodMetricsBlock(item)}
+                    ${renderPeriodComputedBlock(item)}
+                    ${renderPeriodAttribBlock(item)}
                 </article>
             `;
         }
@@ -1201,16 +1475,22 @@
             const wrap = document.getElementById('aaPeriodList');
             if (!wrap) return;
             if (!selectedAdId) {
+                adjustmentPeriodCache = [];
                 wrap.innerHTML = '<div class="aa-period-empty">请先在左侧选择广告</div>';
+                syncAdjustmentAttribSaveBar();
                 return;
             }
             const list = Array.isArray(items) ? items.slice().reverse() : [];
+            adjustmentPeriodCache = list.slice();
             if (!list.length) {
                 wrap.innerHTML = '<div class="aa-period-empty">该广告暂无调整记录</div>';
+                syncAdjustmentAttribSaveBar();
                 return;
             }
             wrap.innerHTML = list.map((item, idx) => renderAdjustmentPeriodCard(item, idx)).join('');
+            bindAdjustmentPeriodEvents();
             scrollPeriodListToLatest();
+            syncAdjustmentAttribSaveBar();
         }
 
         function loadAdjustmentPeriodList() {
@@ -2432,6 +2712,8 @@
 
         function selectAd(adId) {
             selectedAdId = String(adId || '');
+            adjustmentAttribDraft = {};
+            syncAdjustmentAttribSaveBar();
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
             updateInfoPanel(selectedAd ? listItemToAdInfo(selectedAd) : null);

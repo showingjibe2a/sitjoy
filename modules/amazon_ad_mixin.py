@@ -3418,6 +3418,46 @@ class AmazonAdMixin:
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
+            if method == 'PATCH':
+                items = data.get('items')
+                if not isinstance(items, list) or not items:
+                    return self.send_json({'status': 'error', 'message': '缺少 items'}, start_response)
+                updated = 0
+                errors = []
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        for raw in items:
+                            if not isinstance(raw, dict):
+                                errors.append({'message': '无效数据项'})
+                                continue
+                            item_id = self._parse_int(raw.get('id'))
+                            if not item_id:
+                                errors.append({'id': raw.get('id'), 'message': '无效 id'})
+                                continue
+                            attrib_orders = (raw.get('attribution_orders') or '').strip() or None
+                            attrib_sales = (raw.get('attribution_sales') or '').strip() or None
+                            remark = (raw.get('remark') or '').strip() or None
+                            if raw.get('attribution_checked') is None:
+                                attrib_checked = 1 if (attrib_orders or attrib_sales) else 0
+                            else:
+                                attrib_checked = 1 if str(raw.get('attribution_checked')) in ('1', 'true', 'True') else 0
+                            cur.execute(
+                                """
+                                UPDATE amazon_ad_adjustments
+                                SET attribution_checked=%s,
+                                    attribution_orders=%s,
+                                    attribution_sales=%s,
+                                    remark=%s
+                                WHERE id=%s
+                                """,
+                                (attrib_checked, attrib_orders, attrib_sales, remark, item_id),
+                            )
+                            if cur.rowcount:
+                                updated += 1
+                            else:
+                                errors.append({'id': item_id, 'message': '记录不存在'})
+                return self.send_json({'status': 'success', 'updated': updated, 'errors': errors}, start_response)
+
             if method == 'DELETE':
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
