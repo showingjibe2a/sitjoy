@@ -87,7 +87,7 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
                     )
                     rows = cur.fetchall() or []
 
-                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC")
+                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY sort_order ASC, id ASC")
                     op_types = cur.fetchall() or []
 
                 sku_families = []
@@ -355,7 +355,7 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
 
             ad_type_options = []
             with conn.cursor() as cur:
-                cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC LIMIT 100")
+                cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY sort_order ASC, id ASC LIMIT 100")
                 ad_type_options = [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in (cur.fetchall() or [])]
 
             # === 构建响应 ===

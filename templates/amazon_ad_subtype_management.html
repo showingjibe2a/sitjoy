@@ -118,6 +118,32 @@
             padding: 0.45rem 0.55rem;
             background: #fff;
         }
+        .reason-item-order,
+        .optype-order-actions {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            flex: 0 0 auto;
+        }
+        .order-move-btn {
+            min-width: 1.6rem;
+            height: 1.25rem;
+            padding: 0;
+            border-radius: 6px;
+            border: 1px solid var(--morandi-sand);
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            font-size: 0.72rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .order-move-btn:hover:not(:disabled) {
+            background: rgba(207, 199, 189, 0.55);
+        }
+        .order-move-btn:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
         .reason-item-name {
             flex: 1;
             color: var(--morandi-ink);
@@ -245,6 +271,7 @@
                     <table class="pm-table" id="opTypeTable">
                         <thead>
                             <tr>
+                                <th style="width:72px;">顺序</th>
                                 <th>操作名称</th>
                                 <th style="width:100px;">广告组合</th>
                                 <th style="width:100px;">广告活动</th>
@@ -255,7 +282,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                            <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -433,6 +460,15 @@
         let modalCampaignDefaultTargets = [];
         let modalGroupDefaultTargets = [];
 
+        function sortOpTypeOptions(items) {
+            return (Array.isArray(items) ? items.slice() : []).sort((a, b) => {
+                const sa = Number(a.sort_order) || 0;
+                const sb = Number(b.sort_order) || 0;
+                if (sa !== sb) return sa - sb;
+                return Number(a.id || 0) - Number(b.id || 0);
+            });
+        }
+
         function resetSearch() {
             document.getElementById('searchInput').value = '';
             loadSubtypeList();
@@ -509,7 +545,7 @@
                 return;
             }
             const selectedSet = new Set((selectedIds || []).map(x => String(x)));
-            const rows = opTypeOptions
+            const rows = sortOpTypeOptions(opTypeOptions)
                 .filter(item => toBoolFlag(item.apply_campaign) || toBoolFlag(item.apply_group))
                 .map(item => {
                     const enabled = selectedSet.has(String(item.id));
@@ -756,14 +792,32 @@
             modalReasonItems.forEach((name, idx) => {
                 const row = document.createElement('div');
                 row.className = 'reason-item';
-                row.innerHTML = `<span class="reason-item-name">${escapeHtml(name)}</span><button type="button" class="btn-danger">删除</button>`;
-                row.querySelector('button').addEventListener('click', function() {
+                row.innerHTML = `
+                    <div class="reason-item-order">
+                        <button type="button" class="order-move-btn" data-move="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                        <button type="button" class="order-move-btn" data-move="down" title="下移" ${idx === modalReasonItems.length - 1 ? 'disabled' : ''}>↓</button>
+                    </div>
+                    <span class="reason-item-name">${escapeHtml(name)}</span>
+                    <button type="button" class="btn-danger">删除</button>
+                `;
+                row.querySelector('[data-move="up"]').addEventListener('click', () => moveReasonItem(idx, -1));
+                row.querySelector('[data-move="down"]').addEventListener('click', () => moveReasonItem(idx, 1));
+                row.querySelector('.btn-danger').addEventListener('click', function() {
                     modalReasonItems.splice(idx, 1);
                     renderReasonList();
                 });
                 list.appendChild(row);
             });
             empty.style.display = modalReasonItems.length ? 'none' : '';
+        }
+
+        function moveReasonItem(idx, delta) {
+            const next = idx + delta;
+            if (next < 0 || next >= modalReasonItems.length) return;
+            const tmp = modalReasonItems[idx];
+            modalReasonItems[idx] = modalReasonItems[next];
+            modalReasonItems[next] = tmp;
+            renderReasonList();
         }
 
         function addReasonFromInput() {
@@ -963,16 +1017,23 @@
 
         function renderOpTypeTable() {
             const tbody = document.querySelector('#opTypeTable tbody');
+            opTypeOptions = sortOpTypeOptions(opTypeOptions);
             if (!opTypeOptions.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
                 setInlineSaveBarVisible(false);
                 return;
             }
 
-            tbody.innerHTML = opTypeOptions.map(item => {
+            tbody.innerHTML = opTypeOptions.map((item, idx) => {
                 const draft = opTypeInlineDraft[item.id] || item;
                 return `
                     <tr>
+                        <td>
+                            <div class="optype-order-actions">
+                                <button type="button" class="order-move-btn" title="上移" ${idx === 0 ? 'disabled' : ''} onclick="moveOpTypeRow(${item.id}, -1)">↑</button>
+                                <button type="button" class="order-move-btn" title="下移" ${idx === opTypeOptions.length - 1 ? 'disabled' : ''} onclick="moveOpTypeRow(${item.id}, 1)">↓</button>
+                            </div>
+                        </td>
                         <td>${item.name || ''}</td>
                         <td>
                             <div class="inline-switch">
@@ -1012,6 +1073,43 @@
 
             applyInlineToggleListeners();
             setInlineSaveBarVisible(Object.keys(opTypeInlineDraft).length > 0);
+        }
+
+        function moveOpTypeRow(id, delta) {
+            opTypeOptions = sortOpTypeOptions(opTypeOptions);
+            const idx = opTypeOptions.findIndex(x => Number(x.id) === Number(id));
+            if (idx < 0) return;
+            const next = idx + delta;
+            if (next < 0 || next >= opTypeOptions.length) return;
+            const tmp = opTypeOptions[idx];
+            opTypeOptions[idx] = opTypeOptions[next];
+            opTypeOptions[next] = tmp;
+            opTypeOptions.forEach((item, i) => {
+                item.sort_order = (i + 1) * 10;
+            });
+            renderOpTypeTable();
+            saveOpTypeOrder();
+        }
+
+        function saveOpTypeOrder() {
+            const ordered_ids = sortOpTypeOptions(opTypeOptions).map(item => item.id);
+            return fetch('/api/amazon-ad-operation-type?action=reorder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ordered_ids }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '排序保存失败' });
+                        return loadOperationTypeList();
+                    }
+                    return loadOperationTypeList();
+                })
+                .catch(err => {
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '排序保存失败: ' + err });
+                    return loadOperationTypeList();
+                });
         }
 
         function cancelInlineOpTypeEdits() {
@@ -1070,7 +1168,9 @@
             return fetch('/api/amazon-ad-operation-type')
                 .then(r => r.json())
                 .then(data => {
-                    opTypeOptions = data.status === 'success' ? (data.items || []) : [];
+                    opTypeOptions = data.status === 'success'
+                        ? sortOpTypeOptions(data.items || [])
+                        : [];
                     renderOpTypeTable();
                     renderSubtypeTable();
                 })

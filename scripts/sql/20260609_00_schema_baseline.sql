@@ -142,6 +142,7 @@ CREATE TABLE `amazon_ad_items` (
 CREATE TABLE `amazon_ad_operation_types` (
   `id` int(10) UNSIGNED NOT NULL,
   `name` varchar(128) NOT NULL,
+  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `apply_campaign` tinyint(1) NOT NULL DEFAULT 1,
@@ -1383,7 +1384,8 @@ ALTER TABLE `amazon_ad_items`
 --
 ALTER TABLE `amazon_ad_operation_types`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `name` (`name`);
+  ADD UNIQUE KEY `name` (`name`),
+  ADD KEY `idx_ad_operation_type_sort` (`sort_order`);
 
 --
 -- 表的索引 `amazon_ad_products`

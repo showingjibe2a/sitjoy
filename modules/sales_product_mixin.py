@@ -10465,7 +10465,7 @@ class SalesProductMixin:
                         )
                         rows = cur.fetchall() or []
 
-                        cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC")
+                        cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY sort_order ASC, id ASC")
                         op_types = cur.fetchall() or []
 
                     sku_families = []
@@ -11240,7 +11240,7 @@ class SalesProductMixin:
 
                 ad_type_options = []
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC LIMIT 100")
+                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY sort_order ASC, id ASC LIMIT 100")
                     ad_type_options = [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in (cur.fetchall() or [])]
 
                 events.sort(key=lambda x: (x.get('event_date') or '', x.get('event_datetime') or '', x.get('event_type') or ''))

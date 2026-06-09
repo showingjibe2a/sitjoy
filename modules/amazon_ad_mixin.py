@@ -378,15 +378,29 @@ class AmazonAdMixin:
         for key in ('apply_portfolio', 'apply_campaign', 'apply_group'):
             if key in item and item[key] is not None:
                 item[key] = int(item[key])
+        if 'sort_order' in item and item['sort_order'] is not None:
+            item['sort_order'] = int(item['sort_order'])
+        else:
+            item['sort_order'] = 0
         return item
 
     def _fetch_all_operation_types_with_reasons(self, cur):
-        cur.execute("SELECT * FROM amazon_ad_operation_types ORDER BY id DESC LIMIT 500")
+        cur.execute(
+            "SELECT * FROM amazon_ad_operation_types ORDER BY sort_order ASC, id ASC LIMIT 500"
+        )
         return [self._serialize_operation_type_row(r) for r in (cur.fetchall() or [])]
+
+    def _next_operation_type_sort_order(self, cur):
+        cur.execute("SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM amazon_ad_operation_types")
+        row = cur.fetchone() or {}
+        return int(row.get('max_sort') or 0) + 10
 
     def handle_amazon_ad_operation_type_api(self, environ, method, start_response):
         """Amazon 广告操作类型 API（含操作原因 CRUD）"""
         try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
+
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -394,6 +408,25 @@ class AmazonAdMixin:
                 return self.send_json({'status': 'success', 'items': items}, start_response)
 
             data = self._read_json_body(environ)
+
+            if method == 'PUT' and action == 'reorder':
+                ordered_ids = data.get('ordered_ids')
+                if not isinstance(ordered_ids, list) or not ordered_ids:
+                    return self.send_json({'status': 'error', 'message': '缺少 ordered_ids'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sort_value = 10
+                        for raw_id in ordered_ids:
+                            item_id = self._parse_int(raw_id)
+                            if not item_id:
+                                continue
+                            cur.execute(
+                                "UPDATE amazon_ad_operation_types SET sort_order=%s WHERE id=%s",
+                                (sort_value, item_id),
+                            )
+                            sort_value += 10
+                    conn.commit()
+                return self.send_json({'status': 'success'}, start_response)
 
             if method == 'POST':
                 name = (data.get('name') or '').strip()
@@ -407,13 +440,14 @@ class AmazonAdMixin:
                 )
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        sort_order = self._next_operation_type_sort_order(cur)
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_operation_types (
-                                name, apply_portfolio, apply_campaign, apply_group, reason_names
-                            ) VALUES (%s, %s, %s, %s, %s)
+                                name, sort_order, apply_portfolio, apply_campaign, apply_group, reason_names
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
                             """,
-                            (name, apply_portfolio, apply_campaign, apply_group, reason_names),
+                            (name, sort_order, apply_portfolio, apply_campaign, apply_group, reason_names),
                         )
                         new_id = cur.lastrowid
                     conn.commit()
@@ -2020,7 +2054,7 @@ class AmazonAdMixin:
             """
             SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names
             FROM amazon_ad_operation_types
-            ORDER BY id ASC
+            ORDER BY sort_order ASC, id ASC
             """
         )
         for row in cur.fetchall() or []:
@@ -3350,24 +3384,24 @@ class AmazonAdMixin:
                 FROM amazon_ad_operation_types ot
                 INNER JOIN amazon_ad_subtype_operation_types link ON link.operation_type_id = ot.id
                 WHERE link.subtype_id = %s
-                ORDER BY ot.id ASC
+                ORDER BY ot.sort_order ASC, ot.id ASC
                 """,
                 (subtype_id,)
             )
         elif level == 'portfolio':
             cur.execute(
                 "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
-                "FROM amazon_ad_operation_types WHERE apply_portfolio=1 ORDER BY id ASC"
+                "FROM amazon_ad_operation_types WHERE apply_portfolio=1 ORDER BY sort_order ASC, id ASC"
             )
         elif level == 'campaign':
             cur.execute(
                 "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
-                "FROM amazon_ad_operation_types WHERE apply_campaign=1 ORDER BY id ASC"
+                "FROM amazon_ad_operation_types WHERE apply_campaign=1 ORDER BY sort_order ASC, id ASC"
             )
         else:
             cur.execute(
                 "SELECT id, name, apply_portfolio, apply_campaign, apply_group, reason_names "
-                "FROM amazon_ad_operation_types WHERE apply_group=1 ORDER BY id ASC"
+                "FROM amazon_ad_operation_types WHERE apply_group=1 ORDER BY sort_order ASC, id ASC"
             )
         ops = cur.fetchall() or []
         result = []
@@ -3941,7 +3975,7 @@ class AmazonAdMixin:
             """
             SELECT id, name, reason_names
             FROM amazon_ad_operation_types
-            ORDER BY id ASC
+            ORDER BY sort_order ASC, id ASC
             """
         )
         operations = []
