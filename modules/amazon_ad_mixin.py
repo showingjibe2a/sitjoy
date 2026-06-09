@@ -3128,6 +3128,10 @@ class AmazonAdMixin:
         n = self._normalize_adjustment_operation_type_name(op_name)
         return '修改' in n and '广告位' in n
 
+    def _is_modify_product_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '商品' in n
+
     def _apply_adjustment_to_target(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
         target_object = (target_object or '').strip()
@@ -3172,6 +3176,51 @@ class AmazonAdMixin:
             return '投放更新失败'
         return None
 
+    def _apply_adjustment_to_product(self, cur, ad_item_id, operation_name, target_object, after_value):
+        after_value = (after_value or '').strip()
+        target_object = (target_object or '').strip()
+        if not after_value or not target_object or target_object == '-':
+            return None
+        if not self._is_modify_product_operation(operation_name):
+            return None
+        status, err = self._normalize_ad_record_status(after_value)
+        if err:
+            return err
+        cur.execute(
+            """
+            SELECT p.id
+            FROM amazon_ad_products p
+            LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+            WHERE p.ad_item_id=%s AND sp.platform_sku=%s
+            LIMIT 1
+            """,
+            (ad_item_id, target_object),
+        )
+        row = cur.fetchone()
+        if not row:
+            return f'未找到商品：{target_object}'
+        cur.execute(
+            """
+            UPDATE amazon_ad_products
+            SET status=%s, updated_at=NOW()
+            WHERE id=%s
+            """,
+            (status, row['id']),
+        )
+        if cur.rowcount <= 0:
+            return '商品更新失败'
+        return None
+
+    def _apply_adjustment_sync(self, cur, ad_item_id, operation_name, target_object, after_value):
+        product_err = self._apply_adjustment_to_product(
+            cur, ad_item_id, operation_name, target_object, after_value,
+        )
+        if product_err:
+            return product_err
+        return self._apply_adjustment_to_target(
+            cur, ad_item_id, operation_name, target_object, after_value,
+        )
+
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
         """Amazon 广告调整 API（广告搜索 / 默认值 / 调整记录 CRUD）"""
         try:
@@ -3214,6 +3263,35 @@ class AmazonAdMixin:
                         'status': row.get('status') or '启动',
                         'target_desc': row.get('target_desc') or '',
                         'bid_value': bid_value,
+                    })
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
+            if method == 'GET' and action == 'product-options':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                if not ad_item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT p.id, p.status, sp.platform_sku
+                            FROM amazon_ad_products p
+                            LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+                            WHERE p.ad_item_id=%s
+                            ORDER BY sp.platform_sku ASC, p.id ASC
+                            """,
+                            (ad_item_id,),
+                        )
+                        rows = cur.fetchall() or []
+                items = []
+                for row in rows:
+                    sku = str(row.get('platform_sku') or '').strip()
+                    if not sku:
+                        continue
+                    items.append({
+                        'id': row.get('id'),
+                        'status': row.get('status') or '启动',
+                        'target_desc': sku,
                     })
                 return self.send_json({'status': 'success', 'items': items}, start_response)
 
@@ -3289,7 +3367,7 @@ class AmazonAdMixin:
                         op_row = cur.fetchone() or {}
                         op_name = op_row.get('name') or ''
                         after_value = (data.get('after_value') or '').strip()
-                        sync_err = self._apply_adjustment_to_target(
+                        sync_err = self._apply_adjustment_sync(
                             cur, ad_item_id, op_name, target_object, after_value,
                         )
                         if sync_err:

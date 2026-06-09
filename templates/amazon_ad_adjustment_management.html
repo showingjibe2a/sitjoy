@@ -730,6 +730,7 @@
         let allowedOperations = [];
         let selectedAdDetail = null;
         let targetOptionsCache = [];
+        let objectOptionsLoadedAction = '';
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
 
@@ -1354,6 +1355,11 @@
             return n.includes('修改') && n.includes('广告位');
         }
 
+        function isModifyProductOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('商品');
+        }
+
         function isModifyBudgetOp(op) {
             const n = normalizeOperationTypeName(op && op.name);
             return n.includes('修改') && n.includes('预算');
@@ -1374,7 +1380,23 @@
         }
 
         function needsTargetObjectSuggest(op) {
-            return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
+            return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op) || isModifyProductOp(op);
+        }
+
+        function objectOptionsAction(op) {
+            if (isModifyProductOp(op)) return 'product-options';
+            return 'target-options';
+        }
+
+        function objectSuggestEmptyText(op) {
+            if (isModifyProductOp(op)) return '无匹配商品';
+            return '无匹配投放';
+        }
+
+        function objectSuggestPlaceholder(op) {
+            if (isModifyProductOp(op)) return '输入商品SKU联想选择';
+            if (isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op)) return '输入投放名称联想选择';
+            return '关键词 / 竞价 / 投放位置';
         }
 
         function formatBudgetDisplay(raw) {
@@ -1425,16 +1447,30 @@
             return placementDisplayFromStored(bidRaw);
         }
 
+        function statusFromObjectOption(item) {
+            return String(item?.status || '启动').trim() || '启动';
+        }
+
         function beforeValueFromTargetOption(target, op) {
+            if (isModifyProductOp(op)) {
+                return statusFromObjectOption(target);
+            }
             const bid = String((target && target.bid_value) || '').trim();
-            if (!bid) return '';
             if (isModifyPlacementOp(op)) {
-                return placementDisplayFromBid(bid);
+                return bid ? placementDisplayFromBid(bid) : '';
             }
             if (isModifyDeliveryTargetOp(op)) {
-                return String(target.status || '启动').trim() || '启动';
+                return bid;
             }
             return '';
+        }
+
+        function fillAfterValueFromObjectSelection(target, op) {
+            const afterInput = document.getElementById('afterValue');
+            if (!afterInput || !target) return;
+            if (isModifyProductOp(op)) {
+                afterInput.value = statusFromObjectOption(target);
+            }
         }
 
         function refreshBeforeValueForTargetObject() {
@@ -1446,8 +1482,9 @@
             if (!beforeInput) return;
             if (!target) return;
             const next = beforeValueFromTargetOption(target, op);
-            if (isModifyPlacementOp(op) || isModifyDeliveryTargetOp(op)) {
+            if (isModifyPlacementOp(op) || isModifyDeliveryTargetOp(op) || isModifyProductOp(op)) {
                 beforeInput.value = next;
+                fillAfterValueFromObjectSelection(target, op);
             } else if (!String(beforeInput.value || '').trim()) {
                 beforeInput.value = next;
             }
@@ -1489,16 +1526,40 @@
                 }
                 return options;
             }
+            if (isModifyProductOp(op)) {
+                const product = getMatchedTargetFromObject();
+                if (!product) return options;
+                const status = statusFromObjectOption(product);
+                if (fieldId === 'beforeValue') {
+                    options.push({
+                        value: status,
+                        html: renderTargetStatusPill(status),
+                        fillOppositeAfter: false,
+                    });
+                } else if (fieldId === 'afterValue') {
+                    otherTargetStatuses(status).forEach((st) => {
+                        options.push({
+                            value: st,
+                            html: renderTargetStatusPill(st),
+                            fillOppositeAfter: false,
+                        });
+                    });
+                }
+                return options;
+            }
             if (!isModifyDeliveryTargetOp(op)) return options;
             const target = getMatchedTargetFromObject();
             if (!target) return options;
             const status = String(target.status || '启动').trim() || '启动';
+            const bid = String(target.bid_value || '').trim();
             if (fieldId === 'beforeValue') {
-                options.push({
-                    value: status,
-                    html: renderTargetStatusPill(status),
-                    fillOppositeAfter: false,
-                });
+                if (bid) {
+                    options.push({
+                        value: bid,
+                        html: escapeHtml(bid),
+                        fillOppositeAfter: false,
+                    });
+                }
             } else if (fieldId === 'afterValue') {
                 otherTargetStatuses(status).forEach((st) => {
                     options.push({
@@ -1607,6 +1668,7 @@
             if (beforeInput) {
                 beforeInput.value = beforeValueFromTargetOption(target, op);
             }
+            fillAfterValueFromObjectSelection(target, op);
             hideTargetObjectSuggest();
             refreshBeforeValueForTargetObject();
         }
@@ -1627,7 +1689,7 @@
             }
             const matches = filterTargetOptionsForSuggest(query);
             if (!matches.length) {
-                panel.innerHTML = '<div class="aa-target-suggest-empty">无匹配投放</div>';
+                panel.innerHTML = `<div class="aa-target-suggest-empty">${escapeHtml(objectSuggestEmptyText(op))}</div>`;
                 panel.classList.add('open');
                 return;
             }
@@ -1670,22 +1732,28 @@
 
         function loadTargetOptionsForSelectedAd() {
             targetOptionsCache = [];
+            objectOptionsLoadedAction = '';
             hideTargetObjectSuggest();
             syncTargetObjectPickMenu();
             if (!selectedAdId) return Promise.resolve();
-            return fetch(`/api/amazon-ad-adjustment?action=target-options&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+            const op = getSelectedOperationType();
+            const action = objectOptionsAction(op);
+            return fetch(`/api/amazon-ad-adjustment?action=${encodeURIComponent(action)}&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                 .then(r => r.json())
                 .then(data => {
                     if (!data || data.status !== 'success') {
                         targetOptionsCache = [];
+                        objectOptionsLoadedAction = '';
                         syncTargetObjectPickMenu();
                         return;
                     }
                     targetOptionsCache = Array.isArray(data.items) ? data.items : [];
+                    objectOptionsLoadedAction = action;
                     syncTargetObjectPickMenu();
                 })
                 .catch(() => {
                     targetOptionsCache = [];
+                    objectOptionsLoadedAction = '';
                     syncTargetObjectPickMenu();
                 });
         }
@@ -1696,14 +1764,15 @@
             const enabled = needsTargetObjectSuggest(op) && !isFixedTargetObjectDashOp(op);
             if (!input) return;
             if (enabled) {
-                input.placeholder = '输入投放名称联想选择';
-                if (!targetOptionsCache.length && selectedAdId) {
+                input.placeholder = objectSuggestPlaceholder(op);
+                const action = objectOptionsAction(op);
+                if (!targetOptionsCache.length || objectOptionsLoadedAction !== action) {
                     loadTargetOptionsForSelectedAd().then(() => scheduleTargetObjectSuggest());
                 }
             } else if (op && isFixedTargetObjectDashOp(op)) {
                 input.placeholder = '-';
             } else {
-                input.placeholder = '关键词 / 竞价 / 投放位置';
+                input.placeholder = objectSuggestPlaceholder(null);
                 hideTargetObjectSuggest();
             }
             syncOperationTypeFields();
