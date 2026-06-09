@@ -110,8 +110,33 @@
             border-radius: 6px;
             border: 1px solid var(--morandi-sand);
         }
-        .aa-target-object-wrap {
+        .aa-target-input-area {
             position: relative;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .aa-target-object-wrap #targetObject {
+            font-size: 0.78rem;
+            padding: 0.32rem 0.45rem;
+        }
+        .aa-target-object-wrap .input-capsule-menu-panel {
+            min-width: 140px;
+            max-width: min(280px, 90vw);
+            max-height: 220px;
+            overflow-y: auto;
+            padding: 0.25rem;
+        }
+        .aa-target-object-wrap .input-capsule-menu-item {
+            gap: 0.35rem;
+            font-size: 0.76rem;
+            padding: 0.28rem 0.38rem;
+        }
+        .aa-target-object-wrap .input-capsule-menu-item .status-pill {
+            font-size: 0.68rem;
+            padding: 0.08rem 0.32rem;
+        }
+        .aa-target-object-wrap .input-capsule-menu-item .status-segment {
+            flex: 0 0 auto;
         }
         .aa-target-suggest-list {
             display: none;
@@ -120,54 +145,26 @@
             right: 0;
             top: calc(100% + 4px);
             z-index: 40;
-            max-height: 220px;
+            max-height: 180px;
             overflow: auto;
+            padding: 0.25rem;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             background: #fff;
-            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
         }
         .aa-target-suggest-list.open {
             display: block;
         }
-        .aa-target-suggest-item {
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            width: 100%;
-            padding: 0.42rem 0.55rem;
-            border: none;
-            border-bottom: 1px solid var(--morandi-mist);
-            background: #fff;
-            text-align: left;
-            cursor: pointer;
-            font-size: 0.84rem;
-            color: var(--morandi-ink);
-        }
-        .aa-target-suggest-item:last-child {
-            border-bottom: none;
-        }
-        .aa-target-suggest-item:hover,
-        .aa-target-suggest-item:focus {
-            background: rgba(247, 244, 239, 0.95);
-            outline: none;
-        }
-        .aa-target-suggest-item .status-segment {
-            flex: 0 0 auto;
-        }
-        .aa-target-suggest-item .status-pill {
-            pointer-events: none;
-            font-size: 0.72rem;
-            padding: 0.12rem 0.42rem;
-        }
+        .aa-target-pick-name,
         .aa-target-suggest-name {
             flex: 1 1 auto;
             min-width: 0;
             word-break: break-word;
         }
         .aa-target-suggest-empty {
-            padding: 0.55rem 0.65rem;
-            font-size: 0.82rem;
+            padding: 0.38rem 0.45rem;
+            font-size: 0.76rem;
             color: var(--morandi-slate);
         }
         .aa-value-input-wrap {
@@ -175,12 +172,18 @@
             align-items: center;
             gap: 0.35rem;
         }
-        .aa-value-input-wrap > input[type="text"] {
+        .aa-value-input-wrap > input[type="text"],
+        .aa-target-input-area > input[type="text"] {
             flex: 1 1 auto;
             min-width: 0;
             width: auto !important;
         }
-        .aa-value-input-wrap.input-capsule-menu--empty .btn-capsule-sm {
+        .aa-target-input-area > input[type="text"] {
+            width: 100% !important;
+            box-sizing: border-box;
+        }
+        .aa-value-input-wrap.input-capsule-menu--empty .btn-capsule-sm,
+        .aa-target-object-wrap.input-capsule-menu--empty .btn-capsule-sm {
             opacity: 0.35;
             pointer-events: none;
         }
@@ -530,9 +533,15 @@
                         </div>
                         <div class="aa-field-row">
                             <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
-                            <div class="aa-target-object-wrap">
-                                <input type="text" id="targetObject" placeholder="关键词 / 竞价 / 投放位置" autocomplete="off">
-                                <div id="targetObjectSuggest" class="aa-target-suggest-list" role="listbox" aria-label="投放联想"></div>
+                            <div class="aa-value-input-wrap aa-target-object-wrap input-capsule-menu--empty" id="targetObjectWrap">
+                                <div class="aa-target-input-area">
+                                    <input type="text" id="targetObject" placeholder="关键词 / 竞价 / 投放位置" autocomplete="off">
+                                    <div id="targetObjectSuggest" class="aa-target-suggest-list" role="listbox" aria-label="投放联想"></div>
+                                </div>
+                                <div class="input-capsule-menu">
+                                    <button type="button" class="btn-capsule-sm" aria-label="选择操作对象" title="全部可选项">⋯</button>
+                                    <div class="input-capsule-menu-panel" id="targetObjectPickMenu" role="menu" aria-label="操作对象可选项"></div>
+                                </div>
                             </div>
                         </div>
                         <div class="aa-field-row">
@@ -1369,6 +1378,33 @@
             });
         }
 
+        function syncTargetObjectPickMenu() {
+            const wrap = document.getElementById('targetObjectWrap');
+            const menu = document.getElementById('targetObjectPickMenu');
+            if (!wrap || !menu) return;
+            const op = getSelectedOperationType();
+            const enabled = needsTargetObjectSuggest(op);
+            const list = enabled ? (Array.isArray(targetOptionsCache) ? targetOptionsCache : []) : [];
+            wrap.classList.toggle('input-capsule-menu--empty', !list.length);
+            if (!list.length) {
+                menu.innerHTML = '';
+                return;
+            }
+            menu.innerHTML = list.map((item, idx) => {
+                const desc = String(item.target_desc || '').trim();
+                return `<button type="button" class="input-capsule-menu-item" role="menuitem" data-opt-idx="${idx}">${renderTargetStatusPill(item.status)}<span class="aa-target-pick-name">${escapeHtml(desc)}</span></button>`;
+            }).join('');
+            menu.querySelectorAll('.input-capsule-menu-item').forEach((btn) => {
+                btn.addEventListener('mousedown', (ev) => ev.preventDefault());
+                btn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    const idx = Number(btn.getAttribute('data-opt-idx'));
+                    const target = list[idx];
+                    if (target) applyTargetObjectSelection(target, op);
+                });
+            });
+        }
+
         function hideTargetObjectSuggest() {
             const panel = document.getElementById('targetObjectSuggest');
             if (!panel) return;
@@ -1411,9 +1447,9 @@
             panel.innerHTML = matches.map(item => {
                 const desc = String(item.target_desc || '').trim();
                 const enc = encodeURIComponent(desc);
-                return `<button type="button" class="aa-target-suggest-item" role="option" data-target-desc-enc="${enc}">${renderTargetStatusPill(item.status)}<span class="aa-target-suggest-name">${escapeHtml(desc)}</span></button>`;
+                return `<button type="button" class="input-capsule-menu-item" role="option" data-target-desc-enc="${enc}">${renderTargetStatusPill(item.status)}<span class="aa-target-suggest-name">${escapeHtml(desc)}</span></button>`;
             }).join('');
-            panel.querySelectorAll('.aa-target-suggest-item').forEach(btn => {
+            panel.querySelectorAll('.input-capsule-menu-item').forEach(btn => {
                 btn.addEventListener('mousedown', (ev) => {
                     ev.preventDefault();
                 });
@@ -1448,18 +1484,22 @@
         function loadTargetOptionsForSelectedAd() {
             targetOptionsCache = [];
             hideTargetObjectSuggest();
+            syncTargetObjectPickMenu();
             if (!selectedAdId) return Promise.resolve();
             return fetch(`/api/amazon-ad-adjustment?action=target-options&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                 .then(r => r.json())
                 .then(data => {
                     if (!data || data.status !== 'success') {
                         targetOptionsCache = [];
+                        syncTargetObjectPickMenu();
                         return;
                     }
                     targetOptionsCache = Array.isArray(data.items) ? data.items : [];
+                    syncTargetObjectPickMenu();
                 })
                 .catch(() => {
                     targetOptionsCache = [];
+                    syncTargetObjectPickMenu();
                 });
         }
 
@@ -1477,6 +1517,7 @@
                 input.placeholder = '关键词 / 竞价 / 投放位置';
                 hideTargetObjectSuggest();
             }
+            syncTargetObjectPickMenu();
             syncValueQuickMenus();
             refreshBeforeValueForTargetObject();
         }
@@ -2033,7 +2074,7 @@
                 }, 160);
             });
             document.addEventListener('click', (ev) => {
-                const wrap = input.closest('.aa-target-object-wrap');
+                const wrap = document.getElementById('targetObjectWrap');
                 if (wrap && !wrap.contains(ev.target)) hideTargetObjectSuggest();
             });
         })();
@@ -2061,6 +2102,7 @@
             initAdjustmentMetricAutoCalc();
             initAttributionCheckedSegment();
             syncValueQuickMenus();
+            syncTargetObjectPickMenu();
             if (window.AmazonAdFormModal) {
                 window.AmazonAdFormModal.init({
                     onSaveSuccess: (data) => {
