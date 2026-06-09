@@ -53,7 +53,7 @@
                             <tr>
                                 <th data-manage-col-key="调整日期">调整日期</th>
                                 <th data-manage-col-key="关联广告">关联广告</th>
-                                <th data-manage-col-key="操作类型">操作</th>
+                                <th data-manage-col-key="操作类型">操作类型</th>
                                 <th data-manage-col-key="对象">对象</th>
                                 <th data-manage-col-key="修改前">修改前</th>
                                 <th data-manage-col-key="修改后">修改后</th>
@@ -198,31 +198,31 @@
                 const attrChecked = String(item.attribution_checked || '0') === '1' ? '是' : '否';
                 return `
                     <tr>
-                        <td${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
-                        <td${sortCell(`${adName}（${levelText}）`)}>${escapeHtml(adName)}（${escapeHtml(levelText)}）</td>
-                        <td${sortCell(item.operation_name)}>${escapeHtml(item.operation_name || '')}</td>
-                        <td${sortCell(item.target_object)}>${escapeHtml(item.target_object || '')}</td>
-                        <td${sortCell(item.before_value)}>${escapeHtml(item.before_value || '')}</td>
-                        <td${sortCell(item.after_value)}>${escapeHtml(item.after_value || '')}</td>
-                        <td${sortCell(item.reason_name)}>${escapeHtml(item.reason_name || '')}</td>
-                        <td${sortCell(item.start_time)}>${formatDateTime(item.start_time)}</td>
-                        <td${sortCell(item.end_time)}>${formatDateTime(item.end_time)}</td>
-                        <td${sortCell(item.impressions)}>${escapeHtml(item.impressions || '')}</td>
-                        <td${sortCell(item.clicks)}>${escapeHtml(item.clicks || '')}</td>
-                        <td${sortCell(item.cost)}>${escapeHtml(item.cost || '')}</td>
-                        <td${sortCell(item.orders)}>${escapeHtml(item.orders || '')}</td>
-                        <td${sortCell(item.sales)}>${escapeHtml(item.sales || '')}</td>
-                        <td${sortCell(item.acos)}>${escapeHtml(item.acos || '')}</td>
-                        <td${sortCell(item.cpc)}>${escapeHtml(item.cpc || '')}</td>
-                        <td${sortCell(item.ctr)}>${escapeHtml(item.ctr || '')}</td>
-                        <td${sortCell(item.cvr)}>${escapeHtml(item.cvr || '')}</td>
-                        <td${sortCell(item.top_of_search_is)}>${escapeHtml(item.top_of_search_is || '')}</td>
-                        <td${sortCell(attrChecked === '是' ? '1' : '0')}>${attrChecked}</td>
-                        <td${sortCell(item.attribution_orders)}>${escapeHtml(item.attribution_orders || '')}</td>
-                        <td${sortCell(item.attribution_sales)}>${escapeHtml(item.attribution_sales || '')}</td>
-                        <td${sortCell(item.remark)}>${escapeHtml(item.remark || '')}</td>
-                        <td${sortCell(String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交')}>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
-                        <td><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
+                        <td data-manage-col-key="调整日期"${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
+                        <td data-manage-col-key="关联广告"${sortCell(`${adName}（${levelText}）`)}>${escapeHtml(adName)}（${escapeHtml(levelText)}）</td>
+                        <td data-manage-col-key="操作类型"${sortCell(item.operation_name)}>${escapeHtml(item.operation_name || '')}</td>
+                        <td data-manage-col-key="对象"${sortCell(item.target_object)}>${escapeHtml(item.target_object || '')}</td>
+                        <td data-manage-col-key="修改前"${sortCell(item.before_value)}>${escapeHtml(item.before_value || '')}</td>
+                        <td data-manage-col-key="修改后"${sortCell(item.after_value)}>${escapeHtml(item.after_value || '')}</td>
+                        <td data-manage-col-key="原因"${sortCell(item.reason_name)}>${escapeHtml(item.reason_name || '')}</td>
+                        <td data-manage-col-key="开始时间"${sortCell(item.start_time)}>${formatDateTime(item.start_time)}</td>
+                        <td data-manage-col-key="结束时间"${sortCell(item.end_time)}>${formatDateTime(item.end_time)}</td>
+                        <td data-manage-col-key="曝光"${sortCell(item.impressions)}>${escapeHtml(item.impressions || '')}</td>
+                        <td data-manage-col-key="点击"${sortCell(item.clicks)}>${escapeHtml(item.clicks || '')}</td>
+                        <td data-manage-col-key="花费"${sortCell(item.cost)}>${escapeHtml(item.cost || '')}</td>
+                        <td data-manage-col-key="订单"${sortCell(item.orders)}>${escapeHtml(item.orders || '')}</td>
+                        <td data-manage-col-key="销售额"${sortCell(item.sales)}>${escapeHtml(item.sales || '')}</td>
+                        <td data-manage-col-key="ACOS"${sortCell(item.acos)}>${escapeHtml(item.acos || '')}</td>
+                        <td data-manage-col-key="CPC"${sortCell(item.cpc)}>${escapeHtml(item.cpc || '')}</td>
+                        <td data-manage-col-key="CTR"${sortCell(item.ctr)}>${escapeHtml(item.ctr || '')}</td>
+                        <td data-manage-col-key="CVR"${sortCell(item.cvr)}>${escapeHtml(item.cvr || '')}</td>
+                        <td data-manage-col-key="首页首位IS"${sortCell(item.top_of_search_is)}>${escapeHtml(item.top_of_search_is || '')}</td>
+                        <td data-manage-col-key="归因检查"${sortCell(attrChecked === '是' ? '1' : '0')}>${attrChecked}</td>
+                        <td data-manage-col-key="归因订单"${sortCell(item.attribution_orders)}>${escapeHtml(item.attribution_orders || '')}</td>
+                        <td data-manage-col-key="归因销售额"${sortCell(item.attribution_sales)}>${escapeHtml(item.attribution_sales || '')}</td>
+                        <td data-manage-col-key="备注"${sortCell(item.remark)}>${escapeHtml(item.remark || '')}</td>
+                        <td data-manage-col-key="提交类型"${sortCell(String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交')}>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
+                        <td data-manage-col-key="行操作"><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
                     </tr>
                 `;
             }).join('');

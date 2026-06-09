@@ -15,6 +15,7 @@
     const responseToastState = new WeakMap();
     let toastStack = null;
     let activeColumnsPanelState = null;
+    let activeResetMenuState = null;
     let activeResizeState = null;
     let resizePendingFrame = null;
     let resizePendingWidth = null;
@@ -2028,21 +2029,64 @@
         return without.slice(0, anchorIdx + 1).concat(presentFollow, without.slice(anchorIdx + 1));
     }
 
+    function buildManagedPersistedColumnKeyResolver(headerMeta, validKeys){
+        const validSet = new Set(validKeys);
+        const originToKey = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
+        const labelToKeys = new Map();
+        (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta) => {
+            const label = String(meta.label || '').trim();
+            const key = String(meta.key || '').trim();
+            if(!label || !key || !validSet.has(key)) return;
+            if(!labelToKeys.has(label)) labelToKeys.set(label, []);
+            labelToKeys.get(label).push({ origin: Number(meta.origin), key });
+        });
+        labelToKeys.forEach((items, label) => {
+            items.sort((a, b) => (Number.isFinite(a.origin) ? a.origin : 0) - (Number.isFinite(b.origin) ? b.origin : 0));
+            labelToKeys.set(label, items.map(item => item.key));
+        });
+
+        function resolvePersistedColumnKeys(raw){
+            const token = String(raw || '').trim();
+            if(!token) return [];
+            if(validSet.has(token)) return [token];
+            const fromOrigin = originToKey.get(token);
+            if(fromOrigin && validSet.has(fromOrigin)) return [fromOrigin];
+            if(token === '操作' && validSet.has('操作类型') && validSet.has('行操作')){
+                return ['操作类型', '行操作'];
+            }
+            if(token === '操作' && validSet.has('操作类型')){
+                return ['操作类型'];
+            }
+            const fromLabel = labelToKeys.get(token);
+            if(fromLabel && fromLabel.length) return fromLabel.slice();
+            return [];
+        }
+
+        function expandLegacyPersistedColumnKeys(rawList){
+            const out = [];
+            const seen = new Set();
+            (Array.isArray(rawList) ? rawList : []).forEach((raw) => {
+                resolvePersistedColumnKeys(raw).forEach((key) => {
+                    if(!key || seen.has(key)) return;
+                    seen.add(key);
+                    out.push(key);
+                });
+            });
+            return out;
+        }
+
+        return { expandLegacyPersistedColumnKeys };
+    }
+
     function readPersistedColumns(table, headerMeta){
         const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
-        const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
+        const { expandLegacyPersistedColumnKeys } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys);
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'visible-columns'));
             if(!raw) return new Set(validKeys);
             const arr = JSON.parse(raw);
-            const valid = Array.isArray(arr)
-                ? arr.map(v => {
-                    const key = String(v || '').trim();
-                    if(validKeys.includes(key)) return key;
-                    return legacyKeyMap.get(key) || '';
-                }).filter(key => !!key && validKeys.includes(key))
-                : [];
-            return new Set(valid.length ? valid : validKeys);
+            const migrated = expandLegacyPersistedColumnKeys(Array.isArray(arr) ? arr : []);
+            return new Set(migrated.length ? migrated : validKeys);
         } catch (_) {
             return new Set(validKeys);
         }
@@ -2050,18 +2094,12 @@
 
     function readPersistedOrder(table, headerMeta){
         const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
-        const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
+        const { expandLegacyPersistedColumnKeys } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys);
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'column-order'));
             if(!raw) return normalizeManagedTableColumnOrder(canonicalManagedColumnOrderFromMeta(headerMeta), validKeys, headerMeta);
             const arr = JSON.parse(raw);
-            const inOrder = Array.isArray(arr)
-                ? arr.map(v => {
-                    const key = String(v || '').trim();
-                    if(validKeys.includes(key)) return key;
-                    return legacyKeyMap.get(key) || '';
-                }).filter(key => !!key && validKeys.includes(key))
-                : [];
+            const inOrder = expandLegacyPersistedColumnKeys(Array.isArray(arr) ? arr : []);
             validKeys.forEach(v => {
                 if(!inOrder.includes(v)) inOrder.push(v);
             });
@@ -4203,23 +4241,60 @@
         });
     }
 
-    function repositionColumnsPanel(state){
-        if(!state || !state.columnPanel.classList.contains('open')) return;
-        const triggerRect = state.columnsTrigger.getBoundingClientRect();
-        const panel = state.columnPanel;
+    function positionAppAnchorPanel(trigger, panel, options){
+        if(!trigger || !panel) return;
+        const opts = options || {};
+        const gap = opts.gap != null ? opts.gap : 8;
+        const minMargin = opts.minMargin != null ? opts.minMargin : 8;
+        const align = opts.align === 'right' ? 'right' : 'left';
+        const allowFlip = opts.allowFlip !== false;
+        const measureDisplay = opts.measureDisplay || 'grid';
+
         panel.style.visibility = 'hidden';
-        panel.style.display = 'grid';
+        panel.style.display = measureDisplay;
+
+        const triggerRect = trigger.getBoundingClientRect();
         const panelRect = panel.getBoundingClientRect();
         const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        const alignLeft = state.headerCount <= 5;
-        let left = alignLeft ? triggerRect.left : (triggerRect.right - panelRect.width);
-        let top = triggerRect.bottom + 8;
-        left = Math.max(8, Math.min(left, viewportWidth - panelRect.width - 8));
-        top = Math.max(8, Math.min(top, viewportHeight - panelRect.height - 8));
+
+        let left = align === 'right' ? (triggerRect.right - panelRect.width) : triggerRect.left;
+        let top = triggerRect.bottom + gap;
+
+        if(allowFlip){
+            const spaceBelow = viewportHeight - triggerRect.bottom - gap;
+            const spaceAbove = triggerRect.top - gap;
+            if(panelRect.height > spaceBelow - minMargin && spaceAbove > spaceBelow && spaceAbove >= panelRect.height + minMargin){
+                top = triggerRect.top - panelRect.height - gap;
+            }
+        }
+
+        left = Math.max(minMargin, Math.min(left, viewportWidth - panelRect.width - minMargin));
+        top = Math.max(minMargin, Math.min(top, viewportHeight - panelRect.height - minMargin));
+
         panel.style.left = `${left}px`;
         panel.style.top = `${top}px`;
         panel.style.visibility = 'visible';
+    }
+
+    function repositionColumnsPanel(state){
+        if(!state || !state.columnPanel.classList.contains('open')) return;
+        const alignLeft = state.headerCount <= 5;
+        positionAppAnchorPanel(state.columnsTrigger, state.columnPanel, {
+            gap: 8,
+            align: alignLeft ? 'left' : 'right',
+            measureDisplay: 'grid'
+        });
+    }
+
+    function repositionResetMenu(state){
+        if(!state || !state.resetWrap || !state.resetMenu || !state.resetBtn) return;
+        if(!state.resetWrap.classList.contains('is-open')) return;
+        positionAppAnchorPanel(state.resetBtn, state.resetMenu, {
+            gap: 6,
+            align: 'left',
+            measureDisplay: 'grid'
+        });
     }
 
     function closeColumnsPanel(state){
@@ -4236,11 +4311,18 @@
         if(activeColumnsPanelState && activeColumnsPanelState !== state) {
             closeColumnsPanel(activeColumnsPanelState);
         }
+        closeAllResetMenus();
         state.columnPanel.classList.add('open');
         state.columnPanel.style.pointerEvents = 'auto';
         state.columnsTrigger.setAttribute('aria-expanded', 'true');
         activeColumnsPanelState = state;
         repositionColumnsPanel(state);
+    }
+
+    function closeResetMenu(state){
+        if(!state || !state.resetWrap) return;
+        state.resetWrap.classList.remove('is-open');
+        if(activeResetMenuState === state) activeResetMenuState = null;
     }
 
     function closeAllResetMenus(exceptWrap){
@@ -4249,6 +4331,9 @@
             if(keep && keep === wrap) return;
             wrap.classList.remove('is-open');
         });
+        if(!keep || (activeResetMenuState && activeResetMenuState.resetWrap !== keep)){
+            activeResetMenuState = null;
+        }
     }
 
     function clearColumnDragIndicator(state){
@@ -6339,6 +6424,7 @@
             syncManagedBatchBar(state);
             syncTopScroll(state);
             if(activeColumnsPanelState === state) repositionColumnsPanel(state);
+            if(activeResetMenuState === state) repositionResetMenu(state);
         } else if(state.light && String(state.table.dataset.pmLightStickyLayout || '') === '1'
             && String(state.table.dataset.pmLightAllowColResize || '') === '1'){
             if(headerStructureChanged) ensureResizeHandles(state);
@@ -6476,6 +6562,9 @@
         if(!isLightTable && state.columnPanel && state.columnPanel.parentNode !== document.body){
             document.body.appendChild(state.columnPanel);
         }
+        if(!isLightTable && state.resetMenu && state.resetMenu.parentNode !== document.body){
+            document.body.appendChild(state.resetMenu);
+        }
 
         if(!isLightTable){
             if(String(table.dataset.pmSkipClientPagination || '') === '1'){
@@ -6524,11 +6613,18 @@
                     event.stopPropagation();
                     const nextOpen = !state.resetWrap.classList.contains('is-open');
                     closeAllResetMenus(nextOpen ? state.resetWrap : null);
+                    if(nextOpen && activeColumnsPanelState) closeColumnsPanel(activeColumnsPanelState);
                     state.resetWrap.classList.toggle('is-open', nextOpen);
+                    if(nextOpen){
+                        activeResetMenuState = state;
+                        repositionResetMenu(state);
+                    } else if(activeResetMenuState === state){
+                        activeResetMenuState = null;
+                    }
                 });
             }
 
-            state.toolbar.addEventListener('click', (event) => {
+            const onResetMenuItemClick = (event) => {
                 const target = event.target && event.target.closest ? event.target.closest('.pm-table-reset-item[data-reset-mode]') : null;
                 if(!target) return;
                 event.preventDefault();
@@ -6575,7 +6671,7 @@
                     applyPagination(state);
                     syncTopScroll(state);
                     showAppToast('列宽已重置', false, 1200);
-                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    closeResetMenu(state);
                     return;
                 }
 
@@ -6602,7 +6698,7 @@
                                 ok = window.confirm(msg.replace(/\n\n/g, '\n'));
                             }
                             if(!ok){
-                                if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                                closeResetMenu(state);
                                 return;
                             }
                         }
@@ -6630,7 +6726,7 @@
                         persistColumnOrder(state);
                         refreshLayout();
                         showAppToast('字段排序已重置', false, 1200);
-                        if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                        closeResetMenu(state);
                     };
 
                     // fire-and-forget async
@@ -6658,9 +6754,10 @@
                     syncTopScroll(state);
                     renderColumnPanel(state);
                     showAppToast('字段显示已重置', false, 1200);
-                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    closeResetMenu(state);
                 }
-            });
+            };
+            if(state.resetMenu) state.resetMenu.addEventListener('click', onResetMenuItemClick);
 
             state.wrap.addEventListener('scroll', () => {
                 if(Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
@@ -8036,7 +8133,7 @@
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
         }
-        if(!e.target.closest('.pm-table-reset-group')) {
+        if(!e.target.closest('.pm-table-reset-group') && !e.target.closest('.pm-table-reset-menu')) {
             closeAllResetMenus();
         }
     });
@@ -8045,7 +8142,7 @@
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
         }
-        if(!e.target.closest('.pm-table-reset-group')) {
+        if(!e.target.closest('.pm-table-reset-group') && !e.target.closest('.pm-table-reset-menu')) {
             closeAllResetMenus();
         }
         // If user enters an input inside a managed table, immediately release any grid selection
@@ -8220,6 +8317,7 @@
         if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
         repositionActiveHelpDotTip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+        if(activeResetMenuState) repositionResetMenu(activeResetMenuState);
         repositionManagedBatchBars();
     });
 
@@ -8243,6 +8341,7 @@
         if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
         repositionActiveHelpDotTip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+        if(activeResetMenuState) repositionResetMenu(activeResetMenuState);
         repositionManagedBatchBars();
     }, true);
 
