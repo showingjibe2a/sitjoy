@@ -874,6 +874,7 @@
         let objectOptionsLoadedAction = '';
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
+        let adjustmentPeriodAllCache = [];
         let adjustmentPeriodCache = [];
         let adjustmentAttribDraft = {};
 
@@ -1235,8 +1236,41 @@
             if (window.syncModalScrollLock) window.syncModalScrollLock();
         }
 
+        function findAdjustmentPeriodItem(recordId) {
+            return adjustmentPeriodAllCache.find(x => String(x.id) === String(recordId)) || null;
+        }
+
+        function getAdjustmentPeriodFilterCriteria() {
+            return {
+                operationTypeId: String(document.getElementById('operationType')?.value || '').trim(),
+                targetObject: String(document.getElementById('targetObject')?.value || '').trim(),
+            };
+        }
+
+        function hasAdjustmentPeriodFilter() {
+            const { operationTypeId, targetObject } = getAdjustmentPeriodFilterCriteria();
+            return !!(operationTypeId || targetObject);
+        }
+
+        function filterAdjustmentPeriodItems(items) {
+            const { operationTypeId, targetObject } = getAdjustmentPeriodFilterCriteria();
+            return (Array.isArray(items) ? items : []).filter(item => {
+                if (operationTypeId && String(item.operation_type_id) !== operationTypeId) return false;
+                if (targetObject && String(item.target_object || '').trim() !== targetObject) return false;
+                return true;
+            });
+        }
+
+        function applyAdjustmentPeriodFilter() {
+            if (!selectedAdId) {
+                renderAdjustmentPeriodList([]);
+                return;
+            }
+            renderAdjustmentPeriodList(filterAdjustmentPeriodItems(adjustmentPeriodAllCache));
+        }
+
         function updateAdjustmentAttribDraft(recordId, field, rawValue) {
-            const item = adjustmentPeriodCache.find(x => String(x.id) === String(recordId));
+            const item = findAdjustmentPeriodItem(recordId);
             if (!item) return;
             const id = String(recordId);
             const next = { ...getAdjustmentAttribEffective(item) };
@@ -1264,7 +1298,7 @@
 
         function cancelAdjustmentAttribEdits() {
             adjustmentAttribDraft = {};
-            renderAdjustmentPeriodList(adjustmentPeriodCache);
+            applyAdjustmentPeriodFilter();
             syncAdjustmentAttribSaveBar();
         }
 
@@ -1296,7 +1330,7 @@
                     }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
                     items.forEach((up) => {
-                        const row = adjustmentPeriodCache.find(x => String(x.id) === String(up.id));
+                        const row = findAdjustmentPeriodItem(up.id);
                         if (!row) return;
                         row.attribution_checked = up.attribution_checked === '1' ? 1 : 0;
                         row.attribution_orders = up.attribution_orders || '';
@@ -1304,7 +1338,7 @@
                         row.remark = up.remark || '';
                         delete adjustmentAttribDraft[String(up.id)];
                     });
-                    renderAdjustmentPeriodList(adjustmentPeriodCache);
+                    applyAdjustmentPeriodFilter();
                     syncAdjustmentAttribSaveBar();
                     aaSaveResult({
                         action: 'save',
@@ -1468,6 +1502,7 @@
             const wrap = document.getElementById('aaPeriodList');
             if (!wrap) return;
             if (!selectedAdId) {
+                adjustmentPeriodAllCache = [];
                 adjustmentPeriodCache = [];
                 wrap.innerHTML = '<div class="aa-period-empty">请先在左侧选择广告</div>';
                 syncAdjustmentAttribSaveBar();
@@ -1476,7 +1511,10 @@
             const list = Array.isArray(items) ? items.slice().reverse() : [];
             adjustmentPeriodCache = list.slice();
             if (!list.length) {
-                wrap.innerHTML = '<div class="aa-period-empty">该广告暂无调整记录</div>';
+                const emptyText = adjustmentPeriodAllCache.length && hasAdjustmentPeriodFilter()
+                    ? '暂无匹配当前操作类型与对象的记录'
+                    : '该广告暂无调整记录';
+                wrap.innerHTML = `<div class="aa-period-empty">${escapeHtml(emptyText)}</div>`;
                 syncAdjustmentAttribSaveBar();
                 return;
             }
@@ -1494,17 +1532,23 @@
                 return;
             }
             wrap.innerHTML = '<div class="aa-period-empty">加载中…</div>';
+            adjustmentPeriodAllCache = [];
             fetch(`/api/amazon-ad-adjustment?ad_item_id=${encodeURIComponent(selectedAdId)}`)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
+                        adjustmentPeriodAllCache = [];
                         wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">${escapeHtml(data.message || '加载失败')}</div>`;
+                        syncAdjustmentAttribSaveBar();
                         return;
                     }
-                    renderAdjustmentPeriodList(data.items || []);
+                    adjustmentPeriodAllCache = Array.isArray(data.items) ? data.items.slice() : [];
+                    applyAdjustmentPeriodFilter();
                 })
                 .catch(err => {
+                    adjustmentPeriodAllCache = [];
                     wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">加载失败: ${escapeHtml(String(err))}</div>`;
+                    syncAdjustmentAttribSaveBar();
                 });
         }
 
@@ -2238,6 +2282,7 @@
             fillAfterValueFromObjectSelection(target, op);
             hideTargetObjectSuggest();
             refreshBeforeValueForTargetObject();
+            applyAdjustmentPeriodFilter();
         }
 
         function filterTargetOptionsForSuggest(query) {
@@ -2647,6 +2692,7 @@
             syncTargetObjectFieldMode();
             refreshBeforeValueForTargetObject();
             updateSubmitButtonState();
+            applyAdjustmentPeriodFilter();
         }
 
         function listItemToAdInfo(item) {
@@ -2751,7 +2797,10 @@
                     setAttributionChecked(false);
                     hideTargetObjectSuggest();
                     updateSubmitButtonState();
-                    loadTargetOptionsForSelectedAd().then(() => syncTargetObjectFieldMode());
+                    loadTargetOptionsForSelectedAd().then(() => {
+                        syncTargetObjectFieldMode();
+                        applyAdjustmentPeriodFilter();
+                    });
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('加载默认信息失败: ' + err, true, 6500);
@@ -2901,6 +2950,7 @@
                     refreshBeforeValueForTargetObject();
                 }
                 updateSubmitButtonState();
+                applyAdjustmentPeriodFilter();
             });
             input.addEventListener('focus', () => {
                 if (input.readOnly) return;
@@ -2911,6 +2961,7 @@
                     hideTargetObjectSuggest();
                     tryAutofillBeforeValueFromTargetObject();
                     syncValueQuickMenus();
+                    applyAdjustmentPeriodFilter();
                 }, 160);
             });
             document.addEventListener('click', (ev) => {
