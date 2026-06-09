@@ -866,6 +866,8 @@
         let objectOptionsLoadedAction = '';
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
+        let adjustmentPeriodFilterActive = true;
+        let supplementaryTargetObjectKey = '';
         let adjustmentPeriodAllCache = [];
         let adjustmentPeriodCache = [];
         let adjustmentAttribDraft = {};
@@ -1224,7 +1226,23 @@
             return adjustmentPeriodAllCache.find(x => String(x.id) === String(recordId)) || null;
         }
 
+        function enableAdjustmentPeriodFilter() {
+            adjustmentPeriodFilterActive = true;
+        }
+
+        function clearAdjustmentContentFilters() {
+            if (hierarchyFilter) {
+                hierarchyFilter = null;
+                syncHierarchyFilterButtons();
+            }
+            adjustmentPeriodFilterActive = false;
+            applyAdjustmentPeriodFilter();
+        }
+
         function getAdjustmentPeriodFilterCriteria() {
+            if (!adjustmentPeriodFilterActive) {
+                return { operationTypeId: '', targetObject: '' };
+            }
             return {
                 operationTypeId: String(document.getElementById('operationType')?.value || '').trim(),
                 targetObject: String(document.getElementById('targetObject')?.value || '').trim(),
@@ -1694,6 +1712,51 @@
 
         function closeFullSubmitModal() {
             document.getElementById('aaFullSubmitModal')?.classList.remove('active');
+        }
+
+        function clearSupplementaryAdjustmentFields() {
+            [
+                'impressions', 'clicks', 'cost', 'orders', 'sales', 'topOfSearchIs',
+                'acos', 'cpc', 'ctr', 'cvr', 'attributionOrders', 'attributionSales', 'remark',
+            ].forEach(id => setFieldValue(id, ''));
+            setAttributionChecked(false);
+            recalcAdjustmentDerivedMetrics();
+        }
+
+        function refreshSupplementaryAdjustmentDefaults() {
+            if (!selectedAdId) {
+                setFieldValue('adjustDate', '');
+                setFieldValue('startTime', '');
+                setFieldValue('endTime', '');
+                return Promise.resolve();
+            }
+            return fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.status === 'success' && d.defaults) {
+                        setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
+                        setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
+                        setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                        return;
+                    }
+                    setFieldValue('adjustDate', '');
+                    setFieldValue('startTime', '');
+                    setFieldValue('endTime', '');
+                })
+                .catch(() => {
+                    setFieldValue('adjustDate', '');
+                    setFieldValue('startTime', '');
+                    setFieldValue('endTime', '');
+                });
+        }
+
+        function maybeResetSupplementaryOnTargetObjectChange() {
+            const desc = String(document.getElementById('targetObject')?.value || '').trim();
+            if (desc === supplementaryTargetObjectKey) return;
+            supplementaryTargetObjectKey = desc;
+            clearSupplementaryAdjustmentFields();
+            closeFullSubmitModal();
+            refreshSupplementaryAdjustmentDefaults();
         }
 
         function openAdCreateFromAdjustment() {
@@ -2378,6 +2441,7 @@
             if (!input || !target) return;
             input.value = String(target.target_desc || '').trim();
             hideTargetObjectSuggest();
+            enableAdjustmentPeriodFilter();
             if (isModifyProductOp(op)) {
                 syncTargetObjectState();
             } else {
@@ -2388,6 +2452,7 @@
                 refreshBeforeValueForTargetObject();
             }
             applyAdjustmentPeriodFilter();
+            maybeResetSupplementaryOnTargetObjectChange();
         }
 
         function filterTargetOptionsForSuggest(query) {
@@ -2753,6 +2818,7 @@
         }
 
         function loadAdList() {
+            clearAdjustmentContentFilters();
             return fetch('/api/amazon-ad-adjustment?action=ad-search')
                 .then(r => r.json())
                 .then(data => {
@@ -2789,8 +2855,10 @@
         }
 
         function syncReasonOptions() {
+            enableAdjustmentPeriodFilter();
             const opId = String(document.getElementById('operationType').value || '');
             setFieldValue('targetObject', '');
+            supplementaryTargetObjectKey = '';
             setFieldValue('beforeValue', '');
             setFieldValue('afterValue', '');
             hideTargetObjectSuggest();
@@ -2874,6 +2942,7 @@
         function selectAd(adId) {
             selectedAdId = String(adId || '');
             adjustmentAttribDraft = {};
+            supplementaryTargetObjectKey = '';
             syncAdjustmentAttribSaveBar();
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
@@ -2902,22 +2971,10 @@
                     setFieldValue('startTime', toDatetimeLocal(defaults.start_time));
                     setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
                     setFieldValue('targetObject', '');
+                    supplementaryTargetObjectKey = '';
                     setFieldValue('beforeValue', '');
                     setFieldValue('afterValue', '');
-                    setFieldValue('impressions', '');
-                    setFieldValue('clicks', '');
-                    setFieldValue('cost', '');
-                    setFieldValue('orders', '');
-                    setFieldValue('sales', '');
-                    setFieldValue('acos', '');
-                    setFieldValue('cpc', '');
-                    setFieldValue('ctr', '');
-                    setFieldValue('cvr', '');
-                    setFieldValue('topOfSearchIs', '');
-                    setFieldValue('attributionOrders', '');
-                    setFieldValue('attributionSales', '');
-                    setFieldValue('remark', '');
-                    setAttributionChecked(false);
+                    clearSupplementaryAdjustmentFields();
                     hideTargetObjectSuggest();
                     updateSubmitButtonState();
                     loadTargetOptionsForSelectedAd().then(() => {
@@ -3067,6 +3124,7 @@
             if (!input) return;
             input.addEventListener('input', () => {
                 if (input.readOnly) return;
+                enableAdjustmentPeriodFilter();
                 scheduleTargetObjectSuggest();
                 syncValueQuickMenus();
                 syncTargetObjectState();
@@ -3083,7 +3141,9 @@
                     tryAutofillBeforeValueFromTargetObject();
                     syncValueQuickMenus();
                     syncTargetObjectState();
+                    enableAdjustmentPeriodFilter();
                     applyAdjustmentPeriodFilter();
+                    maybeResetSupplementaryOnTargetObjectChange();
                 }, 160);
             });
             document.addEventListener('click', (ev) => {
