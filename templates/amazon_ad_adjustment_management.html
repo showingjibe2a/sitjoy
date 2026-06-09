@@ -1121,12 +1121,19 @@
 
         function validatePhase1() {
             const errors = [];
+            const op = getSelectedOperationType();
             if (!selectedAdId) errors.push('请先在左侧选择广告');
             if (!document.getElementById('operationType').value) errors.push('请选择操作类型');
             if (!document.getElementById('targetObject').value.trim()) errors.push('请填写操作对象');
             if (!document.getElementById('beforeValue').value.trim()) errors.push('请填写修改前');
             if (!document.getElementById('afterValue').value.trim()) errors.push('请填写修改后');
             if (!document.getElementById('operationReason').value) errors.push('请选择修改原因');
+            if (op && (isModifyProductOp(op) || isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op))) {
+                const beforeErr = validateTargetObjectValueField('beforeValue', op);
+                const afterErr = validateTargetObjectValueField('afterValue', op);
+                if (beforeErr) errors.push(beforeErr);
+                if (afterErr) errors.push(afterErr);
+            }
             return errors;
         }
 
@@ -1499,9 +1506,139 @@
             return '';
         }
 
-        function otherTargetStatuses(current) {
-            const s = String(current || '启动').trim() || '启动';
-            return AA_TARGET_STATUSES.filter(status => status !== s);
+        function isValidTargetStatus(text) {
+            const s = String(text || '').trim();
+            return AA_TARGET_STATUSES.includes(s);
+        }
+
+        function isNumericBidValue(text) {
+            const t = String(text || '').trim().replace(/,/g, '');
+            if (!t) return false;
+            if (!/^-?\d+(\.\d+)?$/.test(t)) return false;
+            return Number.isFinite(parseFloat(t));
+        }
+
+        function isPlacementPercentValue(text) {
+            const t = String(text || '').trim();
+            if (!t) return false;
+            if (isValidTargetStatus(t)) return false;
+            if (t.includes('%')) {
+                const n = parseFloat(t.replace(/%/g, '').replace(/,/g, '').trim());
+                return Number.isFinite(n) && n >= 0;
+            }
+            const plain = t.replace(/,/g, '');
+            if (!/^-?\d+(\.\d+)?$/.test(plain)) return false;
+            const n = parseFloat(plain);
+            return Number.isFinite(n) && n >= 0;
+        }
+
+        function placementValuesEquivalent(a, b) {
+            const left = String(a || '').trim();
+            const right = String(b || '').trim();
+            if (!left || !right) return false;
+            if (left === right) return true;
+            const leftStored = placementStoredFromDisplay(left);
+            const rightStored = placementStoredFromDisplay(right);
+            if (leftStored && rightStored && leftStored === rightStored) return true;
+            const leftDisplay = placementDisplayFromStored(left);
+            const rightDisplay = placementDisplayFromStored(right);
+            return !!(leftDisplay && rightDisplay && leftDisplay === rightDisplay);
+        }
+
+        function targetObjectValueMatchesCurrent(candidate, current, op) {
+            const value = String(candidate || '').trim();
+            const cur = String(current || '').trim();
+            if (!value || !cur) return false;
+            if (value === cur) return true;
+            if (isModifyPlacementOp(op)) return placementValuesEquivalent(value, cur);
+            if (isModifyDeliveryTargetOp(op) && isNumericBidValue(value) && isNumericBidValue(cur)) {
+                return parseFloat(value.replace(/,/g, '')) === parseFloat(cur.replace(/,/g, ''));
+            }
+            return false;
+        }
+
+        function buildTargetObjectValueAlternates(target, op, currentRaw) {
+            const current = String(currentRaw || '').trim();
+            const alternates = [];
+            if (!target) return alternates;
+
+            if (isModifyProductOp(op)) {
+                AA_TARGET_STATUSES.forEach((st) => {
+                    if (targetObjectValueMatchesCurrent(st, current, op)) return;
+                    alternates.push({
+                        value: st,
+                        html: renderTargetStatusPill(st),
+                        fillOppositeAfter: false,
+                    });
+                });
+                return alternates;
+            }
+
+            const status = statusFromObjectOption(target);
+            const bid = String(target.bid_value || '').trim();
+            const pctDisplay = bid ? placementDisplayFromBid(bid) : '';
+
+            if (isModifyPlacementOp(op)) {
+                if (pctDisplay && !targetObjectValueMatchesCurrent(pctDisplay, current, op)) {
+                    alternates.push({
+                        value: pctDisplay,
+                        html: escapeHtml(pctDisplay),
+                        fillOppositeAfter: false,
+                    });
+                }
+                AA_TARGET_STATUSES.forEach((st) => {
+                    if (targetObjectValueMatchesCurrent(st, current, op)) return;
+                    alternates.push({
+                        value: st,
+                        html: renderTargetStatusPill(st),
+                        fillOppositeAfter: false,
+                    });
+                });
+                return alternates;
+            }
+
+            if (isModifyDeliveryTargetOp(op)) {
+                if (bid && !targetObjectValueMatchesCurrent(bid, current, op)) {
+                    alternates.push({
+                        value: bid,
+                        html: escapeHtml(bid),
+                        fillOppositeAfter: false,
+                    });
+                }
+                AA_TARGET_STATUSES.forEach((st) => {
+                    if (targetObjectValueMatchesCurrent(st, current, op)) return;
+                    alternates.push({
+                        value: st,
+                        html: renderTargetStatusPill(st),
+                        fillOppositeAfter: false,
+                    });
+                });
+            }
+            return alternates;
+        }
+
+        function validateTargetObjectValueField(fieldId, op) {
+            const label = fieldId === 'beforeValue' ? '修改前' : '修改后';
+            const val = String(document.getElementById(fieldId)?.value || '').trim();
+            if (!val) return null;
+
+            if (isModifyProductOp(op)) {
+                if (!isValidTargetStatus(val)) {
+                    return `${label}须为合法状态（启动/暂停/存档）`;
+                }
+                return null;
+            }
+
+            if (isModifyDeliveryTargetOp(op)) {
+                if (isNumericBidValue(val) || isValidTargetStatus(val)) return null;
+                return `${label}须为合法竞价数值或状态（启动/暂停/存档）`;
+            }
+
+            if (isModifyPlacementOp(op)) {
+                if (isPlacementPercentValue(val) || isValidTargetStatus(val)) return null;
+                return `${label}须为合法百分比或状态（启动/暂停/存档）`;
+            }
+            return null;
         }
 
         function getMatchedTargetFromObject() {
@@ -1512,11 +1649,12 @@
 
         function buildQuickFillOptions(fieldId) {
             const op = getSelectedOperationType();
+            const input = document.getElementById(fieldId);
+            const currentValue = String(input?.value || '').trim();
             const options = [];
             if (isModifyBidStrategyOp(op)) {
                 if (fieldId === 'afterValue') {
-                    const current = String(selectedAdDetail?.bid_strategy || '').trim();
-                    AA_BID_STRATEGIES.filter(s => s !== current).forEach((strategy) => {
+                    AA_BID_STRATEGIES.filter(s => s !== currentValue).forEach((strategy) => {
                         options.push({
                             value: strategy,
                             html: escapeHtml(strategy),
@@ -1526,48 +1664,10 @@
                 }
                 return options;
             }
-            if (isModifyProductOp(op)) {
-                const product = getMatchedTargetFromObject();
-                if (!product) return options;
-                const status = statusFromObjectOption(product);
-                if (fieldId === 'beforeValue') {
-                    options.push({
-                        value: status,
-                        html: renderTargetStatusPill(status),
-                        fillOppositeAfter: false,
-                    });
-                } else if (fieldId === 'afterValue') {
-                    otherTargetStatuses(status).forEach((st) => {
-                        options.push({
-                            value: st,
-                            html: renderTargetStatusPill(st),
-                            fillOppositeAfter: false,
-                        });
-                    });
-                }
-                return options;
-            }
-            if (!isModifyDeliveryTargetOp(op)) return options;
-            const target = getMatchedTargetFromObject();
-            if (!target) return options;
-            const status = String(target.status || '启动').trim() || '启动';
-            const bid = String(target.bid_value || '').trim();
-            if (fieldId === 'beforeValue') {
-                if (bid) {
-                    options.push({
-                        value: bid,
-                        html: escapeHtml(bid),
-                        fillOppositeAfter: false,
-                    });
-                }
-            } else if (fieldId === 'afterValue') {
-                otherTargetStatuses(status).forEach((st) => {
-                    options.push({
-                        value: st,
-                        html: renderTargetStatusPill(st),
-                        fillOppositeAfter: false,
-                    });
-                });
+            if (isModifyProductOp(op) || isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op)) {
+                const target = getMatchedTargetFromObject();
+                if (!target) return options;
+                return buildTargetObjectValueAlternates(target, op, currentValue);
             }
             return options;
         }
@@ -1583,6 +1683,7 @@
                     afterInput.value = opposite || '';
                 }
             }
+            syncValueQuickMenus();
             updateSubmitButtonState();
         }
 
@@ -2357,8 +2458,14 @@
         ['targetObject', 'beforeValue', 'afterValue', 'operationReason'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
-            el.addEventListener('input', updateSubmitButtonState);
-            el.addEventListener('change', updateSubmitButtonState);
+            el.addEventListener('input', () => {
+                if (id === 'beforeValue' || id === 'afterValue') syncValueQuickMenus();
+                updateSubmitButtonState();
+            });
+            el.addEventListener('change', () => {
+                if (id === 'beforeValue' || id === 'afterValue') syncValueQuickMenus();
+                updateSubmitButtonState();
+            });
         });
 
         document.getElementById('adSearchInput').addEventListener('keydown', function(e) {
