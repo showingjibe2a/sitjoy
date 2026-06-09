@@ -1507,7 +1507,7 @@ section.card.pm-card .pm-toolbar .btn-accent {
     opacity: 0.92;
 }
 
-/* Reusable inline table input */
+/* Reusable inline table input — 全站表格单元格小输入框基准类（托管表内 28px 高见 .pm-table tbody tr td input 约 2673 行） */
 .inline-input {
     display: block;
     width: 100%;
@@ -2693,6 +2693,27 @@ button.sj-group-row-edit-btn {
     border-radius: 10px;
     border-color: var(--morandi-sand);
     box-sizing: border-box;
+}
+
+/* 广告调整 · 修改前后列表卡片：复用 .inline-input，规格对齐托管表单元格 input/textarea（非表格场景需覆盖 min-width） */
+.aa-period-card .inline-input,
+.aa-period-card input.inline-input {
+    min-width: 0 !important;
+    width: 100%;
+}
+.aa-period-card textarea.inline-input {
+    min-width: 0 !important;
+    width: 100%;
+    min-height: 52px;
+    height: auto !important;
+    padding: 0.28rem 0.45rem !important;
+    font-size: 0.82rem !important;
+    line-height: 1.35;
+    border-radius: 10px;
+    border: 1px solid var(--morandi-sand);
+    box-sizing: border-box;
+    background: #fff;
+    color: var(--morandi-ink);
 }
 
 .pm-table.is-managed-table td .status-segment,

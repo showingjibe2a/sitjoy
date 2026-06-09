@@ -462,24 +462,28 @@
             gap: 0.2rem 0.32rem;
             align-items: stretch;
         }
-        .aa-period-grid-head {
-            font-size: 0.66rem;
-            font-weight: 700;
-            color: var(--morandi-slate);
-            padding: 0.12rem 0.2rem;
+        .aa-period-data-grid--2col {
+            grid-template-columns: 4.4rem minmax(0, 1fr);
         }
-        .aa-period-daily-head {
+        .aa-period-daily-badge {
+            grid-row: 1 / span 2;
+            grid-column: 3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             text-align: center;
             line-height: 1.25;
             border-radius: 6px;
             background: rgba(236, 231, 223, 0.45);
             border: 1px solid rgba(188, 180, 170, 0.45);
-            padding: 0.2rem 0.18rem;
+            padding: 0.22rem 0.16rem;
             font-size: 0.68rem;
+            color: var(--morandi-slate);
         }
-        .aa-period-daily-head .aa-period-daily-sub {
+        .aa-period-daily-badge .aa-period-daily-sub {
             display: block;
-            margin-top: 0.15rem;
+            margin-top: 0.12rem;
             font-weight: 700;
             color: var(--morandi-ink);
         }
@@ -517,23 +521,7 @@
             color: var(--morandi-slate);
             margin-bottom: 0.1rem;
         }
-        .aa-period-input-sm,
-        .aa-period-attrib-stack input.aa-period-input-sm,
-        .aa-period-attrib-stack textarea.aa-period-input-sm {
-            width: 100%;
-            box-sizing: border-box;
-            font-size: 0.74rem;
-            line-height: 1.25;
-            padding: 0.18rem 0.32rem;
-            min-height: 26px;
-            border-radius: 6px;
-            border: 1px solid rgba(207, 199, 189, 0.75);
-            background: #fff;
-        }
-        .aa-period-attrib-stack textarea.aa-period-input-sm {
-            min-height: 2.1rem;
-            resize: vertical;
-        }
+        /* 归因输入使用全站 .inline-input，卡片内规格见 static/css/style.css → .aa-period-card .inline-input */
         .aa-period-attrib-checked {
             font-size: 0.7rem;
             color: var(--morandi-slate);
@@ -1355,51 +1343,55 @@
             `).join('');
         }
 
-        function renderPeriodDataGrid(blockTitle, midHead, rightHeadHtml, rightHeadClass, rows) {
-            const body = rows.map(([label, val, extra]) => `
-                <div class="aa-period-grid-label">${escapeHtml(label)}</div>
-                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
-                <div class="aa-period-grid-daily">${extra ? escapeHtml(extra) : ''}</div>
-            `).join('');
-            return `
-                <div class="aa-period-block">
-                    <div class="aa-period-block-title">${escapeHtml(blockTitle)}</div>
-                    <div class="aa-period-data-grid">
-                        <div class="aa-period-grid-head"></div>
-                        <div class="aa-period-grid-head">${escapeHtml(midHead)}</div>
-                        <div class="aa-period-grid-head ${rightHeadClass || ''}">${rightHeadHtml}</div>
-                        ${body}
-                    </div>
-                </div>
-            `;
-        }
-
         function renderPeriodMetricsBlock(item) {
             const start = item.start_time;
             const end = item.end_time;
             const daysText = formatPeriodDayCountText(start, end);
-            const rows = [
-                ['开始时间', formatDateTime(start) || '-', ''],
-                ['结束时间', formatDateTime(end) || '-', ''],
+            const metricRows = [
                 ['曝光', formatMetricPlainText(item.impressions), formatDailyMetricText(item.impressions, start, end)],
                 ['点击', formatMetricPlainText(item.clicks), formatDailyMetricText(item.clicks, start, end)],
                 ['花费', formatMetricPlainText(item.cost), formatDailyMetricText(item.cost, start, end)],
                 ['订单', formatMetricPlainText(item.orders), formatDailyMetricText(item.orders, start, end)],
                 ['销售额', formatMetricPlainText(item.sales), formatDailyMetricText(item.sales, start, end)],
             ];
-            const rightHead = `共 ${escapeHtml(daysText)} 日<span class="aa-period-daily-sub">日均</span>`;
-            return renderPeriodDataGrid('区间数据', '区间数据', rightHead, 'aa-period-daily-head', rows);
+            const metricBody = metricRows.map(([label, val, daily]) => `
+                <div class="aa-period-grid-label">${escapeHtml(label)}</div>
+                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
+                <div class="aa-period-grid-daily">${escapeHtml(daily)}</div>
+            `).join('');
+            return `
+                <div class="aa-period-block">
+                    <div class="aa-period-block-title">区间数据</div>
+                    <div class="aa-period-data-grid">
+                        <div class="aa-period-grid-label">开始时间</div>
+                        <div class="aa-period-grid-val">${escapeHtml(formatDateTime(start) || '-')}</div>
+                        <div class="aa-period-daily-badge">共 ${escapeHtml(daysText)} 日<span class="aa-period-daily-sub">日均</span></div>
+                        <div class="aa-period-grid-label">结束时间</div>
+                        <div class="aa-period-grid-val">${escapeHtml(formatDateTime(end) || '-')}</div>
+                        ${metricBody}
+                    </div>
+                </div>
+            `;
         }
 
         function renderPeriodComputedBlock(item) {
             const rows = [
-                ['ACOS', formatMetricPlainText(item.acos), ''],
-                ['CPC', formatMetricPlainText(item.cpc), ''],
-                ['CTR', formatMetricPlainText(item.ctr), ''],
-                ['CVR', formatMetricPlainText(item.cvr), ''],
-                ['首页首位IS', formatMetricPlainText(item.top_of_search_is), ''],
+                ['ACOS', formatMetricPlainText(item.acos)],
+                ['CPC', formatMetricPlainText(item.cpc)],
+                ['CTR', formatMetricPlainText(item.ctr)],
+                ['CVR', formatMetricPlainText(item.cvr)],
+                ['首页首位IS', formatMetricPlainText(item.top_of_search_is)],
             ];
-            return renderPeriodDataGrid('计算字段', '数值', '', '', rows);
+            const body = rows.map(([label, val]) => `
+                <div class="aa-period-grid-label">${escapeHtml(label)}</div>
+                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
+            `).join('');
+            return `
+                <div class="aa-period-block">
+                    <div class="aa-period-block-title">计算字段</div>
+                    <div class="aa-period-data-grid aa-period-data-grid--2col">${body}</div>
+                </div>
+            `;
         }
 
         function renderPeriodAttribBlock(item) {
@@ -1413,17 +1405,17 @@
                         <div class="aa-period-attrib-checked">归因已检查：<strong data-role="attrib-checked-text">${checkedText}</strong></div>
                         <div class="aa-period-attrib-field">
                             <label>归因订单</label>
-                            <input type="text" class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="attribution_orders"
+                            <input type="text" class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="attribution_orders"
                                 value="${escapeHtml(eff.attribution_orders)}" placeholder="选填">
                         </div>
                         <div class="aa-period-attrib-field">
                             <label>归因销售额</label>
-                            <input type="text" class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="attribution_sales"
+                            <input type="text" class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="attribution_sales"
                                 value="${escapeHtml(eff.attribution_sales)}" placeholder="选填">
                         </div>
                         <div class="aa-period-attrib-field">
                             <label>备注</label>
-                            <textarea class="aa-period-attrib-input aa-period-input-sm" data-record-id="${rid}" data-field="remark"
+                            <textarea class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="remark"
                                 placeholder="选填">${escapeHtml(eff.remark)}</textarea>
                         </div>
                     </div>
@@ -1433,11 +1425,12 @@
 
         function renderAdjustmentPeriodCard(item, index) {
             const opName = formatMetricPlainText(item.operation_name);
-            const head = `修改 #${index + 1} · ${opName} · ${formatDateTime(item.adjust_date) || '-'}`;
+            const head = `修改 #${index + 1}`;
             const metaRows = [
                 ['操作类型', escapeHtml(opName)],
                 ['操作对象', escapeHtml(formatMetricPlainText(item.target_object))],
                 ['操作原因', escapeHtml(formatMetricPlainText(item.reason_name))],
+                ['操作时间', escapeHtml(formatDateTime(item.adjust_date) || '-')],
             ];
             const changeRows = [
                 ['修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name)],
