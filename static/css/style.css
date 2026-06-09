@@ -1532,21 +1532,25 @@ section.card.pm-card .pm-toolbar .btn-accent {
     box-shadow: 0 0 0 2px rgba(42, 36, 32, 0.1);
 }
 
-/* 胶囊小号按钮：两端半圆 + 中间矩形，尺寸接近 btn-small */
+/* 胶囊小号按钮：正圆包裹单字/符号，尺寸小于 btn-small */
 .btn-capsule-sm,
 button.btn-capsule-sm {
+    --btn-capsule-sm-size: 20px;
     flex: 0 0 auto;
-    min-width: 1.65rem;
-    min-height: var(--ui-control-height-sm);
-    height: var(--ui-control-height-sm);
-    padding: 0 0.55rem;
-    border-radius: 999px;
+    width: var(--btn-capsule-sm-size);
+    height: var(--btn-capsule-sm-size);
+    min-width: var(--btn-capsule-sm-size);
+    min-height: var(--btn-capsule-sm-size);
+    max-width: var(--btn-capsule-sm-size);
+    max-height: var(--btn-capsule-sm-size);
+    padding: 0;
+    border-radius: 50%;
     border: 1px solid var(--morandi-sand);
     background: var(--morandi-mist);
     color: var(--morandi-ink);
-    font-size: 0.78rem;
+    font-size: 0.62rem;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -1554,6 +1558,7 @@ button.btn-capsule-sm {
     box-sizing: border-box;
     white-space: nowrap;
     box-shadow: none;
+    overflow: hidden;
 }
 .btn-capsule-sm:hover:not(:disabled),
 button.btn-capsule-sm:hover:not(:disabled) {

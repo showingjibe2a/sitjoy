@@ -3386,24 +3386,49 @@ class AmazonAdMixin:
             })
         return result
 
-    def _adjustment_defaults_for_ad(self, cur, ad_item_id):
-        now = datetime.now().replace(second=0, microsecond=0)
+    def _parse_adjustment_datetime(self, value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value.replace(second=0, microsecond=0)
+        try:
+            return datetime.fromisoformat(str(value).replace(' ', 'T', 1)).replace(second=0, microsecond=0)
+        except Exception:
+            return None
+
+    def _fetch_last_adjustment_datetime(self, cur, ad_item_id=None, target_object=None):
+        clauses = []
+        params = []
+        if ad_item_id is not None:
+            clauses.append('ad_item_id=%s')
+            params.append(ad_item_id)
+        target_object = (target_object or '').strip()
+        if target_object and target_object != '-':
+            clauses.append('target_object=%s')
+            params.append(target_object)
+        where_sql = ' AND '.join(clauses) if clauses else '1=1'
         cur.execute(
-            """
+            f"""
             SELECT adjust_date FROM amazon_ad_adjustments
-            WHERE ad_item_id=%s ORDER BY id DESC LIMIT 1
+            WHERE {where_sql}
+            ORDER BY id DESC
+            LIMIT 1
             """,
-            (ad_item_id,)
+            tuple(params),
         )
-        last = cur.fetchone() or {}
-        last_adjust = last.get('adjust_date')
-        if last_adjust and not isinstance(last_adjust, datetime):
-            try:
-                last_adjust = datetime.fromisoformat(str(last_adjust).replace(' ', 'T', 1))
-            except Exception:
-                last_adjust = None
-        if isinstance(last_adjust, datetime):
-            start_time = last_adjust.replace(second=0, microsecond=0)
+        row = cur.fetchone() or {}
+        return self._parse_adjustment_datetime(row.get('adjust_date'))
+
+    def _adjustment_defaults_for_ad(self, cur, ad_item_id, target_object=None):
+        now = datetime.now().replace(second=0, microsecond=0)
+        target_object = (target_object or '').strip()
+        last_adjust = self._fetch_last_adjustment_datetime(cur, ad_item_id, target_object)
+        if not last_adjust and target_object and target_object != '-':
+            last_adjust = self._fetch_last_adjustment_datetime(cur, ad_item_id, None)
+        if not last_adjust:
+            last_adjust = self._fetch_last_adjustment_datetime(cur, None, None)
+        if last_adjust:
+            start_time = last_adjust
         else:
             start_time = now - timedelta(days=7)
         end_time = now
@@ -3489,7 +3514,7 @@ class AmazonAdMixin:
     def _apply_adjustment_to_target(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
         target_object = (target_object or '').strip()
-        if not after_value or not target_object or target_object == '-':
+        if not after_value or not target_object or target_object == '-' or after_value == '-':
             return None
         if not (
             self._is_modify_delivery_target_operation(operation_name)
@@ -3555,7 +3580,7 @@ class AmazonAdMixin:
     def _apply_adjustment_to_product(self, cur, ad_item_id, operation_name, target_object, after_value):
         after_value = (after_value or '').strip()
         target_object = (target_object or '').strip()
-        if not after_value or not target_object or target_object == '-':
+        if not after_value or not target_object or target_object == '-' or after_value == '-':
             return None
         if not self._is_modify_product_operation(operation_name):
             return None
@@ -3593,8 +3618,7 @@ class AmazonAdMixin:
         if sp_err:
             return sp_err
 
-        new_status = status if not status_err else '启动'
-        if status_err and not self._is_numeric_bid_text(after_value):
+        if status_err:
             return status_err
 
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -3608,7 +3632,7 @@ class AmazonAdMixin:
             ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
-                new_status, ad_item_id, sales_product_id,
+                status, ad_item_id, sales_product_id,
                 interval_text, next_dt, updated_dt,
             ),
         )
@@ -3722,13 +3746,14 @@ class AmazonAdMixin:
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
                 if not ad_item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                target_object = (query_params.get('target_object', [''])[0] or '').strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         ad_row, ad_info = self._fetch_adjustment_ad_info(cur, ad_item_id)
                         if not ad_row:
                             return self.send_json({'status': 'error', 'message': '广告不存在'}, start_response)
                         allowed_operations = self._fetch_allowed_operations_for_ad(cur, ad_row)
-                        defaults = self._adjustment_defaults_for_ad(cur, ad_item_id)
+                        defaults = self._adjustment_defaults_for_ad(cur, ad_item_id, target_object)
                 return self.send_json({
                     'status': 'success',
                     'ad_info': ad_info,

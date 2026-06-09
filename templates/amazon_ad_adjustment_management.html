@@ -207,12 +207,13 @@
             opacity: 0.35;
             pointer-events: none;
         }
+        .aa-info-value-wrap .btn-capsule-sm,
+        .aa-value-input-wrap .btn-capsule-sm,
+        .aa-target-object-wrap .btn-capsule-sm {
+            font-size: 0.58rem;
+        }
         .aa-target-object-wrap .btn-capsule-sm.aa-sku-indicator {
             font-weight: 700;
-            line-height: 1;
-            min-width: 1.65rem;
-            padding-left: 0.35rem;
-            padding-right: 0.35rem;
         }
         .aa-target-object-wrap .btn-capsule-sm.aa-sku-indicator--valid {
             color: #fff;
@@ -868,6 +869,8 @@
         let hierarchyFilter = null;
         let adjustmentPeriodFilterActive = true;
         let supplementaryTargetObjectKey = '';
+        let restoringPageState = false;
+        let pageStateSaveTimer = 0;
         let adjustmentPeriodAllCache = [];
         let adjustmentPeriodCache = [];
         let adjustmentAttribDraft = {};
@@ -882,6 +885,101 @@
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
         const AA_SEARCH_LS_EXACT = 'sj.amazonAdAdjustment.exactMatch';
+        const AA_PAGE_STATE_LS = 'sj.amazonAdAdjustment.pageState.v1';
+
+        function readPageState() {
+            try {
+                const raw = localStorage.getItem(AA_PAGE_STATE_LS);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function collectPageState() {
+            return {
+                keyword: String(document.getElementById('adSearchInput')?.value || '').trim(),
+                hierarchyFilter: hierarchyFilter ? { ...hierarchyFilter } : null,
+                selectedAdId: String(selectedAdId || ''),
+                operationTypeId: String(document.getElementById('operationType')?.value || '').trim(),
+                targetObject: String(document.getElementById('targetObject')?.value || '').trim(),
+                adjustmentPeriodFilterActive: !!adjustmentPeriodFilterActive,
+            };
+        }
+
+        function savePageState() {
+            if (restoringPageState) return;
+            try {
+                localStorage.setItem(AA_PAGE_STATE_LS, JSON.stringify(collectPageState()));
+            } catch (e) {}
+        }
+
+        function scheduleSavePageState() {
+            window.clearTimeout(pageStateSaveTimer);
+            pageStateSaveTimer = window.setTimeout(savePageState, 220);
+        }
+
+        function buildAdjustmentDefaultsUrl(targetObject) {
+            if (!selectedAdId) return '';
+            const target = String(targetObject || '').trim();
+            let url = `/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`;
+            if (target && target !== '-') {
+                url += `&target_object=${encodeURIComponent(target)}`;
+            }
+            return url;
+        }
+
+        function applySavedFormState(saved) {
+            if (!saved) return;
+            const opId = String(saved.operationTypeId || '').trim();
+            const target = String(saved.targetObject || '').trim();
+            if (opId) {
+                renderOperationOptions(opId, { skipSyncReason: true });
+                syncReasonOptions({ keepTargetObject: !!target });
+                if (target) {
+                    setFieldValue('targetObject', target);
+                    supplementaryTargetObjectKey = target;
+                }
+            } else {
+                renderOperationOptions('');
+                supplementaryTargetObjectKey = '';
+            }
+        }
+
+        function initPageFromSavedState() {
+            const saved = readPageState() || {};
+            restoringPageState = true;
+
+            if (saved.keyword) {
+                const searchInput = document.getElementById('adSearchInput');
+                if (searchInput) searchInput.value = saved.keyword;
+            }
+            if (saved.hierarchyFilter && saved.hierarchyFilter.type) {
+                hierarchyFilter = { ...saved.hierarchyFilter };
+            }
+            if (typeof saved.adjustmentPeriodFilterActive === 'boolean') {
+                adjustmentPeriodFilterActive = saved.adjustmentPeriodFilterActive;
+            }
+            if (saved.selectedAdId) {
+                selectedAdId = String(saved.selectedAdId);
+            }
+
+            return loadAdList({ clearFilters: false }).then(() => {
+                syncHierarchyFilterButtons();
+                const savedAdId = String(saved.selectedAdId || '').trim();
+                if (savedAdId && adItems.some(x => String(x.id) === String(savedAdId))) {
+                    return selectAd(savedAdId, { restoreForm: saved });
+                }
+                if (!selectedAdId && adItems.length) {
+                    selectAd(adItems[0].id);
+                }
+            }).finally(() => {
+                restoringPageState = false;
+                savePageState();
+            });
+        }
 
         function readAdSearchBool(key, defaultValue) {
             try {
@@ -913,6 +1011,7 @@
                     writeAdSearchBool(AA_SEARCH_LS_ARCHIVED, !!archivedEl.checked);
                     writeAdSearchBool(AA_SEARCH_LS_EXACT, !!exactEl.checked);
                     applyAdListFiltersAndRender();
+                    savePageState();
                 });
             });
         }
@@ -1032,6 +1131,7 @@
             }
             syncHierarchyFilterButtons();
             applyAdListFiltersAndRender();
+            savePageState();
         }
 
         function applyAdListFilters(items) {
@@ -1237,6 +1337,7 @@
             }
             adjustmentPeriodFilterActive = false;
             applyAdjustmentPeriodFilter();
+            savePageState();
         }
 
         function getAdjustmentPeriodFilterCriteria() {
@@ -1730,7 +1831,10 @@
                 setFieldValue('endTime', '');
                 return Promise.resolve();
             }
-            return fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+            const targetObject = document.getElementById('targetObject')?.value || '';
+            const url = buildAdjustmentDefaultsUrl(targetObject);
+            if (!url) return Promise.resolve();
+            return fetch(url)
                 .then(r => r.json())
                 .then(d => {
                     if (d.status === 'success' && d.defaults) {
@@ -1894,9 +1998,30 @@
             return String(objectOptionsContext.defaultBid || '').trim();
         }
 
+        function isDashPlaceholderValue(text) {
+            return String(text || '').trim() === '-';
+        }
+
+        function isAllowedProductModifyValue(text) {
+            return isDashPlaceholderValue(text) || isValidTargetStatus(text);
+        }
+
+        function isAllowedDeliveryModifyValue(text) {
+            return isDashPlaceholderValue(text) || isValidTargetStatus(text) || isNumericBidValue(text);
+        }
+
+        function isAllowedPlacementModifyValue(text) {
+            if (isAllowedDeliveryModifyValue(text)) return true;
+            const t = String(text || '').trim();
+            if (!t.includes('%')) return false;
+            const n = parseFloat(t.replace(/%/g, '').replace(/,/g, '').trim());
+            return Number.isFinite(n) && n >= 0;
+        }
+
         function getDefaultAfterForNewTarget(op) {
+            if (isModifyProductOp(op)) return '启动';
             const bid = getTargetDefaultBid();
-            if (isModifyProductOp(op) || isModifyDeliveryTargetOp(op)) return bid;
+            if (isModifyDeliveryTargetOp(op)) return bid;
             if (isModifyPlacementOp(op)) return bid ? placementDisplayFromBid(bid) : '';
             return '';
         }
@@ -2286,35 +2411,24 @@
             if (!val) return null;
 
             if (isModifyProductOp(op)) {
-                const sku = String(document.getElementById('targetObject')?.value || '').trim();
-                if (isNewProductSkuToAd(sku)) {
-                    if (fieldId === 'beforeValue' && val === '-') return null;
-                    if (fieldId === 'afterValue' && isNumericBidValue(val)) return null;
-                }
-                if (!isValidTargetStatus(val)) {
-                    return `${label}须为合法状态（启动/暂停/存档）`;
+                if (!isAllowedProductModifyValue(val)) {
+                    return `${label}须为合法状态（启动/暂停/存档）或 -`;
                 }
                 return null;
             }
 
             if (isModifyDeliveryTargetOp(op)) {
-                const desc = String(document.getElementById('targetObject')?.value || '').trim();
-                if (isNewTargetDescToAd(desc)) {
-                    if (fieldId === 'beforeValue' && val === '-') return null;
-                    if (fieldId === 'afterValue' && (isNumericBidValue(val) || isValidTargetStatus(val))) return null;
+                if (!isAllowedDeliveryModifyValue(val)) {
+                    return `${label}须为合法竞价数值、状态（启动/暂停/存档）或 -`;
                 }
-                if (isNumericBidValue(val) || isValidTargetStatus(val)) return null;
-                return `${label}须为合法竞价数值或状态（启动/暂停/存档）`;
+                return null;
             }
 
             if (isModifyPlacementOp(op)) {
-                const desc = String(document.getElementById('targetObject')?.value || '').trim();
-                if (isNewTargetDescToAd(desc)) {
-                    if (fieldId === 'beforeValue' && val === '-') return null;
-                    if (fieldId === 'afterValue' && (isPlacementPercentValue(val) || isValidTargetStatus(val))) return null;
+                if (!isAllowedPlacementModifyValue(val)) {
+                    return `${label}须为合法数值、状态（启动/暂停/存档）或 -`;
                 }
-                if (isPlacementPercentValue(val) || isValidTargetStatus(val)) return null;
-                return `${label}须为合法百分比或状态（启动/暂停/存档）`;
+                return null;
             }
             return null;
         }
@@ -2453,6 +2567,7 @@
             }
             applyAdjustmentPeriodFilter();
             maybeResetSupplementaryOnTargetObjectChange();
+            savePageState();
         }
 
         function filterTargetOptionsForSuggest(query) {
@@ -2817,8 +2932,10 @@
             scheduleSyncAaLeftColumnWidth();
         }
 
-        function loadAdList() {
-            clearAdjustmentContentFilters();
+        function loadAdList(options = {}) {
+            if (options.clearFilters !== false) {
+                clearAdjustmentContentFilters();
+            }
             return fetch('/api/amazon-ad-adjustment?action=ad-search')
                 .then(r => r.json())
                 .then(data => {
@@ -2830,15 +2947,17 @@
                     }
                     adItemsRaw = data.items || [];
                     applyAdListFiltersAndRender();
+                    savePageState();
                 })
                 .catch(() => {
                     adItemsRaw = [];
                     adItems = [];
                     renderAdList();
+                    savePageState();
                 });
         }
 
-        function renderOperationOptions(selectedId) {
+        function renderOperationOptions(selectedId, options = {}) {
             const opSelect = document.getElementById('operationType');
             const current = String(selectedId || '');
             opSelect.innerHTML = '<option value="">请选择操作类型</option>';
@@ -2851,14 +2970,16 @@
                 opSelect.appendChild(option);
             });
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(opSelect);
-            syncReasonOptions();
+            if (!options.skipSyncReason) syncReasonOptions();
         }
 
-        function syncReasonOptions() {
+        function syncReasonOptions(options = {}) {
             enableAdjustmentPeriodFilter();
             const opId = String(document.getElementById('operationType').value || '');
-            setFieldValue('targetObject', '');
-            supplementaryTargetObjectKey = '';
+            if (!options.keepTargetObject) {
+                setFieldValue('targetObject', '');
+                supplementaryTargetObjectKey = '';
+            }
             setFieldValue('beforeValue', '');
             setFieldValue('afterValue', '');
             hideTargetObjectSuggest();
@@ -2883,6 +3004,7 @@
             refreshBeforeValueForTargetObject();
             updateSubmitButtonState();
             applyAdjustmentPeriodFilter();
+            savePageState();
         }
 
         function listItemToAdInfo(item) {
@@ -2939,17 +3061,21 @@
             input.value = value || '';
         }
 
-        function selectAd(adId) {
+        function selectAd(adId, options = {}) {
+            const restore = options.restoreForm || null;
             selectedAdId = String(adId || '');
             adjustmentAttribDraft = {};
-            supplementaryTargetObjectKey = '';
+            if (!restore) supplementaryTargetObjectKey = '';
             syncAdjustmentAttribSaveBar();
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
             updateInfoPanel(selectedAd ? listItemToAdInfo(selectedAd) : null);
             updateRecordsLink();
             loadAdjustmentPeriodList();
-            fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+            const defaultsTarget = restore?.targetObject || '';
+            const defaultsUrl = buildAdjustmentDefaultsUrl(defaultsTarget);
+            if (!defaultsUrl) return Promise.resolve();
+            return fetch(defaultsUrl)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
@@ -2965,25 +3091,37 @@
                     };
                     updateInfoPanel(adInfo);
                     allowedOperations = data.allowed_operations || [];
-                    renderOperationOptions('');
+                    if (restore) {
+                        applySavedFormState(restore);
+                    } else {
+                        renderOperationOptions('');
+                    }
                     const defaults = data.defaults || {};
                     setFieldValue('adjustDate', toDatetimeLocal(defaults.adjust_date));
                     setFieldValue('startTime', toDatetimeLocal(defaults.start_time));
                     setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
-                    setFieldValue('targetObject', '');
-                    supplementaryTargetObjectKey = '';
-                    setFieldValue('beforeValue', '');
-                    setFieldValue('afterValue', '');
-                    clearSupplementaryAdjustmentFields();
+                    if (!restore) {
+                        setFieldValue('targetObject', '');
+                        supplementaryTargetObjectKey = '';
+                        setFieldValue('beforeValue', '');
+                        setFieldValue('afterValue', '');
+                        clearSupplementaryAdjustmentFields();
+                    }
                     hideTargetObjectSuggest();
                     updateSubmitButtonState();
-                    loadTargetOptionsForSelectedAd().then(() => {
+                    return loadTargetOptionsForSelectedAd().then(() => {
                         syncTargetObjectFieldMode();
+                        if (restore?.targetObject) {
+                            syncTargetObjectState();
+                        }
                         applyAdjustmentPeriodFilter();
                     });
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('加载默认信息失败: ' + err, true, 6500);
+                })
+                .finally(() => {
+                    savePageState();
                 });
         }
 
@@ -3050,15 +3188,18 @@
                 loadAdjustmentPeriodList();
                 if (selectedAdId) {
                     loadTargetOptionsForSelectedAd().then(() => syncTargetObjectFieldMode());
-                    fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
-                        .then(r => r.json())
-                        .then(d => {
-                            if (d.status === 'success' && d.defaults) {
-                                setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
-                                setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
-                                setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
-                            }
-                        });
+                    const defaultsUrl = buildAdjustmentDefaultsUrl(document.getElementById('targetObject')?.value || '');
+                    if (defaultsUrl) {
+                        fetch(defaultsUrl)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.status === 'success' && d.defaults) {
+                                    setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
+                                    setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                                    setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
+                                }
+                            });
+                    }
                 }
             })
             .catch(err => aaSaveResult({ action: 'create', isError: true, message: '提交失败: ' + err }))
@@ -3144,6 +3285,7 @@
                     enableAdjustmentPeriodFilter();
                     applyAdjustmentPeriodFilter();
                     maybeResetSupplementaryOnTargetObjectChange();
+                    savePageState();
                 }, 160);
             });
             document.addEventListener('click', (ev) => {
@@ -3179,6 +3321,7 @@
             });
         });
 
+        document.getElementById('adSearchInput').addEventListener('input', scheduleSavePageState);
         document.getElementById('adSearchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') loadAdList();
         });
@@ -3204,7 +3347,7 @@
                     showSuccessToast: (msg) => aaSaveResult({ action: 'save', message: msg || undefined }),
                 });
             }
-            loadAdList();
+            initPageFromSavedState();
             updateRecordsLink();
             const fullModal = document.getElementById('aaFullSubmitModal');
             if (fullModal && typeof window.bindPmModalBackdropClose === 'function') {
