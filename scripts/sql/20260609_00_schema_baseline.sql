@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主机： localhost
--- 生成日期： 2026-04-24 09:38:06
+-- 生成日期： 2026-06-09 09:36:28
 -- 服务器版本： 10.11.11-MariaDB
 -- PHP 版本： 8.2.28
 
@@ -20,6 +20,25 @@ SET time_zone = "+00:00";
 --
 -- 数据库： `sitjoy`
 --
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `access_logs`
+--
+
+CREATE TABLE `access_logs` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `user_name` varchar(128) DEFAULT NULL,
+  `page_path` varchar(255) NOT NULL DEFAULT '',
+  `page_key` varchar(64) DEFAULT NULL,
+  `page_label` varchar(128) DEFAULT NULL,
+  `client_ip` varchar(64) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -69,7 +88,7 @@ CREATE TABLE `amazon_ad_adjustments` (
   `target_object` varchar(255) NOT NULL,
   `before_value` varchar(64) DEFAULT NULL,
   `after_value` varchar(64) DEFAULT NULL,
-  `reason_id` int(10) UNSIGNED DEFAULT NULL,
+  `reason_name` varchar(255) DEFAULT NULL,
   `start_time` datetime DEFAULT NULL,
   `end_time` datetime DEFAULT NULL,
   `impressions` varchar(32) DEFAULT NULL,
@@ -81,30 +100,13 @@ CREATE TABLE `amazon_ad_adjustments` (
   `cpc` varchar(32) DEFAULT NULL,
   `ctr` varchar(32) DEFAULT NULL,
   `cvr` varchar(32) DEFAULT NULL,
+  `top_of_search_is` varchar(32) DEFAULT NULL COMMENT '首页首位IS(%)',
   `attribution_checked` tinyint(1) NOT NULL DEFAULT 0,
   `attribution_orders` varchar(32) DEFAULT NULL,
   `attribution_sales` varchar(32) DEFAULT NULL,
   `remark` varchar(255) DEFAULT NULL,
   `is_quick_submit` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- 表的结构 `amazon_ad_deliveries`
---
-
-CREATE TABLE `amazon_ad_deliveries` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `status` varchar(16) NOT NULL DEFAULT '启动',
-  `ad_item_id` int(10) UNSIGNED NOT NULL,
-  `delivery_desc` varchar(255) NOT NULL,
-  `bid_value` varchar(32) DEFAULT NULL,
-  `observe_interval` varchar(64) DEFAULT NULL,
-  `next_observe_at` datetime DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -117,6 +119,7 @@ CREATE TABLE `amazon_ad_items` (
   `id` int(10) UNSIGNED NOT NULL,
   `ad_level` varchar(16) NOT NULL,
   `sku_family_id` int(10) UNSIGNED DEFAULT NULL,
+  `shop_id` int(10) UNSIGNED DEFAULT 1,
   `portfolio_id` int(10) UNSIGNED DEFAULT NULL,
   `campaign_id` int(10) UNSIGNED DEFAULT NULL,
   `strategy_code` varchar(8) DEFAULT NULL,
@@ -125,21 +128,9 @@ CREATE TABLE `amazon_ad_items` (
   `is_shared_budget` tinyint(1) DEFAULT NULL,
   `status` varchar(16) DEFAULT NULL,
   `budget` decimal(12,2) DEFAULT NULL,
+  `bid_strategy` varchar(32) DEFAULT NULL COMMENT '竞价策略，仅广告活动',
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- 表的结构 `amazon_ad_operation_reasons`
---
-
-CREATE TABLE `amazon_ad_operation_reasons` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `operation_type_id` int(10) UNSIGNED NOT NULL,
-  `reason_name` varchar(255) NOT NULL,
-  `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -155,6 +146,7 @@ CREATE TABLE `amazon_ad_operation_types` (
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `apply_campaign` tinyint(1) NOT NULL DEFAULT 1,
   `apply_group` tinyint(1) NOT NULL DEFAULT 1,
+  `reason_names` text DEFAULT NULL,
   `apply_portfolio` tinyint(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -186,6 +178,8 @@ CREATE TABLE `amazon_ad_subtypes` (
   `description` varchar(255) NOT NULL,
   `ad_class` varchar(8) NOT NULL DEFAULT 'SP',
   `subtype_code` varchar(64) NOT NULL,
+  `campaign_default_targets` text DEFAULT NULL,
+  `group_default_targets` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -199,6 +193,24 @@ CREATE TABLE `amazon_ad_subtypes` (
 CREATE TABLE `amazon_ad_subtype_operation_types` (
   `subtype_id` int(10) UNSIGNED NOT NULL,
   `operation_type_id` int(10) UNSIGNED NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `amazon_ad_targets`
+--
+
+CREATE TABLE `amazon_ad_targets` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `status` varchar(16) NOT NULL DEFAULT '启动',
+  `ad_item_id` int(10) UNSIGNED NOT NULL,
+  `target_desc` varchar(255) NOT NULL COMMENT '投放描述',
+  `bid_value` varchar(32) DEFAULT NULL,
+  `observe_interval` varchar(64) DEFAULT NULL,
+  `next_observe_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -472,6 +484,7 @@ CREATE TABLE `image_types` (
   `is_enabled` tinyint(1) NOT NULL DEFAULT 1,
   `applies_fabric` tinyint(1) NOT NULL DEFAULT 1,
   `applies_sales` tinyint(1) NOT NULL DEFAULT 1,
+  `applies_order_product` tinyint(1) NOT NULL DEFAULT 1,
   `applies_aplus` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -583,6 +596,19 @@ CREATE TABLE `logistics_in_transit` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `logistics_in_transit_consolidation_factories`
+--
+
+CREATE TABLE `logistics_in_transit_consolidation_factories` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `transit_id` int(10) UNSIGNED NOT NULL,
+  `factory_id` int(10) UNSIGNED NOT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `logistics_in_transit_items`
 --
 
@@ -626,6 +652,7 @@ CREATE TABLE `logistics_overseas_warehouses` (
   `is_enabled` tinyint(1) NOT NULL DEFAULT 1,
   `region` varchar(32) NOT NULL,
   `destination_region_id` int(10) UNSIGNED DEFAULT NULL,
+  `wayfair_id` varchar(128) DEFAULT NULL COMMENT 'Wayfair 仓库/站点标识',
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -673,6 +700,26 @@ CREATE TABLE `material_types` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `operation_logs`
+--
+
+CREATE TABLE `operation_logs` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `username` varchar(64) NOT NULL DEFAULT '',
+  `user_name` varchar(128) DEFAULT NULL,
+  `api_path` varchar(255) NOT NULL DEFAULT '',
+  `http_method` varchar(16) NOT NULL DEFAULT '',
+  `module_key` varchar(64) DEFAULT NULL,
+  `request_summary` text DEFAULT NULL,
+  `changes_json` text DEFAULT NULL,
+  `client_ip` varchar(64) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `order_products`
 --
 
@@ -701,6 +748,7 @@ CREATE TABLE `order_products` (
   `is_iteration` tinyint(1) NOT NULL DEFAULT 0,
   `is_dachene_product` tinyint(1) NOT NULL DEFAULT 0,
   `is_on_market` tinyint(1) NOT NULL DEFAULT 1,
+  `is_reship_accessory` tinyint(1) NOT NULL DEFAULT 0,
   `source_order_product_id` int(10) UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -737,6 +785,21 @@ CREATE TABLE `order_product_factory_links` (
 CREATE TABLE `order_product_features` (
   `order_product_id` int(10) UNSIGNED NOT NULL,
   `feature_id` int(10) UNSIGNED NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `order_product_image_mappings`
+--
+
+CREATE TABLE `order_product_image_mappings` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `order_product_id` int(10) UNSIGNED NOT NULL,
+  `image_asset_id` bigint(20) UNSIGNED NOT NULL,
+  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 100,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -816,6 +879,60 @@ CREATE TABLE `product_families` (
   `sku_family` varchar(64) NOT NULL,
   `category` varchar(64) NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `sales_forecast_order_sku_monthly`
+--
+
+CREATE TABLE `sales_forecast_order_sku_monthly` (
+  `id` bigint(20) NOT NULL,
+  `order_product_id` int(11) NOT NULL,
+  `forecast_month` date NOT NULL,
+  `initial_qty` bigint(20) NOT NULL DEFAULT 0,
+  `prev_qty` bigint(20) DEFAULT NULL,
+  `latest_qty` bigint(20) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `prev_updated_at` timestamp NULL DEFAULT NULL,
+  `latest_updated_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `sales_forecast_platform_sku_monthly`
+--
+
+CREATE TABLE `sales_forecast_platform_sku_monthly` (
+  `id` bigint(20) NOT NULL,
+  `sales_product_id` int(11) NOT NULL,
+  `forecast_month` date NOT NULL,
+  `initial_qty` bigint(20) NOT NULL DEFAULT 0,
+  `prev_qty` bigint(20) DEFAULT NULL,
+  `latest_qty` bigint(20) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `prev_updated_at` timestamp NULL DEFAULT NULL,
+  `latest_updated_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `sales_forecast_spec_monthly`
+--
+
+CREATE TABLE `sales_forecast_spec_monthly` (
+  `id` bigint(20) NOT NULL,
+  `variant_id` int(11) NOT NULL,
+  `forecast_month` date NOT NULL,
+  `initial_qty` bigint(20) NOT NULL DEFAULT 0,
+  `prev_qty` bigint(20) DEFAULT NULL,
+  `latest_qty` bigint(20) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `prev_updated_at` timestamp NULL DEFAULT NULL,
+  `latest_updated_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -922,6 +1039,58 @@ CREATE TABLE `sales_parents` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `sales_perf_agg_month`
+--
+
+CREATE TABLE `sales_perf_agg_month` (
+  `id` bigint(20) NOT NULL,
+  `sales_product_id` int(11) NOT NULL,
+  `month_start` date NOT NULL,
+  `month_end` date NOT NULL,
+  `year_month` int(11) NOT NULL,
+  `source_rows` int(11) NOT NULL DEFAULT 0,
+  `sales_qty` bigint(20) NOT NULL DEFAULT 0,
+  `net_sales_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `order_qty` bigint(20) NOT NULL DEFAULT 0,
+  `session_total` bigint(20) NOT NULL DEFAULT 0,
+  `ad_impressions` bigint(20) NOT NULL DEFAULT 0,
+  `ad_clicks` bigint(20) NOT NULL DEFAULT 0,
+  `ad_orders` bigint(20) NOT NULL DEFAULT 0,
+  `ad_spend` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `ad_sales_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `refund_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `sales_perf_agg_week`
+--
+
+CREATE TABLE `sales_perf_agg_week` (
+  `id` bigint(20) NOT NULL,
+  `sales_product_id` int(11) NOT NULL,
+  `week_start` date NOT NULL,
+  `week_end` date NOT NULL,
+  `year_week` int(11) NOT NULL,
+  `source_rows` int(11) NOT NULL DEFAULT 0,
+  `sales_qty` bigint(20) NOT NULL DEFAULT 0,
+  `net_sales_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `order_qty` bigint(20) NOT NULL DEFAULT 0,
+  `session_total` bigint(20) NOT NULL DEFAULT 0,
+  `ad_impressions` bigint(20) NOT NULL DEFAULT 0,
+  `ad_clicks` bigint(20) NOT NULL DEFAULT 0,
+  `ad_orders` bigint(20) NOT NULL DEFAULT 0,
+  `ad_spend` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `ad_sales_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `refund_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `sales_products`
 --
 
@@ -933,6 +1102,8 @@ CREATE TABLE `sales_products` (
   `variant_id` int(10) UNSIGNED NOT NULL,
   `parent_id` int(10) UNSIGNED DEFAULT NULL,
   `child_code` varchar(64) DEFAULT NULL,
+  `gtin` varchar(32) DEFAULT NULL,
+  `upc` varchar(32) DEFAULT NULL,
   `sale_price_usd` decimal(10,2) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -958,7 +1129,6 @@ CREATE TABLE `sales_product_performances` (
   `ad_spend` decimal(12,2) NOT NULL DEFAULT 0.00,
   `ad_sales_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `refund_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `sub_category_rank` int(10) UNSIGNED DEFAULT NULL,
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -975,6 +1145,22 @@ CREATE TABLE `sales_product_variants` (
   `sku_family_id` int(10) UNSIGNED NOT NULL,
   `spec_name` varchar(255) NOT NULL,
   `fabric_id` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `sales_variant_image_mappings`
+--
+
+CREATE TABLE `sales_variant_image_mappings` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `variant_id` int(10) UNSIGNED DEFAULT NULL,
+  `image_asset_id` bigint(20) UNSIGNED NOT NULL,
+  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 100,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -1021,36 +1207,20 @@ CREATE TABLE `shops` (
 -- --------------------------------------------------------
 
 --
--- 表的结构 `sales_variant_image_mappings`
---
-
-CREATE TABLE `sales_variant_image_mappings` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `variant_id` int(10) UNSIGNED DEFAULT NULL,
-  `image_asset_id` bigint(20) UNSIGNED NOT NULL,
-  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 100,
-  `created_by` int(10) UNSIGNED DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
 -- 表的结构 `todos`
 --
 
 CREATE TABLE `todos` (
   `id` int(10) UNSIGNED NOT NULL,
+  `todo_type_id` int(10) UNSIGNED NOT NULL,
   `title` varchar(255) NOT NULL,
   `detail` text DEFAULT NULL,
   `start_date` date NOT NULL,
-  `due_date` date NOT NULL,
-  `reminder_interval_days` int(10) UNSIGNED NOT NULL DEFAULT 1,
+  `due_date` date DEFAULT NULL,
+  `reminder_interval_days` int(10) UNSIGNED DEFAULT NULL,
   `is_recurring` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
-  `status` varchar(16) NOT NULL DEFAULT 'open',
-  `completed_at` datetime DEFAULT NULL,
   `priority` tinyint(3) UNSIGNED NOT NULL DEFAULT 2,
+  `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -1064,7 +1234,21 @@ CREATE TABLE `todo_assignments` (
   `id` int(10) UNSIGNED NOT NULL,
   `todo_id` int(10) UNSIGNED NOT NULL,
   `assignee_id` int(10) UNSIGNED NOT NULL,
-  `assignment_status` varchar(16) NOT NULL DEFAULT 'pending',
+  `is_completed` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
+  `completed_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `todo_platform_type_links`
+--
+
+CREATE TABLE `todo_platform_type_links` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `todo_id` int(10) UNSIGNED NOT NULL,
+  `platform_type_id` int(10) UNSIGNED NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -1085,6 +1269,20 @@ CREATE TABLE `todo_sales_links` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `todo_types`
+--
+
+CREATE TABLE `todo_types` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `type_name` varchar(64) NOT NULL,
+  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `users`
 --
 
@@ -1096,6 +1294,10 @@ CREATE TABLE `users` (
   `name` varchar(128) DEFAULT NULL,
   `phone` varchar(64) DEFAULT NULL,
   `birthday` date DEFAULT NULL,
+  `hire_date` date DEFAULT NULL COMMENT '入职日期',
+  `job_title` varchar(128) DEFAULT NULL COMMENT '岗位',
+  `direct_supervisor_id` int(10) UNSIGNED DEFAULT NULL COMMENT '直属上级用户ID',
+  `avatar_path` varchar(512) DEFAULT NULL COMMENT '头像相对路径（data/user_avatars）',
   `is_admin` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
   `can_grant_admin` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
   `page_permissions` longtext DEFAULT NULL,
@@ -1115,9 +1317,37 @@ CREATE TABLE `user_factory_scopes` (
   `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `user_notifications`
+--
+
+CREATE TABLE `user_notifications` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
+  `notification_type` varchar(64) NOT NULL DEFAULT 'system',
+  `title` varchar(255) NOT NULL DEFAULT '',
+  `body` varchar(2000) DEFAULT NULL,
+  `link_url` varchar(512) DEFAULT NULL,
+  `link_label` varchar(128) DEFAULT NULL,
+  `is_read` tinyint(1) NOT NULL DEFAULT 0,
+  `read_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- 转储表的索引
 --
+
+--
+-- 表的索引 `access_logs`
+--
+ALTER TABLE `access_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_access_logs_created_at` (`created_at`),
+  ADD KEY `idx_access_logs_user_id` (`user_id`),
+  ADD KEY `idx_access_logs_page_path` (`page_path`(64));
 
 --
 -- 表的索引 `amazon_account_health`
@@ -1134,17 +1364,7 @@ ALTER TABLE `amazon_ad_adjustments`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_ad_adjustment_ad_item` (`ad_item_id`),
   ADD KEY `idx_ad_adjustment_operation` (`operation_type_id`),
-  ADD KEY `idx_ad_adjustment_reason` (`reason_id`),
   ADD KEY `idx_ad_adjustment_date` (`adjust_date`);
-
---
--- 表的索引 `amazon_ad_deliveries`
---
-ALTER TABLE `amazon_ad_deliveries`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_ad_delivery_item` (`ad_item_id`),
-  ADD KEY `idx_ad_delivery_status` (`status`),
-  ADD KEY `idx_ad_delivery_next_observe` (`next_observe_at`);
 
 --
 -- 表的索引 `amazon_ad_items`
@@ -1155,15 +1375,8 @@ ALTER TABLE `amazon_ad_items`
   ADD KEY `idx_ad_sku` (`sku_family_id`),
   ADD KEY `idx_ad_portfolio` (`portfolio_id`),
   ADD KEY `idx_ad_campaign` (`campaign_id`),
-  ADD KEY `idx_ad_subtype` (`subtype_id`);
-
---
--- 表的索引 `amazon_ad_operation_reasons`
---
-ALTER TABLE `amazon_ad_operation_reasons`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uniq_ad_op_reason` (`operation_type_id`,`reason_name`),
-  ADD KEY `idx_ad_op_reason_type` (`operation_type_id`);
+  ADD KEY `idx_ad_subtype` (`subtype_id`),
+  ADD KEY `idx_ad_shop` (`shop_id`);
 
 --
 -- 表的索引 `amazon_ad_operation_types`
@@ -1195,6 +1408,15 @@ ALTER TABLE `amazon_ad_subtypes`
 ALTER TABLE `amazon_ad_subtype_operation_types`
   ADD PRIMARY KEY (`subtype_id`,`operation_type_id`),
   ADD KEY `fk_ad_subtype_op_type` (`operation_type_id`);
+
+--
+-- 表的索引 `amazon_ad_targets`
+--
+ALTER TABLE `amazon_ad_targets`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_ad_target_item` (`ad_item_id`),
+  ADD KEY `idx_ad_target_status` (`status`),
+  ADD KEY `idx_ad_target_next_observe` (`next_observe_at`);
 
 --
 -- 表的索引 `amazon_keywords`
@@ -1389,6 +1611,15 @@ ALTER TABLE `logistics_in_transit`
   ADD KEY `idx_transit_destination_region` (`destination_region_id`);
 
 --
+-- 表的索引 `logistics_in_transit_consolidation_factories`
+--
+ALTER TABLE `logistics_in_transit_consolidation_factories`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_transit_consolidation_factory` (`transit_id`,`factory_id`),
+  ADD KEY `idx_transit_id` (`transit_id`),
+  ADD KEY `idx_factory_id` (`factory_id`);
+
+--
 -- 表的索引 `logistics_in_transit_items`
 --
 ALTER TABLE `logistics_in_transit_items`
@@ -1441,6 +1672,15 @@ ALTER TABLE `material_types`
   ADD UNIQUE KEY `name` (`name`);
 
 --
+-- 表的索引 `operation_logs`
+--
+ALTER TABLE `operation_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_operation_logs_created_at` (`created_at`),
+  ADD KEY `idx_operation_logs_user_id` (`user_id`),
+  ADD KEY `idx_operation_logs_api_path` (`api_path`(64));
+
+--
 -- 表的索引 `order_products`
 --
 ALTER TABLE `order_products`
@@ -1472,6 +1712,15 @@ ALTER TABLE `order_product_factory_links`
 ALTER TABLE `order_product_features`
   ADD PRIMARY KEY (`order_product_id`,`feature_id`),
   ADD KEY `fk_opf_feature` (`feature_id`);
+
+--
+-- 表的索引 `order_product_image_mappings`
+--
+ALTER TABLE `order_product_image_mappings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_opim_order_image` (`order_product_id`,`image_asset_id`),
+  ADD KEY `idx_opim_order_sort` (`order_product_id`,`sort_order`),
+  ADD KEY `idx_opim_asset` (`image_asset_id`);
 
 --
 -- 表的索引 `order_product_materials`
@@ -1518,6 +1767,33 @@ ALTER TABLE `product_categories`
 ALTER TABLE `product_families`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `sku_family` (`sku_family`);
+
+--
+-- 表的索引 `sales_forecast_order_sku_monthly`
+--
+ALTER TABLE `sales_forecast_order_sku_monthly`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_forecast_order_sku_month` (`order_product_id`,`forecast_month`),
+  ADD KEY `idx_forecast_order_month` (`forecast_month`),
+  ADD KEY `idx_forecast_order_sku` (`order_product_id`);
+
+--
+-- 表的索引 `sales_forecast_platform_sku_monthly`
+--
+ALTER TABLE `sales_forecast_platform_sku_monthly`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_forecast_platform_sku_month` (`sales_product_id`,`forecast_month`),
+  ADD KEY `idx_forecast_platform_sku_month` (`forecast_month`),
+  ADD KEY `idx_forecast_platform_sku` (`sales_product_id`);
+
+--
+-- 表的索引 `sales_forecast_spec_monthly`
+--
+ALTER TABLE `sales_forecast_spec_monthly`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_forecast_spec_month` (`variant_id`,`forecast_month`),
+  ADD KEY `idx_forecast_spec_month` (`forecast_month`),
+  ADD KEY `idx_forecast_spec_variant` (`variant_id`);
 
 --
 -- 表的索引 `sales_order_registrations`
@@ -1571,6 +1847,24 @@ ALTER TABLE `sales_parents`
   ADD KEY `idx_parent_shop` (`shop_id`);
 
 --
+-- 表的索引 `sales_perf_agg_month`
+--
+ALTER TABLE `sales_perf_agg_month`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_month_sales_product` (`sales_product_id`,`year_month`),
+  ADD KEY `idx_month_start` (`month_start`),
+  ADD KEY `idx_month_sp` (`sales_product_id`,`month_start`);
+
+--
+-- 表的索引 `sales_perf_agg_week`
+--
+ALTER TABLE `sales_perf_agg_week`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_week_sales_product` (`sales_product_id`,`year_week`),
+  ADD KEY `idx_week_start` (`week_start`),
+  ADD KEY `idx_week_sp` (`sales_product_id`,`week_start`);
+
+--
 -- 表的索引 `sales_products`
 --
 ALTER TABLE `sales_products`
@@ -1586,8 +1880,10 @@ ALTER TABLE `sales_products`
 ALTER TABLE `sales_product_performances`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_sales_product_performance` (`sales_product_id`,`record_date`),
+  ADD UNIQUE KEY `uniq_sales_product_date` (`sales_product_id`,`record_date`),
   ADD KEY `idx_sp_perf_date` (`record_date`),
-  ADD KEY `idx_sp_perf_product` (`sales_product_id`);
+  ADD KEY `idx_sp_perf_product` (`sales_product_id`),
+  ADD KEY `idx_record_date` (`record_date`);
 
 --
 -- 表的索引 `sales_product_variants`
@@ -1597,6 +1893,16 @@ ALTER TABLE `sales_product_variants`
   ADD UNIQUE KEY `uniq_sales_product_variants_family_spec_fabric` (`sku_family_id`,`spec_name`,`fabric_id`),
   ADD KEY `idx_spv_sku_family` (`sku_family_id`),
   ADD KEY `idx_spv_fabric` (`fabric_id`);
+
+--
+-- 表的索引 `sales_variant_image_mappings`
+--
+ALTER TABLE `sales_variant_image_mappings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_sim_variant_asset` (`variant_id`,`image_asset_id`),
+  ADD KEY `idx_sku_images_asset` (`image_asset_id`),
+  ADD KEY `idx_sim_variant` (`variant_id`),
+  ADD KEY `idx_sim_variant_sort` (`variant_id`,`sort_order`,`id`);
 
 --
 -- 表的索引 `sales_variant_order_links`
@@ -1622,22 +1928,13 @@ ALTER TABLE `shops`
   ADD KEY `idx_shop_brand` (`brand_id`);
 
 --
--- 表的索引 `sales_variant_image_mappings`
---
-ALTER TABLE `sales_variant_image_mappings`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uniq_sim_variant_asset` (`variant_id`,`image_asset_id`),
-  ADD KEY `idx_sku_images_asset` (`image_asset_id`),
-  ADD KEY `idx_sim_variant` (`variant_id`),
-  ADD KEY `idx_sim_variant_sort` (`variant_id`,`sort_order`,`id`);
-
---
 -- 表的索引 `todos`
 --
 ALTER TABLE `todos`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_due_date` (`due_date`),
-  ADD KEY `idx_status` (`status`);
+  ADD KEY `fk_todos_created_by` (`created_by`),
+  ADD KEY `idx_todos_type_status_due` (`todo_type_id`,`due_date`,`id`);
 
 --
 -- 表的索引 `todo_assignments`
@@ -1645,7 +1942,18 @@ ALTER TABLE `todos`
 ALTER TABLE `todo_assignments`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uk_todo_assignee` (`todo_id`,`assignee_id`),
-  ADD KEY `idx_ta_assignee_todo` (`assignee_id`,`todo_id`);
+  ADD KEY `idx_ta_assignee_todo` (`assignee_id`,`todo_id`),
+  ADD KEY `idx_ta_assignee_completed` (`assignee_id`,`is_completed`,`todo_id`),
+  ADD KEY `idx_ta_todo_assignee` (`todo_id`,`assignee_id`);
+
+--
+-- 表的索引 `todo_platform_type_links`
+--
+ALTER TABLE `todo_platform_type_links`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_tptl_todo_platform` (`todo_id`,`platform_type_id`),
+  ADD KEY `idx_tptl_todo` (`todo_id`),
+  ADD KEY `idx_tptl_platform` (`platform_type_id`);
 
 --
 -- 表的索引 `todo_sales_links`
@@ -1659,12 +1967,21 @@ ALTER TABLE `todo_sales_links`
   ADD KEY `idx_tsl_sku_family` (`sku_family_id`);
 
 --
+-- 表的索引 `todo_types`
+--
+ALTER TABLE `todo_types`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_todo_type_name` (`type_name`),
+  ADD KEY `idx_todo_type_sort` (`sort_order`,`id`);
+
+--
 -- 表的索引 `users`
 --
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `username` (`username`),
-  ADD KEY `idx_username` (`username`);
+  ADD KEY `idx_username` (`username`),
+  ADD KEY `idx_users_direct_supervisor_id` (`direct_supervisor_id`);
 
 --
 -- 表的索引 `user_factory_scopes`
@@ -1676,8 +1993,22 @@ ALTER TABLE `user_factory_scopes`
   ADD KEY `idx_user_factory_scope_factory` (`factory_id`);
 
 --
+-- 表的索引 `user_notifications`
+--
+ALTER TABLE `user_notifications`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_notifications_user_read` (`user_id`,`is_read`,`created_at`),
+  ADD KEY `idx_user_notifications_created_at` (`created_at`);
+
+--
 -- 在导出的表使用AUTO_INCREMENT
 --
+
+--
+-- 使用表AUTO_INCREMENT `access_logs`
+--
+ALTER TABLE `access_logs`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- 使用表AUTO_INCREMENT `amazon_account_health`
@@ -1692,21 +2023,9 @@ ALTER TABLE `amazon_ad_adjustments`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- 使用表AUTO_INCREMENT `amazon_ad_deliveries`
---
-ALTER TABLE `amazon_ad_deliveries`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
 -- 使用表AUTO_INCREMENT `amazon_ad_items`
 --
 ALTER TABLE `amazon_ad_items`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- 使用表AUTO_INCREMENT `amazon_ad_operation_reasons`
---
-ALTER TABLE `amazon_ad_operation_reasons`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1725,6 +2044,12 @@ ALTER TABLE `amazon_ad_products`
 -- 使用表AUTO_INCREMENT `amazon_ad_subtypes`
 --
 ALTER TABLE `amazon_ad_subtypes`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `amazon_ad_targets`
+--
+ALTER TABLE `amazon_ad_targets`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1842,6 +2167,12 @@ ALTER TABLE `logistics_in_transit`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- 使用表AUTO_INCREMENT `logistics_in_transit_consolidation_factories`
+--
+ALTER TABLE `logistics_in_transit_consolidation_factories`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- 使用表AUTO_INCREMENT `logistics_in_transit_items`
 --
 ALTER TABLE `logistics_in_transit_items`
@@ -1878,6 +2209,12 @@ ALTER TABLE `material_types`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- 使用表AUTO_INCREMENT `operation_logs`
+--
+ALTER TABLE `operation_logs`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- 使用表AUTO_INCREMENT `order_products`
 --
 ALTER TABLE `order_products`
@@ -1887,6 +2224,12 @@ ALTER TABLE `order_products`
 -- 使用表AUTO_INCREMENT `order_product_factory_links`
 --
 ALTER TABLE `order_product_factory_links`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `order_product_image_mappings`
+--
+ALTER TABLE `order_product_image_mappings`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1920,6 +2263,24 @@ ALTER TABLE `product_families`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- 使用表AUTO_INCREMENT `sales_forecast_order_sku_monthly`
+--
+ALTER TABLE `sales_forecast_order_sku_monthly`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `sales_forecast_platform_sku_monthly`
+--
+ALTER TABLE `sales_forecast_platform_sku_monthly`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `sales_forecast_spec_monthly`
+--
+ALTER TABLE `sales_forecast_spec_monthly`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+
+--
 -- 使用表AUTO_INCREMENT `sales_order_registrations`
 --
 ALTER TABLE `sales_order_registrations`
@@ -1950,6 +2311,18 @@ ALTER TABLE `sales_parents`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- 使用表AUTO_INCREMENT `sales_perf_agg_month`
+--
+ALTER TABLE `sales_perf_agg_month`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `sales_perf_agg_week`
+--
+ALTER TABLE `sales_perf_agg_week`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+
+--
 -- 使用表AUTO_INCREMENT `sales_products`
 --
 ALTER TABLE `sales_products`
@@ -1968,16 +2341,16 @@ ALTER TABLE `sales_product_variants`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- 使用表AUTO_INCREMENT `shops`
---
-ALTER TABLE `shops`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
 -- 使用表AUTO_INCREMENT `sales_variant_image_mappings`
 --
 ALTER TABLE `sales_variant_image_mappings`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `shops`
+--
+ALTER TABLE `shops`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- 使用表AUTO_INCREMENT `todos`
@@ -1992,10 +2365,22 @@ ALTER TABLE `todo_assignments`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- 使用表AUTO_INCREMENT `todo_platform_type_links`
+--
+ALTER TABLE `todo_platform_type_links`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- 使用表AUTO_INCREMENT `todo_sales_links`
 --
 ALTER TABLE `todo_sales_links`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `todo_types`
+--
+ALTER TABLE `todo_types`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- 使用表AUTO_INCREMENT `users`
@@ -2007,6 +2392,12 @@ ALTER TABLE `users`
 -- 使用表AUTO_INCREMENT `user_factory_scopes`
 --
 ALTER TABLE `user_factory_scopes`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- 使用表AUTO_INCREMENT `user_notifications`
+--
+ALTER TABLE `user_notifications`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -2024,14 +2415,7 @@ ALTER TABLE `amazon_account_health`
 --
 ALTER TABLE `amazon_ad_adjustments`
   ADD CONSTRAINT `fk_ad_adjustment_item` FOREIGN KEY (`ad_item_id`) REFERENCES `amazon_ad_items` (`id`),
-  ADD CONSTRAINT `fk_ad_adjustment_operation` FOREIGN KEY (`operation_type_id`) REFERENCES `amazon_ad_operation_types` (`id`),
-  ADD CONSTRAINT `fk_ad_adjustment_reason` FOREIGN KEY (`reason_id`) REFERENCES `amazon_ad_operation_reasons` (`id`) ON DELETE SET NULL;
-
---
--- 限制表 `amazon_ad_deliveries`
---
-ALTER TABLE `amazon_ad_deliveries`
-  ADD CONSTRAINT `fk_ad_delivery_item` FOREIGN KEY (`ad_item_id`) REFERENCES `amazon_ad_items` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `fk_ad_adjustment_operation` FOREIGN KEY (`operation_type_id`) REFERENCES `amazon_ad_operation_types` (`id`);
 
 --
 -- 限制表 `amazon_ad_items`
@@ -2039,14 +2423,9 @@ ALTER TABLE `amazon_ad_deliveries`
 ALTER TABLE `amazon_ad_items`
   ADD CONSTRAINT `fk_ad_campaign` FOREIGN KEY (`campaign_id`) REFERENCES `amazon_ad_items` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_ad_portfolio` FOREIGN KEY (`portfolio_id`) REFERENCES `amazon_ad_items` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_ad_shop` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `fk_ad_sku` FOREIGN KEY (`sku_family_id`) REFERENCES `product_families` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `fk_ad_subtype` FOREIGN KEY (`subtype_id`) REFERENCES `amazon_ad_subtypes` (`id`) ON DELETE SET NULL;
-
---
--- 限制表 `amazon_ad_operation_reasons`
---
-ALTER TABLE `amazon_ad_operation_reasons`
-  ADD CONSTRAINT `fk_ad_op_reason_type` FOREIGN KEY (`operation_type_id`) REFERENCES `amazon_ad_operation_types` (`id`) ON DELETE CASCADE;
 
 --
 -- 限制表 `amazon_ad_products`
@@ -2061,6 +2440,12 @@ ALTER TABLE `amazon_ad_products`
 ALTER TABLE `amazon_ad_subtype_operation_types`
   ADD CONSTRAINT `fk_ad_subtype_op_subtype` FOREIGN KEY (`subtype_id`) REFERENCES `amazon_ad_subtypes` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_ad_subtype_op_type` FOREIGN KEY (`operation_type_id`) REFERENCES `amazon_ad_operation_types` (`id`) ON DELETE CASCADE;
+
+--
+-- 限制表 `amazon_ad_targets`
+--
+ALTER TABLE `amazon_ad_targets`
+  ADD CONSTRAINT `fk_ad_target_item` FOREIGN KEY (`ad_item_id`) REFERENCES `amazon_ad_items` (`id`) ON DELETE CASCADE;
 
 --
 -- 限制表 `amazon_keywords`
@@ -2146,6 +2531,13 @@ ALTER TABLE `logistics_in_transit`
   ADD CONSTRAINT `fk_transit_wh` FOREIGN KEY (`destination_warehouse_id`) REFERENCES `logistics_overseas_warehouses` (`id`) ON DELETE SET NULL;
 
 --
+-- 限制表 `logistics_in_transit_consolidation_factories`
+--
+ALTER TABLE `logistics_in_transit_consolidation_factories`
+  ADD CONSTRAINT `fk_transit_consolidation_factory` FOREIGN KEY (`factory_id`) REFERENCES `logistics_factories` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_transit_consolidation_transit` FOREIGN KEY (`transit_id`) REFERENCES `logistics_in_transit` (`id`) ON DELETE CASCADE;
+
+--
 -- 限制表 `logistics_in_transit_items`
 --
 ALTER TABLE `logistics_in_transit_items`
@@ -2201,6 +2593,13 @@ ALTER TABLE `order_product_factory_links`
 ALTER TABLE `order_product_features`
   ADD CONSTRAINT `fk_opf_feature` FOREIGN KEY (`feature_id`) REFERENCES `features` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_opf_order_product` FOREIGN KEY (`order_product_id`) REFERENCES `order_products` (`id`) ON DELETE CASCADE;
+
+--
+-- 限制表 `order_product_image_mappings`
+--
+ALTER TABLE `order_product_image_mappings`
+  ADD CONSTRAINT `fk_opim_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `image_assets` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_opim_order_product` FOREIGN KEY (`order_product_id`) REFERENCES `order_products` (`id`) ON DELETE CASCADE;
 
 --
 -- 限制表 `order_product_materials`
@@ -2278,6 +2677,13 @@ ALTER TABLE `sales_product_variants`
   ADD CONSTRAINT `fk_spv_sku_family` FOREIGN KEY (`sku_family_id`) REFERENCES `product_families` (`id`);
 
 --
+-- 限制表 `sales_variant_image_mappings`
+--
+ALTER TABLE `sales_variant_image_mappings`
+  ADD CONSTRAINT `fk_sim_variant` FOREIGN KEY (`variant_id`) REFERENCES `sales_product_variants` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_sku_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `image_assets` (`id`);
+
+--
 -- 限制表 `sales_variant_order_links`
 --
 ALTER TABLE `sales_variant_order_links`
@@ -2298,11 +2704,11 @@ ALTER TABLE `shops`
   ADD CONSTRAINT `fk_shop_platform_type` FOREIGN KEY (`platform_type_id`) REFERENCES `platform_types` (`id`);
 
 --
--- 限制表 `sales_variant_image_mappings`
+-- 限制表 `todos`
 --
-ALTER TABLE `sales_variant_image_mappings`
-  ADD CONSTRAINT `fk_sim_variant` FOREIGN KEY (`variant_id`) REFERENCES `sales_product_variants` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `fk_sku_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `image_assets` (`id`);
+ALTER TABLE `todos`
+  ADD CONSTRAINT `fk_todos_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_todos_todo_type` FOREIGN KEY (`todo_type_id`) REFERENCES `todo_types` (`id`);
 
 --
 -- 限制表 `todo_assignments`
@@ -2310,6 +2716,13 @@ ALTER TABLE `sales_variant_image_mappings`
 ALTER TABLE `todo_assignments`
   ADD CONSTRAINT `fk_ta_assignee` FOREIGN KEY (`assignee_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_ta_todo` FOREIGN KEY (`todo_id`) REFERENCES `todos` (`id`) ON DELETE CASCADE;
+
+--
+-- 限制表 `todo_platform_type_links`
+--
+ALTER TABLE `todo_platform_type_links`
+  ADD CONSTRAINT `fk_tptl_platform_type` FOREIGN KEY (`platform_type_id`) REFERENCES `platform_types` (`id`),
+  ADD CONSTRAINT `fk_tptl_todo` FOREIGN KEY (`todo_id`) REFERENCES `todos` (`id`) ON DELETE CASCADE;
 
 --
 -- 限制表 `todo_sales_links`
