@@ -121,28 +121,40 @@
         .reason-item-order,
         .optype-order-actions {
             display: inline-flex;
-            flex-direction: column;
-            gap: 0.15rem;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.08rem;
             flex: 0 0 auto;
         }
-        .order-move-btn {
-            min-width: 1.6rem;
-            height: 1.25rem;
-            padding: 0;
-            border-radius: 6px;
-            border: 1px solid var(--morandi-sand);
-            background: var(--morandi-mist);
-            color: var(--morandi-ink);
-            font-size: 0.72rem;
-            line-height: 1;
-            cursor: pointer;
+        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            margin: 0 !important;
+            padding: 0.04rem 0.18rem !important;
+            min-width: 1.05rem !important;
+            width: 1.05rem !important;
+            height: 1.05rem !important;
+            min-height: 1.05rem !important;
+            line-height: 1 !important;
+            font-size: 0.62rem !important;
+            font-weight: 700 !important;
+            color: #2a2420 !important;
+            border: 0 !important;
+            border-radius: 3px;
+            background: transparent !important;
+            box-shadow: none !important;
         }
-        .order-move-btn:hover:not(:disabled) {
-            background: rgba(207, 199, 189, 0.55);
+        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move:hover:not(:disabled) {
+            color: #2a2420 !important;
+            background: rgba(42, 36, 32, 0.06) !important;
         }
-        .order-move-btn:disabled {
-            opacity: 0.35;
-            cursor: default;
+        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move:disabled {
+            color: rgba(42, 36, 32, 0.28) !important;
+            opacity: 1;
+            cursor: not-allowed;
         }
         .reason-item-name {
             flex: 1;
@@ -196,23 +208,6 @@
             color: var(--morandi-slate);
             font-size: 0.88rem;
         }
-        .floating-save {
-            position: fixed;
-            left: 50%;
-            bottom: 22px;
-            transform: translateX(-50%);
-            background: #fff;
-            border: 1px solid var(--morandi-sand);
-            border-radius: 12px;
-            padding: 0.7rem 1rem;
-            display: none;
-            align-items: center;
-            gap: 0.75rem;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-            z-index: 40;
-            color: var(--morandi-ink);
-        }
-        .floating-save.active { display: flex; }
     </style>
 </head>
 <body>
@@ -440,10 +435,10 @@
         </div>
     </div>
 
-    <div id="inlineSaveBar" class="floating-save" aria-live="polite">
-        <span>已修改操作类型适用模块</span>
-        <button class="btn-secondary" type="button" onclick="cancelInlineOpTypeEdits()">取消</button>
-        <button class="btn-primary" type="button" onclick="saveInlineOpTypeEdits()">保存修改</button>
+    <div id="opTypeSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="opTypeSaveText">已修改 0 项</span>
+        <button class="btn-secondary" type="button" onclick="cancelOpTypeEdits()">取消修改</button>
+        <button class="btn-primary" type="button" onclick="saveOpTypeEdits()">统一保存</button>
     </div>
 
     <footer>
@@ -455,6 +450,8 @@
         let opTypeEditId = null;
         let subtypeCache = [];
         let opTypeOptions = [];
+        let opTypeOptionsOriginal = [];
+        let opTypeOrderBaseline = [];
         let opTypeInlineDraft = {};
         let modalReasonItems = [];
         let modalCampaignDefaultTargets = [];
@@ -793,9 +790,9 @@
                 const row = document.createElement('div');
                 row.className = 'reason-item';
                 row.innerHTML = `
-                    <div class="reason-item-order">
-                        <button type="button" class="order-move-btn" data-move="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
-                        <button type="button" class="order-move-btn" data-move="down" title="下移" ${idx === modalReasonItems.length - 1 ? 'disabled' : ''}>↓</button>
+                    <div class="sf-perf-field-reorder reason-item-order" aria-label="调整顺序">
+                        <button type="button" class="btn-ghost sf-perf-field-move" data-move="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                        <button type="button" class="btn-ghost sf-perf-field-move" data-move="down" title="下移" ${idx === modalReasonItems.length - 1 ? 'disabled' : ''}>↓</button>
                     </div>
                     <span class="reason-item-name">${escapeHtml(name)}</span>
                     <button type="button" class="btn-danger">删除</button>
@@ -954,13 +951,60 @@
             .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
 
-        function setInlineSaveBarVisible(visible) {
-            const bar = document.getElementById('inlineSaveBar');
-            if (visible) {
-                bar.classList.add('active');
-            } else {
-                bar.classList.remove('active');
-            }
+        function getOpTypeDisplayOrderIds() {
+            return (opTypeOptions || []).map(item => Number(item.id));
+        }
+
+        function captureOpTypeBaseline() {
+            opTypeOptionsOriginal = JSON.parse(JSON.stringify(opTypeOptions || []));
+            opTypeOrderBaseline = getOpTypeDisplayOrderIds();
+        }
+
+        function isOpTypeOrderDirty() {
+            const current = getOpTypeDisplayOrderIds();
+            if (current.length !== opTypeOrderBaseline.length) return true;
+            return current.some((id, idx) => id !== opTypeOrderBaseline[idx]);
+        }
+
+        function syncOpTypeOrderMeta() {
+            (opTypeOptions || []).forEach((item, idx) => {
+                item.sort_order = (idx + 1) * 10;
+            });
+        }
+
+        function syncOpTypeSaveBar() {
+            const bar = document.getElementById('opTypeSaveBar');
+            const text = document.getElementById('opTypeSaveText');
+            if (!bar || !text) return;
+            const toggleCount = Object.keys(opTypeInlineDraft).length;
+            const orderDirty = isOpTypeOrderDirty();
+            const parts = [];
+            if (orderDirty) parts.push('排序');
+            if (toggleCount) parts.push(`${toggleCount} 项适用模块`);
+            const dirty = parts.length > 0;
+            text.textContent = dirty ? `已修改：${parts.join('、')}` : '已修改 0 项';
+            bar.classList.toggle('active', dirty);
+        }
+
+        function renderOpTypeReorderButtons(idx, total) {
+            return `
+                <div class="sf-perf-field-reorder optype-order-actions" aria-label="调整顺序">
+                    <button type="button" class="btn-ghost sf-perf-field-move" data-dir="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                    <button type="button" class="btn-ghost sf-perf-field-move" data-dir="down" title="下移" ${idx === total - 1 ? 'disabled' : ''}>↓</button>
+                </div>
+            `;
+        }
+
+        function updateOpTypeOrderButtonStates(tbody) {
+            const root = tbody || document.querySelector('#opTypeTable tbody');
+            if (!root) return;
+            const rows = Array.from(root.querySelectorAll('tr[data-optype-id]'));
+            rows.forEach((row, idx) => {
+                const up = row.querySelector('.sf-perf-field-move[data-dir="up"]');
+                const down = row.querySelector('.sf-perf-field-move[data-dir="down"]');
+                if (up) up.disabled = idx === 0;
+                if (down) down.disabled = idx === rows.length - 1;
+            });
         }
 
         function updateInlineDraft(itemId, field, value) {
@@ -982,7 +1026,7 @@
             if (unchanged) {
                 delete opTypeInlineDraft[itemId];
             }
-            setInlineSaveBarVisible(Object.keys(opTypeInlineDraft).length > 0);
+            syncOpTypeSaveBar();
         }
 
         function applyInlineToggleListeners() {
@@ -1017,23 +1061,17 @@
 
         function renderOpTypeTable() {
             const tbody = document.querySelector('#opTypeTable tbody');
-            opTypeOptions = sortOpTypeOptions(opTypeOptions);
             if (!opTypeOptions.length) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
-                setInlineSaveBarVisible(false);
+                syncOpTypeSaveBar();
                 return;
             }
 
             tbody.innerHTML = opTypeOptions.map((item, idx) => {
                 const draft = opTypeInlineDraft[item.id] || item;
                 return `
-                    <tr>
-                        <td>
-                            <div class="optype-order-actions">
-                                <button type="button" class="order-move-btn" title="上移" ${idx === 0 ? 'disabled' : ''} onclick="moveOpTypeRow(${item.id}, -1)">↑</button>
-                                <button type="button" class="order-move-btn" title="下移" ${idx === opTypeOptions.length - 1 ? 'disabled' : ''} onclick="moveOpTypeRow(${item.id}, 1)">↓</button>
-                            </div>
-                        </td>
+                    <tr data-optype-id="${item.id}">
+                        <td>${renderOpTypeReorderButtons(idx, opTypeOptions.length)}</td>
                         <td>${item.name || ''}</td>
                         <td>
                             <div class="inline-switch">
@@ -1072,74 +1110,128 @@
             }).join('');
 
             applyInlineToggleListeners();
-            setInlineSaveBarVisible(Object.keys(opTypeInlineDraft).length > 0);
+            bindOpTypeReorderEvents();
+            syncOpTypeSaveBar();
+        }
+
+        function bindOpTypeReorderEvents() {
+            const tbody = document.querySelector('#opTypeTable tbody');
+            if (!tbody || tbody.dataset.reorderBound === '1') return;
+            tbody.dataset.reorderBound = '1';
+            tbody.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.sf-perf-field-move') : null;
+                if (!btn || btn.disabled) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const row = btn.closest('tr[data-optype-id]');
+                if (!row || !tbody.contains(row)) return;
+                const id = Number(row.getAttribute('data-optype-id') || 0);
+                if (!id) return;
+                const dir = String(btn.getAttribute('data-dir') || '');
+                if (dir === 'up') moveOpTypeRow(id, -1);
+                else if (dir === 'down') moveOpTypeRow(id, 1);
+            });
         }
 
         function moveOpTypeRow(id, delta) {
-            opTypeOptions = sortOpTypeOptions(opTypeOptions);
             const idx = opTypeOptions.findIndex(x => Number(x.id) === Number(id));
             if (idx < 0) return;
             const next = idx + delta;
             if (next < 0 || next >= opTypeOptions.length) return;
+
+            const tbody = document.querySelector('#opTypeTable tbody');
+            const rows = tbody ? Array.from(tbody.querySelectorAll('tr[data-optype-id]')) : [];
+            const rowA = rows[idx];
+            const rowB = rows[next];
+
             const tmp = opTypeOptions[idx];
             opTypeOptions[idx] = opTypeOptions[next];
             opTypeOptions[next] = tmp;
-            opTypeOptions.forEach((item, i) => {
-                item.sort_order = (i + 1) * 10;
-            });
-            renderOpTypeTable();
-            saveOpTypeOrder();
+            syncOpTypeOrderMeta();
+
+            if (tbody && rowA && rowB) {
+                if (delta < 0) {
+                    tbody.insertBefore(rowA, rowB);
+                } else {
+                    tbody.insertBefore(rowB, rowA);
+                }
+                updateOpTypeOrderButtonStates(tbody);
+            } else {
+                renderOpTypeTable();
+            }
+            syncOpTypeSaveBar();
         }
 
-        function saveOpTypeOrder() {
-            const ordered_ids = sortOpTypeOptions(opTypeOptions).map(item => item.id);
-            return fetch('/api/amazon-ad-operation-type?action=reorder', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ordered_ids }),
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status !== 'success') {
-                        window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '排序保存失败' });
-                        return loadOperationTypeList();
-                    }
-                    return loadOperationTypeList();
-                })
-                .catch(err => {
-                    window.showAppSaveResult({ action: 'save', isError: true, message: '排序保存失败: ' + err });
-                    return loadOperationTypeList();
-                });
-        }
-
-        function cancelInlineOpTypeEdits() {
+        function cancelOpTypeEdits() {
             opTypeInlineDraft = {};
+            opTypeOptions = JSON.parse(JSON.stringify(opTypeOptionsOriginal || []));
             renderOpTypeTable();
+            syncOpTypeSaveBar();
         }
 
-        function saveInlineOpTypeEdits() {
-            const updates = Object.entries(opTypeInlineDraft);
-            if (!updates.length) {
-                setInlineSaveBarVisible(false);
+        function saveOpTypeEdits() {
+            const hasToggle = Object.keys(opTypeInlineDraft).length > 0;
+            const hasOrder = isOpTypeOrderDirty();
+            if (!hasToggle && !hasOrder) {
+                syncOpTypeSaveBar();
                 return;
             }
-            const items = updates.map(([id, draft]) => ({ id: Number(id), ...draft }));
-            fetch('/api/amazon-ad-operation-type', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status !== 'success') {
-                    window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
-                    return;
-                }
-                opTypeInlineDraft = {};
-                Promise.all([loadOperationTypeList(), loadSubtypeList()]);
-                window.showAppSaveResult({ action: 'save' });
-            })
-            .catch(err => window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err }));
+
+            const bar = document.getElementById('opTypeSaveBar');
+            const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+            }
+
+            const tasks = [];
+            if (hasOrder) {
+                const ordered_ids = getOpTypeDisplayOrderIds();
+                tasks.push(
+                    fetch('/api/amazon-ad-operation-type?action=reorder', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ordered_ids }),
+                    }).then(r => r.json())
+                );
+            }
+            if (hasToggle) {
+                const items = Object.entries(opTypeInlineDraft).map(([id, draft]) => ({ id: Number(id), ...draft }));
+                tasks.push(
+                    fetch('/api/amazon-ad-operation-type', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items }),
+                    }).then(r => r.json())
+                );
+            }
+
+            Promise.all(tasks)
+                .then(results => {
+                    const failed = results.find(data => !data || data.status !== 'success');
+                    if (failed) {
+                        window.showAppSaveResult({
+                            action: 'save',
+                            isError: true,
+                            message: failed.message || '保存失败',
+                            errors: failed.errors,
+                        });
+                        return;
+                    }
+                    opTypeInlineDraft = {};
+                    Promise.all([loadOperationTypeList(), loadSubtypeList()]).then(() => {
+                        window.showAppSaveResult({ action: 'save' });
+                    });
+                })
+                .catch(err => {
+                    window.showAppSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
+                })
+                .finally(() => {
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '统一保存';
+                    }
+                });
         }
 
         function renderSubtypeTable() {
@@ -1171,11 +1263,14 @@
                     opTypeOptions = data.status === 'success'
                         ? sortOpTypeOptions(data.items || [])
                         : [];
+                    syncOpTypeOrderMeta();
+                    captureOpTypeBaseline();
                     renderOpTypeTable();
                     renderSubtypeTable();
                 })
                 .catch(() => {
                     opTypeOptions = [];
+                    captureOpTypeBaseline();
                     renderOpTypeTable();
                     renderSubtypeTable();
                 });

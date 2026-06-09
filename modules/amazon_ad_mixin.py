@@ -3187,6 +3187,7 @@ class AmazonAdMixin:
             return {}
         datetime_fields = {'start_time', 'end_time'}
         text_fields = {
+            'target_object',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
             'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
             'attribution_orders', 'attribution_sales', 'remark',
@@ -3944,6 +3945,9 @@ class AmazonAdMixin:
                             item_id = self._parse_int(raw.get('id'))
                             if not item_id:
                                 errors.append({'id': raw.get('id'), 'message': '无效 id'})
+                                continue
+                            if 'target_object' in raw and not (raw.get('target_object') or '').strip():
+                                errors.append({'id': item_id, 'message': '对象不能为空'})
                                 continue
                             patch_fields = self._build_adjustment_patch_fields(raw)
                             if not patch_fields:

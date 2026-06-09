@@ -6909,3 +6909,32 @@ select.pm-inline-compact-select,
 #packageClassCalcForm .form-group {
     margin-bottom: 0;
 }
+
+/* 表格预览批量编辑：右下角统一保存浮条（多页共用） */
+.preview-savebar {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 5300;
+    display: none;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    min-width: min(520px, calc(100vw - 24px));
+}
+.preview-savebar.active {
+    display: flex;
+}
+.preview-savebar span {
+    flex: 1;
+    color: var(--morandi-ink);
+    font-weight: 700;
+}
+.preview-savebar .btn-primary,
+.preview-savebar .btn-secondary {
+    padding: 0.65rem 1rem;
+}

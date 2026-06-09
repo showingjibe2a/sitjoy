@@ -110,6 +110,7 @@
         let recordEditDraft = {};
 
         const RECORD_EDIT_FIELDS = [
+            'target_object',
             'start_time', 'end_time',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
             'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
@@ -431,7 +432,7 @@
                         <td data-manage-col-key="调整日期"${sortCell(item.adjust_date)}>${formatDateTime(item.adjust_date)}</td>
                         <td data-manage-col-key="关联广告"${sortCell(`${adName}（${levelText}）`)}>${escapeHtml(adName)}（${escapeHtml(levelText)}）</td>
                         <td data-manage-col-key="操作类型"${sortCell(item.operation_name)}>${escapeHtml(item.operation_name || '')}</td>
-                        <td data-manage-col-key="对象"${sortCell(item.target_object)}>${escapeHtml(item.target_object || '')}</td>
+                        <td class="preview-edit-cell" data-manage-col-key="对象"${sortCell(draft.target_object || item.target_object)}>${recordEditInput('target_object', itemId, draft.target_object)}</td>
                         <td data-manage-col-key="修改前"${sortCell(item.before_value)}>${escapeHtml(item.before_value || '')}</td>
                         <td data-manage-col-key="修改后"${sortCell(item.after_value)}>${escapeHtml(item.after_value || '')}</td>
                         <td data-manage-col-key="原因"${sortCell(item.reason_name)}>${escapeHtml(item.reason_name || '')}</td>
