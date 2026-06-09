@@ -3023,6 +3023,9 @@ class AmazonAdMixin:
             'portfolio_name': self._adjustment_portfolio_name_from_row(item),
             'campaign_name': item.get('campaign_name') if level == 'group' else (item.get('name') if level == 'campaign' else ''),
             'group_name': item.get('name') if level == 'group' else '',
+            'ad_name': item.get('name') or '',
+            'budget': item.get('budget'),
+            'bid_strategy': item.get('bid_strategy') or '',
         }
         if level == 'portfolio':
             ad_info['portfolio_name'] = item.get('name') or ad_info['portfolio_name']

@@ -119,6 +119,11 @@
             font-size: 0.78rem;
             padding: 0.32rem 0.45rem;
         }
+        .aa-target-object-wrap #targetObject:read-only {
+            background: rgba(255, 255, 255, 0.7);
+            color: var(--morandi-slate);
+            cursor: default;
+        }
         .aa-target-object-wrap .input-capsule-menu-panel {
             min-width: 140px;
             max-width: min(280px, 90vw);
@@ -708,9 +713,16 @@
         let selectedAd = null;
         let selectedAdId = null;
         let allowedOperations = [];
+        let selectedAdDetail = null;
         let targetOptionsCache = [];
         let targetSuggestTimer = 0;
         let hierarchyFilter = null;
+
+        const AA_BID_STRATEGIES = [
+            '动态竞价-仅降低',
+            '动态竞价-提高和降低',
+            '固定竞价',
+        ];
 
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
@@ -1250,8 +1262,69 @@
             return n.includes('修改') && n.includes('广告位');
         }
 
+        function isModifyBudgetOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('预算');
+        }
+
+        function isModifyBidStrategyOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('竞价策略');
+        }
+
+        function isModifyNameOp(op) {
+            const n = normalizeOperationTypeName(op && op.name);
+            return n.includes('修改') && n.includes('名称');
+        }
+
+        function isFixedTargetObjectDashOp(op) {
+            return isModifyBudgetOp(op) || isModifyBidStrategyOp(op) || isModifyNameOp(op);
+        }
+
         function needsTargetObjectSuggest(op) {
             return isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
+        }
+
+        function formatBudgetDisplay(raw) {
+            if (raw == null || raw === '') return '';
+            const n = parseFloat(raw);
+            if (!Number.isFinite(n)) return String(raw).trim();
+            return formatDecimalMetric(n, 2);
+        }
+
+        function syncOperationTypeFields() {
+            const op = getSelectedOperationType();
+            const targetInput = document.getElementById('targetObject');
+            const beforeInput = document.getElementById('beforeValue');
+            const afterInput = document.getElementById('afterValue');
+            if (!targetInput) return;
+
+            if (op && isFixedTargetObjectDashOp(op)) {
+                targetInput.value = '-';
+                targetInput.readOnly = true;
+                hideTargetObjectSuggest();
+            } else {
+                targetInput.readOnly = false;
+                if (targetInput.value === '-') targetInput.value = '';
+            }
+
+            if (!op || !selectedAdDetail) {
+                syncValueQuickMenus();
+                return;
+            }
+
+            if (isModifyBudgetOp(op)) {
+                if (beforeInput) beforeInput.value = formatBudgetDisplay(selectedAdDetail.budget);
+                if (afterInput) afterInput.value = '';
+            } else if (isModifyBidStrategyOp(op)) {
+                if (beforeInput) beforeInput.value = String(selectedAdDetail.bid_strategy || '').trim();
+                if (afterInput) afterInput.value = '';
+            } else if (isModifyNameOp(op)) {
+                const name = String(selectedAdDetail.ad_name || '').trim();
+                if (beforeInput) beforeInput.value = name;
+                if (afterInput) afterInput.value = name;
+            }
+            syncValueQuickMenus();
         }
 
         function placementValueFromBid(bidRaw) {
@@ -1285,6 +1358,7 @@
 
         function refreshBeforeValueForTargetObject() {
             const op = getSelectedOperationType();
+            if (isFixedTargetObjectDashOp(op)) return;
             if (!needsTargetObjectSuggest(op)) return;
             const target = getMatchedTargetFromObject();
             const beforeInput = document.getElementById('beforeValue');
@@ -1316,6 +1390,19 @@
         function buildQuickFillOptions(fieldId) {
             const op = getSelectedOperationType();
             const options = [];
+            if (isModifyBidStrategyOp(op)) {
+                if (fieldId === 'afterValue') {
+                    const current = String(selectedAdDetail?.bid_strategy || '').trim();
+                    AA_BID_STRATEGIES.filter(s => s !== current).forEach((strategy) => {
+                        options.push({
+                            value: strategy,
+                            html: escapeHtml(strategy),
+                            fillOppositeAfter: false,
+                        });
+                    });
+                }
+                return options;
+            }
             if (!isModifyDeliveryTargetOp(op)) return options;
             const target = getMatchedTargetFromObject();
             if (!target) return options;
@@ -1383,7 +1470,7 @@
             const menu = document.getElementById('targetObjectPickMenu');
             if (!wrap || !menu) return;
             const op = getSelectedOperationType();
-            const enabled = needsTargetObjectSuggest(op);
+            const enabled = needsTargetObjectSuggest(op) && !isFixedTargetObjectDashOp(op);
             const list = enabled ? (Array.isArray(targetOptionsCache) ? targetOptionsCache : []) : [];
             wrap.classList.toggle('input-capsule-menu--empty', !list.length);
             if (!list.length) {
@@ -1506,19 +1593,21 @@
         function syncTargetObjectFieldMode() {
             const input = document.getElementById('targetObject');
             const op = getSelectedOperationType();
-            const enabled = needsTargetObjectSuggest(op);
+            const enabled = needsTargetObjectSuggest(op) && !isFixedTargetObjectDashOp(op);
             if (!input) return;
             if (enabled) {
                 input.placeholder = '输入投放名称联想选择';
                 if (!targetOptionsCache.length && selectedAdId) {
                     loadTargetOptionsForSelectedAd().then(() => scheduleTargetObjectSuggest());
                 }
+            } else if (op && isFixedTargetObjectDashOp(op)) {
+                input.placeholder = '-';
             } else {
                 input.placeholder = '关键词 / 竞价 / 投放位置';
                 hideTargetObjectSuggest();
             }
+            syncOperationTypeFields();
             syncTargetObjectPickMenu();
-            syncValueQuickMenus();
             refreshBeforeValueForTargetObject();
         }
 
@@ -1888,6 +1977,11 @@
                         return;
                     }
                     const adInfo = data.ad_info || {};
+                    selectedAdDetail = {
+                        ad_name: adInfo.ad_name || '',
+                        budget: adInfo.budget,
+                        bid_strategy: adInfo.bid_strategy || '',
+                    };
                     updateInfoPanel(adInfo);
                     allowedOperations = data.allowed_operations || [];
                     renderOperationOptions('');
@@ -2056,6 +2150,7 @@
             const input = document.getElementById('targetObject');
             if (!input) return;
             input.addEventListener('input', () => {
+                if (input.readOnly) return;
                 scheduleTargetObjectSuggest();
                 syncValueQuickMenus();
                 if (isModifyPlacementOp(getSelectedOperationType())) {
@@ -2064,6 +2159,7 @@
                 updateSubmitButtonState();
             });
             input.addEventListener('focus', () => {
+                if (input.readOnly) return;
                 scheduleTargetObjectSuggest();
             });
             input.addEventListener('blur', () => {
