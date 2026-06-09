@@ -3500,6 +3500,119 @@ class AmazonAdMixin:
             'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
         }
 
+    def _fetch_observe_defaults_for_target_object(self, cur, ad_item_id, target_object, op_name=None):
+        target_object = (target_object or '').strip()
+        default_days = 1
+        if not ad_item_id or not target_object or target_object == '-':
+            return {
+                'observe_interval': self._format_observe_interval_days(default_days),
+                'observe_days': default_days,
+            }
+        op_name = self._normalize_adjustment_operation_type_name(op_name)
+        use_product = bool(op_name and self._is_modify_product_operation(op_name))
+        use_target = bool(
+            op_name
+            and (
+                self._is_modify_delivery_target_operation(op_name)
+                or self._is_modify_placement_operation(op_name)
+            )
+        )
+        row = None
+        if use_product:
+            cur.execute(
+                """
+                SELECT p.observe_interval
+                FROM amazon_ad_products p
+                LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+                WHERE p.ad_item_id=%s AND sp.platform_sku=%s
+                LIMIT 1
+                """,
+                (ad_item_id, target_object),
+            )
+            row = cur.fetchone()
+        elif use_target:
+            cur.execute(
+                """
+                SELECT observe_interval
+                FROM amazon_ad_targets
+                WHERE ad_item_id=%s AND target_desc=%s
+                LIMIT 1
+                """,
+                (ad_item_id, target_object),
+            )
+            row = cur.fetchone()
+        else:
+            cur.execute(
+                """
+                SELECT observe_interval
+                FROM amazon_ad_targets
+                WHERE ad_item_id=%s AND target_desc=%s
+                LIMIT 1
+                """,
+                (ad_item_id, target_object),
+            )
+            row = cur.fetchone()
+            if not row:
+                cur.execute(
+                    """
+                    SELECT p.observe_interval
+                    FROM amazon_ad_products p
+                    LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+                    WHERE p.ad_item_id=%s AND sp.platform_sku=%s
+                    LIMIT 1
+                    """,
+                    (ad_item_id, target_object),
+                )
+                row = cur.fetchone()
+        if row and row.get('observe_interval'):
+            days = self._parse_observe_interval_days(row.get('observe_interval'))
+            return {
+                'observe_interval': self._format_observe_interval_days(days),
+                'observe_days': days,
+            }
+        return {
+            'observe_interval': self._format_observe_interval_days(default_days),
+            'observe_days': default_days,
+        }
+
+    def _apply_adjustment_observe_sync(
+        self, cur, ad_item_id, op_name, target_object, adjust_date, observe_days, next_observe_at,
+    ):
+        op_name = self._normalize_adjustment_operation_type_name(op_name)
+        if not (
+            self._is_modify_product_operation(op_name)
+            or self._is_modify_delivery_target_operation(op_name)
+            or self._is_modify_placement_operation(op_name)
+        ):
+            return None
+        target_object = (target_object or '').strip()
+        if not target_object or target_object == '-':
+            return None
+        interval_text, updated_dt, next_dt = self._build_observe_fields(
+            observe_days, adjust_date, next_observe_at,
+        )
+        updated_dt = updated_dt or adjust_date
+        if self._is_modify_product_operation(op_name):
+            cur.execute(
+                """
+                UPDATE amazon_ad_products p
+                INNER JOIN sales_products sp ON sp.id = p.sales_product_id
+                SET p.observe_interval=%s, p.next_observe_at=%s, p.updated_at=%s
+                WHERE p.ad_item_id=%s AND sp.platform_sku=%s
+                """,
+                (interval_text, next_dt, updated_dt, ad_item_id, target_object),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE amazon_ad_targets
+                SET observe_interval=%s, next_observe_at=%s, updated_at=%s
+                WHERE ad_item_id=%s AND target_desc=%s
+                """,
+                (interval_text, next_dt, updated_dt, ad_item_id, target_object),
+            )
+        return None
+
     def _normalize_adjustment_operation_type_name(self, name):
         return re.sub(r"[『』【】「』]", '', str(name or '')).strip()
 
@@ -3810,6 +3923,7 @@ class AmazonAdMixin:
                 if not ad_item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
                 target_object = (query_params.get('target_object', [''])[0] or '').strip()
+                operation_type_id = self._parse_int((query_params.get('operation_type_id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         ad_row, ad_info = self._fetch_adjustment_ad_info(cur, ad_item_id)
@@ -3817,6 +3931,18 @@ class AmazonAdMixin:
                             return self.send_json({'status': 'error', 'message': '广告不存在'}, start_response)
                         allowed_operations = self._fetch_allowed_operations_for_ad(cur, ad_row)
                         defaults = self._adjustment_defaults_for_ad(cur, ad_item_id, target_object)
+                        op_name = ''
+                        if operation_type_id:
+                            cur.execute(
+                                "SELECT name FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
+                                (operation_type_id,),
+                            )
+                            op_row = cur.fetchone() or {}
+                            op_name = op_row.get('name') or ''
+                        observe_defaults = self._fetch_observe_defaults_for_target_object(
+                            cur, ad_item_id, target_object, op_name,
+                        )
+                        defaults.update(observe_defaults)
                 return self.send_json({
                     'status': 'success',
                     'ad_info': ad_info,
@@ -3883,6 +4009,16 @@ class AmazonAdMixin:
                         )
                         if sync_err:
                             return self.send_json({'status': 'error', 'message': sync_err}, start_response)
+                        if not is_quick:
+                            self._apply_adjustment_observe_sync(
+                                cur,
+                                ad_item_id,
+                                op_name,
+                                target_object,
+                                adjust_date,
+                                data.get('observe_days'),
+                                data.get('next_observe_at'),
+                            )
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_adjustments (

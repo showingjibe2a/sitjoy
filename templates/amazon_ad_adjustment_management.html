@@ -743,6 +743,16 @@
                             <label for="adjustDate">调整日期</label>
                             <input type="datetime-local" id="adjustDate">
                         </div>
+                        <div id="aaObserveFieldsRow" class="aa-form-row-2" hidden>
+                            <div class="form-group">
+                                <label for="observeIntervalDays">下次观察时间间隔（天）</label>
+                                <input type="number" id="observeIntervalDays" min="0" step="1" value="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="nextObserveAt">下次观察时间</label>
+                                <input type="datetime-local" id="nextObserveAt">
+                            </div>
+                        </div>
                         <div class="pm-section">
                             <h4>效果区间数据</h4>
                             <div class="pm-section-body">
@@ -928,7 +938,68 @@
             if (target && target !== '-') {
                 url += `&target_object=${encodeURIComponent(target)}`;
             }
+            const opId = String(document.getElementById('operationType')?.value || '').trim();
+            if (opId) {
+                url += `&operation_type_id=${encodeURIComponent(opId)}`;
+            }
             return url;
+        }
+
+        function isTargetObjectObserveOp(op) {
+            return isModifyProductOp(op) || isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
+        }
+
+        function shouldShowObserveFields() {
+            return isTargetObjectObserveOp(getSelectedOperationType());
+        }
+
+        function syncObserveFieldsVisibility() {
+            const row = document.getElementById('aaObserveFieldsRow');
+            if (!row) return;
+            row.hidden = !shouldShowObserveFields();
+        }
+
+        function parseObserveDaysFromText(value) {
+            const text = String(value || '').trim();
+            const m = text.match(/\d+/);
+            if (!m) return 1;
+            const n = Number(m[0]);
+            if (!Number.isFinite(n) || n < 0) return 1;
+            return Math.floor(n);
+        }
+
+        function recalcAdjustmentNextObserve() {
+            if (!shouldShowObserveFields()) return;
+            const adjustDate = document.getElementById('adjustDate')?.value;
+            const dayRaw = document.getElementById('observeIntervalDays')?.value;
+            const days = Math.max(0, parseInt(dayRaw || '1', 10) || 1);
+            if (!adjustDate) return;
+            const base = new Date(adjustDate);
+            if (Number.isNaN(base.getTime())) return;
+            base.setDate(base.getDate() + days);
+            setFieldValue('nextObserveAt', toDatetimeLocal(base));
+        }
+
+        function applyObserveDefaults(defaults) {
+            if (!defaults || typeof defaults !== 'object') return;
+            const days = defaults.observe_days != null
+                ? parseObserveDaysFromText(defaults.observe_days)
+                : parseObserveDaysFromText(defaults.observe_interval);
+            setFieldValue('observeIntervalDays', String(days));
+            recalcAdjustmentNextObserve();
+            syncObserveFieldsVisibility();
+        }
+
+        function initAdjustmentObserveFields() {
+            const modal = document.getElementById('aaFullSubmitModal');
+            if (!modal || modal.dataset.observeBound === '1') return;
+            modal.dataset.observeBound = '1';
+            ['adjustDate', 'observeIntervalDays'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', recalcAdjustmentNextObserve);
+                el.addEventListener('change', recalcAdjustmentNextObserve);
+            });
         }
 
         function applySavedFormState(saved) {
@@ -1820,8 +1891,11 @@
             modal.classList.add('active');
             initAdjustmentMetricAutoCalc();
             initAttributionCheckedSegment();
+            initAdjustmentObserveFields();
             recalcAdjustmentDerivedMetrics();
             syncAttributionCheckedButtons();
+            syncObserveFieldsVisibility();
+            recalcAdjustmentNextObserve();
             if (window.initUniversalSingleSelects) {
                 window.initUniversalSingleSelects(modal);
             }
@@ -1836,8 +1910,11 @@
                 'impressions', 'clicks', 'cost', 'orders', 'sales', 'topOfSearchIs',
                 'acos', 'cpc', 'ctr', 'cvr', 'attributionOrders', 'attributionSales', 'remark',
             ].forEach(id => setFieldValue(id, ''));
+            setFieldValue('observeIntervalDays', '1');
+            setFieldValue('nextObserveAt', '');
             setAttributionChecked(false);
             recalcAdjustmentDerivedMetrics();
+            syncObserveFieldsVisibility();
         }
 
         function refreshSupplementaryAdjustmentDefaults() {
@@ -1857,16 +1934,23 @@
                         setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
                         setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
                         setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                        applyObserveDefaults(d.defaults);
                         return;
                     }
                     setFieldValue('adjustDate', '');
                     setFieldValue('startTime', '');
                     setFieldValue('endTime', '');
+                    setFieldValue('observeIntervalDays', '1');
+                    setFieldValue('nextObserveAt', '');
+                    syncObserveFieldsVisibility();
                 })
                 .catch(() => {
                     setFieldValue('adjustDate', '');
                     setFieldValue('startTime', '');
                     setFieldValue('endTime', '');
+                    setFieldValue('observeIntervalDays', '1');
+                    setFieldValue('nextObserveAt', '');
+                    syncObserveFieldsVisibility();
                 });
         }
 
@@ -3018,6 +3102,7 @@
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(reasonSelect);
             syncTargetObjectFieldMode();
             refreshBeforeValueForTargetObject();
+            syncObserveFieldsVisibility();
             updateSubmitButtonState();
             applyAdjustmentPeriodFilter();
             savePageState();
@@ -3116,6 +3201,7 @@
                     setFieldValue('adjustDate', toDatetimeLocal(defaults.adjust_date));
                     setFieldValue('startTime', toDatetimeLocal(defaults.start_time));
                     setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
+                    applyObserveDefaults(defaults);
                     if (!restore) {
                         setFieldValue('targetObject', '');
                         supplementaryTargetObjectKey = '';
@@ -3142,7 +3228,7 @@
         }
 
         function buildPayload(isQuickSubmit) {
-            return {
+            const payload = {
                 is_quick_submit: isQuickSubmit ? 1 : 0,
                 ad_item_id: selectedAdId,
                 operation_type_id: document.getElementById('operationType').value,
@@ -3168,6 +3254,11 @@
                 attribution_sales: document.getElementById('attributionSales').value.trim(),
                 remark: document.getElementById('remark').value.trim()
             };
+            if (!isQuickSubmit && shouldShowObserveFields()) {
+                payload.observe_days = document.getElementById('observeIntervalDays')?.value || '';
+                payload.next_observe_at = document.getElementById('nextObserveAt')?.value || '';
+            }
+            return payload;
         }
 
         function canSubmitPhase1() {
@@ -3213,6 +3304,7 @@
                                     setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
                                     setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
                                     setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
+                                    applyObserveDefaults(d.defaults);
                                 }
                             });
                     }
