@@ -738,6 +738,7 @@
             '动态竞价-提高和降低',
             '固定竞价',
         ];
+        const AA_TARGET_STATUSES = ['启动', '暂停', '存档'];
 
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
@@ -1431,7 +1432,7 @@
                 return placementDisplayFromBid(bid);
             }
             if (isModifyDeliveryTargetOp(op)) {
-                return bid;
+                return String(target.status || '启动').trim() || '启动';
             }
             return '';
         }
@@ -1445,7 +1446,7 @@
             if (!beforeInput) return;
             if (!target) return;
             const next = beforeValueFromTargetOption(target, op);
-            if (isModifyPlacementOp(op)) {
+            if (isModifyPlacementOp(op) || isModifyDeliveryTargetOp(op)) {
                 beforeInput.value = next;
             } else if (!String(beforeInput.value || '').trim()) {
                 beforeInput.value = next;
@@ -1459,6 +1460,11 @@
             if (s === '启动') return '暂停';
             if (s === '暂停') return '启动';
             return '';
+        }
+
+        function otherTargetStatuses(current) {
+            const s = String(current || '启动').trim() || '启动';
+            return AA_TARGET_STATUSES.filter(status => status !== s);
         }
 
         function getMatchedTargetFromObject() {
@@ -1491,17 +1497,16 @@
                 options.push({
                     value: status,
                     html: renderTargetStatusPill(status),
-                    fillOppositeAfter: true,
+                    fillOppositeAfter: false,
                 });
             } else if (fieldId === 'afterValue') {
-                const opposite = oppositeDeliveryStatus(status);
-                if (opposite) {
+                otherTargetStatuses(status).forEach((st) => {
                     options.push({
-                        value: opposite,
-                        html: renderTargetStatusPill(opposite),
+                        value: st,
+                        html: renderTargetStatusPill(st),
                         fillOppositeAfter: false,
                     });
-                }
+                });
             }
             return options;
         }
@@ -1551,6 +1556,7 @@
                         ev.preventDefault();
                         const idx = Number(btn.getAttribute('data-opt-idx'));
                         applyQuickFillOption(fieldId, options[idx]);
+                        dismissInputCapsuleMenu(btn);
                     });
                 });
             });
@@ -2176,6 +2182,7 @@
                 updateRecordsLink();
                 loadAdjustmentPeriodList();
                 if (selectedAdId) {
+                    loadTargetOptionsForSelectedAd().then(() => syncTargetObjectFieldMode());
                     fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                         .then(r => r.json())
                         .then(d => {

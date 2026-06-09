@@ -1579,7 +1579,7 @@ button.btn-capsule-sm:active {
     transform: none;
 }
 
-/* 输入框旁胶囊按钮 + 悬浮菜单（::after 桥接按钮与面板间距，::before 延伸面板热区） */
+/* 输入框旁胶囊按钮 + 悬浮菜单（水平展开在按钮右侧，::after / ::before 桥接间距） */
 .input-capsule-menu {
     position: relative;
     flex: 0 0 auto;
@@ -1587,17 +1587,20 @@ button.btn-capsule-sm:active {
 .input-capsule-menu::after {
     content: '';
     position: absolute;
-    left: -6px;
-    right: -6px;
-    top: 100%;
-    height: 10px;
+    left: 100%;
+    right: auto;
+    top: -4px;
+    width: 10px;
+    height: calc(100% + 8px);
     z-index: 45;
 }
 .input-capsule-menu-panel {
     display: none;
     position: absolute;
-    right: 0;
-    top: calc(100% + 2px);
+    left: calc(100% + 2px);
+    right: auto;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 46;
     min-width: 108px;
     padding: 0.3rem;
@@ -1609,10 +1612,26 @@ button.btn-capsule-sm:active {
 .input-capsule-menu-panel::before {
     content: '';
     position: absolute;
-    left: 0;
-    right: 0;
-    top: -10px;
-    height: 10px;
+    left: -10px;
+    right: auto;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    height: auto;
+}
+/* 按钮靠右时改向左展开，避免超出视口 */
+.input-capsule-menu--panel-left .input-capsule-menu-panel {
+    left: auto;
+    right: calc(100% + 2px);
+    transform: translateY(-50%);
+}
+.input-capsule-menu--panel-left::after {
+    left: auto;
+    right: 100%;
+}
+.input-capsule-menu--panel-left .input-capsule-menu-panel::before {
+    left: auto;
+    right: -10px;
 }
 .input-capsule-menu:hover .input-capsule-menu-panel,
 .input-capsule-menu:focus-within .input-capsule-menu-panel {

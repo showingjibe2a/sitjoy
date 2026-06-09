@@ -3117,6 +3117,61 @@ class AmazonAdMixin:
             'end_time': end_default.strftime('%Y-%m-%d %H:%M:%S'),
         }
 
+    def _normalize_adjustment_operation_type_name(self, name):
+        return re.sub(r"[『』【】「』]", '', str(name or '')).strip()
+
+    def _is_modify_delivery_target_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '投放' in n and '广告位' not in n
+
+    def _is_modify_placement_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '广告位' in n
+
+    def _apply_adjustment_to_target(self, cur, ad_item_id, operation_name, target_object, after_value):
+        after_value = (after_value or '').strip()
+        target_object = (target_object or '').strip()
+        if not after_value or not target_object or target_object == '-':
+            return None
+        if not (
+            self._is_modify_delivery_target_operation(operation_name)
+            or self._is_modify_placement_operation(operation_name)
+        ):
+            return None
+        cur.execute(
+            """
+            SELECT id FROM amazon_ad_targets
+            WHERE ad_item_id=%s AND target_desc=%s
+            LIMIT 1
+            """,
+            (ad_item_id, target_object),
+        )
+        row = cur.fetchone()
+        if not row:
+            return f'未找到投放：{target_object}'
+        target_id = row['id']
+        updates = []
+        params = []
+        if self._is_modify_delivery_target_operation(operation_name):
+            status, err = self._normalize_ad_record_status(after_value)
+            if err:
+                return err
+            updates.extend(['status=%s', 'updated_at=NOW()'])
+            params.append(status)
+        elif self._is_modify_placement_operation(operation_name):
+            updates.extend(['bid_value=%s', 'updated_at=NOW()'])
+            params.append(after_value)
+        if not updates:
+            return None
+        params.append(target_id)
+        cur.execute(
+            f"UPDATE amazon_ad_targets SET {', '.join(updates)} WHERE id=%s",
+            tuple(params),
+        )
+        if cur.rowcount <= 0:
+            return '投放更新失败'
+        return None
+
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
         """Amazon 广告调整 API（广告搜索 / 默认值 / 调整记录 CRUD）"""
         try:
@@ -3227,6 +3282,18 @@ class AmazonAdMixin:
                         )
                         if op_err:
                             return self.send_json({'status': 'error', 'message': op_err}, start_response)
+                        cur.execute(
+                            "SELECT name FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
+                            (operation_type_id,),
+                        )
+                        op_row = cur.fetchone() or {}
+                        op_name = op_row.get('name') or ''
+                        after_value = (data.get('after_value') or '').strip()
+                        sync_err = self._apply_adjustment_to_target(
+                            cur, ad_item_id, op_name, target_object, after_value,
+                        )
+                        if sync_err:
+                            return self.send_json({'status': 'error', 'message': sync_err}, start_response)
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_adjustments (
