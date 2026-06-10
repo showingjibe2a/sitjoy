@@ -3207,6 +3207,88 @@ class AmazonAdMixin:
             patch['attribution_checked'] = 1 if (orders or sales) else 0
         return patch
 
+    def _amazon_ad_adjustment_batch_patch(self, cur, items, chunk_size=120):
+        """批量 PATCH：按列 CASE WHEN 合并 UPDATE，减少数据库往返。"""
+        errors = []
+        patches = []
+        seen_ids = set()
+        for raw in items:
+            if not isinstance(raw, dict):
+                errors.append({'message': '无效数据项'})
+                continue
+            item_id = self._parse_int(raw.get('id'))
+            if not item_id:
+                errors.append({'id': raw.get('id'), 'message': '无效 id'})
+                continue
+            if item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            if 'target_object' in raw and not (raw.get('target_object') or '').strip():
+                errors.append({'id': item_id, 'message': '对象不能为空'})
+                continue
+            if 'adjust_date' in raw and not self._parse_datetime_local_value(raw.get('adjust_date')):
+                errors.append({'id': item_id, 'message': '调整日期不能为空'})
+                continue
+            patch_fields = self._build_adjustment_patch_fields(raw)
+            if not patch_fields:
+                errors.append({'id': item_id, 'message': '无可更新字段'})
+                continue
+            patches.append((item_id, patch_fields))
+
+        if not patches:
+            return 0, errors
+
+        id_list = [item_id for item_id, _ in patches]
+        placeholders = ','.join(['%s'] * len(id_list))
+        cur.execute(
+            f'SELECT id FROM amazon_ad_adjustments WHERE id IN ({placeholders})',
+            tuple(id_list),
+        )
+        found = {
+            self._parse_int(row.get('id'))
+            for row in (cur.fetchall() or [])
+            if self._parse_int(row.get('id'))
+        }
+        valid_patches = []
+        for item_id, patch_fields in patches:
+            if item_id not in found:
+                errors.append({'id': item_id, 'message': '记录不存在'})
+                continue
+            valid_patches.append((item_id, patch_fields))
+        if not valid_patches:
+            return 0, errors
+
+        updated = 0
+        patch_by_id = {item_id: patch_fields for item_id, patch_fields in valid_patches}
+        all_ids = list(patch_by_id.keys())
+        size = max(1, int(chunk_size or 120))
+
+        for offset in range(0, len(all_ids), size):
+            chunk_ids = all_ids[offset:offset + size]
+            all_columns = set()
+            for rid in chunk_ids:
+                all_columns.update(patch_by_id[rid].keys())
+            set_parts = []
+            params = []
+            for col in sorted(all_columns):
+                when_parts = []
+                for rid in chunk_ids:
+                    patch_fields = patch_by_id[rid]
+                    if col not in patch_fields:
+                        continue
+                    when_parts.append('WHEN %s THEN %s')
+                    params.extend([rid, patch_fields[col]])
+                if when_parts:
+                    set_parts.append(f'{col} = CASE id {" ".join(when_parts)} ELSE {col} END')
+            if not set_parts:
+                continue
+            in_ph = ','.join(['%s'] * len(chunk_ids))
+            sql = f'UPDATE amazon_ad_adjustments SET {", ".join(set_parts)} WHERE id IN ({in_ph})'
+            cur.execute(sql, tuple(params + chunk_ids))
+            updated += int(cur.rowcount or 0)
+
+        return updated, errors
+
     def _adjustment_portfolio_name_from_row(self, row):
         if not row:
             return ''
@@ -4077,38 +4159,9 @@ class AmazonAdMixin:
                 items = data.get('items')
                 if not isinstance(items, list) or not items:
                     return self.send_json({'status': 'error', 'message': '缺少 items'}, start_response)
-                updated = 0
-                errors = []
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        for raw in items:
-                            if not isinstance(raw, dict):
-                                errors.append({'message': '无效数据项'})
-                                continue
-                            item_id = self._parse_int(raw.get('id'))
-                            if not item_id:
-                                errors.append({'id': raw.get('id'), 'message': '无效 id'})
-                                continue
-                            if 'target_object' in raw and not (raw.get('target_object') or '').strip():
-                                errors.append({'id': item_id, 'message': '对象不能为空'})
-                                continue
-                            if 'adjust_date' in raw and not self._parse_datetime_local_value(raw.get('adjust_date')):
-                                errors.append({'id': item_id, 'message': '调整日期不能为空'})
-                                continue
-                            patch_fields = self._build_adjustment_patch_fields(raw)
-                            if not patch_fields:
-                                errors.append({'id': item_id, 'message': '无可更新字段'})
-                                continue
-                            set_sql = ', '.join(f'{col}=%s' for col in patch_fields)
-                            values = list(patch_fields.values()) + [item_id]
-                            cur.execute(
-                                f'UPDATE amazon_ad_adjustments SET {set_sql} WHERE id=%s',
-                                values,
-                            )
-                            if cur.rowcount:
-                                updated += 1
-                            else:
-                                errors.append({'id': item_id, 'message': '记录不存在'})
+                        updated, errors = self._amazon_ad_adjustment_batch_patch(cur, items)
                 return self.send_json({'status': 'success', 'updated': updated, 'errors': errors}, start_response)
 
             if method == 'DELETE':

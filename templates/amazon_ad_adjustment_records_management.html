@@ -246,10 +246,56 @@
         }
 
         function collectRecordUpdateItems() {
-            return Object.keys(recordEditDraft).map(id => ({
-                id: Number(id),
-                ...recordEditDraft[id],
-            }));
+            return Object.keys(recordEditDraft).map(idKey => {
+                const item = recordsRaw.find(x => String(x.id) === idKey);
+                if (!item) return null;
+                const draft = recordEditDraft[idKey];
+                const payload = { id: Number(idKey) };
+                let hasChange = false;
+                RECORD_EDIT_FIELDS.forEach(field => {
+                    const orig = getRecordEditableValue(item, field);
+                    const next = normalizeRecordDraftValue(field, draft[field]);
+                    const changed = RECORD_RATIO_FIELDS.has(field)
+                        ? normalizeRatioMetricCompare(orig) !== normalizeRatioMetricCompare(next)
+                        : orig !== next;
+                    if (changed) {
+                        payload[field] = next;
+                        hasChange = true;
+                    }
+                });
+                return hasChange ? payload : null;
+            }).filter(Boolean);
+        }
+
+        function draftFieldToServerValue(field, draftValue) {
+            const text = normalizeRecordDraftValue(field, draftValue);
+            if (field === 'attribution_checked') return text === '1' ? 1 : 0;
+            if (field === 'adjust_date' || field === 'start_time' || field === 'end_time') {
+                if (!text) return null;
+                const normalized = text.length === 16 ? `${text}:00` : text;
+                return normalized.replace('T', ' ');
+            }
+            return text || null;
+        }
+
+        function mergeRecordEditsLocally(failedIds) {
+            const failed = failedIds instanceof Set ? failedIds : new Set();
+            Object.keys(recordEditDraft).forEach(idKey => {
+                const id = Number(idKey);
+                if (failed.has(id)) return;
+                const draft = recordEditDraft[idKey];
+                const idx = recordsRaw.findIndex(x => Number(x.id) === id);
+                if (idx < 0) return;
+                const item = { ...recordsRaw[idx] };
+                RECORD_EDIT_FIELDS.forEach(field => {
+                    if (!(field in draft)) return;
+                    item[field] = draftFieldToServerValue(field, draft[field]);
+                });
+                recordsRaw[idx] = item;
+                delete recordEditDraft[idKey];
+            });
+            applyRecordFilter();
+            syncRecordSaveBar();
         }
 
         function saveRecordEdits() {
@@ -281,9 +327,12 @@
                         return;
                     }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-                    recordEditDraft = {};
-                    loadRecords();
-                    syncRecordSaveBar();
+                    const failedIds = new Set(
+                        (Array.isArray(data.errors) ? data.errors : [])
+                            .map(e => Number(e && e.id))
+                            .filter(id => Number.isFinite(id) && id > 0)
+                    );
+                    mergeRecordEditsLocally(failedIds);
                     aaSaveResult({
                         action: 'save',
                         isError: errCount > 0,
