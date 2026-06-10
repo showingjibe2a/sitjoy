@@ -2567,6 +2567,20 @@ button.sj-group-row-edit-btn {
     display: none;
 }
 
+/* 默认单表 sticky 表头（无分离克隆表头时） */
+.pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > th,
+.pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > td {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--morandi-cream);
+}
+
+.pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > th.pm-table-pinned-cell,
+.pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > td.pm-table-pinned-cell {
+    z-index: 5;
+}
+
 .pm-table-wrap.is-managed-wrap {
     background: var(--morandi-cream);
     border-radius: 12px;

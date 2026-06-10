@@ -678,17 +678,23 @@
         .perf-group-tree-wrap > .pm-table-toolbar .pm-table-pager {
             display: none !important;
         }
-        /* 全量汇总：主表 thead 第二行（与分离表头一并克隆），与列宽/显隐/冻结同源；随表头区固定于滚动表体之上 */
-        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row th,
-        .perf-group-tree-wrap table.pm-managed-head-table thead tr.perf-group-grand-total-row th {
+        /* 全量汇总：主表 thead 第二行，与列宽/显隐/冻结同源；双行 sticky 表头 */
+        .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr:first-child > th {
+            top: 0;
+            z-index: 5;
+        }
+        .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr.perf-group-grand-total-row > th {
+            top: var(--perf-group-head-row1-h, 2.35rem);
+            z-index: 4;
+        }
+        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row th {
             font-size: 0.84rem;
             font-weight: 600;
             vertical-align: middle;
             background: linear-gradient(180deg, #f6faf6 0%, #edf5ee 100%);
             box-shadow: 0 1px 0 rgba(160, 175, 155, 0.45);
         }
-        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row .perf-group-grand-total-label,
-        .perf-group-tree-wrap table.pm-managed-head-table thead tr.perf-group-grand-total-row .perf-group-grand-total-label {
+        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row .perf-group-grand-total-label {
             white-space: nowrap;
             color: var(--morandi-ink);
         }
@@ -801,9 +807,10 @@
             background: #f3efe9;
             color: var(--morandi-ink);
             font-weight: 700;
-            position: sticky;
-            top: 0;
-            z-index: 1;
+        }
+        /* 分组明细：单表 sticky 双行表头（分离克隆表头已禁用） */
+        .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr > th {
+            background: #f3efe9;
         }
         #perfGroupTable thead th.perf-th-metric {
             text-align: right;
@@ -2567,15 +2574,64 @@
             const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
             const childRowsByKey = (key) => Array.from(tbody.querySelectorAll(`tr.perf-group-child-item[data-group-key="${key}"]`));
             const forceShowAllGroupColumns = () => {
-                const root = table.parentElement ? table.parentElement.parentElement : document;
-                const tables = root.querySelectorAll('table#perfGroupTable, table.pm-managed-head-table');
+                const tables = [table];
                 tables.forEach(tb => {
-                    (tb.querySelectorAll('th,td') || []).forEach(cell => {
-                        if (cell && cell.style && cell.style.display === 'none') cell.style.display = '';
-                        if (cell && cell.classList) {
-                            cell.classList.remove('is-hidden-col', 'pm-col-hidden', 'pm-hidden-col');
+                    (tb.querySelectorAll('th,td,col') || []).forEach(cell => {
+                        if (!cell) return;
+                        if (cell.style) {
+                            cell.style.display = '';
+                            cell.style.visibility = '';
+                            if (cell.tagName === 'TH' || cell.tagName === 'TD') {
+                                cell.style.width = '';
+                                cell.style.minWidth = '';
+                                cell.style.maxWidth = '';
+                                cell.style.padding = '';
+                                cell.style.borderWidth = '';
+                            }
+                        }
+                        if (cell.classList) {
+                            cell.classList.remove('is-hidden-col', 'pm-col-hidden', 'pm-hidden-col', 'pm-table-hide-col');
+                        }
+                        if (cell.dataset && (cell.tagName === 'TH' || cell.tagName === 'TD')) {
+                            cell.dataset.pmColHiddenCell = '0';
+                        }
+                        if (cell.tagName === 'COL') {
+                            cell.removeAttribute('data-pm-col-hidden');
                         }
                     });
+                });
+                const api = window.SitjoyManagedPmTable;
+                if (api && typeof api.syncLayout === 'function') {
+                    try { api.syncLayout(table); } catch (_e) { /* ignore */ }
+                }
+            };
+
+            const syncPerfGroupStickyHeadOffset = () => {
+                const row1 = table.tHead && table.tHead.rows && table.tHead.rows[0];
+                if (!row1) return;
+                const h = Math.ceil(row1.getBoundingClientRect().height || 0);
+                if (h > 0) {
+                    table.style.setProperty('--perf-group-head-row1-h', `${h}px`);
+                }
+            };
+
+            const syncPerfGroupManagedTable = () => {
+                const wrap = table.closest('.perf-group-tree-wrap') || table.parentElement;
+                const api = window.SitjoyManagedPmTable;
+                if (api && typeof api.enhance === 'function' && wrap) {
+                    try { api.enhance(wrap); } catch (_e) { /* ignore */ }
+                }
+                if (api && typeof api.invalidateLayout === 'function') {
+                    try { api.invalidateLayout(table); } catch (_e) { /* ignore */ }
+                }
+                window.requestAnimationFrame(() => {
+                    forceShowAllGroupColumns();
+                    syncPerfGroupStickyHeadOffset();
+                    if (table.tHead && table.tHead.rows && table.tHead.rows[0]) {
+                        bindHeaderRow(table.tHead.rows[0]);
+                    }
+                    table.querySelectorAll('thead tr').forEach(r => refreshHeaderArrows(r));
+                    applyHierSort();
                 });
             };
 
@@ -2694,8 +2750,7 @@
                     innerSortState.dir = innerDirEl.value === 'asc' ? 'asc' : 'desc';
                     savePerfGroupOuterSortToStorage(outerSortState.key, outerSortState.dir);
                     savePerfGroupInnerSortToStorage(innerSortState.key, innerSortState.dir);
-                    const root = table.parentElement ? table.parentElement.parentElement : document;
-                    root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
+                    table.querySelectorAll('thead tr').forEach(r => refreshHeaderArrows(r));
                     applyHierSort();
                 };
                 outerKeyEl.addEventListener('change', onToolbarChange);
@@ -2724,9 +2779,8 @@
                     } else {
                         outerSortState.dir = 'desc';
                     }
-                    // 同步所有表头（原表头 + detached 表头）
-                    const root = table.parentElement ? table.parentElement.parentElement : document;
-                    root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
+                    // 同步表头排序箭头
+                    table.querySelectorAll('thead tr').forEach(r => refreshHeaderArrows(r));
                     const outerKeyEl = document.getElementById('perfGroupOuterSortKey');
                     const outerDirEl = document.getElementById('perfGroupOuterSortDir');
                     if (outerKeyEl) outerKeyEl.value = outerSortState.key;
@@ -2737,19 +2791,11 @@
                 });
             };
 
-            // 原表头绑定（有时用户仍会点到）
+            // 表头绑定（供 managed 同步列序与层级排序）
             if (table.tHead && table.tHead.rows && table.tHead.rows[0]) {
                 bindHeaderRow(table.tHead.rows[0]);
             }
-            // managed 会生成 detached header：延迟绑定
-            window.setTimeout(() => {
-                const bodyWrap = table.closest('.pm-managed-body-wrap');
-                const host = bodyWrap && bodyWrap.parentElement ? bodyWrap.parentElement : document;
-                const headTable = host.querySelector('.pm-managed-head-wrap table.pm-managed-head-table');
-                const r = headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0];
-                if (r) bindHeaderRow(r);
-                forceShowAllGroupColumns();
-            }, 60);
+            window.setTimeout(syncPerfGroupManagedTable, 0);
             bindSortToolbar();
             applyHierSort();
             forceShowAllGroupColumns();
@@ -3357,27 +3403,27 @@
             }
             tbody.innerHTML = items.map(item => `
                 <tr data-id="${item.id}">
-                    <td style="text-align:center;"><input type="checkbox" class="perf-row-checkbox row-check" data-id="${item.id}" ${state.selectedPerformanceIds.has(String(item.id)) ? 'checked' : ''} aria-label="选择记录"></td>
-                    <td>${item.record_date || ''}</td>
-                    <td>${item.shop_name || ''}</td>
-                    <td>${item.platform_sku || ''}</td>
-                    <td>${item.sales_qty ?? ''}</td>
-                    <td>${item.net_sales_amount ?? ''}</td>
-                    <td>${item.order_qty ?? ''}</td>
-                    <td>${item.session_total ?? ''}</td>
-                    <td>${item.ad_impressions ?? ''}</td>
-                    <td>${item.ad_clicks ?? ''}</td>
-                    <td>${item.ad_orders ?? ''}</td>
-                    <td>${item.ad_spend ?? ''}</td>
-                    <td>${item.ad_sales_amount ?? ''}</td>
-                    <td>${item.refund_amount ?? ''}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'ctr'), 'ctr')}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'cvr'), 'cvr')}</td>
-                    <td>${formatMetricValue(resolveMetricValue(item, 'cpc'), 'cpc')}</td>
-                    <td>
+                    <td style="text-align:center;" data-manage-col-key="__perf_chk__"><input type="checkbox" class="perf-row-checkbox row-check" data-id="${item.id}" ${state.selectedPerformanceIds.has(String(item.id)) ? 'checked' : ''} aria-label="选择记录"></td>
+                    <td data-manage-col-key="record_date">${item.record_date || ''}</td>
+                    <td data-manage-col-key="shop_name">${item.shop_name || ''}</td>
+                    <td data-manage-col-key="platform_sku">${item.platform_sku || ''}</td>
+                    <td data-manage-col-key="sales_qty">${item.sales_qty ?? ''}</td>
+                    <td data-manage-col-key="net_sales_amount">${item.net_sales_amount ?? ''}</td>
+                    <td data-manage-col-key="order_qty">${item.order_qty ?? ''}</td>
+                    <td data-manage-col-key="session_total">${item.session_total ?? ''}</td>
+                    <td data-manage-col-key="ad_impressions">${item.ad_impressions ?? ''}</td>
+                    <td data-manage-col-key="ad_clicks">${item.ad_clicks ?? ''}</td>
+                    <td data-manage-col-key="ad_orders">${item.ad_orders ?? ''}</td>
+                    <td data-manage-col-key="ad_spend">${item.ad_spend ?? ''}</td>
+                    <td data-manage-col-key="ad_sales_amount">${item.ad_sales_amount ?? ''}</td>
+                    <td data-manage-col-key="refund_amount">${item.refund_amount ?? ''}</td>
+                    <td data-manage-col-key="acos">${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
+                    <td data-manage-col-key="acoas">${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
+                    <td data-manage-col-key="rois">${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
+                    <td data-manage-col-key="ctr">${formatMetricValue(resolveMetricValue(item, 'ctr'), 'ctr')}</td>
+                    <td data-manage-col-key="cvr">${formatMetricValue(resolveMetricValue(item, 'cvr'), 'cvr')}</td>
+                    <td data-manage-col-key="cpc">${formatMetricValue(resolveMetricValue(item, 'cpc'), 'cpc')}</td>
+                    <td data-manage-col-key="__perf_op__">
                         <div class="pm-actions">
                             <button class="btn-secondary" type="button" onclick="openEditPerformanceModal(${item.id})">编辑</button>
                             <button class="btn-danger" type="button" onclick="deleteSalesProductPerformance(${item.id})">删除</button>

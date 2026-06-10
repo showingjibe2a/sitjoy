@@ -1557,6 +1557,11 @@
         return true;
     }
 
+    /** 分离克隆表头已禁用：双表 colgroup/列序易与表体错位，统一使用单表 sticky */
+    function managedTableUsesDetachedHeader(_tableOrState){
+        return false;
+    }
+
     function getHeaderMeta(table){
         if(!table.tHead || !table.tHead.rows.length) return [];
         const cells = Array.from(table.tHead.rows[0].cells || []);
@@ -1606,14 +1611,9 @@
             items.forEach(({ entry }, dupIdx) => {
                 const lbl = String(entry.label || '').trim();
                 const key = String(entry.key || '').trim();
-                const nextLabel = (key && key !== lbl)
+                entry.label = (key && key !== lbl)
                     ? key
                     : `${lbl}${items.length > 1 ? String(dupIdx + 1) : ''}`;
-                entry.label = nextLabel;
-                const cell = entry.cell;
-                if(!cell || cell.querySelector('input[type="checkbox"]')) return;
-                if(cell.querySelector('button, select, textarea, .help-dot, .pm-col-resizer')) return;
-                cell.textContent = nextLabel;
             });
         });
         return meta;
@@ -3380,7 +3380,7 @@
         Array.from(row.cells || []).forEach((cell, idx) => {
             const key = String(cell.dataset.manageColKey || '').trim() || `字段${idx + 1}`;
             if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
-            map.set(key, cell);
+            if(!map.has(key)) map.set(key, cell);
         });
         return map;
     }
@@ -3421,12 +3421,21 @@
 
         const stampBodyRowByOrigin = (row) => {
             if(!row || (row.cells || []).length !== colCount) return;
+            const headerRow = getPrimaryHeaderRow(state);
             Array.from(row.cells || []).forEach((cell, idx) => {
-                const key = originToKey.get(idx)
+                const headerCell = headerRow && headerRow.cells && headerRow.cells[idx];
+                const keyFromHeader = headerCell ? String(headerCell.dataset.manageColKey || '').trim() : '';
+                const key = keyFromHeader
+                    || String(cell.dataset.manageColKey || '').trim()
+                    || originToKey.get(idx)
                     || (headerMeta[idx] && String(headerMeta[idx].key || '').trim())
                     || `字段${idx + 1}`;
                 cell.dataset.manageColKey = key;
-                cell.dataset.manageColOrigin = String(idx);
+                if(headerCell && headerCell.dataset.manageColOrigin){
+                    cell.dataset.manageColOrigin = headerCell.dataset.manageColOrigin;
+                } else {
+                    cell.dataset.manageColOrigin = String(idx);
+                }
             });
         };
 
@@ -3442,7 +3451,7 @@
     }
 
     function getPrimaryHeaderRow(state){
-        if(state && state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0]){
+        if(managedTableUsesDetachedHeader(state) && state && state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0]){
             return state.headerTable.tHead.rows[0];
         }
         if(state && state.table && state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0]){
@@ -3452,6 +3461,7 @@
     }
 
     function syncDetachedHeader(state){
+        if(!managedTableUsesDetachedHeader(state)) return;
         if(!state || !state.headerTable || !state.table || !state.table.tHead || !state.table.tHead.rows.length) return;
         const srcHead = state.table.tHead;
 
@@ -3483,21 +3493,33 @@
     function applyColumnOrder(state){
         syncManagedColgroupOrder(state);
         const expected = state.headerCount;
+        if(!expected || !Array.isArray(state.columnOrder) || !state.columnOrder.length) return;
         const tables = [state.table];
         if(state.headerTable) tables.push(state.headerTable);
         tables.forEach((table) => {
             if(!table) return;
             Array.from(table.rows || []).forEach((row) => {
-                if((row.cells || []).length !== expected) return;
-                const currentOrder = Array.from(row.cells).map((cell) => String(cell.dataset.manageColKey || '').trim());
+                const cells = Array.from(row.cells || []);
+                if(cells.length !== expected) return;
+                const currentOrder = cells.map((cell) => String(cell.dataset.manageColKey || '').trim());
                 if(currentOrder.length === state.columnOrder.length && currentOrder.every((v, i) => v === state.columnOrder[i])) {
                     return;
                 }
                 const byKey = mapRowByKey(row);
+                const used = new Set();
+                const ordered = [];
                 state.columnOrder.forEach((key) => {
                     const cell = byKey.get(String(key || '').trim());
-                    if(cell) row.appendChild(cell);
+                    if(cell && !used.has(cell)){
+                        ordered.push(cell);
+                        used.add(cell);
+                    }
                 });
+                cells.forEach((cell) => {
+                    if(!used.has(cell)) ordered.push(cell);
+                });
+                if(ordered.length !== expected) return;
+                ordered.forEach((cell) => row.appendChild(cell));
             });
         });
     }
@@ -5576,10 +5598,6 @@
         if(!headerMeta.length) return;
         state.headerCount = headerMeta.length;
         ensureManagedColumnKeys(state, headerMeta);
-        if(Array.isArray(state.columnOrder) && state.columnOrder.length){
-            applyColumnOrder(state);
-            syncManagedColgroupOrder(state);
-        }
         syncManagedColumnVisibilitySlots(state);
         syncSjAggToggleColumnCssVar(state);
         syncTopScroll(state);
@@ -5603,7 +5621,12 @@
         const state = managedTableState.get(t);
         if(!state) return;
         state.bodyUpdateDepth = (state.bodyUpdateDepth || 0) + 1;
-        if(state.bodyUpdateDepth === 1) state.suppressManagedRefresh = true;
+        if(state.bodyUpdateDepth === 1){
+            state.suppressManagedRefresh = true;
+            if(state.observer && state.tbody){
+                try { state.observer.disconnect(); } catch(_e){}
+            }
+        }
     }
 
     function endManagedTableBodyUpdate(table){
@@ -5613,8 +5636,13 @@
         if(!state) return;
         state.bodyUpdateDepth = Math.max(0, (state.bodyUpdateDepth || 1) - 1);
         if(state.bodyUpdateDepth > 0) return;
-        state.suppressManagedRefresh = false;
         finishManagedTableBodyUpdate(state);
+        state.suppressManagedRefresh = false;
+        if(state.observer && state.tbody){
+            try {
+                state.observer.observe(state.tbody, { childList: true, subtree: false });
+            } catch(_e){}
+        }
     }
 
     /** 表体重绘后轻量同步列宽/分离表头，不重置 headerSignature（避免反复全量解析列宽） */
@@ -6491,7 +6519,7 @@
         const headerSignature = headerMeta
             .slice()
             .sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'zh-Hans-CN', { sensitivity: 'base' }))
-            .map(meta => `${meta.key}:${meta.label}`)
+            .map(meta => String(meta.key || '').trim())
             .join('|') + '|__layout__|' + layoutSig;
 
         const headerStructureChanged = headerSignature !== state.headerSignature;
@@ -6671,14 +6699,25 @@
                 table.parentNode.insertBefore(wrap, table);
                 wrap.appendChild(table);
             }
+            const useDetachedHeader = managedTableUsesDetachedHeader(table);
             wrap.classList.add('is-managed-wrap', 'pm-managed-body-wrap');
+            wrap.classList.toggle('pm-uses-detached-header', useDetachedHeader);
+            if(table.tHead){
+                if(useDetachedHeader){
+                    table.tHead.classList.add('pm-managed-hidden-head');
+                } else {
+                    table.tHead.classList.remove('pm-managed-hidden-head');
+                }
+            }
 
-            headWrap = document.createElement('div');
-            headWrap.className = 'pm-table-wrap pm-managed-head-wrap is-managed-wrap';
-            headTable = document.createElement('table');
-            headTable.className = `${table.className} pm-managed-head-table`;
-            headTable.setAttribute('data-disable-table-manage', '1');
-            headWrap.appendChild(headTable);
+            if(useDetachedHeader){
+                headWrap = document.createElement('div');
+                headWrap.className = 'pm-table-wrap pm-managed-head-wrap is-managed-wrap';
+                headTable = document.createElement('table');
+                headTable.className = `${table.className} pm-managed-head-table`;
+                headTable.setAttribute('data-disable-table-manage', '1');
+                headWrap.appendChild(headTable);
+            }
 
             toolbar = document.createElement('div');
             toolbar.className = 'pm-table-toolbar';
@@ -6715,7 +6754,7 @@
             topScrollInner = document.createElement('div');
             topScrollInner.className = 'pm-table-top-scroll-inner';
             topScroll.appendChild(topScrollInner);
-            wrap.parentNode.insertBefore(headWrap, wrap);
+            if(headWrap) wrap.parentNode.insertBefore(headWrap, wrap);
             wrap.parentNode.insertBefore(topScroll, wrap);
         }
 
@@ -6725,6 +6764,7 @@
             wrap,
             headWrap,
             headerTable: headTable,
+            detachedHeader: !isLightTable && managedTableUsesDetachedHeader(table),
             toolbar,
             topScroll,
             topScrollInner,
@@ -6971,34 +7011,37 @@
             if(state.resetMenu) state.resetMenu.addEventListener('click', onResetMenuItemClick);
 
             state.wrap.addEventListener('scroll', () => {
-                if(Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
+                if(state.headWrap && Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
                     state.headWrap.scrollLeft = state.wrap.scrollLeft;
                 }
-                if(Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
+                if(state.topScroll && Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
                     state.topScroll.scrollLeft = state.wrap.scrollLeft;
                 }
             });
 
-            state.headWrap.addEventListener('scroll', () => {
-                if(Math.abs(state.wrap.scrollLeft - state.headWrap.scrollLeft) > 1){
-                    state.wrap.scrollLeft = state.headWrap.scrollLeft;
-                }
-                if(Math.abs(state.topScroll.scrollLeft - state.headWrap.scrollLeft) > 1){
-                    state.topScroll.scrollLeft = state.headWrap.scrollLeft;
-                }
-            });
+            if(state.headWrap){
+                state.headWrap.addEventListener('scroll', () => {
+                    if(Math.abs(state.wrap.scrollLeft - state.headWrap.scrollLeft) > 1){
+                        state.wrap.scrollLeft = state.headWrap.scrollLeft;
+                    }
+                    if(state.topScroll && Math.abs(state.topScroll.scrollLeft - state.headWrap.scrollLeft) > 1){
+                        state.topScroll.scrollLeft = state.headWrap.scrollLeft;
+                    }
+                });
+            }
 
             state.topScroll.addEventListener('scroll', () => {
                 if(Math.abs(state.wrap.scrollLeft - state.topScroll.scrollLeft) > 1){
                     state.wrap.scrollLeft = state.topScroll.scrollLeft;
                 }
-                if(Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
+                if(state.headWrap && Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
                     state.headWrap.scrollLeft = state.topScroll.scrollLeft;
                 }
             });
 
             // When users interact with checkbox controls in the cloned header,
             // forward the change to the original table header control that page scripts bind to.
+            if(state.headerTable){
             state.headerTable.addEventListener('change', (event) => {
                 const target = event.target;
                 if(!target || !(target instanceof HTMLInputElement)) return;
@@ -7031,6 +7074,7 @@
                 sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
                 syncManagedBatchBarAsync(state);
             });
+            }
 
             state.table.addEventListener('change', (event) => {
                 const target = event.target;
