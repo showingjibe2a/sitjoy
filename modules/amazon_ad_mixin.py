@@ -3358,6 +3358,7 @@ class AmazonAdMixin:
             'group_name': name if level == 'group' else '',
             'portfolio_id': portfolio_id,
             'campaign_id': campaign_id,
+            'amazon_id': row.get('amazon_id') or '',
         }
 
     def _fetch_adjustment_ad_info(self, cur, ad_item_id):

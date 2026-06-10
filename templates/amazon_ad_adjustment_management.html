@@ -657,8 +657,8 @@
                         <div class="aa-field-row">
                             <label for="aaAmazonIdInput" class="label-help">亚马逊 ID<span class="help-dot" data-tip="该广告尚未填写亚马逊 ID，建议补充完善"></span></label>
                             <div class="aa-value-input-wrap">
-                                <input type="text" id="aaAmazonIdInput" placeholder="亚马逊 ID" autocomplete="off">
-                                <button type="button" class="btn-secondary btn-small" id="aaAmazonIdSaveBtn">保存</button>
+                                <input type="text" id="aaAmazonIdInput" class="inline-input" placeholder="亚马逊 ID" autocomplete="off">
+                                <button type="button" class="btn-secondary btn-small pm-u-hidden" id="aaAmazonIdSaveBtn">保存</button>
                             </div>
                         </div>
                     </div>
@@ -3212,8 +3212,9 @@
 
         function listItemToAdInfo(item) {
             if (!item) {
-                return { ad_type_text: '-', portfolio_name: '-', campaign_name: '-', group_name: '-' };
+                return { ad_type_text: '-', portfolio_name: '-', campaign_name: '-', group_name: '-', amazon_id: '' };
             }
+            const amazonId = String(item.amazon_id || '').trim();
             const level = String(item.ad_level || 'campaign');
             if (level === 'portfolio') {
                 return {
@@ -3221,6 +3222,7 @@
                     portfolio_name: item.ad_name || item.portfolio_name || '-',
                     campaign_name: '-',
                     group_name: '-',
+                    amazon_id: amazonId,
                 };
             }
             if (level === 'group') {
@@ -3229,6 +3231,7 @@
                     portfolio_name: item.portfolio_name || '-',
                     campaign_name: item.campaign_name || '-',
                     group_name: item.ad_name || '-',
+                    amazon_id: amazonId,
                 };
             }
             return {
@@ -3236,21 +3239,57 @@
                 portfolio_name: item.portfolio_name || '-',
                 campaign_name: item.ad_name || '-',
                 group_name: '-',
+                amazon_id: amazonId,
             };
+        }
+
+        let aaAmazonIdBaseline = '';
+
+        function resolveAmazonIdForSelection(adInfo) {
+            return String(
+                (adInfo && adInfo.amazon_id)
+                || selectedAdDetail?.amazon_id
+                || selectedAd?.amazon_id
+                || ''
+            ).trim();
+        }
+
+        function syncAmazonIdSaveButton() {
+            const input = document.getElementById('aaAmazonIdInput');
+            const btn = document.getElementById('aaAmazonIdSaveBtn');
+            if (!input || !btn) return;
+            const current = String(input.value || '').trim();
+            const dirty = current !== aaAmazonIdBaseline;
+            const showSave = dirty || !aaAmazonIdBaseline;
+            btn.classList.toggle('pm-u-hidden', !showSave);
+            btn.disabled = !selectedAdId || !showSave;
         }
 
         function syncAmazonIdPrompt(adInfo) {
             const wrap = document.getElementById('aaAmazonIdPrompt');
             const input = document.getElementById('aaAmazonIdInput');
-            const btn = document.getElementById('aaAmazonIdSaveBtn');
             if (!wrap || !input) return;
-            const amazonId = String((adInfo && adInfo.amazon_id) || selectedAdDetail?.amazon_id || '').trim();
-            const show = !!selectedAdId && !amazonId;
-            wrap.hidden = !show;
-            if (show) {
+            if (!selectedAdId) {
+                aaAmazonIdBaseline = '';
+                wrap.hidden = true;
                 input.value = '';
+                syncAmazonIdSaveButton();
+                return;
             }
-            if (btn) btn.disabled = !selectedAdId;
+            const amazonId = resolveAmazonIdForSelection(adInfo);
+            aaAmazonIdBaseline = amazonId;
+            input.value = amazonId;
+            wrap.hidden = false;
+            const dot = wrap.querySelector('.help-dot');
+            if (dot) {
+                dot.setAttribute(
+                    'data-tip',
+                    amazonId
+                        ? '亚马逊后台对应层级的实体 ID；修改后点击保存'
+                        : '该广告尚未填写亚马逊 ID，建议补充完善'
+                );
+            }
+            syncAmazonIdSaveButton();
         }
 
         function saveAmazonIdFromAdjustment() {
@@ -3276,12 +3315,15 @@
                     }
                     const savedId = String(data.item?.amazon_id || amazonId).trim();
                     if (selectedAdDetail) selectedAdDetail.amazon_id = savedId;
+                    if (selectedAd) selectedAd.amazon_id = savedId;
+                    const raw = adItemsRaw.find(x => String(x.id) === String(selectedAdId));
+                    if (raw) raw.amazon_id = savedId;
                     syncAmazonIdPrompt({ amazon_id: savedId });
                     aaSaveResult({ action: 'save', message: '亚马逊 ID 已保存' });
                 })
                 .catch(err => aaSaveResult({ action: 'save', isError: true, message: '保存失败: ' + err }))
                 .finally(() => {
-                    if (btn) btn.disabled = !selectedAdId;
+                    syncAmazonIdSaveButton();
                 });
         }
 
@@ -3320,7 +3362,6 @@
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
             updateInfoPanel(selectedAd ? listItemToAdInfo(selectedAd) : null);
-            syncAmazonIdPrompt(null);
             updateRecordsLink();
             loadAdjustmentPeriodList();
             const defaultsTarget = restore?.targetObject || '';
@@ -3514,6 +3555,7 @@
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
         document.getElementById('targetObjectNextBtn')?.addEventListener('click', jumpToNextObserveTarget);
         document.getElementById('aaAmazonIdSaveBtn')?.addEventListener('click', saveAmazonIdFromAdjustment);
+        document.getElementById('aaAmazonIdInput')?.addEventListener('input', syncAmazonIdSaveButton);
         ['filterByPortfolioBtn', 'filterByCampaignBtn', 'filterByGroupBtn'].forEach((btnId) => {
             const btn = document.getElementById(btnId);
             if (!btn) return;

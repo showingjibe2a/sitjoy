@@ -63,12 +63,13 @@
                             <th>广告活动</th>
                             <th>广告组</th>
                             <th>细分类</th>
+                            <th style="width:140px;">亚马逊ID</th>
                             <th>最后修改时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -165,7 +166,7 @@
         function renderAdTable(items) {
             const tbody = document.querySelector('#adTable tbody');
             if (!items.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
 
@@ -206,6 +207,7 @@
                     <td>${campaignText}</td>
                     <td>${groupText}</td>
                     <td>${subtypeText}</td>
+                    <td>${item.amazon_id || ''}</td>
                     <td>${formatDateTime(item.updated_at)}</td>
                     <td>
                         <div class="pm-actions">
@@ -299,7 +301,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#adTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     adItemsCache = data.items || [];
@@ -309,7 +311,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#adTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
