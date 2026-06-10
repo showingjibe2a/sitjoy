@@ -77,6 +77,25 @@
             color: var(--morandi-slate);
             font-weight: 600;
         }
+        .aa-field-label-row {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .aa-field-label-row label {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        #targetObjectNextBtn {
+            font-size: 0.58rem;
+            padding: 0 0.3rem;
+            min-width: 2.15rem;
+            flex: 0 0 auto;
+        }
+        #targetObjectNextBtn:disabled {
+            opacity: 0.35;
+            pointer-events: none;
+        }
         .aa-field-row .aa-readonly {
             font-size: 0.86rem;
             color: var(--morandi-ink);
@@ -679,7 +698,10 @@
                             </select>
                         </div>
                         <div class="aa-field-row">
-                            <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
+                            <div class="aa-field-label-row">
+                                <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
+                                <button type="button" class="btn-capsule-sm" id="targetObjectNextBtn" aria-label="下一个待观察" title="下一个待观察" disabled>下一个</button>
+                            </div>
                             <div class="aa-value-input-wrap aa-target-object-wrap input-capsule-menu--empty" id="targetObjectWrap">
                                 <div class="aa-target-input-area">
                                     <input type="text" id="targetObject" class="aa-adjust-value-input" placeholder="关键词 / 竞价 / 投放位置" autocomplete="off">
@@ -1002,21 +1024,44 @@
             });
         }
 
-        function applySavedFormState(saved) {
+        function setOperationTypeValue(opId) {
+            const opSelect = document.getElementById('operationType');
+            if (!opSelect) return;
+            const id = String(opId || '').trim();
+            if (!id) {
+                renderOperationOptions('');
+                return;
+            }
+            const allowed = allowedOperations.find(op => String(op.id) === id);
+            if (!allowed) {
+                renderOperationOptions('');
+                return;
+            }
+            renderOperationOptions(id, { skipSyncReason: true });
+            opSelect.value = id;
+            if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(opSelect);
+        }
+
+        function applyObserveNavigationForm(saved) {
             if (!saved) return;
             const opId = String(saved.operationTypeId || '').trim();
             const target = String(saved.targetObject || '').trim();
             if (opId) {
-                renderOperationOptions(opId, { skipSyncReason: true });
-                syncReasonOptions({ keepTargetObject: !!target });
-                if (target) {
-                    setFieldValue('targetObject', target);
-                    supplementaryTargetObjectKey = target;
-                }
+                setOperationTypeValue(opId);
             } else {
                 renderOperationOptions('');
+            }
+            if (target) {
+                setFieldValue('targetObject', target);
+                supplementaryTargetObjectKey = target;
+            } else {
                 supplementaryTargetObjectKey = '';
             }
+            syncReasonOptions({ keepTargetObject: true });
+        }
+
+        function applySavedFormState(saved) {
+            applyObserveNavigationForm(saved);
         }
 
         function initPageFromSavedState() {
@@ -2670,6 +2715,62 @@
             savePageState();
         }
 
+        function syncTargetObjectNextBtn() {
+            const btn = document.getElementById('targetObjectNextBtn');
+            if (!btn) return;
+            btn.disabled = !selectedAdId;
+        }
+
+        function applyNextObserveSelection(item) {
+            const nextAdId = String(item?.ad_item_id || '').trim();
+            const nextOpId = String(item?.operation_type_id || '').trim();
+            const nextOpName = String(item?.operation_type_name || '').trim();
+            const nextTarget = String(item?.target_object || '').trim();
+            if (!nextAdId || !nextTarget) return Promise.resolve();
+            const restore = {
+                operationTypeId: nextOpId,
+                operationTypeName: nextOpName,
+                targetObject: nextTarget,
+            };
+            if (nextAdId !== String(selectedAdId || '')) {
+                return selectAd(nextAdId, { restoreForm: restore });
+            }
+            applyObserveNavigationForm(restore);
+            enableAdjustmentPeriodFilter();
+            return loadTargetOptionsForSelectedAd().then(() => {
+                syncTargetObjectFieldMode();
+                syncTargetObjectState();
+                applyAdjustmentPeriodFilter();
+                maybeResetSupplementaryOnTargetObjectChange();
+                savePageState();
+            });
+        }
+
+        function jumpToNextObserveTarget() {
+            if (!selectedAdId) return;
+            const btn = document.getElementById('targetObjectNextBtn');
+            if (btn) btn.disabled = true;
+            const opId = String(document.getElementById('operationType')?.value || '').trim();
+            const target = String(document.getElementById('targetObject')?.value || '').trim();
+            let url = `/api/amazon-ad-adjustment?action=next-observe&ad_item_id=${encodeURIComponent(selectedAdId)}`;
+            if (opId) url += `&operation_type_id=${encodeURIComponent(opId)}`;
+            if (target) url += `&target_object=${encodeURIComponent(target)}`;
+            return fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success' || !data.item) {
+                        aaValidationToast(data.message || '暂无待观察项');
+                        return;
+                    }
+                    if (data.item.stay_on_current) {
+                        aaValidationToast('当前对象待观察');
+                    }
+                    return applyNextObserveSelection(data.item);
+                })
+                .catch(err => aaValidationToast('加载失败: ' + err))
+                .finally(() => syncTargetObjectNextBtn());
+        }
+
         function filterTargetOptionsForSuggest(query) {
             const q = String(query || '').trim().toLowerCase();
             const list = Array.isArray(targetOptionsCache) ? targetOptionsCache : [];
@@ -3066,9 +3167,11 @@
                 const option = document.createElement('option');
                 option.value = op.id;
                 option.textContent = op.name || `操作${op.id}`;
-                if (current && String(op.id) === current) option.selected = true;
                 opSelect.appendChild(option);
             });
+            if (current) {
+                opSelect.value = current;
+            }
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(opSelect);
             if (!options.skipSyncReason) syncReasonOptions();
         }
@@ -3269,6 +3372,7 @@
             const ok = canSubmitPhase1();
             document.getElementById('submitBtn').disabled = !ok;
             document.getElementById('quickSubmitBtn').disabled = !ok;
+            syncTargetObjectNextBtn();
         }
 
         function postRecord(isQuickSubmit, onSuccess) {
@@ -3360,6 +3464,7 @@
         }
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
+        document.getElementById('targetObjectNextBtn')?.addEventListener('click', jumpToNextObserveTarget);
         ['filterByPortfolioBtn', 'filterByCampaignBtn', 'filterByGroupBtn'].forEach((btnId) => {
             const btn = document.getElementById(btnId);
             if (!btn) return;
@@ -3443,6 +3548,7 @@
             initAttributionCheckedSegment();
             syncValueQuickMenus();
             syncTargetObjectPickMenu();
+            syncTargetObjectNextBtn();
             syncPlacementFieldHints();
             if (window.AmazonAdFormModal) {
                 window.AmazonAdFormModal.init({

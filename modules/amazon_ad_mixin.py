@@ -3696,7 +3696,7 @@ class AmazonAdMixin:
         return None
 
     def _normalize_adjustment_operation_type_name(self, name):
-        return re.sub(r"[『』【】「』]", '', str(name or '')).strip()
+        return re.sub(r"[『』【】「」]", '', str(name or '')).strip()
 
     def _is_modify_delivery_target_operation(self, op_name):
         n = self._normalize_adjustment_operation_type_name(op_name)
@@ -3709,6 +3709,503 @@ class AmazonAdMixin:
     def _is_modify_product_operation(self, op_name):
         n = self._normalize_adjustment_operation_type_name(op_name)
         return '修改' in n and '商品' in n
+
+    def _adjustment_observe_active_status(self, status):
+        return str(status or '启动').strip() == '启动'
+
+    def _fetch_adjustment_ad_item_brief(self, cur, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id:
+            return None
+        cur.execute(
+            """
+            SELECT id, ad_level, status, portfolio_id, campaign_id, subtype_id
+            FROM amazon_ad_items
+            WHERE id=%s
+            LIMIT 1
+            """,
+            (ad_item_id,),
+        )
+        return cur.fetchone()
+
+    def _adjustment_observe_ad_chain_valid(self, cur, ad_item_id):
+        row = self._fetch_adjustment_ad_item_brief(cur, ad_item_id)
+        if not row or not self._adjustment_observe_active_status(row.get('status')):
+            return False
+        level = str(row.get('ad_level') or '').strip()
+        if level == 'group':
+            campaign_id = self._parse_int(row.get('campaign_id'))
+            if not campaign_id:
+                return False
+            campaign = self._fetch_adjustment_ad_item_brief(cur, campaign_id)
+            if not campaign or not self._adjustment_observe_active_status(campaign.get('status')):
+                return False
+            portfolio_id = self._parse_int(campaign.get('portfolio_id'))
+            if portfolio_id:
+                portfolio = self._fetch_adjustment_ad_item_brief(cur, portfolio_id)
+                if not portfolio or not self._adjustment_observe_active_status(portfolio.get('status')):
+                    return False
+        elif level == 'campaign':
+            portfolio_id = self._parse_int(row.get('portfolio_id'))
+            if portfolio_id:
+                portfolio = self._fetch_adjustment_ad_item_brief(cur, portfolio_id)
+                if not portfolio or not self._adjustment_observe_active_status(portfolio.get('status')):
+                    return False
+        return True
+
+    def _fetch_adjustment_group_ids_for_campaign(self, cur, campaign_id):
+        campaign_id = self._parse_int(campaign_id)
+        if not campaign_id:
+            return []
+        cur.execute(
+            """
+            SELECT id
+            FROM amazon_ad_items
+            WHERE ad_level='group' AND campaign_id=%s
+            ORDER BY id ASC
+            """,
+            (campaign_id,),
+        )
+        out = []
+        for row in cur.fetchall() or []:
+            gid = self._parse_int(row.get('id'))
+            if gid and self._adjustment_observe_ad_chain_valid(cur, gid):
+                out.append(gid)
+        return out
+
+    def _append_adjustment_observe_ad_item(self, ordered, seen, cur, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id or ad_item_id in seen:
+            return
+        if not self._adjustment_observe_ad_chain_valid(cur, ad_item_id):
+            return
+        seen.add(ad_item_id)
+        ordered.append(ad_item_id)
+
+    def _append_adjustment_observe_campaign_scope(
+        self, ordered, seen, cur, campaign_id, include_campaign=True, include_groups=True,
+    ):
+        campaign_id = self._parse_int(campaign_id)
+        if not campaign_id:
+            return
+        if include_campaign:
+            self._append_adjustment_observe_ad_item(ordered, seen, cur, campaign_id)
+        if include_groups:
+            for group_id in self._fetch_adjustment_group_ids_for_campaign(cur, campaign_id):
+                self._append_adjustment_observe_ad_item(ordered, seen, cur, group_id)
+
+    def _append_adjustment_observe_portfolio_campaigns(self, ordered, seen, cur, portfolio_id):
+        portfolio_id = self._parse_int(portfolio_id)
+        if not portfolio_id:
+            return
+        cur.execute(
+            """
+            SELECT id
+            FROM amazon_ad_items
+            WHERE ad_level='campaign' AND portfolio_id=%s AND status='启动'
+            ORDER BY id ASC
+            """,
+            (portfolio_id,),
+        )
+        for row in cur.fetchall() or []:
+            cid = self._parse_int(row.get('id'))
+            if cid:
+                self._append_adjustment_observe_campaign_scope(
+                    ordered, seen, cur, cid, include_campaign=True, include_groups=True,
+                )
+
+    def _pick_operation_type_id_for_observe_kind(self, operations, kind):
+        for op in operations or []:
+            name = self._normalize_adjustment_operation_type_name(op.get('name'))
+            if kind == 'product' and self._is_modify_product_operation(name):
+                return self._parse_int(op.get('id'))
+            if kind == 'placement' and self._is_modify_placement_operation(name):
+                return self._parse_int(op.get('id'))
+            if kind == 'delivery' and self._is_modify_delivery_target_operation(name):
+                return self._parse_int(op.get('id'))
+        return None
+
+    def _operation_type_name_from_allowed(self, allowed, operation_type_id):
+        operation_type_id = self._parse_int(operation_type_id)
+        if not operation_type_id:
+            return ''
+        for op in allowed or []:
+            if self._parse_int(op.get('id')) == operation_type_id:
+                return str(op.get('name') or '').strip()
+        return ''
+
+    def _classify_target_observe_kind(self, cur, ad_row, target_desc, placement_cache):
+        level = str(ad_row.get('ad_level') or '').strip()
+        target_desc = str(target_desc or '').strip()
+        if not target_desc:
+            return 'delivery'
+        if level == 'campaign':
+            return 'placement'
+        if level == 'group':
+            placement_names = self._placement_target_names_for_ad_item(cur, ad_row, placement_cache)
+            if target_desc.lower() in placement_names:
+                return 'placement'
+        return 'delivery'
+
+    def _build_adjustment_observe_ad_item_order(self, cur, ad_row):
+        if not ad_row:
+            return []
+        level = str(ad_row.get('ad_level') or '').strip()
+        self_id = self._parse_int(ad_row.get('id'))
+        portfolio_id = self._parse_int(ad_row.get('portfolio_id'))
+        campaign_id = self._parse_int(ad_row.get('campaign_id'))
+        ordered = []
+        seen = set()
+
+        if level == 'group':
+            self._append_adjustment_observe_ad_item(ordered, seen, cur, self_id)
+            self._append_adjustment_observe_campaign_scope(
+                ordered, seen, cur, campaign_id, include_campaign=True, include_groups=True,
+            )
+            if campaign_id and portfolio_id:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM amazon_ad_items
+                    WHERE ad_level='campaign' AND portfolio_id=%s AND id>%s AND status='启动'
+                    ORDER BY id ASC
+                    """,
+                    (portfolio_id, campaign_id),
+                )
+                for row in cur.fetchall() or []:
+                    cid = self._parse_int(row.get('id'))
+                    if cid:
+                        self._append_adjustment_observe_campaign_scope(
+                            ordered, seen, cur, cid, include_campaign=True, include_groups=True,
+                        )
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM amazon_ad_items
+                    WHERE ad_level='portfolio' AND id>%s AND status='启动'
+                    ORDER BY id ASC
+                    """,
+                    (portfolio_id,),
+                )
+                for row in cur.fetchall() or []:
+                    pid = self._parse_int(row.get('id'))
+                    if pid:
+                        self._append_adjustment_observe_portfolio_campaigns(ordered, seen, cur, pid)
+        elif level == 'campaign':
+            self._append_adjustment_observe_ad_item(ordered, seen, cur, self_id)
+            self._append_adjustment_observe_campaign_scope(
+                ordered, seen, cur, self_id, include_campaign=False, include_groups=True,
+            )
+            if portfolio_id:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM amazon_ad_items
+                    WHERE ad_level='campaign' AND portfolio_id=%s AND id>%s AND status='启动'
+                    ORDER BY id ASC
+                    """,
+                    (portfolio_id, self_id),
+                )
+                for row in cur.fetchall() or []:
+                    cid = self._parse_int(row.get('id'))
+                    if cid:
+                        self._append_adjustment_observe_campaign_scope(
+                            ordered, seen, cur, cid, include_campaign=True, include_groups=True,
+                        )
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM amazon_ad_items
+                    WHERE ad_level='portfolio' AND id>%s AND status='启动'
+                    ORDER BY id ASC
+                    """,
+                    (portfolio_id,),
+                )
+                for row in cur.fetchall() or []:
+                    pid = self._parse_int(row.get('id'))
+                    if pid:
+                        self._append_adjustment_observe_portfolio_campaigns(ordered, seen, cur, pid)
+        elif level == 'portfolio':
+            self._append_adjustment_observe_portfolio_campaigns(ordered, seen, cur, self_id)
+            cur.execute(
+                """
+                SELECT id
+                FROM amazon_ad_items
+                WHERE ad_level='portfolio' AND id>%s AND status='启动'
+                ORDER BY id ASC
+                """,
+                (self_id,),
+            )
+            for row in cur.fetchall() or []:
+                pid = self._parse_int(row.get('id'))
+                if pid:
+                    self._append_adjustment_observe_portfolio_campaigns(ordered, seen, cur, pid)
+        return ordered
+
+    def _placement_target_names_for_ad_item(self, cur, ad_item_row, cache):
+        if not ad_item_row:
+            return set()
+        subtype_id = self._parse_int(ad_item_row.get('subtype_id'))
+        ad_level = str(ad_item_row.get('ad_level') or '').strip()
+        if ad_level == 'group' and not subtype_id:
+            campaign_id = self._parse_int(ad_item_row.get('campaign_id'))
+            if campaign_id:
+                cur.execute(
+                    "SELECT subtype_id FROM amazon_ad_items WHERE id=%s AND ad_level='campaign' LIMIT 1",
+                    (campaign_id,),
+                )
+                camp = cur.fetchone() or {}
+                subtype_id = self._parse_int(camp.get('subtype_id')) or subtype_id
+        if ad_level not in ('campaign', 'group') or not subtype_id:
+            return set()
+        key = (subtype_id, ad_level)
+        if key not in cache:
+            defaults = self._fetch_subtype_default_targets(cur, subtype_id, ad_level)
+            cache[key] = {str(item.get('name') or '').strip().lower() for item in defaults if item.get('name')}
+        return cache[key]
+
+    def _adjustment_observe_kind_rank(self, kind):
+        if kind == 'delivery':
+            return 0
+        if kind == 'product':
+            return 1
+        if kind == 'placement':
+            return 2
+        return 9
+
+    def _collect_adjustment_observe_candidates(self, cur, ad_item_ids, allowed_kinds):
+        if not ad_item_ids:
+            return []
+        placement_cache = {}
+        ad_rows = {}
+        for ad_item_id in ad_item_ids:
+            ad_rows[ad_item_id] = self._fetch_adjustment_ad_item_brief(cur, ad_item_id)
+
+        placeholders = ','.join(['%s'] * len(ad_item_ids))
+        candidates = []
+
+        if 'delivery' in allowed_kinds or 'placement' in allowed_kinds:
+            cur.execute(
+                f"""
+                SELECT ad_item_id, id, target_desc, next_observe_at
+                FROM amazon_ad_targets
+                WHERE ad_item_id IN ({placeholders})
+                  AND next_observe_at IS NOT NULL
+                  AND next_observe_at <= NOW()
+                ORDER BY next_observe_at ASC, target_desc ASC, id ASC
+                """,
+                tuple(ad_item_ids),
+            )
+            for row in cur.fetchall() or []:
+                ad_item_id = self._parse_int(row.get('ad_item_id'))
+                ad_row = ad_rows.get(ad_item_id)
+                if not ad_row:
+                    continue
+                target_desc = str(row.get('target_desc') or '').strip()
+                if not target_desc:
+                    continue
+                kind = self._classify_target_observe_kind(cur, ad_row, target_desc, placement_cache)
+                if kind not in allowed_kinds:
+                    continue
+                candidates.append({
+                    'ad_item_id': ad_item_id,
+                    'kind': kind,
+                    'target_object': target_desc,
+                    'next_observe_at': row.get('next_observe_at'),
+                    'entity_id': self._parse_int(row.get('id')),
+                })
+
+        if 'product' in allowed_kinds:
+            cur.execute(
+                f"""
+                SELECT p.ad_item_id, p.id, sp.platform_sku, p.next_observe_at
+                FROM amazon_ad_products p
+                LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+                WHERE p.ad_item_id IN ({placeholders})
+                  AND p.next_observe_at IS NOT NULL
+                  AND p.next_observe_at <= NOW()
+                  AND sp.platform_sku IS NOT NULL
+                  AND TRIM(sp.platform_sku) <> ''
+                ORDER BY p.next_observe_at ASC, sp.platform_sku ASC, p.id ASC
+                """,
+                tuple(ad_item_ids),
+            )
+            for row in cur.fetchall() or []:
+                ad_item_id = self._parse_int(row.get('ad_item_id'))
+                sku = str(row.get('platform_sku') or '').strip()
+                if not sku:
+                    continue
+                candidates.append({
+                    'ad_item_id': ad_item_id,
+                    'kind': 'product',
+                    'target_object': sku,
+                    'next_observe_at': row.get('next_observe_at'),
+                    'entity_id': self._parse_int(row.get('id')),
+                })
+
+        ad_rank = {ad_id: idx for idx, ad_id in enumerate(ad_item_ids)}
+
+        def sort_key(item):
+            return (
+                ad_rank.get(item.get('ad_item_id'), 999999),
+                self._adjustment_observe_kind_rank(item.get('kind')),
+                str(item.get('target_object') or ''),
+                self._parse_int(item.get('entity_id')) or 0,
+            )
+
+        candidates.sort(key=sort_key)
+        return candidates
+
+    def _adjustment_observe_ad_rank(self, ad_item_order, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        try:
+            return ad_item_order.index(ad_item_id)
+        except ValueError:
+            return 999999
+
+    def _first_adjustment_observe_candidate_after_ad_rank(self, candidates, ad_item_order, after_rank):
+        for item in candidates:
+            rank = self._adjustment_observe_ad_rank(ad_item_order, item.get('ad_item_id'))
+            if rank > after_rank:
+                return item
+        return None
+
+    def _infer_observe_kind_from_operation_name(self, op_name):
+        op_name = self._normalize_adjustment_operation_type_name(op_name)
+        if self._is_modify_product_operation(op_name):
+            return 'product'
+        if self._is_modify_placement_operation(op_name):
+            return 'placement'
+        if self._is_modify_delivery_target_operation(op_name):
+            return 'delivery'
+        return None
+
+    def _find_current_adjustment_observe_match(
+        self, candidates, ad_item_id, target_object, preferred_kind=None,
+    ):
+        target_object = (target_object or '').strip()
+        if not target_object or target_object == '-':
+            return None
+        ad_item_id = self._parse_int(ad_item_id)
+        scoped = [
+            item for item in candidates
+            if self._parse_int(item.get('ad_item_id')) == ad_item_id
+            and str(item.get('target_object') or '').strip() == target_object
+        ]
+        if not scoped:
+            return None
+        if preferred_kind:
+            for item in scoped:
+                if item.get('kind') == preferred_kind:
+                    return item
+        return scoped[0]
+
+    def _serialize_adjustment_observe_pick(self, cur, picked, stay_on_current=False):
+        if not picked:
+            return None, '已是最后一个待观察项'
+        picked_ad_row = self._fetch_adjustment_ad_item_brief(cur, picked.get('ad_item_id'))
+        allowed = self._fetch_allowed_operations_for_ad(cur, picked_ad_row)
+        operation_type_id = self._pick_operation_type_id_for_observe_kind(allowed, picked.get('kind'))
+        if not operation_type_id:
+            return None, '无法匹配操作类型'
+        operation_type_name = self._operation_type_name_from_allowed(allowed, operation_type_id)
+        next_observe_at = picked.get('next_observe_at')
+        next_observe_text = ''
+        if next_observe_at is not None:
+            if isinstance(next_observe_at, datetime):
+                next_observe_text = next_observe_at.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                next_observe_text = str(next_observe_at)
+        return {
+            'ad_item_id': picked.get('ad_item_id'),
+            'operation_type_id': operation_type_id,
+            'operation_type_name': operation_type_name,
+            'target_object': picked.get('target_object'),
+            'kind': picked.get('kind'),
+            'next_observe_at': next_observe_text,
+            'stay_on_current': bool(stay_on_current),
+        }, None
+
+    def _find_next_adjustment_observe_candidate(self, cur, ad_item_id, operation_type_id, target_object):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id:
+            return None, '请先选择广告'
+        ad_row = self._fetch_adjustment_ad_item_brief(cur, ad_item_id)
+        if not ad_row:
+            return None, '广告不存在'
+
+        allowed_kinds = {'delivery', 'product', 'placement'}
+        ad_item_order = self._build_adjustment_observe_ad_item_order(cur, ad_row)
+        candidates = self._collect_adjustment_observe_candidates(cur, ad_item_order, allowed_kinds)
+        if not candidates:
+            return None, '暂无待观察项'
+
+        target_object = (target_object or '').strip()
+        preferred_kind = None
+        if operation_type_id:
+            cur.execute(
+                "SELECT name FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
+                (self._parse_int(operation_type_id),),
+            )
+            op_row = cur.fetchone() or {}
+            preferred_kind = self._infer_observe_kind_from_operation_name(op_row.get('name'))
+
+        current_match = self._find_current_adjustment_observe_match(
+            candidates, ad_item_id, target_object, preferred_kind,
+        )
+        if current_match:
+            return self._serialize_adjustment_observe_pick(cur, current_match, stay_on_current=True)
+
+        current_ad_candidates = [
+            item for item in candidates
+            if self._parse_int(item.get('ad_item_id')) == ad_item_id
+        ]
+        current_ad_rank = self._adjustment_observe_ad_rank(ad_item_order, ad_item_id)
+
+        picked = None
+        if target_object and target_object != '-':
+            found_idx = -1
+            for idx, item in enumerate(current_ad_candidates):
+                if str(item.get('target_object') or '').strip() == target_object:
+                    found_idx = idx
+                    break
+            if found_idx >= 0:
+                if found_idx + 1 < len(current_ad_candidates):
+                    picked = current_ad_candidates[found_idx + 1]
+                else:
+                    picked = self._first_adjustment_observe_candidate_after_ad_rank(
+                        candidates, ad_item_order, current_ad_rank,
+                    )
+            elif current_ad_candidates:
+                picked = current_ad_candidates[0]
+            else:
+                picked = self._first_adjustment_observe_candidate_after_ad_rank(
+                    candidates, ad_item_order, current_ad_rank,
+                )
+        elif current_ad_candidates:
+            picked = current_ad_candidates[0]
+        else:
+            picked = self._first_adjustment_observe_candidate_after_ad_rank(
+                candidates, ad_item_order, current_ad_rank,
+            )
+
+        start_idx = 0
+        if picked:
+            for idx, item in enumerate(candidates):
+                if (
+                    self._parse_int(item.get('ad_item_id')) == self._parse_int(picked.get('ad_item_id'))
+                    and item.get('kind') == picked.get('kind')
+                    and str(item.get('target_object') or '').strip() == str(picked.get('target_object') or '').strip()
+                    and self._parse_int(item.get('entity_id')) == self._parse_int(picked.get('entity_id'))
+                ):
+                    start_idx = idx
+                    break
+
+        for idx in range(start_idx, len(candidates)):
+            result, err = self._serialize_adjustment_observe_pick(cur, candidates[idx], stay_on_current=False)
+            if result:
+                return result, None
+        return None, err or '已是最后一个待观察项'
 
     def _is_archive_operation(self, op_name):
         return self._normalize_adjustment_operation_type_name(op_name) == '存档'
@@ -4006,6 +4503,21 @@ class AmazonAdMixin:
                     'platform_skus': platform_skus,
                     'default_bid': default_bid,
                 }, start_response)
+
+            if method == 'GET' and action == 'next-observe':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                if not ad_item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                operation_type_id = self._parse_int((query_params.get('operation_type_id', [''])[0] or '').strip())
+                target_object = (query_params.get('target_object', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        item, err = self._find_next_adjustment_observe_candidate(
+                            cur, ad_item_id, operation_type_id, target_object,
+                        )
+                if err:
+                    return self.send_json({'status': 'success', 'item': None, 'message': err}, start_response)
+                return self.send_json({'status': 'success', 'item': item}, start_response)
 
             if method == 'GET' and action == 'defaults':
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
