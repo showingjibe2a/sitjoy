@@ -533,7 +533,7 @@ class AmazonAdMixin:
                 p.shop_id
             ) AS shop_id,
             i.portfolio_id, i.campaign_id,
-            i.strategy_code, i.subtype_id, i.name, i.is_shared_budget, i.status, i.budget,
+            i.strategy_code, i.subtype_id, i.name, i.amazon_id, i.is_shared_budget, i.status, i.budget,
             i.bid_strategy,
             i.created_at, i.updated_at,
             pf.sku_family,
@@ -587,6 +587,12 @@ class AmazonAdMixin:
         if text not in self._VALID_CAMPAIGN_BID_STRATEGIES:
             return None, f'无效竞价策略: {text}'
         return text, None
+
+    def _normalize_amazon_id(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     def _serialize_amazon_ad_item(self, row):
         if not row:
@@ -773,7 +779,8 @@ class AmazonAdMixin:
         cur.execute(
             """
             SELECT id, ad_level, name, portfolio_id, campaign_id, shop_id,
-                   sku_family_id, strategy_code, subtype_id, is_shared_budget, status, budget, bid_strategy
+                   sku_family_id, strategy_code, subtype_id, is_shared_budget, status, budget, bid_strategy,
+                   amazon_id
             FROM amazon_ad_items
             WHERE ad_level IN ('portfolio', 'campaign', 'group')
             """
@@ -1032,6 +1039,7 @@ class AmazonAdMixin:
             'ad_level': ad_level,
             'name': name,
             'status': status,
+            'amazon_id': self._normalize_amazon_id(data.get('amazon_id')),
             'sku_family_id': None,
             'portfolio_id': None,
             'campaign_id': None,
@@ -1116,17 +1124,29 @@ class AmazonAdMixin:
 
             if method == 'PATCH':
                 item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 status = (data.get('status') or '').strip()
-                if not item_id or not status:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or status'}, start_response)
+                has_amazon_id = 'amazon_id' in data
+                if not status and not has_amazon_id:
+                    return self.send_json({'status': 'error', 'message': '缺少可更新字段'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE amazon_ad_items SET status=%s WHERE id=%s",
-                            (status, item_id)
-                        )
-                        if cur.rowcount <= 0:
-                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        if has_amazon_id:
+                            amazon_id = self._normalize_amazon_id(data.get('amazon_id'))
+                            cur.execute(
+                                "UPDATE amazon_ad_items SET amazon_id=%s WHERE id=%s",
+                                (amazon_id, item_id),
+                            )
+                            if cur.rowcount <= 0:
+                                return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        elif status:
+                            cur.execute(
+                                "UPDATE amazon_ad_items SET status=%s WHERE id=%s",
+                                (status, item_id),
+                            )
+                            if cur.rowcount <= 0:
+                                return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
                         item = self._fetch_amazon_ad_item_by_id(cur, item_id)
                 return self.send_json({'status': 'success', 'item': item}, start_response)
 
@@ -1172,13 +1192,14 @@ class AmazonAdMixin:
                             """
                             INSERT INTO amazon_ad_items (
                                 ad_level, sku_family_id, shop_id, portfolio_id, campaign_id,
-                                strategy_code, subtype_id, name, is_shared_budget, status, budget, bid_strategy
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                strategy_code, subtype_id, name, amazon_id, is_shared_budget, status, budget, bid_strategy
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 fields['ad_level'], fields['sku_family_id'], fields.get('shop_id'),
                                 fields['portfolio_id'], fields['campaign_id'], fields['strategy_code'],
-                                fields['subtype_id'], fields['name'], fields['is_shared_budget'],
+                                fields['subtype_id'], fields['name'], fields.get('amazon_id'),
+                                fields['is_shared_budget'],
                                 fields['status'], fields['budget'], fields.get('bid_strategy'),
                             )
                         )
@@ -1245,14 +1266,15 @@ class AmazonAdMixin:
                             """
                             UPDATE amazon_ad_items SET
                                 sku_family_id=%s, shop_id=%s, portfolio_id=%s, campaign_id=%s,
-                                strategy_code=%s, subtype_id=%s, name=%s,
+                                strategy_code=%s, subtype_id=%s, name=%s, amazon_id=%s,
                                 is_shared_budget=%s, status=%s, budget=%s, bid_strategy=%s
                             WHERE id=%s
                             """,
                             (
                                 fields['sku_family_id'], fields.get('shop_id'), fields['portfolio_id'],
                                 fields['campaign_id'], fields['strategy_code'], fields['subtype_id'],
-                                fields['name'], fields['is_shared_budget'], fields['status'], fields['budget'],
+                                fields['name'], fields.get('amazon_id'), fields['is_shared_budget'],
+                                fields['status'], fields['budget'],
                                 fields.get('bid_strategy'), item_id,
                             )
                         )
@@ -1285,7 +1307,7 @@ class AmazonAdMixin:
     def _amazon_ad_items_template_headers(self):
         """导入模板列顺序：归属两列置于最右侧。"""
         return [
-            '广告类型*', '名称*', '状态*',
+            '广告类型*', '名称*', '状态*', '亚马逊ID',
             '关联货号', '是否共享预算', '关联店铺',
             '策略', '细分类', '预算', '竞价策略',
             '归属广告组合名称', '归属广告活动名称',
@@ -1416,13 +1438,13 @@ class AmazonAdMixin:
         dv_shared.error = '请从列表选择：是 / 否'
         dv_shared.errorTitle = '是否共享预算'
         ws.add_data_validation(dv_shared)
-        dv_shared.add(f'E{first_data_row}:E{data_end}')
+        dv_shared.add(f'F{first_data_row}:F{data_end}')
 
         dv_strategy = DataValidation(type='list', formula1='"BE,BD,PC"', allow_blank=True)
         dv_strategy.error = '请从列表选择：BE / BD / PC'
         dv_strategy.errorTitle = '策略'
         ws.add_data_validation(dv_strategy)
-        dv_strategy.add(f'G{first_data_row}:G{data_end}')
+        dv_strategy.add(f'H{first_data_row}:H{data_end}')
 
         dv_bid_strategy = DataValidation(
             type='list',
@@ -1432,7 +1454,7 @@ class AmazonAdMixin:
         dv_bid_strategy.error = '请从列表选择竞价策略'
         dv_bid_strategy.errorTitle = '竞价策略'
         ws.add_data_validation(dv_bid_strategy)
-        dv_bid_strategy.add(f'J{first_data_row}:J{data_end}')
+        dv_bid_strategy.add(f'K{first_data_row}:K{data_end}')
 
         sku_families = list(sku_families or [])
         subtype_labels = list(subtype_labels or [])
@@ -1448,7 +1470,7 @@ class AmazonAdMixin:
             dv_sku.error = '请从列表选择货号'
             dv_sku.errorTitle = '关联货号'
             ws.add_data_validation(dv_sku)
-            dv_sku.add(f'D{first_data_row}:D{data_end}')
+            dv_sku.add(f'E{first_data_row}:E{data_end}')
         if options_ws is not None and subtype_labels:
             opt_end = len(subtype_labels) + 1
             dv_subtype = DataValidation(
@@ -1459,7 +1481,7 @@ class AmazonAdMixin:
             dv_subtype.error = '请从列表选择细分类'
             dv_subtype.errorTitle = '细分类'
             ws.add_data_validation(dv_subtype)
-            dv_subtype.add(f'H{first_data_row}:H{data_end}')
+            dv_subtype.add(f'I{first_data_row}:I{data_end}')
         if options_ws is not None and shop_names:
             opt_end = len(shop_names) + 1
             dv_shop = DataValidation(
@@ -1470,7 +1492,7 @@ class AmazonAdMixin:
             dv_shop.error = '请从列表选择店铺'
             dv_shop.errorTitle = '关联店铺'
             ws.add_data_validation(dv_shop)
-            dv_shop.add(f'F{first_data_row}:F{data_end}')
+            dv_shop.add(f'G{first_data_row}:G{data_end}')
         if options_ws is not None and portfolio_names:
             opt_end = len(portfolio_names) + 1
             dv_portfolio = DataValidation(
@@ -1481,19 +1503,19 @@ class AmazonAdMixin:
             dv_portfolio.error = '请从列表选择广告组合'
             dv_portfolio.errorTitle = '归属广告组合名称'
             ws.add_data_validation(dv_portfolio)
-            dv_portfolio.add(f'K{first_data_row}:K{data_end}')
+            dv_portfolio.add(f'L{first_data_row}:L{data_end}')
 
         # 条件格式：公式为真时显示灰色（表示当前行广告类型下该列无需填写）
         rules = [
-            ('D', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
             ('E', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
             ('F', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
-            ('G', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('G', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
             ('H', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
             ('I', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
             ('J', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
-            ('K', f'OR($A{anchor}="",$A{anchor}="组合")'),
-            ('L', f'OR($A{anchor}="",$A{anchor}<>"组")'),
+            ('K', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('L', f'OR($A{anchor}="",$A{anchor}="组合")'),
+            ('M', f'OR($A{anchor}="",$A{anchor}<>"组")'),
         ]
         for col, formula in rules:
             ws.conditional_formatting.add(
@@ -1503,8 +1525,8 @@ class AmazonAdMixin:
 
         ws.freeze_panes = f'A{first_data_row}'
         widths = {
-            'A': 11, 'B': 28, 'C': 9, 'D': 14, 'E': 14,
-            'F': 16, 'G': 8, 'H': 12, 'I': 10, 'J': 18, 'K': 22, 'L': 26,
+            'A': 11, 'B': 28, 'C': 9, 'D': 18, 'E': 14, 'F': 14,
+            'G': 16, 'H': 8, 'I': 12, 'J': 10, 'K': 18, 'L': 22, 'M': 26,
         }
         for col, width in widths.items():
             ws.column_dimensions[col].width = width
@@ -1529,19 +1551,19 @@ class AmazonAdMixin:
         headers = self._amazon_ad_items_template_headers()
         ws.append(headers)
         ws.append([
-            '组合', '示例-Short-SKU01', '启动',
+            '组合', '示例-Short-SKU01', '启动', '',
             'SKU01', '是', example_shop,
             '', '', '', '',
             '', '',
         ])
         ws.append([
-            '活动', 'BE-示例组合-SP-KW', '启动',
+            '活动', 'BE-示例组合-SP-KW', '启动', '',
             '', '', '',
             'BE', 'SP-KW', '50', '动态竞价-仅降低',
             '示例-Short-SKU01', '',
         ])
         ws.append([
-            '组', 'BE-示例组合-SP-KW', '启动',
+            '组', 'BE-示例组合-SP-KW', '启动', '',
             '', '', '',
             '', '', '', '',
             '示例-Short-SKU01', 'BE-示例组合-SP-KW',
@@ -1577,6 +1599,7 @@ class AmazonAdMixin:
             ('广告类型*', '必填', '必填', '必填', '下拉：组合 / 活动 / 组'),
             ('名称*', '必填', '必填', '必填', ''),
             ('状态*', '必填', '必填', '必填', '下拉：启动 / 暂停 / 存档'),
+            ('亚马逊ID', '选填', '选填', '选填', '亚马逊后台对应层级的实体 ID'),
             ('关联货号', '选填', '—', '—', '仅组合可填；下拉为系统货号；灰底表示本行不适用'),
             ('是否共享预算', '必填', '—', '—', '仅组合可填；下拉：是 / 否'),
             ('关联店铺', '选填', '—', '—', '仅组合可填；下拉为系统店铺；留空默认 id=1'),
@@ -1692,6 +1715,9 @@ class AmazonAdMixin:
                             'name': name,
                             'status': status,
                         }
+                        amazon_id_text = cell_value(row, '亚马逊ID') or ''
+                        if amazon_id_text:
+                            payload['amazon_id'] = amazon_id_text
 
                         if ad_level == 'portfolio':
                             sku_family = cell_value(row, '关联货号') or ''
@@ -1807,12 +1833,15 @@ class AmazonAdMixin:
                                 existing.get('shop_id') if existing else None
                             ) or default_shop_id
                         if existing:
+                            if not payload.get('amazon_id') and existing.get('amazon_id'):
+                                fields['amazon_id'] = existing.get('amazon_id')
                             cur.execute(
                                 """
                                 UPDATE amazon_ad_items SET
                                     sku_family_id=%s, shop_id=%s, portfolio_id=%s, campaign_id=%s,
                                     strategy_code=%s, subtype_id=%s,
-                                    is_shared_budget=%s, status=%s, budget=%s, bid_strategy=%s
+                                    is_shared_budget=%s, status=%s, budget=%s, bid_strategy=%s,
+                                    amazon_id=%s
                                 WHERE id=%s
                                 """,
                                 (
@@ -1820,7 +1849,7 @@ class AmazonAdMixin:
                                     fields['portfolio_id'], fields['campaign_id'],
                                     fields['strategy_code'], fields['subtype_id'],
                                     fields['is_shared_budget'], fields['status'], fields['budget'],
-                                    fields.get('bid_strategy'), existing['id'],
+                                    fields.get('bid_strategy'), fields.get('amazon_id'), existing['id'],
                                 )
                             )
                             updated += 1
@@ -1840,14 +1869,16 @@ class AmazonAdMixin:
                                 """
                                 INSERT INTO amazon_ad_items (
                                     ad_level, sku_family_id, shop_id, portfolio_id, campaign_id,
-                                    strategy_code, subtype_id, name, is_shared_budget, status, budget, bid_strategy
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    strategy_code, subtype_id, name, is_shared_budget, status, budget, bid_strategy,
+                                    amazon_id
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 """,
                                 (
                                     fields['ad_level'], fields['sku_family_id'], fields.get('shop_id'),
                                     fields['portfolio_id'], fields['campaign_id'], fields['strategy_code'],
                                     fields['subtype_id'], fields['name'], fields['is_shared_budget'],
                                     fields['status'], fields['budget'], fields.get('bid_strategy'),
+                                    fields.get('amazon_id'),
                                 )
                             )
                             new_id = cur.lastrowid
@@ -3351,6 +3382,7 @@ class AmazonAdMixin:
             'status': item.get('status') or '启动',
             'budget': item.get('budget'),
             'bid_strategy': item.get('bid_strategy') or '',
+            'amazon_id': item.get('amazon_id') or '',
         }
         if level == 'portfolio':
             ad_info['portfolio_name'] = item.get('name') or ad_info['portfolio_name']

@@ -153,6 +153,10 @@
             '        <label for="modalGroupName">广告组名称<span class="required-asterisk">*</span></label>',
             '        <input type="text" id="modalGroupName" placeholder="例如：核心词-精准">',
             '      </div>',
+            '      <div class="form-group pm-form-full">',
+            '        <label for="modalAmazonId">亚马逊 ID（选填）</label>',
+            '        <input type="text" id="modalAmazonId" placeholder="亚马逊后台对应层级的实体 ID">',
+            '      </div>',
             '    </div>',
             '    <div id="adModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>',
             '    <div class="pm-modal-actions">',
@@ -520,6 +524,7 @@
         $('modalGroupName').value = '';
         $('modalGroupName').dataset.auto = '1';
         $('modalStatusGroup').value = '启动';
+        $('modalAmazonId').value = '';
         renderSubtypeSegment();
         syncSegmentButtons('modalStrategy');
         syncSegmentButtons('modalBidStrategy');
@@ -548,6 +553,7 @@
             if (!item) return;
             adEditId = item.id;
             $('ad-modal-title').innerText = '编辑广告信息';
+            $('modalAmazonId').value = item.amazon_id || '';
             $('modalAdLevelSegment').setAttribute('data-locked', '1');
             $('modalAdLevel').value = item.ad_level;
             if (item.ad_level === 'portfolio') {
@@ -698,6 +704,9 @@
             showAdStatus(dupMsg, true);
             return;
         }
+
+        const amazonId = ($('modalAmazonId')?.value || '').trim();
+        payload.amazon_id = amazonId || null;
 
         let method = 'POST';
         if (adEditId) {
