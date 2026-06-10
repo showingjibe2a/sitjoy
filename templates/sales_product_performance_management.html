@@ -494,6 +494,8 @@
         }
         .perf-chart-detail-row strong {
             font-size: 0.9rem;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
         }
         .perf-chart-detail-empty {
             color: var(--morandi-slate);
@@ -552,6 +554,8 @@
             font-size: 0.9rem;
             color: var(--morandi-ink);
             font-weight: 700;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
         }
         .perf-group-head {
             display: flex;
@@ -808,19 +812,21 @@
             color: var(--morandi-ink);
             font-weight: 700;
         }
-        /* 分组明细：单表 sticky 双行表头（分离克隆表头已禁用） */
-        .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr > th {
-            background: #f3efe9;
-        }
-        #perfGroupTable thead th.perf-th-metric {
+        .perf-table th.perf-col-num,
+        .perf-table td.perf-col-num {
             text-align: right;
+            font-variant-numeric: tabular-nums;
         }
-        #perfGroupTable thead th .perf-th-head-metric {
+        .perf-table th.perf-col-num .perf-th-head-metric {
             display: inline-flex;
             align-items: center;
             justify-content: flex-end;
             gap: 0.28rem;
             width: 100%;
+        }
+        /* 分组明细：单表 sticky 双行表头（分离克隆表头已禁用） */
+        .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr > th {
+            background: #f3efe9;
         }
         .perf-table tr.row-focus {
             background: rgba(123, 154, 176, 0.18);
@@ -1095,22 +1101,22 @@
                                     <th data-manage-col-key="record_date">日期</th>
                                     <th data-manage-col-key="shop_name">店铺</th>
                                     <th data-manage-col-key="platform_sku">销售平台SKU</th>
-                                    <th data-manage-col-key="sales_qty">销量</th>
-                                    <th data-manage-col-key="net_sales_amount">净销售额</th>
-                                    <th data-manage-col-key="order_qty">订单量</th>
-                                    <th data-manage-col-key="session_total">Sessions-Total</th>
-                                    <th data-manage-col-key="ad_impressions">广告展示</th>
-                                    <th data-manage-col-key="ad_clicks">广告点击</th>
-                                    <th data-manage-col-key="ad_orders">广告订单量</th>
-                                    <th data-manage-col-key="ad_spend">广告花费</th>
-                                    <th data-manage-col-key="ad_sales_amount">广告销售额</th>
-                                    <th data-manage-col-key="refund_amount">退款金额</th>
-                                    <th data-manage-col-key="acos">ACOS</th>
-                                    <th data-manage-col-key="acoas">ACOAS</th>
-                                    <th data-manage-col-key="rois">ROIS</th>
-                                    <th data-manage-col-key="ctr">CTR</th>
-                                    <th data-manage-col-key="cvr">CVR</th>
-                                    <th data-manage-col-key="cpc">CPC</th>
+                                    <th class="perf-col-num" data-manage-col-key="sales_qty">销量</th>
+                                    <th class="perf-col-num" data-manage-col-key="net_sales_amount">净销售额</th>
+                                    <th class="perf-col-num" data-manage-col-key="order_qty">订单量</th>
+                                    <th class="perf-col-num" data-manage-col-key="session_total">Sessions-Total</th>
+                                    <th class="perf-col-num" data-manage-col-key="ad_impressions">广告展示</th>
+                                    <th class="perf-col-num" data-manage-col-key="ad_clicks">广告点击</th>
+                                    <th class="perf-col-num" data-manage-col-key="ad_orders">广告订单量</th>
+                                    <th class="perf-col-num" data-manage-col-key="ad_spend">广告花费</th>
+                                    <th class="perf-col-num" data-manage-col-key="ad_sales_amount">广告销售额</th>
+                                    <th class="perf-col-num" data-manage-col-key="refund_amount">退款金额</th>
+                                    <th class="perf-col-num" data-manage-col-key="acos">ACOS</th>
+                                    <th class="perf-col-num" data-manage-col-key="acoas">ACOAS</th>
+                                    <th class="perf-col-num" data-manage-col-key="rois">ROIS</th>
+                                    <th class="perf-col-num" data-manage-col-key="ctr">CTR</th>
+                                    <th class="perf-col-num" data-manage-col-key="cvr">CVR</th>
+                                    <th class="perf-col-num" data-manage-col-key="cpc">CPC</th>
                                     <th style="width:160px;" data-manage-col-key="__perf_op__" data-disable-sort="1">操作</th>
                                 </tr>
                             </thead>
@@ -1256,6 +1262,22 @@
             'estimated_product_cost_usd', 'estimated_last_mile_freight_usd', 'estimated_total_cost_usd',
             'est_referral_commission_usd', 'estimated_net_profit_usd'
         ];
+
+        const PERF_NON_NUMERIC_COL_KEYS = new Set([
+            '__toggle', '__sku', '__fabric', '__spec', '__perf_chk__', '__perf_op__',
+            'record_date', 'shop_name', 'platform_sku'
+        ]);
+
+        function isPerfNumericColKey(key) {
+            const k = String(key || '').trim();
+            if (!k || PERF_NON_NUMERIC_COL_KEYS.has(k)) return false;
+            if (k === '__rows') return true;
+            return !!(state.metricMap[k]);
+        }
+
+        function perfColNumClass(key) {
+            return isPerfNumericColKey(key) ? ' perf-col-num' : '';
+        }
 
         function emptyPerfGroupSum() {
             const sum = { rows: 0 };
@@ -1539,8 +1561,10 @@
         function formatNumber(v) {
             const n = Number(v || 0);
             if (!Number.isFinite(n)) return '-';
-            if (Math.abs(n) >= 1000) return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-            return n.toFixed(2).replace(/\.00$/, '');
+            if (typeof window.formatSitjoyNumber === 'function') {
+                return window.formatSitjoyNumber(n, { key: '', label: '', kind: 'auto', empty: '-' });
+            }
+            return n.toFixed(2);
         }
 
         function isPercentMetricKey(key) {
@@ -1550,10 +1574,17 @@
         function formatMetricValue(v, key) {
             const n = Number(v || 0);
             if (!Number.isFinite(n)) return '-';
-            if (isPercentMetricKey(key)) {
-                return `${(n * 100).toFixed(2).replace(/\.00$/, '')}%`;
+            if (typeof window.formatSitjoyNumber === 'function') {
+                return window.formatSitjoyNumber(n, {
+                    key: String(key || ''),
+                    label: (state.metricMap[key] && state.metricMap[key].label) || '',
+                    kind: isPercentMetricKey(key) ? 'percent' : 'auto',
+                    ratio: isPercentMetricKey(key),
+                    empty: '-'
+                });
             }
-            return formatNumber(n);
+            if (isPercentMetricKey(key)) return `${(n * 100).toFixed(2)}%`;
+            return n.toFixed(2);
         }
 
         function escapeAttrForTip(s) {
@@ -1615,9 +1646,10 @@
             const n = Number(v || 0);
             if (!Number.isFinite(n)) return '-';
             if (asPercent) {
-                const p = n * 100;
-                if (Math.abs(p) >= 100) return `${Math.round(p)}%`;
-                return `${p.toFixed(1).replace(/\.0$/, '')}%`;
+                if (typeof window.formatSitjoyNumber === 'function') {
+                    return window.formatSitjoyNumber(n, { kind: 'percent', ratio: true, empty: '-' });
+                }
+                return `${(n * 100).toFixed(2)}%`;
             }
             return formatNumber(n);
         }
@@ -2452,9 +2484,9 @@
             const headThCells = headKeys.map((k, i) => {
                 const lab = headColLabels[i] || k;
                 const isFirst = i === 0;
-                const cls = i >= 5 ? 'perf-th-metric' : '';
+                const cls = perfColNumClass(k).trim();
                 const inner = perfGroupThCellInner(k, lab);
-                return `<th class="${cls}" data-manage-col-key="${k}" data-disable-sort="1"${isFirst ? ' style="width:72px;"' : ''}>${inner}</th>`;
+                return `<th${cls ? ` class="${cls}"` : ''} data-manage-col-key="${k}" data-disable-sort="1"${isFirst ? ' style="width:72px;"' : ''}>${inner}</th>`;
             }).join('');
 
             const flatAllItems = [];
@@ -2464,8 +2496,8 @@
             finalizePerfGroupAggregateSum(grandSum);
 
             const grandThCells = headKeys.map((k) => {
-                const isMetric = (k !== '__toggle' && k !== '__sku' && k !== '__fabric' && k !== '__spec' && k !== '__rows');
-                const cls = `${isMetric ? 'perf-th-metric ' : ''}${k === '__sku' ? 'perf-group-grand-total-label' : ''}`.trim();
+                const numCls = perfColNumClass(k).trim();
+                const cls = `${numCls}${k === '__sku' ? ' perf-group-grand-total-label' : ''}`.trim();
                 const clsAttr = cls ? ` class="${cls}"` : '';
                 return `<th${clsAttr} data-manage-col-key="${k}" data-disable-sort="1">${perfGroupGrandSummaryCellHtml(k, grandSum)}</th>`;
             }).join('');
@@ -2510,8 +2542,8 @@
                     <td data-manage-col-key="__sku">${g.sku_family || '未分组货号'}</td>
                     <td data-manage-col-key="__fabric">-</td>
                     <td data-manage-col-key="__spec">-</td>
-                    <td data-manage-col-key="__rows">${formatNumber(sum.rows)}</td>
-                    ${metricKeys.map(k => `<td data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(sum, k), k)}</td>`).join('')}
+                    <td class="perf-col-num" data-manage-col-key="__rows">${formatNumber(sum.rows)}</td>
+                    ${metricKeys.map(k => `<td class="perf-col-num" data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(sum, k), k)}</td>`).join('')}
                 `;
                 tbody.appendChild(parentTr);
 
@@ -2536,8 +2568,8 @@
                             <td data-manage-col-key="__sku" style="padding-left:18px;">${row.platform_sku || '-'}</td>
                             <td data-manage-col-key="__fabric">${row.fabric || '-'}</td>
                             <td data-manage-col-key="__spec">${row.spec_name || '-'}</td>
-                            <td data-manage-col-key="__rows">${formatNumber(row.rows || 0)}</td>
-                            ${metricKeys.map(k => `<td data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(row, k), k)}</td>`).join('')}
+                            <td class="perf-col-num" data-manage-col-key="__rows">${formatNumber(row.rows || 0)}</td>
+                            ${metricKeys.map(k => `<td class="perf-col-num" data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(row, k), k)}</td>`).join('')}
                         `;
                         tbody.appendChild(tr);
                     });
@@ -3407,22 +3439,22 @@
                     <td data-manage-col-key="record_date">${item.record_date || ''}</td>
                     <td data-manage-col-key="shop_name">${item.shop_name || ''}</td>
                     <td data-manage-col-key="platform_sku">${item.platform_sku || ''}</td>
-                    <td data-manage-col-key="sales_qty">${item.sales_qty ?? ''}</td>
-                    <td data-manage-col-key="net_sales_amount">${item.net_sales_amount ?? ''}</td>
-                    <td data-manage-col-key="order_qty">${item.order_qty ?? ''}</td>
-                    <td data-manage-col-key="session_total">${item.session_total ?? ''}</td>
-                    <td data-manage-col-key="ad_impressions">${item.ad_impressions ?? ''}</td>
-                    <td data-manage-col-key="ad_clicks">${item.ad_clicks ?? ''}</td>
-                    <td data-manage-col-key="ad_orders">${item.ad_orders ?? ''}</td>
-                    <td data-manage-col-key="ad_spend">${item.ad_spend ?? ''}</td>
-                    <td data-manage-col-key="ad_sales_amount">${item.ad_sales_amount ?? ''}</td>
-                    <td data-manage-col-key="refund_amount">${item.refund_amount ?? ''}</td>
-                    <td data-manage-col-key="acos">${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
-                    <td data-manage-col-key="acoas">${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
-                    <td data-manage-col-key="rois">${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
-                    <td data-manage-col-key="ctr">${formatMetricValue(resolveMetricValue(item, 'ctr'), 'ctr')}</td>
-                    <td data-manage-col-key="cvr">${formatMetricValue(resolveMetricValue(item, 'cvr'), 'cvr')}</td>
-                    <td data-manage-col-key="cpc">${formatMetricValue(resolveMetricValue(item, 'cpc'), 'cpc')}</td>
+                    <td class="perf-col-num" data-manage-col-key="sales_qty">${item.sales_qty ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="net_sales_amount">${item.net_sales_amount ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="order_qty">${item.order_qty ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="session_total">${item.session_total ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="ad_impressions">${item.ad_impressions ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="ad_clicks">${item.ad_clicks ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="ad_orders">${item.ad_orders ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="ad_spend">${item.ad_spend ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="ad_sales_amount">${item.ad_sales_amount ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="refund_amount">${item.refund_amount ?? ''}</td>
+                    <td class="perf-col-num" data-manage-col-key="acos">${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
+                    <td class="perf-col-num" data-manage-col-key="acoas">${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
+                    <td class="perf-col-num" data-manage-col-key="rois">${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
+                    <td class="perf-col-num" data-manage-col-key="ctr">${formatMetricValue(resolveMetricValue(item, 'ctr'), 'ctr')}</td>
+                    <td class="perf-col-num" data-manage-col-key="cvr">${formatMetricValue(resolveMetricValue(item, 'cvr'), 'cvr')}</td>
+                    <td class="perf-col-num" data-manage-col-key="cpc">${formatMetricValue(resolveMetricValue(item, 'cpc'), 'cpc')}</td>
                     <td data-manage-col-key="__perf_op__">
                         <div class="pm-actions">
                             <button class="btn-secondary" type="button" onclick="openEditPerformanceModal(${item.id})">编辑</button>

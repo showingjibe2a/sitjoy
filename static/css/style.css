@@ -1987,6 +1987,34 @@ button.sj-group-row-edit-btn {
     text-overflow: ellipsis;
 }
 
+/* 全局表格数值列右对齐（pm-col-num / num / data-pm-align="num"） */
+.pm-table th.pm-col-num,
+.pm-table td.pm-col-num,
+.pm-table th.num,
+.pm-table td.num,
+.pm-table th.perf-col-num,
+.pm-table td.perf-col-num,
+table th.pm-col-num,
+table td.pm-col-num,
+table th.num,
+table td.num,
+table th.perf-col-num,
+table td.perf-col-num,
+table th[data-pm-align="num"],
+table td[data-pm-align="num"] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pm-table th.pm-col-num .perf-th-head-metric,
+table th.pm-col-num .perf-th-head-metric {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.28rem;
+    width: 100%;
+}
+
 .pm-table tbody tr {
     transition: background-color 0.12s ease;
 }

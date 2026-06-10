@@ -1619,6 +1619,287 @@
         return meta;
     }
 
+    /** 全站数值展示：需显示小数时统一两位；百分数亦保留两位小数 */
+    const SITJOY_PERCENT_COLUMN_KEY_RE = /(?:^|_)(?:acos|acoas|ctr|cvr|a_to_z|defect|negative_feedback|chargeback|late_shipment|cancel|tracking|delivery|discount_rate|refund_rate|commission_rate|net_margin_rate|pct|percent)(?:_|$)|_rate$/i;
+    const SITJOY_INTEGER_COLUMN_KEY_RE = /(?:^|_)(?:qty|quantity|impressions|clicks|orders|order_qty|sales_qty|session|rows|__rows|index|seq|sort_order|count|pack_qty|carton_qty)(?:_|$)/i;
+    const SITJOY_DECIMAL_COLUMN_KEY_RE = /(?:^|_)(?:amount|price|cost|spend|sales|profit|freight|refund|margin|commission|cpc|bid|usd|cny|eur|avg|average|weight|net_sales|gross_sales|estimated_|est_|last_mile|warehouse_cost|rois)(?:_|$)/i;
+    const SITJOY_PERCENT_LABEL_RE = /(?:率|占比|ACOS|ACOAS|CTR|CVR)$/i;
+    const SITJOY_INTEGER_LABEL_RE = /(?:销量|数量|件数|点击|展示|订单量|记录数|Sessions)/i;
+    const SITJOY_DECIMAL_LABEL_RE = /(?:金额|花费|销售额|成本|费用|价格|单价|运费|佣金|利润|USD|usd)/i;
+
+    function sitjoyResolveNumberDisplayKind(key, label){
+        const k = String(key || '').trim();
+        const lab = String(label || '').trim();
+        if(SITJOY_PERCENT_COLUMN_KEY_RE.test(k) || (lab && SITJOY_PERCENT_LABEL_RE.test(lab))) return 'percent';
+        if(SITJOY_INTEGER_COLUMN_KEY_RE.test(k) || (lab && SITJOY_INTEGER_LABEL_RE.test(lab) && !SITJOY_DECIMAL_LABEL_RE.test(lab))) return 'integer';
+        if(SITJOY_DECIMAL_COLUMN_KEY_RE.test(k) || (lab && SITJOY_DECIMAL_LABEL_RE.test(lab))) return 'decimal';
+        return 'auto';
+    }
+
+    function formatSitjoyNumber(value, options){
+        const opts = options && typeof options === 'object' ? options : {};
+        const empty = opts.empty != null ? opts.empty : '';
+        if(value === null || value === undefined || value === '') return empty;
+
+        let text = String(value).trim();
+        if(!text || text === '-' || text === '—') return text;
+
+        let parsedFromPercent = false;
+        if(text.endsWith('%')){
+            parsedFromPercent = true;
+            text = text.slice(0, -1).replace(/[,\s\u00a0]/g, '');
+        } else {
+            text = text.replace(/[,\s\u00a0]/g, '');
+        }
+
+        const n = Number(text);
+        if(!Number.isFinite(n)) return String(value);
+
+        let kind = String(opts.kind || opts.mode || 'auto').toLowerCase();
+        if(kind === 'auto') kind = sitjoyResolveNumberDisplayKind(opts.key, opts.label);
+
+        if(kind === 'percent' || parsedFromPercent){
+            let pct = n;
+            if(!parsedFromPercent){
+                const ratio = opts.ratio;
+                if(ratio === true) pct = n * 100;
+                else if(ratio === false) pct = n;
+                else if(Math.abs(n) <= 1.5) pct = n * 100;
+            }
+            return pct.toFixed(2) + '%';
+        }
+
+        if(kind === 'integer'){
+            if(Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+            return n.toFixed(2);
+        }
+
+        if(kind === 'decimal'){
+            return n.toFixed(2);
+        }
+
+        if(Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+        return n.toFixed(2);
+    }
+
+    function formatSitjoyTableCellDisplayText(text, key, label){
+        const raw = String(text ?? '').trim();
+        if(!raw || raw === '-' || raw === '—' || /加载|暂无|失败/.test(raw)) return raw;
+        return formatSitjoyNumber(raw, { key, label, kind: 'auto' });
+    }
+
+    /** 全局表格数值列右对齐：显式 data-pm-align="num|text|center" 可覆盖启发式 */
+    const PM_NUM_ALIGN_NON_NUMERIC_KEYS = new Set([
+        '__toggle', '__sku', '__fabric', '__spec', '__perf_chk__', '__perf_op__', '__transit_chk__',
+        '__sj_agg__', '__sj_group_actions__', '__sj_group_middle__',
+        'record_date', 'shop_name', 'platform_sku', 'sku_family', 'platform_type', 'operation_type_name',
+        'target_object', 'detail', 'campaign', 'ad_name', 'keyword', 'asin', 'fnsku', 'color', 'colour',
+        'fabric', 'spec_name', 'spec', 'material', 'category', 'brand', 'status', 'status_name',
+        'type_name', 'name', 'title', 'label', 'remark', 'note', 'comment', 'description',
+        'operator', 'employee', 'user', 'email', 'phone', 'address', 'url', 'path', 'file', 'barcode',
+        'tracking_no', 'waybill', 'container_no', 'warehouse', 'location', 'carrier'
+    ]);
+    const PM_NUM_ALIGN_NON_NUMERIC_KEY_RE = /(?:^|_)(?:name|title|label|sku|desc|description|remark|notes?|comment|status|type_name|shop|platform|color|colour|fabric|spec|material|category|brand|operator|employee|user|email|phone|address|url|path|file|barcode|asin|fnsku|keyword|campaign|target|object|detail|toggle|chk|check|thumb|image|photo|banner|icon|actions?|operation_type|delivery|warehouse|location|carrier|tracking|waybill|container|certification|feature|audit|log|message|error|warning|date|time|datetime|month_label)(?:_|$)/i;
+    const PM_NUM_ALIGN_NUMERIC_KEY_RE = /(?:^|_)(?:qty|quantity|amount|price|cost|count|total|num|number|rate|pct|percent|acos|acoas|rois|ctr|cvr|cpc|spend|sales|profit|margin|commission|freight|refund|impressions|clicks|orders|session|rows|weight|volume|cbm|days|stock|inventory|surplus|shortage|pack|carton|unit|usd|cny|eur|moq|lead_time|width|height|length|depth|ratio|score|rank|index|seq|sort_order|gap|delta|diff|avg|average|min|max|sum|listed|shipped|received|allocated|available|reserved|pending|completed|progress)(?:_|$)|^__rows$|^\d{4}-\d{2}$/;
+    const PM_NUM_ALIGN_NUMERIC_LABEL_RE = /(?:销量|数量|件数|订单|点击|展示|花费|销售额|金额|成本|费用|价格|单价|运费|佣金|利润|退款|库存|在途|缺口|盈余|周转|天数|重量|体积|占比|比率|率)$|^(?:ACOS|ACOAS|ROIS|CTR|CVR|CPC|Sessions)/i;
+
+    function managedHeaderCellIsCenterAligned(cell){
+        if(!cell) return false;
+        if(cell.querySelector('input[type="checkbox"]')) return true;
+        const ta = String(cell.style.textAlign || '').trim().toLowerCase();
+        if(ta === 'center') return true;
+        if(cell.classList && cell.classList.contains('pm-col-center')) return true;
+        return false;
+    }
+
+    function isManagedNonNumericColumnKey(key){
+        const k = String(key || '').trim();
+        if(!k) return true;
+        if(PM_NUM_ALIGN_NON_NUMERIC_KEYS.has(k)) return true;
+        if(/^__/.test(k) && k !== '__rows') return true;
+        return PM_NUM_ALIGN_NON_NUMERIC_KEY_RE.test(k);
+    }
+
+    function isManagedNumericColumnKey(key, label){
+        const k = String(key || '').trim();
+        if(!k || isManagedNonNumericColumnKey(k)) return false;
+        if(PM_NUM_ALIGN_NUMERIC_KEY_RE.test(k)) return true;
+        const lab = String(label || '').trim();
+        if(lab && PM_NUM_ALIGN_NUMERIC_LABEL_RE.test(lab)) return true;
+        return false;
+    }
+
+    function managedCellLooksNonNumeric(cell){
+        if(!cell) return true;
+        if(cell.querySelector('input[type="checkbox"], select, textarea, button, a, img, .universal-select, .pm-actions, .sj-group-row-actions, .pm-table-note-wrap')){
+            if(cell.querySelector('input[type="number"]') && !cell.querySelector('input:not([type="number"]), select, textarea, button:not([type="button"])')) return false;
+            return true;
+        }
+        if(cell.querySelector('input[type="date"], input[type="datetime-local"], input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="search"]')) return true;
+        return false;
+    }
+
+    function managedCellIsPlainNumericText(cell){
+        if(!cell || managedCellLooksNonNumeric(cell)) return false;
+        const children = Array.from(cell.children || []);
+        if(!children.length) return true;
+        if(children.length === 1 && children[0].classList && children[0].classList.contains('sf-cell-num-text')) return true;
+        return false;
+    }
+
+    function managedCellSampleIsNumeric(cell){
+        if(managedCellLooksNonNumeric(cell)) return false;
+        const text = String(cell.textContent || '').trim();
+        if(!text || text === '-' || text === '—' || text === '...' || text === '加载中...' || text === '暂无数据') return null;
+        if(/^-?\d[\d,]*(?:\.\d+)?%?$/.test(text.replace(/\s/g, ''))) return true;
+        return false;
+    }
+
+    function resolveManagedNumericColumnKeys(state, table, headerMeta){
+        const numericKeys = new Set();
+        (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta) => {
+            const key = String(meta && meta.key || '').trim();
+            const cell = meta && meta.cell;
+            if(!key || managedHeaderCellIsCenterAligned(cell)) return;
+            const explicit = cell ? String(cell.dataset.pmAlign || cell.dataset.pmColAlign || '').trim().toLowerCase() : '';
+            if(explicit === 'num' || explicit === 'number' || explicit === 'right'){
+                numericKeys.add(key);
+                return;
+            }
+            if(explicit === 'text' || explicit === 'left' || explicit === 'center') return;
+            if(isManagedNumericColumnKey(key, meta.label)) numericKeys.add(key);
+        });
+
+        const rows = state
+            ? getDataRows(state).filter((row) => row && row.style.display !== 'none').slice(0, 40)
+            : Array.from((table && table.tBodies && table.tBodies[0] && table.tBodies[0].rows) || [])
+                .filter((row) => row && row.style.display !== 'none')
+                .slice(0, 40);
+
+        (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta) => {
+            const key = String(meta && meta.key || '').trim();
+            if(!key || numericKeys.has(key) || managedHeaderCellIsCenterAligned(meta.cell)) return;
+            if(isManagedNonNumericColumnKey(key)) return;
+            let num = 0;
+            let total = 0;
+            for(const row of rows){
+                let cell = null;
+                if(state){
+                    cell = mapRowByKey(row).get(key);
+                } else {
+                    const idx = headerMeta.findIndex((m) => String(m.key || '').trim() === key);
+                    cell = idx >= 0 ? row.cells[idx] : null;
+                }
+                if(!cell) continue;
+                const sample = managedCellSampleIsNumeric(cell);
+                if(sample === null) continue;
+                total += 1;
+                if(sample) num += 1;
+            }
+            if(total >= 3 && num / total >= 0.8) numericKeys.add(key);
+        });
+        return numericKeys;
+    }
+
+    function applyNumericColumnAlignForTable(table){
+        if(!table || table.tagName !== 'TABLE') return;
+        if(String(table.dataset.pmDisableNumAlign || '') === '1') return;
+        if(!table.tHead || !table.tHead.rows || !table.tHead.rows.length) return;
+        const headerMeta = getHeaderMeta(table);
+        if(!headerMeta.length) return;
+        const state = managedTableState.get(table) || null;
+        const numericKeys = resolveManagedNumericColumnKeys(state, table, headerMeta);
+        const headerRow = table.tHead.rows[0];
+
+        const applyToCell = (cell, headerCell) => {
+            if(!cell) return;
+            if(managedHeaderCellIsCenterAligned(cell)){
+                cell.classList.remove('pm-col-num');
+                return;
+            }
+            const key = String((headerCell && headerCell.dataset.manageColKey) || cell.dataset.manageColKey || '').trim();
+            const explicit = String(cell.dataset.pmAlign || cell.dataset.pmColAlign || '').trim().toLowerCase();
+            if(explicit === 'text' || explicit === 'left' || explicit === 'center'){
+                cell.classList.remove('pm-col-num');
+                return;
+            }
+            const isNum = explicit === 'num' || explicit === 'number' || explicit === 'right' || (key && numericKeys.has(key));
+            cell.classList.toggle('pm-col-num', !!isNum);
+        };
+
+        Array.from(table.tHead.rows || []).forEach((row) => {
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                applyToCell(cell, headerRow.cells[idx] || cell);
+            });
+        });
+
+        const bodyRows = state
+            ? getDataRows(state)
+            : Array.from(table.tBodies[0]?.rows || []).filter((row) => {
+                const tag = row && row.parentNode ? String(row.parentNode.tagName || '').toUpperCase() : '';
+                return tag === 'TBODY';
+            });
+        bodyRows.forEach((row) => {
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                applyToCell(cell, headerRow.cells[idx]);
+            });
+        });
+    }
+
+    function applyNumericColumnDisplayFormatForTable(table){
+        if(!table || table.tagName !== 'TABLE') return;
+        if(String(table.dataset.pmDisableNumFormat || table.dataset.pmDisableNumAlign || '') === '1') return;
+        if(!table.tHead || !table.tHead.rows || !table.tHead.rows.length) return;
+        const headerMeta = getHeaderMeta(table);
+        if(!headerMeta.length) return;
+        const headerRow = table.tHead.rows[0];
+        const keyLabelMap = new Map(headerMeta.map((meta) => [String(meta.key || '').trim(), String(meta.label || '').trim()]));
+
+        const formatCell = (cell, headerCell) => {
+            if(!cell || !cell.classList || !cell.classList.contains('pm-col-num')) return;
+            if(String(cell.dataset.pmSkipNumFormat || '') === '1') return;
+            if(!managedCellIsPlainNumericText(cell)) return;
+            const key = String((headerCell && headerCell.dataset.manageColKey) || cell.dataset.manageColKey || '').trim();
+            const label = keyLabelMap.get(key) || (headerCell ? extractHeaderLabelText(headerCell) : '');
+            const fmtKind = String(cell.dataset.pmNumFormat || (headerCell && headerCell.dataset.pmNumFormat) || '').trim().toLowerCase();
+            const next = fmtKind
+                ? formatSitjoyNumber(cell.textContent, { key, label, kind: fmtKind, ratio: fmtKind === 'percent' })
+                : formatSitjoyTableCellDisplayText(cell.textContent, key, label);
+            const cur = String(cell.textContent || '').trim();
+            if(next !== cur) cell.textContent = next;
+        };
+
+        Array.from(table.tHead.rows || []).forEach((row) => {
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                if(!cell.classList || !cell.classList.contains('pm-col-num')) return;
+                formatCell(cell, headerRow.cells[idx] || cell);
+            });
+        });
+
+        const state = managedTableState.get(table) || null;
+        const bodyRows = state
+            ? getDataRows(state)
+            : Array.from(table.tBodies[0]?.rows || []).filter((row) => {
+                const tag = row && row.parentNode ? String(row.parentNode.tagName || '').toUpperCase() : '';
+                return tag === 'TBODY';
+            });
+        bodyRows.forEach((row) => {
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                formatCell(cell, headerRow.cells[idx]);
+            });
+        });
+    }
+
+    function applyNumericColumnLayoutForTable(table){
+        applyNumericColumnAlignForTable(table);
+        applyNumericColumnDisplayFormatForTable(table);
+    }
+
+    function enhanceAllTableNumericAlign(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('table').forEach((table) => applyNumericColumnLayoutForTable(table));
+    }
+
     function measureManagedHeaderMinWidthPx(th){
         if(!th) return 0;
         const label = extractHeaderLabelText(th);
@@ -5599,6 +5880,7 @@
         state.headerCount = headerMeta.length;
         ensureManagedColumnKeys(state, headerMeta);
         syncManagedColumnVisibilitySlots(state);
+        applyNumericColumnLayoutForTable(state.table);
         syncSjAggToggleColumnCssVar(state);
         syncTopScroll(state);
         reapplyManagedColumnFiltersFromHandle(state);
@@ -5722,8 +6004,17 @@
         /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
         enhance(root){
             enhanceManagedTables(root && root.querySelectorAll ? root : document);
-        }
+        },
+        /** 按列 key / 表头文案 / 单元格内容启发式，为数值列加 pm-col-num 并统一小数格式 */
+        applyNumericAlign(tableOrRoot){
+            if(!tableOrRoot) return;
+            if(tableOrRoot.tagName === 'TABLE') applyNumericColumnLayoutForTable(tableOrRoot);
+            else enhanceAllTableNumericAlign(tableOrRoot);
+        },
+        formatNumber: formatSitjoyNumber
     });
+
+    window.formatSitjoyNumber = formatSitjoyNumber;
 
     window.SitjoyColumnFilter = {
         attach: attachColumnFilter,
@@ -6667,6 +6958,7 @@
         }
         ensureManagedTableColumnFilter(state);
         reapplyManagedColumnFiltersFromHandle(state);
+        applyNumericColumnLayoutForTable(state.table);
 
         state.isRefreshing = false;
         if(state.needRefresh){
@@ -7117,6 +7409,7 @@
     function enhanceManagedTables(root){
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('table').forEach((table, index) => createManagedTable(table, index));
+        enhanceAllTableNumericAlign(scope);
     }
 
     function repositionManagedBatchBars(){
