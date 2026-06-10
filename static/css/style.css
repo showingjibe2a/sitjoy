@@ -982,20 +982,30 @@ section.card.pm-card .pm-divider {
     border-radius: 8px;
 }
 
-.pm-form-hint {
-    margin: 0.28rem 0 0;
-    font-size: 0.66rem;
-    line-height: 1.35;
-    color: rgba(74, 78, 87, 0.82);
-}
-
-.pm-form-hint--flush {
-    margin-top: 0;
-}
-
 .pm-muted {
     color: var(--morandi-slate);
     font-size: 0.9rem;
+}
+
+/* 轻量提醒框：待补全、操作前提示等（虚线暖色底，可包裹表单项） */
+.pm-notice {
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    margin: 0 0 0.5rem;
+    padding: 0.48rem 0.52rem;
+    border: 1px dashed rgba(207, 199, 189, 0.75);
+    border-radius: 8px;
+    background: rgba(255, 249, 235, 0.72);
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.pm-notice__text {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--morandi-slate);
 }
 
 /* 与父体管理等页一致：表格块与上方工具卡片留出间距 */

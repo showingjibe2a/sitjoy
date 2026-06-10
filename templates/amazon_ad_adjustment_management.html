@@ -86,16 +86,6 @@
             flex: 1 1 auto;
             min-width: 0;
         }
-        #targetObjectNextBtn {
-            font-size: 0.58rem;
-            padding: 0 0.3rem;
-            min-width: 2.15rem;
-            flex: 0 0 auto;
-        }
-        #targetObjectNextBtn:disabled {
-            opacity: 0.35;
-            pointer-events: none;
-        }
         .aa-field-row .aa-readonly {
             font-size: 0.86rem;
             color: var(--morandi-ink);
@@ -373,39 +363,6 @@
         .aa-actions .btn-primary,
         .aa-actions .btn-secondary {
             width: 100%;
-        }
-        .aa-amazon-id-prompt {
-            margin-top: 0.65rem;
-            padding: 0.55rem 0.6rem;
-            border: 1px dashed rgba(207, 199, 189, 0.75);
-            border-radius: 8px;
-            background: rgba(255, 249, 235, 0.72);
-            flex: 0 0 auto;
-        }
-        .aa-amazon-id-hint {
-            margin: 0 0 0.45rem;
-            font-size: 0.78rem;
-            color: var(--morandi-slate);
-            line-height: 1.35;
-        }
-        .aa-amazon-id-row {
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-        }
-        .aa-amazon-id-row input {
-            flex: 1 1 auto;
-            min-width: 0;
-            font-size: 0.86rem;
-            padding: 0.42rem 0.5rem;
-            border-radius: 6px;
-            border: 1px solid var(--morandi-sand);
-            box-sizing: border-box;
-        }
-        .aa-amazon-id-row .btn-secondary {
-            flex: 0 0 auto;
-            white-space: nowrap;
-            width: auto;
         }
         .aa-extra-modal .pm-form {
             gap: 0.55rem;
@@ -696,6 +653,15 @@
 
                 <div class="card pm-card aa-right-col">
                     <h3 style="margin:0 0 0.55rem 0; flex:0 0 auto; font-size:1rem;">调整内容</h3>
+                    <div class="pm-notice" id="aaAmazonIdPrompt" hidden>
+                        <div class="aa-field-row">
+                            <label for="aaAmazonIdInput" class="label-help">亚马逊 ID<span class="help-dot" data-tip="该广告尚未填写亚马逊 ID，建议补充完善"></span></label>
+                            <div class="aa-value-input-wrap">
+                                <input type="text" id="aaAmazonIdInput" placeholder="亚马逊 ID" autocomplete="off">
+                                <button type="button" class="btn-secondary btn-small" id="aaAmazonIdSaveBtn">保存</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="aa-form-stack" id="adInfoBox">
                         <div class="aa-field-row">
                             <label>广告类型</label>
@@ -733,7 +699,7 @@
                         <div class="aa-field-row">
                             <div class="aa-field-label-row">
                                 <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
-                                <button type="button" class="btn-capsule-sm" id="targetObjectNextBtn" aria-label="下一个待观察" title="下一个待观察" disabled>下一个</button>
+                                <button type="button" class="btn-secondary btn-small" id="targetObjectNextBtn" aria-label="下一个待观察" title="下一个待观察" disabled>下一个</button>
                             </div>
                             <div class="aa-value-input-wrap aa-target-object-wrap input-capsule-menu--empty" id="targetObjectWrap">
                                 <div class="aa-target-input-area">
@@ -778,13 +744,6 @@
                         <button type="button" class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
                         <button type="button" class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn" disabled>快速提交</button>
                         <a href="/amazon-ad-adjustment-records-management" id="aaRecordsLink" class="btn-secondary" style="text-align:center; text-decoration:none; display:none;">查看全部记录</a>
-                    </div>
-                    <div class="aa-amazon-id-prompt" id="aaAmazonIdPrompt" hidden>
-                        <p class="aa-amazon-id-hint">该广告尚未填写亚马逊 ID，建议补充完善</p>
-                        <div class="aa-amazon-id-row">
-                            <input type="text" id="aaAmazonIdInput" placeholder="亚马逊 ID" autocomplete="off">
-                            <button type="button" class="btn-secondary" id="aaAmazonIdSaveBtn">保存</button>
-                        </div>
                     </div>
                 </div>
 
