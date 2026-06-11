@@ -741,8 +741,8 @@
                     </div>
 
                     <div class="aa-actions">
-                        <button type="button" class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
-                        <button type="button" class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn" disabled>快速提交</button>
+                        <button type="button" class="btn-primary" onclick="submitRecord()" id="submitBtn">提交并记录</button>
+                        <button type="button" class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn">快速提交</button>
                         <a href="/amazon-ad-adjustment-records-management" id="aaRecordsLink" class="btn-secondary" style="text-align:center; text-decoration:none; display:none;">查看全部记录</a>
                     </div>
                 </div>
@@ -893,6 +893,7 @@
         let selectedAdId = null;
         let allowedOperations = [];
         let selectedAdDetail = null;
+        let targetOptionsAllCache = [];
         let targetOptionsCache = [];
         let objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
         let objectOptionsLoadedAction = '';
@@ -1870,16 +1871,16 @@
             const sales = parseMetricNumber(document.getElementById('sales')?.value);
 
             if (cost != null && sales != null && sales > 0) {
-                setFieldValue('acos', formatPercentFromRatio(cost / sales));
+                setFieldValue('acos', formatPercentFromRatio(cost / sales), { silent: true });
             }
             if (cost != null && clicks != null && clicks > 0) {
-                setFieldValue('cpc', formatDecimalMetric(cost / clicks));
+                setFieldValue('cpc', formatDecimalMetric(cost / clicks), { silent: true });
             }
             if (clicks != null && impressions != null && impressions > 0) {
-                setFieldValue('ctr', formatPercentFromRatio(clicks / impressions));
+                setFieldValue('ctr', formatPercentFromRatio(clicks / impressions), { silent: true });
             }
             if (orders != null && clicks != null && clicks > 0) {
-                setFieldValue('cvr', formatPercentFromRatio(orders / clicks));
+                setFieldValue('cvr', formatPercentFromRatio(orders / clicks), { silent: true });
             }
         }
 
@@ -2122,10 +2123,18 @@
             return objectOptionsContext.platformSkus && objectOptionsContext.platformSkus.has(s);
         }
 
+        function isArchivedTargetStatus(status) {
+            return String(status || '').trim() === '存档';
+        }
+
+        function filterActiveTargetOptions(list) {
+            return (Array.isArray(list) ? list : []).filter(item => !isArchivedTargetStatus(item.status));
+        }
+
         function isTargetDescLinkedToAd(desc) {
             const s = String(desc || '').trim();
             if (!s) return false;
-            return targetOptionsCache.some(x => String(x.target_desc || '').trim() === s);
+            return targetOptionsAllCache.some(x => String(x.target_desc || '').trim() === s);
         }
 
         function isNewTargetDescToAd(desc) {
@@ -2580,7 +2589,7 @@
         function getMatchedTargetFromObject() {
             const desc = String(document.getElementById('targetObject')?.value || '').trim();
             if (!desc) return null;
-            return targetOptionsCache.find(x => String(x.target_desc || '').trim() === desc) || null;
+            return targetOptionsAllCache.find(x => String(x.target_desc || '').trim() === desc) || null;
         }
 
         function buildQuickFillOptions(fieldId) {
@@ -2828,6 +2837,7 @@
         }
 
         function loadTargetOptionsForSelectedAd() {
+            targetOptionsAllCache = [];
             targetOptionsCache = [];
             objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
             objectOptionsLoadedAction = '';
@@ -2840,6 +2850,7 @@
                 .then(r => r.json())
                 .then(data => {
                     if (!data || data.status !== 'success') {
+                        targetOptionsAllCache = [];
                         targetOptionsCache = [];
                         objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
                         objectOptionsLoadedAction = '';
@@ -2847,7 +2858,8 @@
                         syncTargetObjectState();
                         return;
                     }
-                    targetOptionsCache = Array.isArray(data.items) ? data.items : [];
+                    targetOptionsAllCache = Array.isArray(data.items) ? data.items : [];
+                    targetOptionsCache = filterActiveTargetOptions(targetOptionsAllCache);
                     objectOptionsContext = {
                         platformSkus: action === 'product-options'
                             ? new Set(Array.isArray(data.platform_skus) ? data.platform_skus : [])
@@ -2859,6 +2871,7 @@
                     syncTargetObjectState();
                 })
                 .catch(() => {
+                    targetOptionsAllCache = [];
                     targetOptionsCache = [];
                     objectOptionsContext = { platformSkus: new Set(), defaultBid: '' };
                     objectOptionsLoadedAction = '';
@@ -3179,11 +3192,11 @@
             enableAdjustmentPeriodFilter();
             const opId = String(document.getElementById('operationType').value || '');
             if (!options.keepTargetObject) {
-                setFieldValue('targetObject', '');
+                setFieldValue('targetObject', '', { silent: true });
                 supplementaryTargetObjectKey = '';
             }
-            setFieldValue('beforeValue', '');
-            setFieldValue('afterValue', '');
+            setFieldValue('beforeValue', '', { silent: true });
+            setFieldValue('afterValue', '', { silent: true });
             hideTargetObjectSuggest();
             const reasonSelect = document.getElementById('operationReason');
             reasonSelect.innerHTML = '<option value="">请选择修改原因</option>';
@@ -3347,10 +3360,49 @@
             syncAmazonIdPrompt(adInfo);
         }
 
-        function setFieldValue(id, value) {
+        const AA_PHASE1_FIELD_IDS = new Set([
+            'targetObject', 'beforeValue', 'afterValue', 'operationType', 'operationReason',
+        ]);
+        const AA_METRIC_SOURCE_FIELD_IDS = new Set(AA_METRIC_SOURCE_IDS);
+
+        function notifyAdjustmentFieldProgrammaticChange(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            if (AA_METRIC_SOURCE_FIELD_IDS.has(id)) {
+                recalcAdjustmentDerivedMetrics();
+                return;
+            }
+            if (id === 'targetObject') {
+                syncTargetObjectState();
+                applyAdjustmentPeriodFilter();
+            } else if (id === 'beforeValue') {
+                syncAfterValueWhenBeforeIsCurrentStatus();
+                syncValueQuickMenus();
+            } else if (id === 'afterValue') {
+                syncValueQuickMenus();
+            } else if (id === 'operationType') {
+                syncReasonOptions();
+                return;
+            }
+            updateSubmitButtonState();
+        }
+
+        function setFieldValue(id, value, options = {}) {
             const input = document.getElementById(id);
             if (!input) return;
             input.value = value || '';
+            if (options.silent) return;
+            if (AA_PHASE1_FIELD_IDS.has(id) || AA_METRIC_SOURCE_FIELD_IDS.has(id)) {
+                notifyAdjustmentFieldProgrammaticChange(id);
+            }
+            if (id === 'operationType' && window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(input);
+            }
+            if (id === 'operationReason' && window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(input);
+            }
         }
 
         function selectAd(adId, options = {}) {
@@ -3395,10 +3447,10 @@
                     setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
                     applyObserveDefaults(defaults);
                     if (!restore) {
-                        setFieldValue('targetObject', '');
+                        setFieldValue('targetObject', '', { silent: true });
                         supplementaryTargetObjectKey = '';
-                        setFieldValue('beforeValue', '');
-                        setFieldValue('afterValue', '');
+                        setFieldValue('beforeValue', '', { silent: true });
+                        setFieldValue('afterValue', '', { silent: true });
                         clearSupplementaryAdjustmentFields();
                     }
                     hideTargetObjectSuggest();
@@ -3453,14 +3505,7 @@
             return payload;
         }
 
-        function canSubmitPhase1() {
-            return validatePhase1().length === 0;
-        }
-
         function updateSubmitButtonState() {
-            const ok = canSubmitPhase1();
-            document.getElementById('submitBtn').disabled = !ok;
-            document.getElementById('quickSubmitBtn').disabled = !ok;
             syncTargetObjectNextBtn();
         }
 
@@ -3504,7 +3549,10 @@
                 }
             })
             .catch(err => aaSaveResult({ action: 'create', isError: true, message: '提交失败: ' + err }))
-            .finally(() => updateSubmitButtonState());
+            .finally(() => {
+                if (btn) btn.disabled = false;
+                updateSubmitButtonState();
+            });
         }
 
         function submitRecord() {
@@ -3652,12 +3700,20 @@
                     showSuccessToast: (msg) => aaSaveResult({ action: 'save', message: msg || undefined }),
                 });
             }
+            initAdjustmentMetricAutoCalc();
             initPageFromSavedState();
             updateRecordsLink();
             const fullModal = document.getElementById('aaFullSubmitModal');
             if (fullModal && typeof window.bindPmModalBackdropClose === 'function') {
                 window.bindPmModalBackdropClose(fullModal, closeFullSubmitModal);
             }
+            window.AmazonAdAdjustmentPage = {
+                setFieldValue,
+                notifyAdjustmentFieldProgrammaticChange,
+                updateSubmitButtonState,
+                validatePhase1,
+                recalcAdjustmentDerivedMetrics,
+            };
         });
     </script>
 
