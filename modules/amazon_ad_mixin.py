@@ -146,7 +146,9 @@ class AmazonAdMixin:
         if not targets:
             return
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt, next_dt = self._resolve_observe_datetimes(
+            now_text, None, self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES,
+        )
         updated_dt = updated_dt or now_text
         for item in targets:
             name = item.get('name')
@@ -166,10 +168,10 @@ class AmazonAdMixin:
                 """
                 INSERT INTO amazon_ad_targets (
                     status, ad_item_id, target_desc, bid_value,
-                    observe_interval, next_observe_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    next_observe_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                ('启动', ad_item_id, name, bid_value, interval_text, next_dt, updated_dt),
+                ('启动', ad_item_id, name, bid_value, next_dt, updated_dt),
             )
 
     def _validate_amazon_ad_subtype_payload(self, cur, description, ad_class, subtype_code, exclude_id=None):
@@ -1910,6 +1912,8 @@ class AmazonAdMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     _VALID_AD_RECORD_STATUS = ('启动', '暂停', '存档')
+    _AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES = 14 * 24 * 60
+    _AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES = 24 * 60
 
     _AMAZON_AD_PRODUCT_LIST_SELECT = """
         SELECT p.*, i.name AS ad_name, i.ad_level, sp.platform_sku
@@ -1930,37 +1934,24 @@ class AmazonAdMixin:
             return None, f'无效状态: {text}'
         return text, None
 
-    def _format_observe_interval_days(self, days):
-        parsed = self._parse_int(days)
-        if parsed is None:
-            return None
-        parsed = max(0, int(parsed))
-        return f'{parsed}天'
+    def _parse_observe_minutes(self, value):
+        parsed = self._parse_int(value)
+        if parsed is not None and parsed >= 0:
+            return int(parsed)
+        return None
 
-    def _parse_observe_interval_days(self, text):
-        raw = str(text or '').strip()
-        if not raw:
-            return 1
-        parsed = self._parse_int(raw)
-        if parsed is not None:
-            return max(0, int(parsed))
-        m = re.search(r'\d+', raw)
-        if m:
-            return max(0, int(m.group(0)))
-        return 1
-
-    def _build_observe_fields(self, observe_days, updated_at, next_observe_at=None):
-        days = self._parse_observe_interval_days(observe_days)
-        interval_text = self._format_observe_interval_days(days)
+    def _resolve_observe_datetimes(self, updated_at, next_observe_at=None, observe_minutes=None):
         updated_dt = self._parse_datetime_local_value(updated_at)
         next_dt = self._parse_datetime_local_value(next_observe_at)
-        if updated_dt and not next_dt and days:
-            try:
-                base = datetime.fromisoformat(updated_dt.replace(' ', 'T', 1))
-                next_dt = (base + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-            except Exception:
-                next_dt = None
-        return interval_text, updated_dt, next_dt
+        if updated_dt and not next_dt:
+            mins = self._parse_observe_minutes(observe_minutes)
+            if mins is not None:
+                try:
+                    base = datetime.fromisoformat(updated_dt.replace(' ', 'T', 1))
+                    next_dt = (base + timedelta(minutes=int(mins))).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    next_dt = None
+        return updated_dt, next_dt
 
     def _validate_ad_item_for_relation(self, cur, ad_item_id, allowed_levels):
         ad_item_id = self._parse_int(ad_item_id)
@@ -2388,13 +2379,13 @@ class AmazonAdMixin:
     def _amazon_ad_product_template_headers(self):
         return [
             '状态*', '店铺*', '广告组合*', '广告活动*', '广告组*', '投放商品*',
-            '最后修改时间*', '下次观察时间间隔（天）', '下次观察时间',
+            '最后修改时间*', '下次观察时间',
         ]
 
     def _amazon_ad_target_template_headers(self):
         return [
             '状态*', '店铺*', '广告组合*', '广告活动*', '广告组',
-            '投放描述*', '竞价*', '最后修改时间*', '下次观察时间间隔（天）', '下次观察时间',
+            '投放描述*', '竞价*', '最后修改时间*', '下次观察时间',
         ]
 
     def _build_amazon_ad_product_import_workbook(self):
@@ -2418,7 +2409,7 @@ class AmazonAdMixin:
         ws.append(headers)
         ws.append([
             '启动', example_shop, example_port, 'BE-示例组合-SP-KW', 'BE-示例组合-SP-KW',
-            example_sku, '2026-06-08 10:00', '1', '2026-06-09 10:00',
+            example_sku, '2026-06-08 10:00', '2026-06-22 10:00',
         ])
 
         example_font = Font(italic=True, color='7B8088')
@@ -2489,8 +2480,7 @@ class AmazonAdMixin:
             ('广告组合* / 广告活动* / 广告组*', '是', '四元组定位广告组（与调整记录一致）'),
             ('投放商品*', '是', '下拉为销售平台 SKU'),
             ('最后修改时间*', '是', '如 2026-06-08 10:00'),
-            ('下次观察时间间隔（天）', '否', '默认 1 天'),
-            ('下次观察时间', '否', '留空则按间隔自动计算'),
+            ('下次观察时间', '否', '留空则按系统默认间隔自动计算（商品14天、投放1天）'),
             ('', '', '第2行为示例，导入从第3行填写'),
         ]:
             guide.append(list(row))
@@ -2518,11 +2508,11 @@ class AmazonAdMixin:
         ws.append(headers)
         ws.append([
             '启动', example_shop, example_port, example_camp, '',
-            '示例投放描述-活动', '0.35', '2026-06-08 10:00', '1', '2026-06-09 10:00',
+            '示例投放描述-活动', '0.35', '2026-06-08 10:00', '2026-06-09 10:00',
         ])
         ws.append([
             '启动', example_shop, example_port, example_camp, example_camp,
-            '示例投放描述-组', '18%', '2026-06-08 10:00', '3', '2026-06-11 10:00',
+            '示例投放描述-组', '18%', '2026-06-08 10:00', '2026-06-09 10:00',
         ])
 
         example_font = Font(italic=True, color='7B8088')
@@ -2584,6 +2574,7 @@ class AmazonAdMixin:
             ('广告组', '组层级', '填写则定位广告组；留空则定位广告活动'),
             ('投放描述* / 竞价*', '是', '竞价支持金额或百分比'),
             ('最后修改时间*', '是', '如 2026-06-08 10:00'),
+            ('下次观察时间', '否', '留空则按系统默认间隔自动计算（投放1天）'),
             ('', '', '第2–3行为示例，导入从第4行填写；冻结窗格在示例行下方'),
         ]:
             guide.append(list(row))
@@ -2694,11 +2685,16 @@ class AmazonAdMixin:
             bid_value = (data.get('bid_value') or '').strip()
             if not target_desc or not bid_value:
                 return self.send_json({'status': 'error', 'message': '投放描述与竞价为必填'}, start_response)
-            interval_text, updated_dt, next_dt = self._build_observe_fields(
-                data.get('observe_days'), data.get('updated_at'), data.get('next_observe_at'),
+            observe_minutes = self._parse_observe_minutes(data.get('observe_minutes'))
+            if observe_minutes is None:
+                observe_minutes = self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES
+            updated_dt, next_dt = self._resolve_observe_datetimes(
+                data.get('updated_at'), data.get('next_observe_at'), observe_minutes,
             )
             if not updated_dt:
                 return self.send_json({'status': 'error', 'message': '最后修改时间不能为空'}, start_response)
+            if not next_dt:
+                return self.send_json({'status': 'error', 'message': '下次观察时间不能为空'}, start_response)
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -2725,12 +2721,12 @@ class AmazonAdMixin:
                             """
                             INSERT INTO amazon_ad_targets (
                                 status, ad_item_id, target_desc, bid_value,
-                                observe_interval, next_observe_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                next_observe_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 status, ad_row['id'], target_desc, bid_value,
-                                interval_text, next_dt, updated_dt,
+                                next_dt, updated_dt,
                             ),
                         )
                         return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
@@ -2755,12 +2751,12 @@ class AmazonAdMixin:
                             """
                             UPDATE amazon_ad_targets SET
                                 status=%s, ad_item_id=%s, target_desc=%s, bid_value=%s,
-                                observe_interval=%s, next_observe_at=%s, updated_at=%s
+                                next_observe_at=%s, updated_at=%s
                             WHERE id=%s
                             """,
                             (
                                 status, ad_row['id'], target_desc, bid_value,
-                                interval_text, next_dt, updated_dt, item_id,
+                                next_dt, updated_dt, item_id,
                             ),
                         )
                         if cur.rowcount <= 0:
@@ -2809,11 +2805,16 @@ class AmazonAdMixin:
             sales_product_id = self._parse_int(data.get('sales_product_id'))
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': '请选择投放商品'}, start_response)
-            interval_text, updated_dt, next_dt = self._build_observe_fields(
-                data.get('observe_days'), data.get('updated_at'), data.get('next_observe_at'),
+            observe_minutes = self._parse_observe_minutes(data.get('observe_minutes'))
+            if observe_minutes is None:
+                observe_minutes = self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES
+            updated_dt, next_dt = self._resolve_observe_datetimes(
+                data.get('updated_at'), data.get('next_observe_at'), observe_minutes,
             )
             if not updated_dt:
                 return self.send_json({'status': 'error', 'message': '最后修改时间不能为空'}, start_response)
+            if not next_dt:
+                return self.send_json({'status': 'error', 'message': '下次观察时间不能为空'}, start_response)
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -2844,12 +2845,12 @@ class AmazonAdMixin:
                             """
                             INSERT INTO amazon_ad_products (
                                 status, ad_item_id, sales_product_id,
-                                observe_interval, next_observe_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                                next_observe_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s)
                             """,
                             (
                                 status, ad_row['id'], sales_product_id,
-                                interval_text, next_dt, updated_dt,
+                                next_dt, updated_dt,
                             ),
                         )
                         return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
@@ -2874,12 +2875,12 @@ class AmazonAdMixin:
                             """
                             UPDATE amazon_ad_products SET
                                 status=%s, ad_item_id=%s, sales_product_id=%s,
-                                observe_interval=%s, next_observe_at=%s, updated_at=%s
+                                next_observe_at=%s, updated_at=%s
                             WHERE id=%s
                             """,
                             (
                                 status, ad_row['id'], sales_product_id,
-                                interval_text, next_dt, updated_dt, item_id,
+                                next_dt, updated_dt, item_id,
                             ),
                         )
                         if cur.rowcount <= 0:
@@ -2986,10 +2987,10 @@ class AmazonAdMixin:
                                 break
                             continue
 
-                        interval_text, updated_dt, next_dt = self._build_observe_fields(
-                            cell('下次观察时间间隔（天）'),
+                        updated_dt, next_dt = self._resolve_observe_datetimes(
                             cell('最后修改时间*') or '',
                             cell('下次观察时间'),
+                            self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES,
                         )
                         if not updated_dt:
                             if not self._append_child_import_error(errors, row_idx, '最后修改时间不能为空'):
@@ -3006,12 +3007,12 @@ class AmazonAdMixin:
                         existing_id = target_by_key.get(dedupe_key)
                         if existing_id:
                             update_rows.append((
-                                status, bid_value, interval_text, next_dt, updated_dt, existing_id,
+                                status, bid_value, next_dt, updated_dt, existing_id,
                             ))
                             updated += 1
                         else:
                             insert_rows.append((
-                                status, ad_item_id, desc, bid_value, interval_text, next_dt, updated_dt,
+                                status, ad_item_id, desc, bid_value, next_dt, updated_dt,
                             ))
                             target_by_key[dedupe_key] = None
                             created += 1
@@ -3021,8 +3022,8 @@ class AmazonAdMixin:
                         """
                         INSERT INTO amazon_ad_targets (
                             status, ad_item_id, target_desc, bid_value,
-                            observe_interval, next_observe_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            next_observe_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
                         """,
                         insert_rows,
                     )
@@ -3031,7 +3032,7 @@ class AmazonAdMixin:
                         """
                         UPDATE amazon_ad_targets SET
                             status=%s, bid_value=%s,
-                            observe_interval=%s, next_observe_at=%s, updated_at=%s
+                            next_observe_at=%s, updated_at=%s
                         WHERE id=%s
                         """,
                         update_rows,
@@ -3138,10 +3139,10 @@ class AmazonAdMixin:
                                 break
                             continue
 
-                        interval_text, updated_dt, next_dt = self._build_observe_fields(
-                            cell('下次观察时间间隔（天）'),
+                        updated_dt, next_dt = self._resolve_observe_datetimes(
                             cell('最后修改时间*') or '',
                             cell('下次观察时间'),
+                            self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES,
                         )
                         if not updated_dt:
                             if not self._append_child_import_error(errors, row_idx, '最后修改时间不能为空'):
@@ -3158,12 +3159,12 @@ class AmazonAdMixin:
                         existing_id = product_by_key.get(dedupe_key)
                         if existing_id:
                             update_rows.append((
-                                status, interval_text, next_dt, updated_dt, existing_id,
+                                status, next_dt, updated_dt, existing_id,
                             ))
                             updated += 1
                         else:
                             insert_rows.append((
-                                status, ad_item_id, sales_product_id, interval_text, next_dt, updated_dt,
+                                status, ad_item_id, sales_product_id, next_dt, updated_dt,
                             ))
                             product_by_key[dedupe_key] = None
                             created += 1
@@ -3173,8 +3174,8 @@ class AmazonAdMixin:
                         """
                         INSERT INTO amazon_ad_products (
                             status, ad_item_id, sales_product_id,
-                            observe_interval, next_observe_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                            next_observe_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s)
                         """,
                         insert_rows,
                     )
@@ -3182,8 +3183,7 @@ class AmazonAdMixin:
                         cur,
                         """
                         UPDATE amazon_ad_products SET
-                            status=%s, observe_interval=%s,
-                            next_observe_at=%s, updated_at=%s
+                            status=%s, next_observe_at=%s, updated_at=%s
                         WHERE id=%s
                         """,
                         update_rows,
@@ -3616,83 +3616,8 @@ class AmazonAdMixin:
             'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
         }
 
-    def _fetch_observe_defaults_for_target_object(self, cur, ad_item_id, target_object, op_name=None):
-        target_object = (target_object or '').strip()
-        default_days = 1
-        if not ad_item_id or not target_object or target_object == '-':
-            return {
-                'observe_interval': self._format_observe_interval_days(default_days),
-                'observe_days': default_days,
-            }
-        op_name = self._normalize_adjustment_operation_type_name(op_name)
-        use_product = bool(op_name and self._is_modify_product_operation(op_name))
-        use_target = bool(
-            op_name
-            and (
-                self._is_modify_delivery_target_operation(op_name)
-                or self._is_modify_placement_operation(op_name)
-            )
-        )
-        row = None
-        if use_product:
-            cur.execute(
-                """
-                SELECT p.observe_interval
-                FROM amazon_ad_products p
-                LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
-                WHERE p.ad_item_id=%s AND sp.platform_sku=%s
-                LIMIT 1
-                """,
-                (ad_item_id, target_object),
-            )
-            row = cur.fetchone()
-        elif use_target:
-            cur.execute(
-                """
-                SELECT observe_interval
-                FROM amazon_ad_targets
-                WHERE ad_item_id=%s AND target_desc=%s
-                LIMIT 1
-                """,
-                (ad_item_id, target_object),
-            )
-            row = cur.fetchone()
-        else:
-            cur.execute(
-                """
-                SELECT observe_interval
-                FROM amazon_ad_targets
-                WHERE ad_item_id=%s AND target_desc=%s
-                LIMIT 1
-                """,
-                (ad_item_id, target_object),
-            )
-            row = cur.fetchone()
-            if not row:
-                cur.execute(
-                    """
-                    SELECT p.observe_interval
-                    FROM amazon_ad_products p
-                    LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
-                    WHERE p.ad_item_id=%s AND sp.platform_sku=%s
-                    LIMIT 1
-                    """,
-                    (ad_item_id, target_object),
-                )
-                row = cur.fetchone()
-        if row and row.get('observe_interval'):
-            days = self._parse_observe_interval_days(row.get('observe_interval'))
-            return {
-                'observe_interval': self._format_observe_interval_days(days),
-                'observe_days': days,
-            }
-        return {
-            'observe_interval': self._format_observe_interval_days(default_days),
-            'observe_days': default_days,
-        }
-
     def _apply_adjustment_observe_sync(
-        self, cur, ad_item_id, op_name, target_object, adjust_date, observe_days, next_observe_at,
+        self, cur, ad_item_id, op_name, target_object, updated_at, next_observe_at=None, observe_minutes=None,
     ):
         op_name = self._normalize_adjustment_operation_type_name(op_name)
         if not (
@@ -3704,28 +3629,34 @@ class AmazonAdMixin:
         target_object = (target_object or '').strip()
         if not target_object or target_object == '-':
             return None
-        interval_text, updated_dt, next_dt = self._build_observe_fields(
-            observe_days, adjust_date, next_observe_at,
+        if observe_minutes is None:
+            if self._is_modify_product_operation(op_name):
+                observe_minutes = self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES
+            else:
+                observe_minutes = self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES
+        updated_dt, next_dt = self._resolve_observe_datetimes(
+            updated_at, next_observe_at, observe_minutes,
         )
-        updated_dt = updated_dt or adjust_date
+        if not updated_dt or not next_dt:
+            return None
         if self._is_modify_product_operation(op_name):
             cur.execute(
                 """
                 UPDATE amazon_ad_products p
                 INNER JOIN sales_products sp ON sp.id = p.sales_product_id
-                SET p.observe_interval=%s, p.next_observe_at=%s, p.updated_at=%s
+                SET p.next_observe_at=%s, p.updated_at=%s
                 WHERE p.ad_item_id=%s AND sp.platform_sku=%s
                 """,
-                (interval_text, next_dt, updated_dt, ad_item_id, target_object),
+                (next_dt, updated_dt, ad_item_id, target_object),
             )
         else:
             cur.execute(
                 """
                 UPDATE amazon_ad_targets
-                SET observe_interval=%s, next_observe_at=%s, updated_at=%s
+                SET next_observe_at=%s, updated_at=%s
                 WHERE ad_item_id=%s AND target_desc=%s
                 """,
-                (interval_text, next_dt, updated_dt, ad_item_id, target_object),
+                (next_dt, updated_dt, ad_item_id, target_object),
             )
         return None
 
@@ -4266,18 +4197,20 @@ class AmazonAdMixin:
 
     def _insert_amazon_ad_target_row(self, cur, ad_item_id, target_desc, status, bid_value):
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt, next_dt = self._resolve_observe_datetimes(
+            now_text, None, self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES,
+        )
         updated_dt = updated_dt or now_text
         cur.execute(
             """
             INSERT INTO amazon_ad_targets (
                 status, ad_item_id, target_desc, bid_value,
-                observe_interval, next_observe_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                next_observe_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 status, ad_item_id, target_desc, bid_value,
-                interval_text, next_dt, updated_dt,
+                next_dt, updated_dt,
             ),
         )
         if cur.rowcount <= 0:
@@ -4418,18 +4351,20 @@ class AmazonAdMixin:
 
         product_status = status
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        interval_text, updated_dt, next_dt = self._build_observe_fields(1, now_text)
+        updated_dt, next_dt = self._resolve_observe_datetimes(
+            now_text, None, self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES,
+        )
         updated_dt = updated_dt or now_text
         cur.execute(
             """
             INSERT INTO amazon_ad_products (
                 status, ad_item_id, sales_product_id,
-                observe_interval, next_observe_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                next_observe_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s)
             """,
             (
                 product_status, ad_item_id, sales_product_id,
-                interval_text, next_dt, updated_dt,
+                next_dt, updated_dt,
             ),
         )
         if cur.rowcount <= 0:
@@ -4558,7 +4493,6 @@ class AmazonAdMixin:
                 if not ad_item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
                 target_object = (query_params.get('target_object', [''])[0] or '').strip()
-                operation_type_id = self._parse_int((query_params.get('operation_type_id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         ad_row, ad_info = self._fetch_adjustment_ad_info(cur, ad_item_id)
@@ -4566,18 +4500,6 @@ class AmazonAdMixin:
                             return self.send_json({'status': 'error', 'message': '广告不存在'}, start_response)
                         allowed_operations = self._fetch_allowed_operations_for_ad(cur, ad_row)
                         defaults = self._adjustment_defaults_for_ad(cur, ad_item_id, target_object)
-                        op_name = ''
-                        if operation_type_id:
-                            cur.execute(
-                                "SELECT name FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
-                                (operation_type_id,),
-                            )
-                            op_row = cur.fetchone() or {}
-                            op_name = op_row.get('name') or ''
-                        observe_defaults = self._fetch_observe_defaults_for_target_object(
-                            cur, ad_item_id, target_object, op_name,
-                        )
-                        defaults.update(observe_defaults)
                 return self.send_json({
                     'status': 'success',
                     'ad_info': ad_info,
@@ -4585,7 +4507,7 @@ class AmazonAdMixin:
                     'defaults': defaults,
                 }, start_response)
 
-            if method == 'GET':
+            if method == 'GET' and not action:
                 ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
                 sql = """
                     SELECT
@@ -4610,6 +4532,38 @@ class AmazonAdMixin:
                 return self.send_json({'status': 'success', 'items': rows, 'total': len(rows)}, start_response)
 
             data = self._read_json_body(environ)
+
+            if method == 'POST' and action == 'skip-observe':
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                operation_type_id = self._parse_int(data.get('operation_type_id'))
+                target_object = (data.get('target_object') or '').strip()
+                if not ad_item_id or not operation_type_id or not target_object:
+                    return self.send_json({'status': 'error', 'message': '缺少必填字段'}, start_response)
+                observe_minutes = self._parse_observe_minutes(data.get('observe_minutes'))
+                now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT name FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
+                            (operation_type_id,),
+                        )
+                        op_row = cur.fetchone() or {}
+                        op_name = op_row.get('name') or ''
+                        self._apply_adjustment_observe_sync(
+                            cur,
+                            ad_item_id,
+                            op_name,
+                            target_object,
+                            now_text,
+                            None,
+                            observe_minutes,
+                        )
+                        item, err = self._find_next_adjustment_observe_candidate(
+                            cur, ad_item_id, operation_type_id, target_object,
+                        )
+                if err:
+                    return self.send_json({'status': 'success', 'item': None, 'message': err}, start_response)
+                return self.send_json({'status': 'success', 'item': item}, start_response)
 
             if method == 'POST':
                 ad_item_id = self._parse_int(data.get('ad_item_id'))
@@ -4650,8 +4604,8 @@ class AmazonAdMixin:
                             op_name,
                             target_object,
                             adjust_date,
-                            data.get('observe_days'),
                             data.get('next_observe_at'),
+                            data.get('observe_minutes'),
                         )
                         cur.execute(
                             """

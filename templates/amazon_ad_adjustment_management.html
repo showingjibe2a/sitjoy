@@ -86,6 +86,36 @@
             flex: 1 1 auto;
             min-width: 0;
         }
+        .aa-observe-nav-btns {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-shrink: 0;
+        }
+        .aa-gear-btn {
+            width: 1.65rem;
+            height: 1.65rem;
+            min-width: 1.65rem;
+            padding: 0;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.82rem;
+            line-height: 1;
+        }
+        .aa-observe-interval-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+        }
+        .aa-observe-interval-grid label {
+            font-size: 0.78rem;
+            color: var(--morandi-slate);
+            font-weight: 600;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
         .aa-field-row .aa-readonly {
             font-size: 0.86rem;
             color: var(--morandi-ink);
@@ -732,7 +762,11 @@
                         <div class="aa-field-row">
                             <div class="aa-field-label-row">
                                 <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
-                                <button type="button" class="btn-secondary btn-small" id="targetObjectNextBtn" aria-label="下一个待观察" title="下一个待观察" disabled>下一个</button>
+                                <div class="aa-observe-nav-btns">
+                                    <button type="button" class="btn-secondary aa-gear-btn" id="observeIntervalSettingsBtn" aria-label="观察间隔设置" title="观察间隔设置">⚙</button>
+                                    <button type="button" class="btn-secondary btn-small" id="targetObjectSkipBtn" aria-label="跳过" title="仅更新下次观察时间并跳到下一个" disabled>跳过</button>
+                                    <button type="button" class="btn-secondary btn-small" id="targetObjectNextBtn" aria-label="下一个待观察" title="下一个待观察" disabled>下一个</button>
+                                </div>
                             </div>
                             <div class="aa-value-input-wrap aa-target-object-wrap input-capsule-menu--empty" id="targetObjectWrap">
                                 <div class="aa-target-input-area">
@@ -796,15 +830,9 @@
                             <label for="adjustDate">调整日期</label>
                             <input type="datetime-local" id="adjustDate">
                         </div>
-                        <div id="aaObserveFieldsRow" class="aa-form-row-2" hidden>
-                            <div class="form-group">
-                                <label for="observeIntervalDays">下次观察时间间隔（天）</label>
-                                <input type="number" id="observeIntervalDays" min="0" step="1" value="1">
-                            </div>
-                            <div class="form-group">
-                                <label for="nextObserveAt">下次观察时间</label>
-                                <input type="datetime-local" id="nextObserveAt">
-                            </div>
+                        <div id="aaObserveFieldsRow" class="form-group" hidden>
+                            <label for="nextObserveAt">下次观察时间</label>
+                            <input type="datetime-local" id="nextObserveAt">
                         </div>
                         <div class="pm-section">
                             <h4>效果区间数据</h4>
@@ -903,6 +931,35 @@
                     <div class="pm-modal-actions">
                         <button type="button" class="btn-secondary" onclick="closeFullSubmitModal()">取消</button>
                         <button type="button" class="btn-primary" onclick="confirmFullSubmit()">确认提交</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm-modal aa-extra-modal" id="aaObserveIntervalModal">
+                <div class="pm-modal-content" style="max-width: 520px;">
+                    <h3 style="margin-top:0;">默认观察间隔</h3>
+                    <p style="margin:0 0 1rem; font-size:0.86rem; color:var(--morandi-slate);">用于计算下次观察时间，保存在本机浏览器。</p>
+                    <div class="pm-form">
+                        <div class="pm-section">
+                            <h4>商品</h4>
+                            <div class="aa-observe-interval-grid pm-section-body">
+                                <div><label for="observeProductDays">天</label><input type="number" id="observeProductDays" min="0" step="1"></div>
+                                <div><label for="observeProductHours">小时</label><input type="number" id="observeProductHours" min="0" step="1"></div>
+                                <div><label for="observeProductMinutes">分钟</label><input type="number" id="observeProductMinutes" min="0" step="1"></div>
+                            </div>
+                        </div>
+                        <div class="pm-section">
+                            <h4>投放</h4>
+                            <div class="aa-observe-interval-grid pm-section-body">
+                                <div><label for="observeDeliveryDays">天</label><input type="number" id="observeDeliveryDays" min="0" step="1"></div>
+                                <div><label for="observeDeliveryHours">小时</label><input type="number" id="observeDeliveryHours" min="0" step="1"></div>
+                                <div><label for="observeDeliveryMinutes">分钟</label><input type="number" id="observeDeliveryMinutes" min="0" step="1"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pm-modal-actions">
+                        <button type="button" class="btn-secondary" id="aaObserveIntervalCancelBtn">取消</button>
+                        <button type="button" class="btn-primary" id="aaObserveIntervalSaveBtn">保存</button>
                     </div>
                 </div>
             </div>
@@ -1025,33 +1082,27 @@
             row.hidden = !shouldShowObserveFields();
         }
 
-        function parseObserveDaysFromText(value) {
-            const text = String(value || '').trim();
-            const m = text.match(/\d+/);
-            if (!m) return 1;
-            const n = Number(m[0]);
-            if (!Number.isFinite(n) || n < 0) return 1;
-            return Math.floor(n);
+        function getCurrentObserveMinutes() {
+            const op = getSelectedOperationType();
+            const OI = window.AaObserveInterval;
+            if (!OI || !op) return null;
+            const interval = OI.getObserveIntervalForOperationName(op.name || '');
+            return OI.intervalToMinutes(interval);
         }
 
         function recalcAdjustmentNextObserve() {
             if (!shouldShowObserveFields()) return;
             const adjustDate = document.getElementById('adjustDate')?.value;
-            const dayRaw = document.getElementById('observeIntervalDays')?.value;
-            const days = Math.max(0, parseInt(dayRaw || '1', 10) || 1);
             if (!adjustDate) return;
-            const base = new Date(adjustDate);
-            if (Number.isNaN(base.getTime())) return;
-            base.setDate(base.getDate() + days);
-            setFieldValue('nextObserveAt', toDatetimeLocal(base));
+            const op = getSelectedOperationType();
+            const OI = window.AaObserveInterval;
+            if (!OI || !op) return;
+            const next = OI.computeNextObserveFromBase(new Date(adjustDate), op.name || '');
+            if (!next || Number.isNaN(next.getTime())) return;
+            setFieldValue('nextObserveAt', toDatetimeLocal(next));
         }
 
-        function applyObserveDefaults(defaults) {
-            if (!defaults || typeof defaults !== 'object') return;
-            const days = defaults.observe_days != null
-                ? parseObserveDaysFromText(defaults.observe_days)
-                : parseObserveDaysFromText(defaults.observe_interval);
-            setFieldValue('observeIntervalDays', String(days));
+        function applyObserveDefaults() {
             recalcAdjustmentNextObserve();
             syncObserveFieldsVisibility();
         }
@@ -1060,7 +1111,7 @@
             const modal = document.getElementById('aaFullSubmitModal');
             if (!modal || modal.dataset.observeBound === '1') return;
             modal.dataset.observeBound = '1';
-            ['adjustDate', 'observeIntervalDays'].forEach((id) => {
+            ['adjustDate'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('input', recalcAdjustmentNextObserve);
@@ -2284,7 +2335,6 @@
                 'impressions', 'clicks', 'cost', 'orders', 'sales', 'topOfSearchIs',
                 'acos', 'cpc', 'ctr', 'cvr', 'attributionOrders', 'attributionSales', 'remark',
             ].forEach(id => setFieldValue(id, ''));
-            setFieldValue('observeIntervalDays', '1');
             setFieldValue('nextObserveAt', '');
             setAttributionChecked(false);
             recalcAdjustmentDerivedMetrics();
@@ -2308,13 +2358,12 @@
                         setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
                         setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
                         setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
-                        applyObserveDefaults(d.defaults);
+                        applyObserveDefaults();
                         return;
                     }
                     setFieldValue('adjustDate', '');
                     setFieldValue('startTime', '');
                     setFieldValue('endTime', '');
-                    setFieldValue('observeIntervalDays', '1');
                     setFieldValue('nextObserveAt', '');
                     syncObserveFieldsVisibility();
                 })
@@ -2322,7 +2371,6 @@
                     setFieldValue('adjustDate', '');
                     setFieldValue('startTime', '');
                     setFieldValue('endTime', '');
-                    setFieldValue('observeIntervalDays', '1');
                     setFieldValue('nextObserveAt', '');
                     syncObserveFieldsVisibility();
                 });
@@ -3059,9 +3107,90 @@
         }
 
         function syncTargetObjectNextBtn() {
-            const btn = document.getElementById('targetObjectNextBtn');
-            if (!btn) return;
-            btn.disabled = !selectedAdId;
+            const enabled = !!selectedAdId;
+            const skipBtn = document.getElementById('targetObjectSkipBtn');
+            const nextBtn = document.getElementById('targetObjectNextBtn');
+            if (skipBtn) skipBtn.disabled = !enabled || !shouldShowObserveFields();
+            if (nextBtn) nextBtn.disabled = !enabled;
+        }
+
+        function skipCurrentObserveTarget() {
+            if (!selectedAdId || !shouldShowObserveFields()) return;
+            const opId = String(document.getElementById('operationType')?.value || '').trim();
+            const target = String(document.getElementById('targetObject')?.value || '').trim();
+            if (!opId || !target) {
+                aaValidationToast('请先选择操作类型并填写操作对象');
+                return;
+            }
+            const skipBtn = document.getElementById('targetObjectSkipBtn');
+            if (skipBtn) skipBtn.disabled = true;
+            const payload = {
+                ad_item_id: selectedAdId,
+                operation_type_id: opId,
+                target_object: target,
+            };
+            const mins = getCurrentObserveMinutes();
+            if (mins != null) payload.observe_minutes = mins;
+            return fetch('/api/amazon-ad-adjustment?action=skip-observe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        aaValidationToast(data.message || '跳过失败');
+                        return;
+                    }
+                    if (!data.item) {
+                        aaValidationToast(data.message || '暂无下一个待观察项');
+                        return;
+                    }
+                    return applyNextObserveSelection(data.item);
+                })
+                .catch(err => aaValidationToast('跳过失败: ' + err))
+                .finally(() => syncTargetObjectNextBtn());
+        }
+
+        function fillObserveIntervalModalFields(settings) {
+            const s = settings || (window.AaObserveInterval && window.AaObserveInterval.readObserveIntervalSettings()) || {};
+            const product = s.product || {};
+            const delivery = s.delivery || {};
+            setFieldValue('observeProductDays', String(product.days ?? 14));
+            setFieldValue('observeProductHours', String(product.hours ?? 0));
+            setFieldValue('observeProductMinutes', String(product.minutes ?? 0));
+            setFieldValue('observeDeliveryDays', String(delivery.days ?? 1));
+            setFieldValue('observeDeliveryHours', String(delivery.hours ?? 0));
+            setFieldValue('observeDeliveryMinutes', String(delivery.minutes ?? 0));
+        }
+
+        function openObserveIntervalSettingsModal() {
+            fillObserveIntervalModalFields();
+            document.getElementById('aaObserveIntervalModal')?.classList.add('active');
+        }
+
+        function closeObserveIntervalSettingsModal() {
+            document.getElementById('aaObserveIntervalModal')?.classList.remove('active');
+        }
+
+        function saveObserveIntervalSettings() {
+            const OI = window.AaObserveInterval;
+            if (!OI) return;
+            OI.writeObserveIntervalSettings({
+                product: {
+                    days: document.getElementById('observeProductDays')?.value,
+                    hours: document.getElementById('observeProductHours')?.value,
+                    minutes: document.getElementById('observeProductMinutes')?.value,
+                },
+                delivery: {
+                    days: document.getElementById('observeDeliveryDays')?.value,
+                    hours: document.getElementById('observeDeliveryHours')?.value,
+                    minutes: document.getElementById('observeDeliveryMinutes')?.value,
+                },
+            });
+            closeObserveIntervalSettingsModal();
+            recalcAdjustmentNextObserve();
+            if (window.showAppToast) window.showAppToast('观察间隔已保存');
         }
 
         function applyNextObserveSelection(item) {
@@ -3784,7 +3913,7 @@
                     setFieldValue('adjustDate', toDatetimeLocal(defaults.adjust_date));
                     setFieldValue('startTime', toDatetimeLocal(defaults.start_time));
                     setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
-                    applyObserveDefaults(defaults);
+                    applyObserveDefaults();
                     if (!restore) {
                         setFieldValue('targetObject', '', { silent: true });
                         supplementaryTargetObjectKey = '';
@@ -3810,23 +3939,26 @@
                 });
         }
 
-        function computeNextObserveAtFrom(adjustDateVal, observeDaysVal) {
-            const days = Math.max(0, parseInt(observeDaysVal || '1', 10) || 1);
-            if (!adjustDateVal) return '';
-            const base = new Date(adjustDateVal);
-            if (Number.isNaN(base.getTime())) return '';
-            base.setDate(base.getDate() + days);
-            return toDatetimeLocal(base);
-        }
-
         function appendObserveFieldsToPayload(payload) {
             if (!shouldShowObserveFields()) return payload;
             if (!payload.adjust_date) {
                 payload.adjust_date = toDatetimeLocal(new Date());
             }
-            payload.observe_days = document.getElementById('observeIntervalDays')?.value || '1';
-            payload.next_observe_at = document.getElementById('nextObserveAt')?.value
-                || computeNextObserveAtFrom(payload.adjust_date, payload.observe_days);
+            const mins = getCurrentObserveMinutes();
+            if (mins != null) payload.observe_minutes = mins;
+            const nextVal = document.getElementById('nextObserveAt')?.value;
+            if (nextVal) {
+                payload.next_observe_at = nextVal;
+            } else {
+                const op = getSelectedOperationType();
+                const OI = window.AaObserveInterval;
+                if (OI && op) {
+                    const next = OI.computeNextObserveFromBase(new Date(payload.adjust_date), op.name || '');
+                    if (next && !Number.isNaN(next.getTime())) {
+                        payload.next_observe_at = toDatetimeLocal(next);
+                    }
+                }
+            }
             return payload;
         }
 
@@ -3898,7 +4030,7 @@
                                     setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
                                     setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
                                     setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
-                                    applyObserveDefaults(d.defaults);
+                                    applyObserveDefaults();
                                 }
                             });
                     }
@@ -3962,6 +4094,10 @@
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
         document.getElementById('targetObjectNextBtn')?.addEventListener('click', jumpToNextObserveTarget);
+        document.getElementById('targetObjectSkipBtn')?.addEventListener('click', skipCurrentObserveTarget);
+        document.getElementById('observeIntervalSettingsBtn')?.addEventListener('click', openObserveIntervalSettingsModal);
+        document.getElementById('aaObserveIntervalCancelBtn')?.addEventListener('click', closeObserveIntervalSettingsModal);
+        document.getElementById('aaObserveIntervalSaveBtn')?.addEventListener('click', saveObserveIntervalSettings);
         document.getElementById('aaRecalcComputedBtn')?.addEventListener('click', refreshComputedFieldsFromMetrics);
         document.getElementById('aaAmazonIdSaveBtn')?.addEventListener('click', saveAmazonIdFromAdjustment);
         document.getElementById('aaAmazonIdInput')?.addEventListener('input', syncAmazonIdSaveButton);
@@ -4079,6 +4215,7 @@
         });
     </script>
 
+    <script src="/static/js/aa_observe_interval.js"></script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/amazon_ad_form_modal.js"></script>
 </body>

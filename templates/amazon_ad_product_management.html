@@ -11,6 +11,7 @@
 </head>
 <body>
     <div id="site-header"></div>
+    <script src="/static/js/aa_observe_interval.js"></script>
     <script src="/static/js/header.js"></script>
 
     <div class="container">
@@ -46,13 +47,12 @@
                             <th>广告关联</th>
                             <th>投放商品</th>
                             <th style="width:170px;">最后修改时间</th>
-                            <th style="width:160px;">下次观察时间间隔</th>
                             <th style="width:170px;">下次观察时间</th>
                             <th style="width:150px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -83,10 +83,6 @@
                 <div class="form-group">
                     <label for="modalUpdatedAt">最后修改时间<span class="required-asterisk">*</span></label>
                     <input type="datetime-local" id="modalUpdatedAt">
-                </div>
-                <div class="form-group">
-                    <label for="modalObserveDays">下次观察时间间隔（天）</label>
-                    <input type="number" id="modalObserveDays" min="0" step="1" value="1">
                 </div>
                 <div class="form-group">
                     <label for="modalNextObserve">下次观察时间</label>
@@ -137,24 +133,19 @@
             return toDatetimeLocal(new Date());
         }
 
-        function parseObserveDaysFromText(value) {
-            const text = String(value || '').trim();
-            const m = text.match(/\d+/);
-            if (!m) return 1;
-            const n = Number(m[0]);
-            if (!Number.isFinite(n) || n < 0) return 1;
-            return Math.floor(n);
-        }
-
         function recalcNextObserveTime() {
             const updatedAt = document.getElementById('modalUpdatedAt').value;
-            const dayRaw = document.getElementById('modalObserveDays').value;
-            const days = Math.max(0, parseInt(dayRaw || '1', 10) || 1);
             if (!updatedAt) return;
-            const base = new Date(updatedAt);
-            if (Number.isNaN(base.getTime())) return;
-            base.setDate(base.getDate() + days);
-            document.getElementById('modalNextObserve').value = toDatetimeLocal(base);
+            const OI = window.AaObserveInterval;
+            if (!OI) return;
+            const next = OI.computeNextObserveFromBase(new Date(updatedAt), 'product');
+            if (!next || Number.isNaN(next.getTime())) return;
+            document.getElementById('modalNextObserve').value = toDatetimeLocal(next);
+        }
+
+        function getProductObserveMinutes() {
+            const OI = window.AaObserveInterval;
+            return OI ? OI.intervalToMinutes(OI.getObserveIntervalForKind('product')) : 20160;
         }
 
         function showStatus(message, isError) {
@@ -310,7 +301,7 @@
         function renderTable(items) {
             const tbody = document.querySelector('#productTable tbody');
             if (!items.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = items.map(item => `
@@ -325,7 +316,6 @@
                     <td>${adRelationText(item)}</td>
                     <td>${item.platform_sku || ''}</td>
                     <td>${formatDateTime(item.updated_at)}</td>
-                    <td>${item.observe_interval || ''}</td>
                     <td>${formatDateTime(item.next_observe_at)}</td>
                     <td>
                         <div class="pm-actions">
@@ -345,7 +335,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#productTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     rowsCache = data.items || [];
@@ -353,7 +343,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#productTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -363,7 +353,6 @@
             document.getElementById('modalStatus').value = '启动';
             document.getElementById('modalAdItem').value = lastSelectedAdItemId || '';
             document.getElementById('modalSalesProduct').value = '';
-            document.getElementById('modalObserveDays').value = '1';
             document.getElementById('modalUpdatedAt').value = nowLocalInputValue();
             document.getElementById('modalNextObserve').value = '';
             renderAdOptions(lastSelectedAdItemId || '');
@@ -387,7 +376,6 @@
             document.getElementById('modalAdItem').value = item.ad_item_id || '';
             lastSelectedAdItemId = item.ad_item_id ? String(item.ad_item_id) : lastSelectedAdItemId;
             document.getElementById('modalSalesProduct').value = item.sales_product_id || '';
-            document.getElementById('modalObserveDays').value = String(parseObserveDaysFromText(item.observe_interval));
             document.getElementById('modalUpdatedAt').value = toDatetimeLocal(item.updated_at) || nowLocalInputValue();
             document.getElementById('modalNextObserve').value = toDatetimeLocal(item.next_observe_at);
             renderAdOptions(item.ad_item_id || '');
@@ -411,7 +399,7 @@
                 status: document.getElementById('modalStatus').value,
                 ad_item_id: document.getElementById('modalAdItem').value,
                 sales_product_id: document.getElementById('modalSalesProduct').value,
-                observe_days: document.getElementById('modalObserveDays').value,
+                observe_minutes: getProductObserveMinutes(),
                 updated_at: document.getElementById('modalUpdatedAt').value,
                 next_observe_at: document.getElementById('modalNextObserve').value
             };
@@ -514,7 +502,7 @@
         document.getElementById('modalAdItem').addEventListener('change', function() {
             lastSelectedAdItemId = this.value ? String(this.value) : lastSelectedAdItemId;
         });
-        document.getElementById('modalObserveDays').addEventListener('input', recalcNextObserveTime);
+        document.getElementById('modalUpdatedAt').addEventListener('input', recalcNextObserveTime);
         document.getElementById('modalUpdatedAt').addEventListener('change', recalcNextObserveTime);
         document.getElementById('productUploadInput').addEventListener('change', function(e) {
             const file = e.target.files && e.target.files[0];
