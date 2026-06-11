@@ -15,7 +15,20 @@
     let campaignOptions = [];
     let subtypeOptions = [];
     let shopOptions = [];
+    let operationTypeOptions = [];
     let eventsBound = false;
+    let modalDefaultTargets = [];
+    let defaultTargetsSourceKey = '';
+    let groupPlatformSkus = new Set();
+    let groupPlatformSkusCampaignKey = '';
+
+    function escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
 
     function $(id) { return document.getElementById(id); }
 
@@ -36,6 +49,32 @@
             '#modalAdLevelSegment[data-locked="1"] {',
             '  opacity: 0.65; pointer-events: none;',
             '}',
+            '#adDefaultTargetsWrap .default-target-toolbar {',
+            '  display: grid; grid-template-columns: 1fr 120px auto; gap: 0.5rem; align-items: center;',
+            '}',
+            '#adDefaultTargetsWrap .default-target-list { display: grid; gap: 0.5rem; }',
+            '#adDefaultTargetsWrap .default-target-item {',
+            '  display: grid; grid-template-columns: 1fr 120px auto; gap: 0.55rem; align-items: center;',
+            '  border: 2px solid var(--morandi-sand); border-radius: 8px; padding: 0.45rem 0.55rem; background: #fff;',
+            '}',
+            '#adDefaultTargetsWrap .default-target-item-name {',
+            '  color: var(--morandi-ink); font-size: 0.92rem; word-break: break-word;',
+            '}',
+            '#adDefaultTargetsWrap .default-target-empty {',
+            '  color: var(--morandi-slate); font-size: 0.9rem;',
+            '}',
+            '#adInitialProductSkusInput {',
+            '  width: 100%; min-height: 5.5rem; resize: vertical;',
+            '  border: 2px solid var(--morandi-sand); border-radius: 8px;',
+            '  padding: 0.5rem 0.6rem; font-size: 0.92rem; line-height: 1.45;',
+            '  font-family: inherit; box-sizing: border-box;',
+            '}',
+            '#adInitialProductSkusInput.is-invalid { border-color: #c45c5c; }',
+            '#adInitialProductSkusValidation {',
+            '  margin-top: 0.4rem; font-size: 0.86rem; line-height: 1.4;',
+            '}',
+            '#adInitialProductSkusValidation.is-error { color: #a33; }',
+            '#adInitialProductSkusValidation.is-ok { color: #2f6f2f; }',
         ].join('\n');
         document.head.appendChild(style);
     }
@@ -153,6 +192,23 @@
             '        <label for="modalGroupName">广告组名称<span class="required-asterisk">*</span></label>',
             '        <input type="text" id="modalGroupName" placeholder="例如：核心词-精准">',
             '      </div>',
+            '      <div class="form-group pm-form-full level-campaign level-group" id="adDefaultTargetsWrap" style="display:none;">',
+            '        <div class="pm-section">',
+            '          <h4 style="margin-top:0;" class="label-help">默认投放<span class="help-dot" data-tip="根据细分类预设，保存广告时将一并创建以下投放（可修改竞价或增删）。"></span></h4>',
+            '          <div class="default-target-toolbar">',
+            '            <input type="text" id="adDefaultTargetNameInput" placeholder="投放描述">',
+            '            <input type="text" id="adDefaultTargetValueInput" placeholder="竞价">',
+            '            <button type="button" class="btn-secondary" id="adDefaultTargetAddBtn">添加</button>',
+            '          </div>',
+            '          <div id="adDefaultTargetList" class="default-target-list"></div>',
+            '          <div id="adDefaultTargetEmpty" class="default-target-empty" style="display:none;">暂无投放项，保存时不会自动创建投放</div>',
+            '        </div>',
+            '      </div>',
+            '      <div class="form-group pm-form-full level-group" id="adInitialProductSkusWrap" style="display:none;">',
+            '        <label for="adInitialProductSkusInput" class="label-help">销售平台SKU<span class="help-dot" data-tip="每行一个销售平台SKU，保存广告组时将一并创建商品（状态：启动）。失焦时校验是否为当前店铺的销售平台SKU。"></span></label>',
+            '        <textarea id="adInitialProductSkusInput" placeholder="例如：&#10;ABC-123&#10;DEF-456"></textarea>',
+            '        <div id="adInitialProductSkusValidation" style="display:none;"></div>',
+            '      </div>',
             '      <div class="form-group pm-form-full">',
             '        <label for="modalAmazonId">亚马逊 ID（选填）</label>',
             '        <input type="text" id="modalAmazonId" placeholder="亚马逊后台对应层级的实体 ID">',
@@ -166,7 +222,9 @@
             '  </div>',
             '</div>',
         ].join('');
-        document.body.appendChild(wrap.firstElementChild);
+        const modalEl = wrap.firstElementChild;
+        document.body.appendChild(modalEl);
+        if (global.bindFloatingHelpDots) global.bindFloatingHelpDots(modalEl);
     }
 
     function showAdStatus(message, isError) {
@@ -250,6 +308,150 @@
             });
     }
 
+    function loadOperationTypeOptions() {
+        return fetch('/api/amazon-ad-operation-type')
+            .then(r => r.json())
+            .then(data => {
+                operationTypeOptions = data.status === 'success' ? (data.items || []) : [];
+            })
+            .catch(() => { operationTypeOptions = []; });
+    }
+
+    function normalizeOperationTypeName(name) {
+        return String(name || '').replace(/[『』【】「」]/g, '').trim();
+    }
+
+    function isModifyProductOperationName(name) {
+        const n = normalizeOperationTypeName(name);
+        return n.includes('修改') && n.includes('商品');
+    }
+
+    function subtypeHasModifyProductOp(subtype) {
+        if (!subtype || !Array.isArray(subtype.operation_type_ids)) return false;
+        const idSet = new Set(subtype.operation_type_ids.map(String));
+        return (operationTypeOptions || []).some(
+            op => idSet.has(String(op.id)) && isModifyProductOperationName(op.name),
+        );
+    }
+
+    function shouldShowInitialProductSkusSection() {
+        if (adEditId) return false;
+        if (($('modalAdLevel')?.value || '') !== 'group') return false;
+        if (!($('modalGroupCampaign')?.value || '')) return false;
+        const subtype = getActiveSubtypeForDefaultTargets();
+        return subtypeHasModifyProductOp(subtype);
+    }
+
+    function parseInitialProductSkusFromTextarea() {
+        const raw = $('adInitialProductSkusInput')?.value || '';
+        const seen = new Set();
+        const lines = [];
+        raw.split(/\r?\n/).forEach((line) => {
+            const text = String(line || '').trim();
+            if (!text) return;
+            const key = text.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            lines.push(text);
+        });
+        return lines;
+    }
+
+    function isProductSkuInShop(sku) {
+        const s = String(sku || '').trim();
+        if (!s) return false;
+        return groupPlatformSkus.has(s);
+    }
+
+    function renderInitialProductSkusValidation(message, mode) {
+        const el = $('adInitialProductSkusValidation');
+        const input = $('adInitialProductSkusInput');
+        if (!el) return;
+        if (!message) {
+            el.style.display = 'none';
+            el.className = '';
+            el.innerText = '';
+            input?.classList.remove('is-invalid');
+            return;
+        }
+        el.style.display = '';
+        el.className = mode === 'ok' ? 'is-ok' : 'is-error';
+        el.innerText = message;
+        input?.classList.toggle('is-invalid', mode !== 'ok');
+    }
+
+    function validateInitialProductSkus(showEmptyAsValid) {
+        const skus = parseInitialProductSkusFromTextarea();
+        if (!skus.length) {
+            renderInitialProductSkusValidation('', null);
+            return true;
+        }
+        if (!groupPlatformSkus.size) {
+            renderInitialProductSkusValidation('无法加载店铺销售平台SKU列表，请重新选择广告活动', 'error');
+            return false;
+        }
+        const invalid = skus.filter(sku => !isProductSkuInShop(sku));
+        if (invalid.length) {
+            renderInitialProductSkusValidation(
+                `以下SKU不是当前广告归属店铺的销售平台SKU：${invalid.join('、')}`,
+                'error',
+            );
+            return false;
+        }
+        if (!showEmptyAsValid) {
+            renderInitialProductSkusValidation(`已校验 ${skus.length} 个销售平台SKU`, 'ok');
+        } else {
+            renderInitialProductSkusValidation('', null);
+        }
+        return true;
+    }
+
+    function loadGroupPlatformSkusForValidation() {
+        const campaignId = $('modalGroupCampaign')?.value || '';
+        if (!campaignId) {
+            groupPlatformSkus = new Set();
+            groupPlatformSkusCampaignKey = '';
+            return Promise.resolve();
+        }
+        const key = String(campaignId);
+        if (key === groupPlatformSkusCampaignKey && groupPlatformSkus.size) {
+            return Promise.resolve();
+        }
+        return fetch(`/api/amazon-ad?action=shop-platform-skus&campaign_id=${encodeURIComponent(campaignId)}`)
+            .then(r => r.json())
+            .then((data) => {
+                if (data.status === 'success') {
+                    groupPlatformSkus = new Set(
+                        Array.isArray(data.platform_skus) ? data.platform_skus : [],
+                    );
+                    groupPlatformSkusCampaignKey = key;
+                } else {
+                    groupPlatformSkus = new Set();
+                    groupPlatformSkusCampaignKey = '';
+                }
+            })
+            .catch(() => {
+                groupPlatformSkus = new Set();
+                groupPlatformSkusCampaignKey = '';
+            });
+    }
+
+    function refreshInitialProductSkusSection() {
+        const wrap = $('adInitialProductSkusWrap');
+        if (!wrap) return;
+        if (!shouldShowInitialProductSkusSection()) {
+            wrap.style.display = 'none';
+            renderInitialProductSkusValidation('', null);
+            return;
+        }
+        wrap.style.display = '';
+        loadGroupPlatformSkusForValidation().then(() => {
+            if (shouldShowInitialProductSkusSection()) {
+                validateInitialProductSkus(true);
+            }
+        });
+    }
+
     function syncSegmentButtons(targetId) {
         const input = $(targetId);
         const value = input ? String(input.value || '') : '';
@@ -268,6 +470,7 @@
         input.value = value;
         syncSegmentButtons(targetId);
         if (targetId === 'modalAdLevel') onAdLevelChanged();
+        if (targetId === 'modalSubtype') refreshDefaultTargetsSection();
         if (triggerRefresh) refreshCampaignName();
     }
 
@@ -284,6 +487,7 @@
         if (!subtypeOptions.length) {
             container.innerHTML = '<span style="color:var(--morandi-slate);font-size:0.88rem;padding:0.22rem 0.3rem;">暂无细分类</span>';
             input.value = '';
+            refreshDefaultTargetsSection();
             return;
         }
         const current = String(input.value || '');
@@ -295,6 +499,7 @@
             const text = `${item.ad_class}-${item.subtype_code}`;
             return `<button type="button" class="status-pill ${active}" data-target="modalSubtype" data-value="${value}" onclick="setSegmentValue('modalSubtype','${value}', true)">${text}</button>`;
         }).join('');
+        refreshDefaultTargetsSection();
     }
 
     function loadShopOptions() {
@@ -429,6 +634,8 @@
         }
         renderGroupCampaignSelect(selectedCampaign);
         onGroupCampaignChanged();
+        refreshDefaultTargetsSection();
+        refreshInitialProductSkusSection();
     }
 
     function onGroupCampaignChanged() {
@@ -445,6 +652,8 @@
             groupNameInput.value = campaignName;
             groupNameInput.dataset.auto = '1';
         }
+        refreshDefaultTargetsSection();
+        refreshInitialProductSkusSection();
     }
 
     function buildPortfolioNameBySkuId(skuId) {
@@ -493,6 +702,152 @@
         });
         if (level === 'group') onGroupPortfolioChanged();
         syncSegmentButtons('modalAdLevel');
+        refreshDefaultTargetsSection();
+        refreshInitialProductSkusSection();
+    }
+
+    function normalizeDefaultTargetItems(items) {
+        const seen = new Set();
+        return (Array.isArray(items) ? items : [])
+            .map(item => ({
+                name: item && item.name ? String(item.name).trim() : '',
+                value: item && item.value ? String(item.value).trim() : '',
+            }))
+            .filter(item => item.name && item.value)
+            .filter(item => {
+                const key = item.name.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    function getActiveSubtypeForDefaultTargets() {
+        const level = $('modalAdLevel')?.value;
+        if (level === 'campaign') {
+            const subtypeId = $('modalSubtype')?.value;
+            return (subtypeOptions || []).find(x => String(x.id) === String(subtypeId)) || null;
+        }
+        if (level === 'group') {
+            const campaignId = $('modalGroupCampaign')?.value;
+            const campaign = (campaignOptions || []).find(x => String(x.id) === String(campaignId));
+            if (!campaign?.subtype_id) return null;
+            return (subtypeOptions || []).find(x => String(x.id) === String(campaign.subtype_id)) || null;
+        }
+        return null;
+    }
+
+    function defaultTargetsSourceKeyForState() {
+        const level = $('modalAdLevel')?.value;
+        if (level === 'campaign') return `campaign:${$('modalSubtype')?.value || ''}`;
+        if (level === 'group') return `group:${$('modalGroupCampaign')?.value || ''}`;
+        return '';
+    }
+
+    function getSubtypeDefaultTargetsForLevel() {
+        const level = $('modalAdLevel')?.value;
+        const subtype = getActiveSubtypeForDefaultTargets();
+        if (!subtype) return [];
+        if (level === 'campaign') {
+            return normalizeDefaultTargetItems(subtype.campaign_default_targets || []);
+        }
+        if (level === 'group') {
+            return normalizeDefaultTargetItems(subtype.group_default_targets || []);
+        }
+        return [];
+    }
+
+    function renderAdDefaultTargetList() {
+        const list = $('adDefaultTargetList');
+        const empty = $('adDefaultTargetEmpty');
+        if (!list || !empty) return;
+        list.innerHTML = '';
+        modalDefaultTargets.forEach((item, idx) => {
+            const row = document.createElement('div');
+            row.className = 'default-target-item';
+            row.innerHTML = `
+                <span class="default-target-item-name">${escapeHtml(item.name)}</span>
+                <input type="text" class="inline-input default-target-value-input" value="${escapeHtml(item.value)}" aria-label="竞价">
+                <button type="button" class="btn-danger btn-small">删除</button>
+            `;
+            const valueInput = row.querySelector('.default-target-value-input');
+            valueInput.addEventListener('input', () => {
+                modalDefaultTargets[idx].value = valueInput.value;
+            });
+            row.querySelector('button').addEventListener('click', () => {
+                modalDefaultTargets.splice(idx, 1);
+                renderAdDefaultTargetList();
+            });
+            list.appendChild(row);
+        });
+        empty.style.display = modalDefaultTargets.length ? 'none' : '';
+    }
+
+    function refreshDefaultTargetsSection() {
+        const wrap = $('adDefaultTargetsWrap');
+        if (!wrap) return;
+        if (adEditId) {
+            wrap.style.display = 'none';
+            return;
+        }
+        const level = $('modalAdLevel')?.value;
+        if (level !== 'campaign' && level !== 'group') {
+            wrap.style.display = 'none';
+            return;
+        }
+        if (level === 'group' && !($('modalGroupCampaign')?.value || '')) {
+            wrap.style.display = 'none';
+            return;
+        }
+        const defaults = getSubtypeDefaultTargetsForLevel();
+        if (!defaults.length) {
+            wrap.style.display = 'none';
+            return;
+        }
+        wrap.style.display = '';
+        const key = defaultTargetsSourceKeyForState();
+        if (key !== defaultTargetsSourceKey) {
+            defaultTargetsSourceKey = key;
+            modalDefaultTargets = defaults.map(item => ({ ...item }));
+        }
+        renderAdDefaultTargetList();
+    }
+
+    function addAdDefaultTargetFromInput() {
+        const nameInput = $('adDefaultTargetNameInput');
+        const valueInput = $('adDefaultTargetValueInput');
+        const name = (nameInput?.value || '').trim();
+        const value = (valueInput?.value || '').trim();
+        if (!name || !value) {
+            if (!name) nameInput?.focus();
+            else valueInput?.focus();
+            return;
+        }
+        const exists = modalDefaultTargets.some(
+            item => String(item.name).toLowerCase() === name.toLowerCase(),
+        );
+        if (exists) {
+            nameInput.value = '';
+            valueInput.value = '';
+            valueInput.focus();
+            return;
+        }
+        modalDefaultTargets.push({ name, value });
+        nameInput.value = '';
+        valueInput.value = '';
+        renderAdDefaultTargetList();
+    }
+
+    function collectDefaultTargetsPayload() {
+        if (adEditId) return undefined;
+        const wrap = $('adDefaultTargetsWrap');
+        if (!wrap || wrap.style.display === 'none') return undefined;
+        return normalizeDefaultTargetItems(
+            modalDefaultTargets.map(item => ({
+                name: item.name,
+                value: String(item.value || '').trim(),
+            })).filter(item => item.name && item.value),
+        );
     }
 
     function resetCreateForm() {
@@ -525,6 +880,13 @@
         $('modalGroupName').dataset.auto = '1';
         $('modalStatusGroup').value = '启动';
         $('modalAmazonId').value = '';
+        modalDefaultTargets = [];
+        defaultTargetsSourceKey = '';
+        groupPlatformSkus = new Set();
+        groupPlatformSkusCampaignKey = '';
+        const skuInput = $('adInitialProductSkusInput');
+        if (skuInput) skuInput.value = '';
+        renderInitialProductSkusValidation('', null);
         renderSubtypeSegment();
         syncSegmentButtons('modalStrategy');
         syncSegmentButtons('modalBidStrategy');
@@ -533,6 +895,8 @@
         syncSegmentButtons('modalStatusGroup');
         resetAdStatus();
         onAdLevelChanged();
+        refreshDefaultTargetsSection();
+        refreshInitialProductSkusSection();
     }
 
     function openCreateModal() {
@@ -597,6 +961,9 @@
             syncSegmentButtons('modalStatusGroup');
             resetAdStatus();
             onAdLevelChanged();
+            $('adDefaultTargetsWrap').style.display = 'none';
+            $('adInitialProductSkusWrap').style.display = 'none';
+            renderInitialProductSkusValidation('', null);
             $(MODAL_ID).classList.add('active');
             if (global.initUniversalSingleSelects) global.initUniversalSingleSelects($(MODAL_ID));
             if (global.syncModalScrollLock) global.syncModalScrollLock();
@@ -708,6 +1075,24 @@
         const amazonId = ($('modalAmazonId')?.value || '').trim();
         payload.amazon_id = amazonId || null;
 
+        if (!adEditId && (level === 'campaign' || level === 'group')) {
+            const defaultTargets = collectDefaultTargetsPayload();
+            if (defaultTargets !== undefined) {
+                payload.default_targets = defaultTargets;
+            }
+        }
+
+        if (!adEditId && level === 'group' && shouldShowInitialProductSkusSection()) {
+            const skus = parseInitialProductSkusFromTextarea();
+            if (skus.length) {
+                if (!validateInitialProductSkus(false)) {
+                    showAdStatus('请修正不合法的销售平台SKU', true);
+                    return;
+                }
+                payload.initial_product_skus = skus;
+            }
+        }
+
         let method = 'POST';
         if (adEditId) {
             payload.id = adEditId;
@@ -770,6 +1155,22 @@
                 this.dataset.auto = this.value.trim() ? '0' : '1';
             });
         }
+        $('adDefaultTargetAddBtn')?.addEventListener('click', addAdDefaultTargetFromInput);
+        $('adInitialProductSkusInput')?.addEventListener('blur', () => {
+            if (shouldShowInitialProductSkusSection()) {
+                validateInitialProductSkus(false);
+            }
+        });
+        ['adDefaultTargetNameInput', 'adDefaultTargetValueInput'].forEach((id) => {
+            const el = $(id);
+            if (!el) return;
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addAdDefaultTargetFromInput();
+                }
+            });
+        });
         global.setTimeout(() => {
             const el = $(MODAL_ID);
             if (el && typeof global.bindPmModalBackdropClose === 'function') {
@@ -786,6 +1187,7 @@
             loadCategoryMap(),
             loadSkuOptions(),
             loadSubtypeOptions(),
+            loadOperationTypeOptions(),
             loadShopOptions(),
             loadPortfolioOptions(),
             loadCampaignOptions(),

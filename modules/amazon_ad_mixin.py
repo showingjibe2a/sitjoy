@@ -138,12 +138,85 @@ class AmazonAdMixin:
         row = cur.fetchone() or {}
         return self._parse_subtype_default_targets(row.get('targets_json'))
 
-    def _create_subtype_default_targets_for_ad_item(self, cur, ad_item_id, subtype_id, ad_level):
+    def _parse_initial_product_skus(self, value):
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            return []
+        out = []
+        seen = set()
+        for item in value:
+            text = str(item or '').strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(text)
+        return out
+
+    def _resolve_sales_product_id_for_shop(self, cur, shop_id, platform_sku):
+        platform_sku = (platform_sku or '').strip()
+        if not platform_sku:
+            return None, '请填写操作对象'
+        shop_id = self._parse_int(shop_id)
+        if not shop_id:
+            return None, '无法解析广告归属店铺'
+        cur.execute(
+            """
+            SELECT id FROM sales_products
+            WHERE shop_id=%s AND platform_sku=%s
+            LIMIT 1
+            """,
+            (shop_id, platform_sku),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, f'未找到店铺销售平台SKU: {platform_sku}'
+        return int(row['id']), None
+
+    def _create_initial_products_for_ad_item(self, cur, ad_item_id, shop_id, skus):
         ad_item_id = self._parse_int(ad_item_id)
-        if not ad_item_id or ad_level not in ('campaign', 'group'):
+        skus = self._parse_initial_product_skus(skus) or []
+        if not ad_item_id or not skus:
             return
-        targets = self._fetch_subtype_default_targets(cur, subtype_id, ad_level)
-        if not targets:
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        updated_dt, next_dt = self._resolve_observe_datetimes(
+            now_text, None, self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES,
+        )
+        updated_dt = updated_dt or now_text
+        for platform_sku in skus:
+            sales_product_id, sp_err = self._resolve_sales_product_id_for_shop(
+                cur, shop_id, platform_sku,
+            )
+            if sp_err or not sales_product_id:
+                continue
+            cur.execute(
+                """
+                SELECT p.id
+                FROM amazon_ad_products p
+                WHERE p.ad_item_id=%s AND p.sales_product_id=%s
+                LIMIT 1
+                """,
+                (ad_item_id, sales_product_id),
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                """
+                INSERT INTO amazon_ad_products (
+                    status, ad_item_id, sales_product_id,
+                    next_observe_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s)
+                """,
+                ('启动', ad_item_id, sales_product_id, next_dt, updated_dt),
+            )
+
+    def _create_default_targets_for_ad_item(self, cur, ad_item_id, targets):
+        ad_item_id = self._parse_int(ad_item_id)
+        targets = self._parse_subtype_default_targets(targets)
+        if not ad_item_id or not targets:
             return
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         updated_dt, next_dt = self._resolve_observe_datetimes(
@@ -173,6 +246,13 @@ class AmazonAdMixin:
                 """,
                 ('启动', ad_item_id, name, bid_value, next_dt, updated_dt),
             )
+
+    def _create_subtype_default_targets_for_ad_item(self, cur, ad_item_id, subtype_id, ad_level):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id or ad_level not in ('campaign', 'group'):
+            return
+        targets = self._fetch_subtype_default_targets(cur, subtype_id, ad_level)
+        self._create_default_targets_for_ad_item(cur, ad_item_id, targets)
 
     def _validate_amazon_ad_subtype_payload(self, cur, description, ad_class, subtype_code, exclude_id=None):
         description = (description or '').strip()
@@ -1087,6 +1167,37 @@ class AmazonAdMixin:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             if method == 'GET':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'shop-platform-skus':
+                    campaign_id = self._parse_int(
+                        (query_params.get('campaign_id', [''])[0] or '').strip()
+                    )
+                    shop_id = self._parse_int(
+                        (query_params.get('shop_id', [''])[0] or '').strip()
+                    )
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            if campaign_id and not shop_id:
+                                campaign = self._fetch_amazon_ad_item_by_id(cur, campaign_id)
+                                if not campaign or str(campaign.get('ad_level') or '') != 'campaign':
+                                    return self.send_json(
+                                        {'status': 'error', 'message': '广告活动不存在'},
+                                        start_response,
+                                    )
+                                shop_id = self._parse_int(campaign.get('shop_id'))
+                            if not shop_id:
+                                return self.send_json(
+                                    {'status': 'error', 'message': 'Missing shop_id or campaign_id'},
+                                    start_response,
+                                )
+                            platform_skus = sorted(
+                                self._fetch_shop_platform_skus(cur, shop_id)
+                            )
+                    return self.send_json(
+                        {'status': 'success', 'platform_skus': platform_skus},
+                        start_response,
+                    )
+
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 level = (query_params.get('level', [''])[0] or '').strip().lower()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
@@ -1190,6 +1301,28 @@ class AmazonAdMixin:
                         if dup_err:
                             return self.send_json({'status': 'error', 'message': dup_err}, start_response)
 
+                        initial_product_skus = None
+                        if ad_level == 'group' and 'initial_product_skus' in data:
+                            initial_product_skus = self._parse_initial_product_skus(
+                                data.get('initial_product_skus')
+                            )
+                            if initial_product_skus:
+                                shop_id = self._parse_int(fields.get('shop_id'))
+                                if not shop_id:
+                                    return self.send_json(
+                                        {'status': 'error', 'message': '无法解析广告归属店铺'},
+                                        start_response,
+                                    )
+                                for sku in initial_product_skus:
+                                    _, sku_err = self._resolve_sales_product_id_for_shop(
+                                        cur, shop_id, sku,
+                                    )
+                                    if sku_err:
+                                        return self.send_json(
+                                            {'status': 'error', 'message': sku_err},
+                                            start_response,
+                                        )
+
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_items (
@@ -1207,8 +1340,16 @@ class AmazonAdMixin:
                         )
                         new_id = cur.lastrowid
                         if ad_level in ('campaign', 'group'):
-                            self._create_subtype_default_targets_for_ad_item(
-                                cur, new_id, fields.get('subtype_id'), ad_level,
+                            if 'default_targets' in data:
+                                targets = self._parse_subtype_default_targets(data.get('default_targets'))
+                            else:
+                                targets = self._fetch_subtype_default_targets(
+                                    cur, fields.get('subtype_id'), ad_level,
+                                )
+                            self._create_default_targets_for_ad_item(cur, new_id, targets)
+                        if initial_product_skus:
+                            self._create_initial_products_for_ad_item(
+                                cur, new_id, fields.get('shop_id'), initial_product_skus,
                             )
                         item = self._fetch_amazon_ad_item_by_id(cur, new_id)
                 return self.send_json({'status': 'success', 'id': new_id, 'item': item}, start_response)
@@ -3479,24 +3620,10 @@ class AmazonAdMixin:
         return ''
 
     def _resolve_sales_product_id_for_ad_shop(self, cur, ad_item_id, platform_sku):
-        platform_sku = (platform_sku or '').strip()
-        if not platform_sku:
-            return None, '请填写操作对象'
         shop_id = self._resolve_ad_item_shop_id(cur, ad_item_id)
         if not shop_id:
             return None, '无法解析广告归属店铺'
-        cur.execute(
-            """
-            SELECT id FROM sales_products
-            WHERE shop_id=%s AND platform_sku=%s
-            LIMIT 1
-            """,
-            (shop_id, platform_sku),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None, f'未找到店铺销售平台SKU: {platform_sku}'
-        return int(row['id']), None
+        return self._resolve_sales_product_id_for_shop(cur, shop_id, platform_sku)
 
     def _is_numeric_bid_text(self, value):
         text = str(value or '').strip().replace(',', '')
