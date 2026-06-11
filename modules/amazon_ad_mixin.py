@@ -3779,16 +3779,55 @@ class AmazonAdMixin:
                     ordered, seen, cur, cid, include_campaign=True, include_groups=True,
                 )
 
-    def _pick_operation_type_id_for_observe_kind(self, operations, kind):
-        for op in operations or []:
-            name = self._normalize_adjustment_operation_type_name(op.get('name'))
-            if kind == 'product' and self._is_modify_product_operation(name):
-                return self._parse_int(op.get('id'))
-            if kind == 'placement' and self._is_modify_placement_operation(name):
-                return self._parse_int(op.get('id'))
-            if kind == 'delivery' and self._is_modify_delivery_target_operation(name):
-                return self._parse_int(op.get('id'))
+    def _pick_operation_type_id_for_observe_kind(self, operations, kind, fallback_kinds=None):
+        kinds = [kind]
+        for fb in fallback_kinds or ():
+            if fb and fb not in kinds:
+                kinds.append(fb)
+        for try_kind in kinds:
+            for op in operations or []:
+                name = self._normalize_adjustment_operation_type_name(op.get('name'))
+                if try_kind == 'product' and self._is_modify_product_operation(name):
+                    return self._parse_int(op.get('id'))
+                if try_kind == 'placement' and self._is_modify_placement_operation(name):
+                    return self._parse_int(op.get('id'))
+                if try_kind == 'delivery' and self._is_modify_delivery_target_operation(name):
+                    return self._parse_int(op.get('id'))
         return None
+
+    def _observe_due_sql_predicate(self, next_col, updated_col, default_minutes):
+        mins = max(0, int(default_minutes or 0))
+        return f"""(
+            ({next_col} IS NOT NULL AND {next_col} <= NOW())
+            OR (
+                {next_col} IS NULL
+                AND {updated_col} IS NOT NULL
+                AND {updated_col} <= DATE_SUB(NOW(), INTERVAL {mins} MINUTE)
+            )
+        )"""
+
+    def _scope_observe_candidates_for_ad(self, candidates, ad_item_id):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id:
+            return []
+        return [
+            item for item in candidates
+            if self._parse_int(item.get('ad_item_id')) == ad_item_id
+        ]
+
+    def _format_observe_pick_failure(self, err, candidates, ad_item_id, scoped):
+        scoped = scoped or []
+        target_n = sum(1 for x in scoped if x.get('kind') in ('delivery', 'placement'))
+        product_n = sum(1 for x in scoped if x.get('kind') == 'product')
+        base = err or '无法匹配操作类型'
+        if not candidates:
+            return '暂无待观察项'
+        if not scoped:
+            return f'当前广告下暂无到期观察项（范围内共 {len(candidates)} 项）'
+        return (
+            f'{base}（当前广告：投放到期 {target_n} 项，商品到期 {product_n} 项；'
+            f'请确认投放的下次观察时间已填写且已到期）'
+        )
 
     def _operation_type_name_from_allowed(self, allowed, operation_type_id):
         operation_type_id = self._parse_int(operation_type_id)
@@ -3981,15 +4020,17 @@ class AmazonAdMixin:
         candidates = []
 
         if 'delivery' in allowed_kinds or 'placement' in allowed_kinds:
+            target_due = self._observe_due_sql_predicate(
+                'next_observe_at', 'updated_at', self._AMAZON_AD_TARGET_DEFAULT_OBSERVE_MINUTES,
+            )
             cur.execute(
                 f"""
-                SELECT ad_item_id, id, target_desc, next_observe_at
+                SELECT ad_item_id, id, target_desc, next_observe_at, updated_at
                 FROM amazon_ad_targets
                 WHERE ad_item_id IN ({placeholders})
                   AND status='启动'
-                  AND next_observe_at IS NOT NULL
-                  AND next_observe_at <= NOW()
-                ORDER BY next_observe_at ASC, target_desc ASC, id ASC
+                  AND {target_due}
+                ORDER BY COALESCE(next_observe_at, updated_at) ASC, target_desc ASC, id ASC
                 """,
                 tuple(ad_item_ids),
             )
@@ -4008,23 +4049,25 @@ class AmazonAdMixin:
                     'ad_item_id': ad_item_id,
                     'kind': kind,
                     'target_object': target_desc,
-                    'next_observe_at': row.get('next_observe_at'),
+                    'next_observe_at': row.get('next_observe_at') or row.get('updated_at'),
                     'entity_id': self._parse_int(row.get('id')),
                 })
 
         if 'product' in allowed_kinds:
+            product_due = self._observe_due_sql_predicate(
+                'p.next_observe_at', 'p.updated_at', self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES,
+            )
             cur.execute(
                 f"""
-                SELECT p.ad_item_id, p.id, sp.platform_sku, p.next_observe_at
+                SELECT p.ad_item_id, p.id, sp.platform_sku, p.next_observe_at, p.updated_at
                 FROM amazon_ad_products p
                 LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
                 WHERE p.ad_item_id IN ({placeholders})
                   AND p.status='启动'
-                  AND p.next_observe_at IS NOT NULL
-                  AND p.next_observe_at <= NOW()
+                  AND {product_due}
                   AND sp.platform_sku IS NOT NULL
                   AND TRIM(sp.platform_sku) <> ''
-                ORDER BY p.next_observe_at ASC, sp.platform_sku ASC, p.id ASC
+                ORDER BY COALESCE(p.next_observe_at, p.updated_at) ASC, sp.platform_sku ASC, p.id ASC
                 """,
                 tuple(ad_item_ids),
             )
@@ -4037,7 +4080,7 @@ class AmazonAdMixin:
                     'ad_item_id': ad_item_id,
                     'kind': 'product',
                     'target_object': sku,
-                    'next_observe_at': row.get('next_observe_at'),
+                    'next_observe_at': row.get('next_observe_at') or row.get('updated_at'),
                     'entity_id': self._parse_int(row.get('id')),
                 })
 
@@ -4104,7 +4147,15 @@ class AmazonAdMixin:
             return None, '已是最后一个待观察项'
         picked_ad_row = self._fetch_adjustment_ad_item_brief(cur, picked.get('ad_item_id'))
         allowed = self._fetch_allowed_operations_for_ad(cur, picked_ad_row)
-        operation_type_id = self._pick_operation_type_id_for_observe_kind(allowed, picked.get('kind'))
+        kind = picked.get('kind')
+        fallback_kinds = []
+        if kind == 'placement':
+            fallback_kinds = ['delivery']
+        elif kind == 'delivery':
+            fallback_kinds = ['placement']
+        operation_type_id = self._pick_operation_type_id_for_observe_kind(
+            allowed, kind, fallback_kinds,
+        )
         if not operation_type_id:
             return None, '无法匹配操作类型'
         operation_type_name = self._operation_type_name_from_allowed(allowed, operation_type_id)
@@ -4140,6 +4191,23 @@ class AmazonAdMixin:
             return None, '暂无待观察项'
 
         target_object = (target_object or '').strip()
+        scoped = self._scope_observe_candidates_for_ad(candidates, ad_item_id)
+        sequential = bool(target_object and target_object != '-')
+
+        if not sequential:
+            err = None
+            for item in scoped:
+                result, err = self._serialize_adjustment_observe_pick(cur, item, stay_on_current=False)
+                if result:
+                    return result, None
+            for item in candidates:
+                if self._parse_int(item.get('ad_item_id')) == ad_item_id:
+                    continue
+                result, err = self._serialize_adjustment_observe_pick(cur, item, stay_on_current=False)
+                if result:
+                    return result, None
+            return None, self._format_observe_pick_failure(err, candidates, ad_item_id, scoped)
+
         preferred_kind = None
         if operation_type_id:
             cur.execute(
@@ -4161,7 +4229,7 @@ class AmazonAdMixin:
             result, err = self._serialize_adjustment_observe_pick(cur, candidates[idx], stay_on_current=False)
             if result:
                 return result, None
-        return None, err or '已是最后一个待观察项'
+        return None, self._format_observe_pick_failure(err, candidates, ad_item_id, scoped)
 
     def _is_archive_operation(self, op_name):
         return self._normalize_adjustment_operation_type_name(op_name) == '存档'

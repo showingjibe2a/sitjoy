@@ -3216,11 +3216,7 @@
             if (!selectedAdId) return;
             const btn = document.getElementById('targetObjectNextBtn');
             if (btn) btn.disabled = true;
-            const opId = String(document.getElementById('operationType')?.value || '').trim();
-            const target = String(document.getElementById('targetObject')?.value || '').trim();
-            let url = `/api/amazon-ad-adjustment?action=next-observe&ad_item_id=${encodeURIComponent(selectedAdId)}`;
-            if (opId) url += `&operation_type_id=${encodeURIComponent(opId)}`;
-            if (target) url += `&target_object=${encodeURIComponent(target)}`;
+            const url = `/api/amazon-ad-adjustment?action=next-observe&ad_item_id=${encodeURIComponent(selectedAdId)}`;
             return fetch(url)
                 .then(r => r.json())
                 .then(data => {
