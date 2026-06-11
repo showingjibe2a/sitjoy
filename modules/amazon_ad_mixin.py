@@ -3219,6 +3219,7 @@ class AmazonAdMixin:
         datetime_fields = {'adjust_date', 'start_time', 'end_time'}
         text_fields = {
             'target_object',
+            'before_value', 'after_value',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
             'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
             'attribution_orders', 'attribution_sales', 'remark',

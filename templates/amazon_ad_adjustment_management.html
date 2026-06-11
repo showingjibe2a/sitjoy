@@ -530,6 +530,41 @@
             border-radius: 4px;
             background: rgba(248, 246, 242, 0.65);
         }
+        .aa-period-editable {
+            display: block;
+            width: 100%;
+            min-height: 1.25em;
+            border-radius: 4px;
+            cursor: text;
+        }
+        .aa-period-editable.is-dirty {
+            background: rgba(255, 243, 205, 0.88);
+        }
+        .aa-period-editable.is-editing .aa-period-cell-display {
+            display: none;
+        }
+        .aa-period-editable .inline-input,
+        .aa-period-editable textarea {
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            font-size: 0.76rem;
+            min-height: 26px;
+        }
+        .aa-period-field-v .aa-period-editable {
+            padding: 0;
+            background: transparent;
+        }
+        .aa-period-field-v .aa-period-editable.is-dirty {
+            background: rgba(255, 243, 205, 0.88);
+        }
+        .aa-period-attrib-yesno.is-dirty .status-segment {
+            outline: 1px solid rgba(217, 119, 6, 0.45);
+            outline-offset: 1px;
+        }
+        .aa-period-attrib-field .status-segment--inline {
+            width: fit-content;
+        }
         .aa-period-grid-daily {
             font-size: 0.76rem;
             font-weight: 600;
@@ -746,7 +781,7 @@
                 </div>
 
                 <div class="card pm-card aa-period-col">
-                    <h3>修改前后列表</h3>
+                    <h3 class="label-help">修改前后列表<span class="help-dot" data-tip="双击各数据项可编辑；修改后使用底部「批量保存」。"></span></h3>
                     <div class="aa-period-list-wrap" id="aaPeriodList">
                         <div class="aa-period-empty">请先在左侧选择广告</div>
                     </div>
@@ -876,9 +911,9 @@
     </div>
 
     <div id="aaAttribSaveBar" class="pm-batch-float-bar" aria-live="polite">
-        <span class="pm-batch-float-count" id="aaAttribSaveText">已修改 0 条归因/备注</span>
-        <button type="button" class="btn-secondary" onclick="cancelAdjustmentAttribEdits()">取消</button>
-        <button type="button" class="btn-primary" onclick="saveAdjustmentAttribEdits()">批量保存</button>
+        <span class="pm-batch-float-count" id="aaAttribSaveText">已修改 0 条记录数据</span>
+        <button type="button" class="btn-secondary" onclick="cancelAdjustmentPeriodEdits()">取消</button>
+        <button type="button" class="btn-primary" onclick="saveAdjustmentPeriodEdits()">批量保存</button>
     </div>
 
     <footer>
@@ -904,7 +939,17 @@
         let pageStateSaveTimer = 0;
         let adjustmentPeriodAllCache = [];
         let adjustmentPeriodCache = [];
-        let adjustmentAttribDraft = {};
+        let adjustmentPeriodDraft = {};
+        const PERIOD_EDIT_FIELDS = [
+            'adjust_date', 'target_object',
+            'before_value', 'after_value',
+            'start_time', 'end_time',
+            'impressions', 'clicks', 'cost', 'orders', 'sales', 'top_of_search_is',
+            'acos', 'cpc', 'ctr', 'cvr',
+            'attribution_checked', 'attribution_orders', 'attribution_sales', 'remark',
+        ];
+        const PERIOD_RATIO_FIELDS = new Set(['acos', 'ctr', 'cvr']);
+        const PERIOD_DATETIME_FIELDS = new Set(['adjust_date', 'start_time', 'end_time']);
 
         const AA_BID_STRATEGIES = [
             '动态竞价-仅降低',
@@ -1399,46 +1444,428 @@
             return String(Math.max(1, Math.ceil(days - 1e-9)));
         }
 
-        function normalizeAdjustmentAttribState(item) {
-            return {
-                attribution_checked: String(item?.attribution_checked || '0') === '1' ? '1' : '0',
-                attribution_orders: String(item?.attribution_orders || '').trim(),
-                attribution_sales: String(item?.attribution_sales || '').trim(),
-                remark: String(item?.remark || '').trim(),
-            };
+        function ratioMetricInputValue(raw) {
+            const disp = formatComputedRatioMetricDisplay(raw);
+            return disp === '-' ? '' : disp;
         }
 
-        function getAdjustmentAttribEffective(item) {
+        function normalizeRatioMetricCompare(raw) {
+            const disp = formatComputedRatioMetricDisplay(raw);
+            return disp === '-' ? '' : disp;
+        }
+
+        function normalizePeriodDraftValue(field, rawValue) {
+            if (field === 'attribution_checked') {
+                return String(rawValue || '0') === '1' ? '1' : '0';
+            }
+            if (PERIOD_DATETIME_FIELDS.has(field)) {
+                return String(rawValue || '').trim();
+            }
+            return String(rawValue ?? '').trim();
+        }
+
+        function getPeriodFieldBaseValue(item, field) {
+            if (PERIOD_DATETIME_FIELDS.has(field)) {
+                return toDatetimeLocal(item[field]);
+            }
+            if (PERIOD_RATIO_FIELDS.has(field)) {
+                return ratioMetricInputValue(item[field]);
+            }
+            if (field === 'before_value' || field === 'after_value') {
+                const raw = String(item[field] ?? '').trim();
+                if (isModifyPlacementOperationName(item.operation_name)) {
+                    return placementDisplayFromStored(raw) || raw;
+                }
+                return raw;
+            }
+            if (field === 'attribution_checked') {
+                return String(item?.attribution_checked || '0') === '1' ? '1' : '0';
+            }
+            return String(item[field] ?? '').trim();
+        }
+
+        function getPeriodFieldEffectiveValue(item, field) {
             const id = String(item?.id || '');
-            if (id && adjustmentAttribDraft[id]) return { ...adjustmentAttribDraft[id] };
-            return normalizeAdjustmentAttribState(item);
+            const draft = adjustmentPeriodDraft[id];
+            if (draft && Object.prototype.hasOwnProperty.call(draft, field)) {
+                return draft[field];
+            }
+            return getPeriodFieldBaseValue(item, field);
         }
 
-        function attribStatesEqual(a, b) {
-            const left = normalizeAdjustmentAttribState(a || {});
-            const right = normalizeAdjustmentAttribState(b || {});
-            return left.attribution_checked === right.attribution_checked
-                && left.attribution_orders === right.attribution_orders
-                && left.attribution_sales === right.attribution_sales
-                && left.remark === right.remark;
+        function buildPeriodDraftFromItem(item) {
+            const draft = {};
+            PERIOD_EDIT_FIELDS.forEach((field) => {
+                draft[field] = getPeriodFieldBaseValue(item, field);
+            });
+            return draft;
         }
 
-        function countAdjustmentAttribEditedRows() {
-            return Object.keys(adjustmentAttribDraft).length;
+        function getPeriodEffectiveItem(item) {
+            const merged = { ...item };
+            PERIOD_EDIT_FIELDS.forEach((field) => {
+                merged[field] = getPeriodFieldEffectiveValue(item, field);
+            });
+            return merged;
         }
 
-        function syncAdjustmentAttribSaveBar() {
+        function periodFieldInputType(field) {
+            if (PERIOD_DATETIME_FIELDS.has(field)) return 'datetime-local';
+            if (field === 'remark') return 'textarea';
+            return 'text';
+        }
+
+        function getPeriodFieldDisplayHtml(item, field) {
+            const val = getPeriodFieldEffectiveValue(item, field);
+            if (field === 'attribution_checked') {
+                return val === '1' ? '是' : '否';
+            }
+            if (PERIOD_DATETIME_FIELDS.has(field)) {
+                const shown = formatDateTime(val) || '-';
+                return escapeHtml(shown);
+            }
+            if (field === 'before_value' || field === 'after_value') {
+                return formatAdjustmentValueDisplay(val, item.operation_name);
+            }
+            if (PERIOD_RATIO_FIELDS.has(field)) {
+                return escapeHtml(formatComputedRatioMetricDisplay(val));
+            }
+            if (field === 'cpc') {
+                return escapeHtml(formatMetricPlainText(val));
+            }
+            return formatMetricPlain(val);
+        }
+
+        function isPeriodFieldDirty(item, field) {
+            const id = String(item?.id || '');
+            const draft = adjustmentPeriodDraft[id];
+            if (!draft || !Object.prototype.hasOwnProperty.call(draft, field)) return false;
+            const orig = getPeriodFieldBaseValue(item, field);
+            const next = normalizePeriodDraftValue(field, draft[field]);
+            if (PERIOD_RATIO_FIELDS.has(field)) {
+                return normalizeRatioMetricCompare(orig) !== normalizeRatioMetricCompare(next);
+            }
+            return orig !== next;
+        }
+
+        function periodDraftUnchanged(item, draft) {
+            return PERIOD_EDIT_FIELDS.every((field) => {
+                const orig = getPeriodFieldBaseValue(item, field);
+                const next = normalizePeriodDraftValue(field, draft[field]);
+                if (PERIOD_RATIO_FIELDS.has(field)) {
+                    return normalizeRatioMetricCompare(orig) === normalizeRatioMetricCompare(next);
+                }
+                return orig === next;
+            });
+        }
+
+        function renderPeriodAttribCheckedSwitch(item) {
+            const recordId = escapeHtml(String(item.id));
+            const val = getPeriodFieldEffectiveValue(item, 'attribution_checked');
+            const isYes = val === '1';
+            const dirtyCls = isPeriodFieldDirty(item, 'attribution_checked') ? ' is-dirty' : '';
+            return `
+                <div class="yes-no-field aa-period-attrib-yesno${dirtyCls}" data-record-id="${recordId}">
+                    <div class="status-segment status-segment--inline aa-period-attrib-segment" data-value="${isYes ? '1' : '0'}">
+                        <button type="button" class="status-pill status-pill--enabled${isYes ? ' is-active' : ''}" data-period-yesno="1">是</button>
+                        <button type="button" class="status-pill status-pill--paused${!isYes ? ' is-active' : ''}" data-period-yesno="0">否</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function syncPeriodAttribCheckedSegment(yesNoWrap, item) {
+            if (!yesNoWrap || !item) return;
+            const val = getPeriodFieldEffectiveValue(item, 'attribution_checked');
+            const isYes = val === '1';
+            const seg = yesNoWrap.querySelector('.aa-period-attrib-segment');
+            if (seg) {
+                seg.dataset.value = isYes ? '1' : '0';
+                seg.querySelectorAll('.status-pill[data-period-yesno]').forEach((btn) => {
+                    btn.classList.toggle('is-active', String(btn.getAttribute('data-period-yesno') || '') === (isYes ? '1' : '0'));
+                });
+            }
+            yesNoWrap.classList.toggle('is-dirty', isPeriodFieldDirty(item, 'attribution_checked'));
+        }
+
+        function renderPeriodEditableCell(item, field) {
+            if (field === 'attribution_checked') {
+                return renderPeriodAttribCheckedSwitch(item);
+            }
+            const rid = escapeHtml(String(item.id));
+            const inputType = periodFieldInputType(field);
+            const dirtyCls = isPeriodFieldDirty(item, field) ? ' is-dirty' : '';
+            return `<span class="aa-period-editable${dirtyCls}" data-record-id="${rid}" data-field="${escapeHtml(field)}" data-input-type="${inputType}" title="双击编辑"><span class="aa-period-cell-display">${getPeriodFieldDisplayHtml(item, field)}</span></span>`;
+        }
+
+        function countAdjustmentPeriodEditedRows() {
+            return Object.keys(adjustmentPeriodDraft).length;
+        }
+
+        function syncAdjustmentPeriodSaveBar() {
             const bar = document.getElementById('aaAttribSaveBar');
             const text = document.getElementById('aaAttribSaveText');
             if (!bar || !text) return;
-            const count = countAdjustmentAttribEditedRows();
-            text.textContent = `已修改 ${count} 条归因/备注`;
+            const count = countAdjustmentPeriodEditedRows();
+            text.textContent = `已修改 ${count} 条记录数据`;
             bar.classList.toggle('active', count > 0);
             if (window.syncModalScrollLock) window.syncModalScrollLock();
         }
 
         function findAdjustmentPeriodItem(recordId) {
             return adjustmentPeriodAllCache.find(x => String(x.id) === String(recordId)) || null;
+        }
+
+        function updatePeriodDraft(recordId, field, rawValue) {
+            const item = findAdjustmentPeriodItem(recordId);
+            if (!item) return;
+            const id = String(recordId);
+            const draft = adjustmentPeriodDraft[id] || buildPeriodDraftFromItem(item);
+            draft[field] = normalizePeriodDraftValue(field, rawValue);
+            if (field === 'attribution_orders' || field === 'attribution_sales') {
+                if (draft.attribution_orders || draft.attribution_sales) {
+                    draft.attribution_checked = '1';
+                }
+            }
+            if (periodDraftUnchanged(item, draft)) {
+                delete adjustmentPeriodDraft[id];
+            } else {
+                adjustmentPeriodDraft[id] = draft;
+            }
+            refreshPeriodCardAfterEdit(id, field);
+            if (field === 'attribution_orders' || field === 'attribution_sales') {
+                refreshPeriodCardAfterEdit(id, 'attribution_checked');
+            }
+            syncAdjustmentPeriodSaveBar();
+        }
+
+        function refreshPeriodCardAfterEdit(recordId, changedField) {
+            const card = document.querySelector(`.aa-period-card[data-record-id="${recordId}"]`);
+            const item = findAdjustmentPeriodItem(recordId);
+            if (!card || !item) return;
+            if (changedField === 'attribution_checked') {
+                const yesNoWrap = card.querySelector('.aa-period-attrib-yesno');
+                if (yesNoWrap) syncPeriodAttribCheckedSegment(yesNoWrap, item);
+                return;
+            }
+            card.querySelectorAll(`.aa-period-editable[data-field="${changedField}"]`).forEach((cell) => {
+                const display = cell.querySelector('.aa-period-cell-display');
+                if (display) {
+                    display.innerHTML = getPeriodFieldDisplayHtml(item, changedField);
+                }
+                cell.classList.toggle('is-dirty', isPeriodFieldDirty(item, changedField));
+            });
+            const metricFields = new Set(['start_time', 'end_time', 'impressions', 'clicks', 'cost', 'orders', 'sales']);
+            if (metricFields.has(changedField)) {
+                refreshPeriodCardDailyMetrics(card, item);
+            }
+            if (changedField === 'attribution_orders' || changedField === 'attribution_sales') {
+                const yesNoWrap = card.querySelector('.aa-period-attrib-yesno');
+                if (yesNoWrap) syncPeriodAttribCheckedSegment(yesNoWrap, item);
+            }
+        }
+
+        function refreshPeriodCardDailyMetrics(card, item) {
+            const eff = getPeriodEffectiveItem(item);
+            const start = eff.start_time;
+            const end = eff.end_time;
+            const daysText = formatPeriodDayCountText(start, end);
+            const badge = card.querySelector('[data-role="period-day-badge"]');
+            if (badge) badge.textContent = `共 ${daysText} 日`;
+            const dailyMap = {
+                impressions: formatDailyMetricText(eff.impressions, start, end),
+                clicks: formatDailyMetricText(eff.clicks, start, end),
+                cost: formatDailyMetricText(eff.cost, start, end),
+                orders: formatDailyMetricText(eff.orders, start, end),
+                sales: formatDailyMetricText(eff.sales, start, end),
+            };
+            Object.keys(dailyMap).forEach((field) => {
+                const el = card.querySelector(`[data-role="period-daily-${field}"]`);
+                if (el) el.textContent = dailyMap[field];
+            });
+        }
+
+        function beginPeriodCellEdit(cell) {
+            if (!cell || cell.classList.contains('is-editing')) return;
+            const recordId = cell.getAttribute('data-record-id');
+            const field = cell.getAttribute('data-field');
+            const item = findAdjustmentPeriodItem(recordId);
+            if (!item || !field) return;
+            const displayEl = cell.querySelector('.aa-period-cell-display');
+            if (!displayEl) return;
+            const inputType = cell.getAttribute('data-input-type') || 'text';
+            const currentVal = getPeriodFieldEffectiveValue(item, field);
+            cell.classList.add('is-editing');
+            let input;
+            if (inputType === 'datetime-local') {
+                input = document.createElement('input');
+                input.type = 'datetime-local';
+                input.className = 'inline-input preview-edit-input aa-period-edit-input';
+            } else if (inputType === 'textarea') {
+                input = document.createElement('textarea');
+                input.className = 'inline-input aa-period-edit-input';
+                input.rows = 2;
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'inline-input preview-edit-input aa-period-edit-input';
+            }
+            input.value = currentVal;
+            displayEl.style.display = 'none';
+            cell.appendChild(input);
+            input.focus();
+            if (inputType === 'text' && input.select) {
+                try { input.select(); } catch (_e) { /* ignore */ }
+            }
+            const finish = (commit) => {
+                if (!cell.classList.contains('is-editing')) return;
+                if (commit) {
+                    updatePeriodDraft(recordId, field, input.value);
+                }
+                displayEl.style.display = '';
+                input.remove();
+                cell.classList.remove('is-editing');
+            };
+            input.addEventListener('blur', () => finish(true));
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    finish(false);
+                } else if (e.key === 'Enter' && inputType !== 'textarea') {
+                    e.preventDefault();
+                    finish(true);
+                }
+            });
+        }
+
+        function periodDraftFieldToServerValue(field, draftValue, item) {
+            const text = normalizePeriodDraftValue(field, draftValue);
+            if (field === 'attribution_checked') return text === '1' ? 1 : 0;
+            if (PERIOD_DATETIME_FIELDS.has(field)) {
+                if (!text) return null;
+                const normalized = text.length === 16 ? `${text}:00` : text;
+                return normalized.replace('T', ' ');
+            }
+            if (field === 'before_value' || field === 'after_value') {
+                if (isModifyPlacementOperationName(item.operation_name)) {
+                    return placementStoredFromDisplay(text) || null;
+                }
+                return text || null;
+            }
+            return text || null;
+        }
+
+        function collectPeriodUpdateItems() {
+            return Object.keys(adjustmentPeriodDraft).map((idKey) => {
+                const item = findAdjustmentPeriodItem(idKey);
+                if (!item) return null;
+                const draft = adjustmentPeriodDraft[idKey];
+                const payload = { id: Number(idKey) };
+                let hasChange = false;
+                PERIOD_EDIT_FIELDS.forEach((field) => {
+                    const orig = getPeriodFieldBaseValue(item, field);
+                    const next = normalizePeriodDraftValue(field, draft[field]);
+                    const changed = PERIOD_RATIO_FIELDS.has(field)
+                        ? normalizeRatioMetricCompare(orig) !== normalizeRatioMetricCompare(next)
+                        : orig !== next;
+                    if (changed) {
+                        payload[field] = next;
+                        hasChange = true;
+                    }
+                });
+                return hasChange ? payload : null;
+            }).filter(Boolean);
+        }
+
+        function mergePeriodEditsLocally(failedIds) {
+            const failed = failedIds instanceof Set ? failedIds : new Set();
+            Object.keys(adjustmentPeriodDraft).forEach((idKey) => {
+                const id = Number(idKey);
+                if (failed.has(id)) return;
+                const draft = adjustmentPeriodDraft[idKey];
+                const row = findAdjustmentPeriodItem(id);
+                if (!row) return;
+                PERIOD_EDIT_FIELDS.forEach((field) => {
+                    if (!Object.prototype.hasOwnProperty.call(draft, field)) return;
+                    const serverVal = periodDraftFieldToServerValue(field, draft[field], row);
+                    if (field === 'attribution_checked') {
+                        row[field] = serverVal === 1 ? 1 : 0;
+                    } else {
+                        row[field] = serverVal == null ? '' : serverVal;
+                    }
+                });
+                delete adjustmentPeriodDraft[idKey];
+            });
+            applyAdjustmentPeriodFilter();
+        }
+
+        function cancelAdjustmentPeriodEdits() {
+            adjustmentPeriodDraft = {};
+            applyAdjustmentPeriodFilter();
+            syncAdjustmentPeriodSaveBar();
+        }
+
+        function saveAdjustmentPeriodEdits() {
+            const items = collectPeriodUpdateItems();
+            if (!items.length) {
+                syncAdjustmentPeriodSaveBar();
+                return;
+            }
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        aaSaveResult({
+                            action: 'save',
+                            isError: true,
+                            message: (data && data.message) || '批量保存失败',
+                            errors: data && data.errors,
+                        });
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    const failedIds = new Set(
+                        (Array.isArray(data.errors) ? data.errors : [])
+                            .map(e => Number(e && e.id))
+                            .filter(id => Number.isFinite(id) && id > 0)
+                    );
+                    mergePeriodEditsLocally(failedIds);
+                    syncAdjustmentPeriodSaveBar();
+                    aaSaveResult({
+                        action: 'save',
+                        isError: errCount > 0,
+                        message: `已保存 ${data.updated || 0} 条记录${errCount ? `，失败 ${errCount} 条` : ''}`,
+                        errors: data.errors,
+                    });
+                })
+                .catch(err => {
+                    aaSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
+                });
+        }
+
+        function bindAdjustmentPeriodEvents() {
+            const wrap = document.getElementById('aaPeriodList');
+            if (!wrap || wrap.dataset.periodEditBound === '1') return;
+            wrap.dataset.periodEditBound = '1';
+            wrap.addEventListener('dblclick', (e) => {
+                const cell = e.target.closest('.aa-period-editable');
+                if (!cell || cell.classList.contains('is-editing')) return;
+                e.preventDefault();
+                beginPeriodCellEdit(cell);
+            });
+            wrap.addEventListener('click', (e) => {
+                const btn = e.target.closest('.aa-period-attrib-segment .status-pill[data-period-yesno]');
+                if (!btn) return;
+                e.preventDefault();
+                const yesNoWrap = btn.closest('.aa-period-attrib-yesno');
+                const recordId = yesNoWrap?.getAttribute('data-record-id');
+                if (!recordId) return;
+                updatePeriodDraft(recordId, 'attribution_checked', btn.getAttribute('data-period-yesno') || '0');
+            });
         }
 
         function enableAdjustmentPeriodFilter() {
@@ -1487,105 +1914,6 @@
             renderAdjustmentPeriodList(filterAdjustmentPeriodItems(adjustmentPeriodAllCache));
         }
 
-        function updateAdjustmentAttribDraft(recordId, field, rawValue) {
-            const item = findAdjustmentPeriodItem(recordId);
-            if (!item) return;
-            const id = String(recordId);
-            const next = { ...getAdjustmentAttribEffective(item) };
-            const f = String(field || '').trim();
-            if (f === 'attribution_orders' || f === 'attribution_sales' || f === 'remark') {
-                next[f] = String(rawValue ?? '').trim();
-            }
-            if (f === 'attribution_orders' || f === 'attribution_sales') {
-                if (next.attribution_orders || next.attribution_sales) {
-                    next.attribution_checked = '1';
-                }
-            }
-            if (attribStatesEqual(next, item)) {
-                delete adjustmentAttribDraft[id];
-            } else {
-                adjustmentAttribDraft[id] = next;
-            }
-            const card = document.querySelector(`.aa-period-card[data-record-id="${id}"]`);
-            const checkedEl = card?.querySelector('[data-role="attrib-checked-text"]');
-            if (checkedEl) {
-                checkedEl.textContent = next.attribution_checked === '1' ? '是' : '否';
-            }
-            syncAdjustmentAttribSaveBar();
-        }
-
-        function cancelAdjustmentAttribEdits() {
-            adjustmentAttribDraft = {};
-            applyAdjustmentPeriodFilter();
-            syncAdjustmentAttribSaveBar();
-        }
-
-        function saveAdjustmentAttribEdits() {
-            const ids = Object.keys(adjustmentAttribDraft);
-            if (!ids.length) {
-                syncAdjustmentAttribSaveBar();
-                return;
-            }
-            const items = ids.map((id) => ({
-                id: Number(id),
-                ...adjustmentAttribDraft[id],
-            }));
-            fetch('/api/amazon-ad-adjustment', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items }),
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (!data || data.status !== 'success') {
-                        aaSaveResult({
-                            action: 'save',
-                            isError: true,
-                            message: (data && data.message) || '批量保存失败',
-                            errors: data && data.errors,
-                        });
-                        return;
-                    }
-                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-                    items.forEach((up) => {
-                        const row = findAdjustmentPeriodItem(up.id);
-                        if (!row) return;
-                        row.attribution_checked = up.attribution_checked === '1' ? 1 : 0;
-                        row.attribution_orders = up.attribution_orders || '';
-                        row.attribution_sales = up.attribution_sales || '';
-                        row.remark = up.remark || '';
-                        delete adjustmentAttribDraft[String(up.id)];
-                    });
-                    applyAdjustmentPeriodFilter();
-                    syncAdjustmentAttribSaveBar();
-                    aaSaveResult({
-                        action: 'save',
-                        isError: errCount > 0,
-                        message: `已保存 ${data.updated || 0} 条归因/备注${errCount ? `，失败 ${errCount} 条` : ''}`,
-                        errors: data.errors,
-                    });
-                })
-                .catch(err => {
-                    aaSaveResult({ action: 'save', isError: true, message: '请求失败: ' + err });
-                });
-        }
-
-        function bindAdjustmentPeriodEvents() {
-            const wrap = document.getElementById('aaPeriodList');
-            if (!wrap || wrap.dataset.attribBound === '1') return;
-            wrap.dataset.attribBound = '1';
-            wrap.addEventListener('input', (e) => {
-                const el = e.target;
-                if (!el || !el.classList || !el.classList.contains('aa-period-attrib-input')) return;
-                updateAdjustmentAttribDraft(el.dataset.recordId, el.dataset.field, el.value);
-            });
-            wrap.addEventListener('change', (e) => {
-                const el = e.target;
-                if (!el || !el.classList || !el.classList.contains('aa-period-attrib-input')) return;
-                updateAdjustmentAttribDraft(el.dataset.recordId, el.dataset.field, el.value);
-            });
-        }
-
         function renderPeriodFieldList(rows) {
             return rows.map(([label, valueHtml]) => `
                 <div class="aa-period-field-row">
@@ -1596,34 +1924,34 @@
         }
 
         function renderPeriodMetricsBlock(item) {
-            const start = item.start_time;
-            const end = item.end_time;
+            const eff = getPeriodEffectiveItem(item);
+            const start = eff.start_time;
+            const end = eff.end_time;
             const daysText = formatPeriodDayCountText(start, end);
-            const metricRows = [
-                ['曝光', formatMetricPlainText(item.impressions), formatDailyMetricText(item.impressions, start, end)],
-                ['点击', formatMetricPlainText(item.clicks), formatDailyMetricText(item.clicks, start, end)],
-                ['花费', formatMetricPlainText(item.cost), formatDailyMetricText(item.cost, start, end)],
-                ['订单', formatMetricPlainText(item.orders), formatDailyMetricText(item.orders, start, end)],
-                ['销售额', formatMetricPlainText(item.sales), formatDailyMetricText(item.sales, start, end)],
-            ];
-            const metricBody = metricRows.map(([label, val, daily]) => `
+            const metricFields = ['impressions', 'clicks', 'cost', 'orders', 'sales'];
+            const metricLabels = ['曝光', '点击', '花费', '订单', '销售额'];
+            const metricBody = metricLabels.map((label, idx) => {
+                const field = metricFields[idx];
+                const daily = formatDailyMetricText(eff[field], start, end);
+                return `
                 <div class="aa-period-grid-label">${escapeHtml(label)}</div>
-                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
-                <div class="aa-period-grid-daily">${escapeHtml(daily)}</div>
-            `).join('');
+                <div class="aa-period-grid-val">${renderPeriodEditableCell(item, field)}</div>
+                <div class="aa-period-grid-daily" data-role="period-daily-${field}">${escapeHtml(daily)}</div>
+            `;
+            }).join('');
             const topIsRow = `
                 <div class="aa-period-grid-label">首页首位IS</div>
-                <div class="aa-period-grid-val aa-period-grid-val--span-daily">${formatMetricPlain(item.top_of_search_is)}</div>
+                <div class="aa-period-grid-val aa-period-grid-val--span-daily">${renderPeriodEditableCell(item, 'top_of_search_is')}</div>
             `;
             return `
                 <div class="aa-period-block">
                     <div class="aa-period-block-title">区间数据</div>
                     <div class="aa-period-data-grid">
                         <div class="aa-period-grid-label">开始时间</div>
-                        <div class="aa-period-grid-val">${escapeHtml(formatDateTime(start) || '-')}</div>
-                        <div class="aa-period-daily-badge">共 ${escapeHtml(daysText)} 日<span class="aa-period-daily-sub">日均</span></div>
+                        <div class="aa-period-grid-val">${renderPeriodEditableCell(item, 'start_time')}</div>
+                        <div class="aa-period-daily-badge" data-role="period-day-badge">共 ${escapeHtml(daysText)} 日<span class="aa-period-daily-sub">日均</span></div>
                         <div class="aa-period-grid-label">结束时间</div>
-                        <div class="aa-period-grid-val">${escapeHtml(formatDateTime(end) || '-')}</div>
+                        <div class="aa-period-grid-val">${renderPeriodEditableCell(item, 'end_time')}</div>
                         ${metricBody}
                         ${topIsRow}
                     </div>
@@ -1633,14 +1961,14 @@
 
         function renderPeriodComputedBlock(item) {
             const rows = [
-                ['ACOS', formatComputedRatioMetricDisplay(item.acos)],
-                ['CPC', formatMetricPlainText(item.cpc)],
-                ['CTR', formatComputedRatioMetricDisplay(item.ctr)],
-                ['CVR', formatComputedRatioMetricDisplay(item.cvr)],
+                ['ACOS', 'acos'],
+                ['CPC', 'cpc'],
+                ['CTR', 'ctr'],
+                ['CVR', 'cvr'],
             ];
-            const body = rows.map(([label, val]) => `
+            const body = rows.map(([label, field]) => `
                 <div class="aa-period-grid-label">${escapeHtml(label)}</div>
-                <div class="aa-period-grid-val">${escapeHtml(val)}</div>
+                <div class="aa-period-grid-val">${renderPeriodEditableCell(item, field)}</div>
             `).join('');
             return `
                 <div class="aa-period-block">
@@ -1651,28 +1979,25 @@
         }
 
         function renderPeriodAttribBlock(item) {
-            const eff = getAdjustmentAttribEffective(item);
-            const rid = escapeHtml(String(item.id));
-            const checkedText = eff.attribution_checked === '1' ? '是' : '否';
             return `
                 <div class="aa-period-block">
                     <div class="aa-period-block-title">归因与备注</div>
                     <div class="aa-period-attrib-stack">
-                        <div class="aa-period-attrib-checked">归因已检查：<strong data-role="attrib-checked-text">${checkedText}</strong></div>
+                        <div class="aa-period-attrib-field">
+                            <label>归因已检查</label>
+                            ${renderPeriodAttribCheckedSwitch(item)}
+                        </div>
                         <div class="aa-period-attrib-field">
                             <label>归因订单</label>
-                            <input type="text" class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="attribution_orders"
-                                value="${escapeHtml(eff.attribution_orders)}" placeholder="选填">
+                            ${renderPeriodEditableCell(item, 'attribution_orders')}
                         </div>
                         <div class="aa-period-attrib-field">
                             <label>归因销售额</label>
-                            <input type="text" class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="attribution_sales"
-                                value="${escapeHtml(eff.attribution_sales)}" placeholder="选填">
+                            ${renderPeriodEditableCell(item, 'attribution_sales')}
                         </div>
                         <div class="aa-period-attrib-field">
                             <label>备注</label>
-                            <textarea class="inline-input aa-period-attrib-input" data-record-id="${rid}" data-field="remark"
-                                placeholder="选填">${escapeHtml(eff.remark)}</textarea>
+                            ${renderPeriodEditableCell(item, 'remark')}
                         </div>
                     </div>
                 </div>
@@ -1684,13 +2009,13 @@
             const head = `修改 #${index + 1}`;
             const metaRows = [
                 ['操作类型', escapeHtml(opName)],
-                ['操作对象', escapeHtml(formatMetricPlainText(item.target_object))],
+                ['操作对象', renderPeriodEditableCell(item, 'target_object')],
                 ['操作原因', escapeHtml(formatMetricPlainText(item.reason_name))],
-                ['操作时间', escapeHtml(formatDateTime(item.adjust_date) || '-')],
+                ['操作时间', renderPeriodEditableCell(item, 'adjust_date')],
             ];
             const changeRows = [
-                ['修改前', formatAdjustmentValueDisplay(item.before_value, item.operation_name)],
-                ['修改后', formatAdjustmentValueDisplay(item.after_value, item.operation_name)],
+                ['修改前', renderPeriodEditableCell(item, 'before_value')],
+                ['修改后', renderPeriodEditableCell(item, 'after_value')],
             ];
             return `
                 <article class="aa-period-card" data-record-id="${escapeHtml(String(item.id))}">
@@ -1727,7 +2052,7 @@
                 adjustmentPeriodAllCache = [];
                 adjustmentPeriodCache = [];
                 wrap.innerHTML = '<div class="aa-period-empty">请先在左侧选择广告</div>';
-                syncAdjustmentAttribSaveBar();
+                syncAdjustmentPeriodSaveBar();
                 return;
             }
             const list = Array.isArray(items) ? items.slice().reverse() : [];
@@ -1737,13 +2062,13 @@
                     ? '暂无匹配当前操作类型与对象的记录'
                     : '该广告暂无调整记录';
                 wrap.innerHTML = `<div class="aa-period-empty">${escapeHtml(emptyText)}</div>`;
-                syncAdjustmentAttribSaveBar();
+                syncAdjustmentPeriodSaveBar();
                 return;
             }
             wrap.innerHTML = list.map((item, idx) => renderAdjustmentPeriodCard(item, idx)).join('');
             bindAdjustmentPeriodEvents();
             scrollPeriodListToLatest();
-            syncAdjustmentAttribSaveBar();
+            syncAdjustmentPeriodSaveBar();
         }
 
         function loadAdjustmentPeriodList() {
@@ -1761,7 +2086,7 @@
                     if (data.status !== 'success') {
                         adjustmentPeriodAllCache = [];
                         wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">${escapeHtml(data.message || '加载失败')}</div>`;
-                        syncAdjustmentAttribSaveBar();
+                        syncAdjustmentPeriodSaveBar();
                         return;
                     }
                     adjustmentPeriodAllCache = Array.isArray(data.items) ? data.items.slice() : [];
@@ -1770,7 +2095,7 @@
                 .catch(err => {
                     adjustmentPeriodAllCache = [];
                     wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">加载失败: ${escapeHtml(String(err))}</div>`;
-                    syncAdjustmentAttribSaveBar();
+                    syncAdjustmentPeriodSaveBar();
                 });
         }
 
@@ -3422,9 +3747,9 @@
         function selectAd(adId, options = {}) {
             const restore = options.restoreForm || null;
             selectedAdId = String(adId || '');
-            adjustmentAttribDraft = {};
+            adjustmentPeriodDraft = {};
             if (!restore) supplementaryTargetObjectKey = '';
-            syncAdjustmentAttribSaveBar();
+            syncAdjustmentPeriodSaveBar();
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
             updateInfoPanel(selectedAd ? listItemToAdInfo(selectedAd) : null);
