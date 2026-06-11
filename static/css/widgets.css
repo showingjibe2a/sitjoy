@@ -68,18 +68,6 @@
     font-size: 0.72rem;
     box-sizing: border-box;
 }
-#mjRuleNotice .mj-rule-preset-hint {
-    margin: 0;
-    font-size: 0.76rem;
-    line-height: 1.45;
-    color: inherit;
-}
-.mj-rule-preset-hint {
-    margin: 0;
-    font-size: 0.74rem;
-    line-height: 1.4;
-    color: var(--morandi-slate);
-}
 .mj-table-placeholder {
     margin: 2rem 1rem;
     text-align: center;

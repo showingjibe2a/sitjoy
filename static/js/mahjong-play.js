@@ -1061,9 +1061,10 @@
     sel.value = preset;
     rulePresetSyncing = false;
     if (hint) {
-      hint.textContent = (s && s.rule_summary)
+      const tip = (s && s.rule_summary)
         || MJ_PRESET_HINTS[preset]
         || MJ_PRESET_HINTS.standard;
+      hint.setAttribute('data-tip', tip);
     }
     sel.disabled = !(inLobby && s && s.you_are_host);
   }
@@ -2469,7 +2470,7 @@
     const hint = $('mjRulePresetHint');
     if (!sel || !hint) return;
     const key = sel.value || 'standard';
-    hint.textContent = MJ_PRESET_HINTS[key] || MJ_PRESET_HINTS.standard;
+    hint.setAttribute('data-tip', MJ_PRESET_HINTS[key] || MJ_PRESET_HINTS.standard);
   }
 
   function onRulePresetChange() {

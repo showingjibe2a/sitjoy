@@ -670,8 +670,7 @@
 
     <div class="pm-modal" id="spParentEditModal">
         <div class="pm-modal-content" style="max-width: 520px;">
-            <h3 style="margin-top:0;">编辑父体</h3>
-            <p class="helper-text" style="margin:0 0 0.75rem;">修改父体编号、店铺与费率预估；保存后刷新列表。</p>
+            <h3 style="margin-top:0;" class="label-help">编辑父体<span class="help-dot" data-tip="修改父体编号、店铺与费率预估；保存后刷新列表。"></span></h3>
             <div class="pm-form">
                 <input type="hidden" id="spParentEditId">
                 <div class="form-group pm-form-full">
@@ -3494,7 +3493,7 @@
             if (!tbody) return;
             const vids = Array.from(gallerySelectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
             if (!vids.length) {
-                tbody.innerHTML = `<tr><td colspan="4" class="helper-text" style="text-align:center;">未选择</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" class="pm-muted" style="text-align:center;">未选择</td></tr>`;
                 applyMainImageRecommendedNameIfNeeded();
                 return;
             }
@@ -3555,7 +3554,6 @@
 
                 const html = `
                     <div style="display:grid; gap:0.6rem;">
-                        <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
                         <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
                             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
                                 <thead style="position:sticky; top:0; z-index:1;">
@@ -3589,12 +3587,12 @@
                                 <tbody id="galleryVariantPickerTbody"></tbody>
                             </table>
                         </div>
-                        <div class="helper-text" style="margin:0;">提示：输入框会在本地记忆（同一次访问）以节省重复筛选时间。</div>
                     </div>
                 `;
                 const openPickerDialog = (window.showHtmlConfirmCompat
                     ? window.showHtmlConfirmCompat({
                         title: '选择规格',
+                        titleHelpTip: '可分别搜索：货号 / 规格 / 面料（支持多选）。输入框会在本地记忆（同一次访问）以节省重复筛选时间。',
                         htmlText: html,
                         confirmText: '确定',
                         cancelText: '取消',

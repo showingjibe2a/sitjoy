@@ -22,10 +22,6 @@
             font-size: 0.95rem;
             min-width: 240px;
         }
-        .material-parent-hint {
-            font-size: 0.85rem;
-            color: var(--morandi-slate);
-        }
         .material-row-parent td {
             font-weight: 600;
             background: rgba(236, 231, 223, 0.65);
@@ -164,10 +160,9 @@
                     <div class="material-type-group" id="modalMaterialType"></div>
                 </div>
                 <div class="form-group pm-form-full">
-                    <label for="modalMaterialParent">父体（可选）</label>
+                    <label for="modalMaterialParent" class="label-help">父体（可选）<span class="help-dot" data-tip="不选择默认为父体"></span></label>
                     <div class="material-parent-select">
                         <select id="modalMaterialParent"></select>
-                        <span class="material-parent-hint">不选择默认为父体</span>
                     </div>
                 </div>
             </div>

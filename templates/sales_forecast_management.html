@@ -1607,14 +1607,6 @@
             font-weight: 600 !important;
             line-height: 1.2 !important;
         }
-        .sf-perf-fields-panel-hint {
-            grid-column: 1 / -1;
-            font-size: 0.72rem;
-            color: rgba(42, 36, 32, 0.55);
-            line-height: 1.35;
-            padding: 0.1rem 0.2rem 0.25rem;
-            margin: 0;
-        }
         .sf-perf-fields-panel .pm-table-columns-item-main label {
             display: inline-flex;
             align-items: center;
@@ -1915,8 +1907,11 @@
                 <span class="sf-perf-float-title" id="sfPerfPanelTitle">产品表现</span>
             </div>
             <div class="sf-perf-float-panel-header-right">
-                <div class="pm-table-columns" id="sfPerfFieldsDropdown" title="勾选要在表格中展示的指标行；月份列标题始终显示">
-                    <button type="button" class="pm-table-columns-trigger btn-secondary" id="sfPerfFieldsTrigger" aria-expanded="false" aria-controls="sfPerfFieldsPanel">字段显示</button>
+                <div class="pm-table-columns" id="sfPerfFieldsDropdown">
+                    <span class="label-help" style="display:inline-flex;align-items:center;gap:0.25rem;">
+                        <button type="button" class="pm-table-columns-trigger btn-secondary" id="sfPerfFieldsTrigger" aria-expanded="false" aria-controls="sfPerfFieldsPanel">字段显示</button>
+                        <span class="help-dot" data-tip="月份列标题始终显示。以下为产品表现矩阵中的指标行；勾选与顺序保存在本机浏览器（↑/↓ 调整行序）。"></span>
+                    </span>
                     <div class="pm-table-columns-panel sf-perf-fields-panel" id="sfPerfFieldsPanel" role="region" aria-label="指标行显示"></div>
                 </div>
                 <button type="button" class="modal-close" id="sfPerfPanelClose" aria-label="关闭">×</button>
@@ -8471,7 +8466,6 @@
             catalogKeys.forEach((k) => {
                 if (!order.includes(k)) order.push(k);
             });
-            const hint = '<p class="sf-perf-fields-panel-hint">月份列标题始终显示。以下为产品表现矩阵中的<strong>指标行</strong>；勾选与顺序保存在本机浏览器（↑/↓ 调整行序）。</p>';
             const items = order.map((fkey) => {
                 const k = escapeHtml(fkey);
                 const lab = escapeHtml(labelByKey.get(fkey) || fkey);
@@ -8484,7 +8478,7 @@
                     + '<button type="button" class="btn-ghost sf-perf-field-move" data-dir="down" title="下移">↓</button>'
                     + '</div></div>';
             }).join('');
-            fldPanel.innerHTML = hint + items;
+            fldPanel.innerHTML = items;
             fldPanel.querySelectorAll('input[type="checkbox"][data-field-key]').forEach((inp) => {
                 inp.addEventListener('change', onSfPerfMatrixRowVisibilityChange);
             });

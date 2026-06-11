@@ -41,7 +41,6 @@
         .cd-lines-table tr:last-child td { border-bottom: none; }
         .cd-lines-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
         .cd-empty { padding: 2rem; text-align: center; color: var(--morandi-slate); font-size: 0.92rem; }
-        .cd-note { font-size: 0.82rem; color: var(--morandi-slate); margin: 0 0 0.75rem; line-height: 1.45; }
         .cd-loading { position: fixed; inset: 0; background: rgba(255,252,248,.55); display: none; align-items: center; justify-content: center; z-index: 80; }
         .cd-loading.is-open { display: flex; }
         .cd-lead-grid { display: grid; grid-template-columns: 1fr 5rem 5rem; gap: 0.35rem 0.5rem; align-items: center; max-width: 420px; }
@@ -52,7 +51,7 @@
     <div id="site-header"></div>
     <div class="container">
         <section class="hero" style="margin-bottom: 1rem;">
-            <h2>凑柜草稿</h2>
+            <h2 class="label-help">凑柜草稿<span class="help-dot" data-tip="建议发货量 = max(预测期内最小全链路盈余缺口, 目标覆盖月数×月均预测 − 期末盈余)；数量向上取整至装柜量整数倍。未关联工厂的 SKU 归入「未关联工厂」单独分柜。"></span></h2>
             <p>按下单 SKU 预测与全链路库存盈余估算补货量；<strong>同一柜可混多个 SKU</strong>，默认<strong>按工厂分柜</strong>（暂不跨工厂拼柜）。</p>
         </section>
 
@@ -100,10 +99,6 @@
                     <button type="button" class="btn-primary" id="cdBtnGenerate">生成凑柜草稿</button>
                 </div>
             </div>
-            <p class="cd-note" style="margin-top: 0.65rem;">
-                建议发货量 = max(预测期内最小全链路盈余缺口, 目标覆盖月数×月均预测 − 期末盈余)；数量向上取整至装柜量整数倍。
-                未关联工厂的 SKU 归入「未关联工厂」单独分柜。
-            </p>
         </div>
 
         <div class="cd-summary" id="cdSummary" hidden></div>
@@ -117,11 +112,10 @@
     <div class="modal" id="cdLeadtimeModal" hidden>
         <div class="modal-content" style="max-width: 480px;">
             <div class="modal-header">
-                <h3>工厂库存时效（按目的区域）</h3>
+                <h3 class="label-help">工厂库存时效（按目的区域）<span class="help-dot" data-tip="在库→海外仓上架天数、在制完工→上架天数；与销量预测页共用本地配置。"></span></h3>
                 <button type="button" class="modal-close" id="cdLeadtimeClose" aria-label="关闭">×</button>
             </div>
             <div class="modal-body">
-                <p class="cd-note">在库→海外仓上架天数、在制完工→上架天数；与销量预测页共用本地配置。</p>
                 <div class="cd-lead-grid" id="cdLeadtimeGrid"></div>
             </div>
             <div class="modal-footer">
@@ -208,7 +202,7 @@
                 return `<button type="button" class="${cls}" data-value="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
             }).join('');
             if (!regions.length) {
-                seg.innerHTML = '<span class="cd-note" style="margin:0;">暂无目的区域</span>';
+                seg.innerHTML = '<span class="pm-muted" style="margin:0;">暂无目的区域</span>';
             }
         }
 

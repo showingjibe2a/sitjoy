@@ -118,16 +118,20 @@
     const htmlText = String(conf.htmlText || conf.message || conf.description || '').trim();
     if (!htmlText) return Promise.resolve(false);
     const title = String(conf.title || '确认');
+    const titleHelpTip = String(conf.titleHelpTip || '').trim();
     const confirmText = String(conf.confirmText || '确定');
     const cancelText = String(conf.cancelText || '取消');
     const maxWidth = Number(conf.maxWidth || 920);
+    const titleHtml = titleHelpTip
+      ? `<h3 class="label-help" style="margin-top:0;">${escapeHtml(title)}<span class="help-dot" data-tip="${escapeHtml(titleHelpTip)}"></span></h3>`
+      : `<h3 style="margin-top:0;">${escapeHtml(title)}</h3>`;
 
     return new Promise((resolve) => {
       const modal = document.createElement('div');
       modal.className = 'pm-modal active';
       modal.innerHTML = `
         <div class="pm-modal-content" style="max-width:${maxWidth}px;">
-          <h3 style="margin-top:0;">${escapeHtml(title)}</h3>
+          ${titleHtml}
           <div class="pm-modal-scroll"><div id="appHtmlConfirmBody"></div></div>
           <div class="pm-modal-actions">
             <button type="button" class="btn-secondary" id="appHtmlConfirmCancel">${escapeHtml(cancelText)}</button>
@@ -168,6 +172,7 @@
       modal.addEventListener('pointercancel', onBackdropPointerReset);
       document.addEventListener('keydown', onEsc);
       document.body.appendChild(modal);
+      if (window.bindFloatingHelpDots) window.bindFloatingHelpDots(modal);
       if (window.syncModalScrollLock) window.syncModalScrollLock();
     });
   }
@@ -488,7 +493,7 @@
     if (!tbody) return;
     const vids = Array.from(selectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
     if (!vids.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="helper-text" style="text-align:center;">未选择</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="pm-muted" style="text-align:center;">未选择</td></tr>`;
       applyRecommendedNameIfNeeded();
       updateApplyHintUi();
       return;
@@ -527,7 +532,7 @@
     if (!tbody) return;
     const ids = Array.from(selectedFabricIds || []).map(v => Number(v)).filter(v => v > 0);
     if (!ids.length) {
-      tbody.innerHTML = `<tr><td colspan="3" class="helper-text" style="text-align:center;">未选择</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3" class="pm-muted" style="text-align:center;">未选择</td></tr>`;
       applyRecommendedNameIfNeeded();
       updateApplyHintUi();
       return;
@@ -564,7 +569,7 @@
     if (!tbody) return;
     const ids = Array.from(selectedOrderProductIds || []).map(v => Number(v)).filter(v => v > 0);
     if (!ids.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="helper-text" style="text-align:center;">未选择</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="pm-muted" style="text-align:center;">未选择</td></tr>`;
       updateApplyHintUi();
       return;
     }
@@ -640,7 +645,6 @@
 
       const html = `
         <div style="display:grid; gap:0.6rem;">
-          <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
           <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
@@ -674,7 +678,6 @@
               <tbody id="pmVariantTbody"></tbody>
             </table>
           </div>
-          <div class="helper-text" style="margin:0;">提示：输入框会在本地记忆（同一次访问）以节省重复筛选时间。</div>
         </div>
       `;
 
@@ -685,6 +688,7 @@
 
       const p = showHtmlConfirmCompat({
         title: '选择规格',
+        titleHelpTip: '可分别搜索：货号 / 规格 / 面料（支持多选）。输入框会在本地记忆（同一次访问）以节省重复筛选时间。',
         htmlText: html,
         confirmText: '确定',
         cancelText: '取消',
@@ -810,7 +814,6 @@
     ensureFabricOptions().then(items => {
       const html = `
         <div style="display:grid; gap:0.6rem;">
-          <div class="helper-text" style="margin:0;">搜索面料代码或名称（支持多选）</div>
           <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
@@ -830,7 +833,7 @@
           </div>
         </div>
       `;
-      const p = showHtmlConfirmCompat({ title: '选择面料', htmlText: html, confirmText: '确定', cancelText: '取消', maxWidth: 720 });
+      const p = showHtmlConfirmCompat({ title: '选择面料', titleHelpTip: '搜索面料代码或名称（支持多选）', htmlText: html, confirmText: '确定', cancelText: '取消', maxWidth: 720 });
       const bindUi = (n) => {
         const cEl = $('pmFabricSearchCode');
         const nEl = $('pmFabricSearchName');
@@ -932,7 +935,6 @@
 
       const html = `
         <div style="display:grid; gap:0.6rem;">
-          <div class="helper-text" style="margin:0;">搜索货号 / SKU / 规格简称（支持多选；列表最多约 8000 条）</div>
           <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden; max-height:62vh;">
             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
@@ -951,10 +953,9 @@
               <tbody id="pmOpTbody"></tbody>
             </table>
           </div>
-          <div class="helper-text" style="margin:0;">提示：三个搜索框会在本地记忆，下次打开仍会保留。</div>
         </div>
       `;
-      const p = showHtmlConfirmCompat({ title: '选择下单产品', htmlText: html, confirmText: '确定', cancelText: '取消', maxWidth: 920 });
+      const p = showHtmlConfirmCompat({ title: '选择下单产品', titleHelpTip: '搜索货号 / SKU / 规格简称（支持多选；列表最多约 8000 条）。三个搜索框会在本地记忆，下次打开仍会保留。', htmlText: html, confirmText: '确定', cancelText: '取消', maxWidth: 920 });
       const bindUi = (n) => {
         const a = $('pmOpSearchFam');
         const b = $('pmOpSearchSku');

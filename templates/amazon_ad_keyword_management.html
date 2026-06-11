@@ -47,7 +47,7 @@
 
         <section class="pm-layout">
             <div class="card pm-card" style="margin-bottom:0.8rem;">
-                <h3 style="margin:0 0 0.75rem 0;">基础选择</h3>
+                <h3 style="margin:0 0 0.75rem 0;" class="label-help">基础选择<span class="help-dot" data-tip="选择品类后，自动加载该品类关键词、标签和货号数据。"></span></h3>
                 <div class="pm-form">
                     <div class="form-group">
                             <label for="categorySelect">品类（选择后自动进入模块）</label>
@@ -58,7 +58,6 @@
                             <select id="currentSkuFamily"></select>
                     </div>
                 </div>
-                <div class="helper-text" style="margin-top:0.55rem;">选择品类后，自动加载该品类关键词、标签和货号数据。</div>
             </div>
 
             <div class="card pm-card" style="margin-bottom:0.8rem;">
@@ -99,12 +98,12 @@
                                 <label>逐个设置</label>
                                 <button class="btn-secondary" type="button" onclick="startTagWalker()">逐个设置标签（遍历当前筛选中未加标签）</button>
                             </div>
-                            <div class="form-group pm-form-full helper-text" id="bulkHint">已选 0 条关键词</div>
+                            <div class="form-group pm-form-full pm-muted" id="bulkHint">已选 0 条关键词</div>
                         </div>
                     </div>
 
                     <div class="pm-section">
-                        <h4>相关性模块</h4>
+                        <h4 class="label-help">相关性模块<span class="help-dot" data-tip="需先在顶部选择「当前编辑货号」。"></span></h4>
                         <div class="pm-section-body">
                             <div class="form-group">
                                 <label for="bulkRelevanceLevel">相关性等级（批量）</label>
@@ -125,7 +124,6 @@
                                 <label>逐个设置</label>
                                 <button class="btn-secondary" type="button" onclick="startRelevanceWalker()">逐个设置相关性（遍历当前筛选中未设置）</button>
                             </div>
-                            <div class="form-group pm-form-full helper-text">需先在顶部选择“当前编辑货号”。</div>
                         </div>
                     </div>
                 </div>

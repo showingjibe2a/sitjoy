@@ -8307,8 +8307,7 @@
             modal.innerHTML = `
                 <div class="pm-modal-content pm-modal-content--wide" style="max-width:720px;">
                     <div class="pm-modal-scroll">
-                        <h3 id="sitjoyUsageTipsTitle" style="margin-top:0;">SITJOY 使用提示与隐藏功能</h3>
-                        <p class="helper-text" style="margin-top:0;">以下为全站通用能力说明。个别页面若未接入托管表或未展示某按钮，以实际界面为准。</p>
+                        <h3 id="sitjoyUsageTipsTitle" style="margin-top:0;" class="label-help">SITJOY 使用提示与隐藏功能<span class="help-dot" data-tip="以下为全站通用能力说明。个别页面若未接入托管表或未展示某按钮，以实际界面为准。"></span></h3>
                         <div class="sitjoy-usage-detail-body">${sectionsHtml}</div>
                     </div>
                     <div class="pm-modal-actions">
@@ -8316,6 +8315,7 @@
                     </div>
                 </div>`;
             document.body.appendChild(modal);
+            bindFloatingHelpDots(modal);
             modal.querySelector('#sitjoyUsageTipsClose').addEventListener('click', () => closeUsageTipsModal());
             window.setTimeout(() => {
                 if(typeof window.bindPmModalBackdropClose === 'function'){
@@ -9032,6 +9032,7 @@
         };
         window.showAppConfirm = showAppConfirm;
         window.showAppConfirmAsync = showAppConfirmAsync;
+        window.bindFloatingHelpDots = bindFloatingHelpDots;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;
 
         if(typeof window.onManagedTableBatchDownload !== 'function'){
