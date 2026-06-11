@@ -377,10 +377,8 @@
             grid-template-columns: 1fr 1fr;
             gap: 0.55rem 0.75rem;
         }
-        .aa-extra-modal .aa-computed-hint {
-            margin: 0 0 0.5rem;
-            font-size: 0.82rem;
-            color: var(--morandi-slate);
+        .aa-extra-modal .pm-section-header.pm-section-header--split {
+            margin-bottom: 0.5rem;
         }
         .aa-extra-modal .yes-no-field {
             display: inline-flex;
@@ -757,8 +755,7 @@
 
             <div class="pm-modal aa-extra-modal" id="aaFullSubmitModal">
                 <div class="pm-modal-content" style="max-width: 640px;">
-                    <h3 style="margin-top:0;">补充调整记录信息</h3>
-                    <p class="helper-text" style="margin:0.35rem 0 0.65rem;">请填写效果区间、计算字段、归因与备注后确认提交。</p>
+                    <h3 style="margin-top:0;" class="label-help">补充调整记录信息<span class="help-dot" data-tip="请填写效果区间、计算字段、归因与备注后确认提交。"></span></h3>
                     <div class="pm-form">
                         <div class="form-group">
                             <label for="adjustDate">调整日期</label>
@@ -812,8 +809,10 @@
                             </div>
                         </div>
                         <div class="pm-section">
-                            <h4>计算字段</h4>
-                            <p class="aa-computed-hint">根据曝光、点击、花费、订单、销售额自动计算（可手动修改）</p>
+                            <div class="pm-section-header pm-section-header--split">
+                                <h4 class="label-help">计算字段<span class="help-dot" data-tip="根据曝光、点击、花费、订单、销售额自动计算（可手动修改）"></span></h4>
+                                <button type="button" class="btn-secondary btn-small" id="aaRecalcComputedBtn" title="根据效果区间数据重新计算">刷新</button>
+                            </div>
                             <div class="aa-computed-grid pm-section-body">
                                 <div class="form-group">
                                     <label for="acos">ACOS</label>
@@ -1884,6 +1883,11 @@
             }
         }
 
+        function refreshComputedFieldsFromMetrics() {
+            ['acos', 'cpc', 'ctr', 'cvr'].forEach(id => setFieldValue(id, '', { silent: true }));
+            recalcAdjustmentDerivedMetrics();
+        }
+
         function syncAttributionCheckedButtons() {
             const input = document.getElementById('attributionChecked');
             if (!input) return;
@@ -1997,6 +2001,12 @@
                     setFieldValue('nextObserveAt', '');
                     syncObserveFieldsVisibility();
                 });
+        }
+
+        function resetSupplementaryForContextChange() {
+            closeFullSubmitModal();
+            clearSupplementaryAdjustmentFields();
+            supplementaryTargetObjectKey = '';
         }
 
         function maybeResetSupplementaryOnTargetObjectChange() {
@@ -2740,18 +2750,22 @@
                 operationTypeName: nextOpName,
                 targetObject: nextTarget,
             };
+            resetSupplementaryForContextChange();
+            enableAdjustmentPeriodFilter();
             if (nextAdId !== String(selectedAdId || '')) {
-                return selectAd(nextAdId, { restoreForm: restore });
+                return selectAd(nextAdId, { restoreForm: restore }).then(() => {
+                    supplementaryTargetObjectKey = String(document.getElementById('targetObject')?.value || '').trim();
+                    return refreshSupplementaryAdjustmentDefaults();
+                });
             }
             applyObserveNavigationForm(restore);
-            enableAdjustmentPeriodFilter();
             return loadTargetOptionsForSelectedAd().then(() => {
                 syncTargetObjectFieldMode();
                 syncTargetObjectState();
                 applyAdjustmentPeriodFilter();
-                maybeResetSupplementaryOnTargetObjectChange();
-                savePageState();
-            });
+                supplementaryTargetObjectKey = String(document.getElementById('targetObject')?.value || '').trim();
+                return refreshSupplementaryAdjustmentDefaults();
+            }).then(() => savePageState());
         }
 
         function jumpToNextObserveTarget() {
@@ -3602,6 +3616,7 @@
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
         document.getElementById('targetObjectNextBtn')?.addEventListener('click', jumpToNextObserveTarget);
+        document.getElementById('aaRecalcComputedBtn')?.addEventListener('click', refreshComputedFieldsFromMetrics);
         document.getElementById('aaAmazonIdSaveBtn')?.addEventListener('click', saveAmazonIdFromAdjustment);
         document.getElementById('aaAmazonIdInput')?.addEventListener('input', syncAmazonIdSaveButton);
         ['filterByPortfolioBtn', 'filterByCampaignBtn', 'filterByGroupBtn'].forEach((btnId) => {
@@ -3713,6 +3728,7 @@
                 updateSubmitButtonState,
                 validatePhase1,
                 recalcAdjustmentDerivedMetrics,
+                refreshComputedFieldsFromMetrics,
             };
         });
     </script>
