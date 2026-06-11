@@ -4644,16 +4644,15 @@ class AmazonAdMixin:
                         )
                         if sync_err:
                             return self.send_json({'status': 'error', 'message': sync_err}, start_response)
-                        if not is_quick:
-                            self._apply_adjustment_observe_sync(
-                                cur,
-                                ad_item_id,
-                                op_name,
-                                target_object,
-                                adjust_date,
-                                data.get('observe_days'),
-                                data.get('next_observe_at'),
-                            )
+                        self._apply_adjustment_observe_sync(
+                            cur,
+                            ad_item_id,
+                            op_name,
+                            target_object,
+                            adjust_date,
+                            data.get('observe_days'),
+                            data.get('next_observe_at'),
+                        )
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_adjustments (

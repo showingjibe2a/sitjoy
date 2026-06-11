@@ -3810,6 +3810,26 @@
                 });
         }
 
+        function computeNextObserveAtFrom(adjustDateVal, observeDaysVal) {
+            const days = Math.max(0, parseInt(observeDaysVal || '1', 10) || 1);
+            if (!adjustDateVal) return '';
+            const base = new Date(adjustDateVal);
+            if (Number.isNaN(base.getTime())) return '';
+            base.setDate(base.getDate() + days);
+            return toDatetimeLocal(base);
+        }
+
+        function appendObserveFieldsToPayload(payload) {
+            if (!shouldShowObserveFields()) return payload;
+            if (!payload.adjust_date) {
+                payload.adjust_date = toDatetimeLocal(new Date());
+            }
+            payload.observe_days = document.getElementById('observeIntervalDays')?.value || '1';
+            payload.next_observe_at = document.getElementById('nextObserveAt')?.value
+                || computeNextObserveAtFrom(payload.adjust_date, payload.observe_days);
+            return payload;
+        }
+
         function buildPayload(isQuickSubmit) {
             const payload = {
                 is_quick_submit: isQuickSubmit ? 1 : 0,
@@ -3837,10 +3857,7 @@
                 attribution_sales: document.getElementById('attributionSales').value.trim(),
                 remark: document.getElementById('remark').value.trim()
             };
-            if (!isQuickSubmit && shouldShowObserveFields()) {
-                payload.observe_days = document.getElementById('observeIntervalDays')?.value || '';
-                payload.next_observe_at = document.getElementById('nextObserveAt')?.value || '';
-            }
+            appendObserveFieldsToPayload(payload);
             return payload;
         }
 
@@ -3922,6 +3939,10 @@
             const errs = validatePhase1();
             if (errs.length) {
                 aaValidationToast(errs[0]);
+                return;
+            }
+            if (shouldShowObserveFields()) {
+                refreshSupplementaryAdjustmentDefaults().finally(() => postRecord(true));
                 return;
             }
             postRecord(true);
