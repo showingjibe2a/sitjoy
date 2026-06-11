@@ -1399,37 +1399,39 @@
             return `${parseFloat(pct.toFixed(4))}%`;
         }
 
+        function placementRatioFromStored(raw) {
+            const bid = String(raw || '').trim();
+            if (!bid) return null;
+            if (bid.includes('%')) {
+                const parsed = parseFloat(bid.replace(/%/g, '').replace(/,/g, '').trim());
+                if (!Number.isFinite(parsed) || parsed < 0) return null;
+                return parsed / 100;
+            }
+            const clean = bid.replace(/,/g, '').trim();
+            const parsed = parseFloat(clean);
+            if (!Number.isFinite(parsed) || parsed < 0) return null;
+            if (parsed <= 1) return parsed;
+            // 无小数点的较大整数多为历史整型百分比（如 120）；否则为比例（1.2→120%，2→200%）
+            if (/^\d+$/.test(clean) && parsed >= 10 && parsed <= 500) {
+                return parsed / 100;
+            }
+            return parsed;
+        }
+
         function placementDisplayFromStored(raw) {
             const bid = String(raw || '').trim();
             if (!bid) return '';
-            if (bid.includes('%')) {
-                const numPart = bid.replace(/%/g, '').replace(/,/g, '').trim();
-                const parsed = parseFloat(numPart);
-                if (!Number.isFinite(parsed) || parsed < 0) return bid;
-                return formatPlacementPercentFromRatio(parsed / 100);
-            }
-            const parsed = parseFloat(bid.replace(/,/g, ''));
-            if (!Number.isFinite(parsed) || parsed < 0) return bid;
-            if (parsed <= 1) {
-                return formatPlacementPercentFromRatio(parsed);
-            }
-            return formatPlacementPercentFromRatio(parsed / 100);
+            const ratio = placementRatioFromStored(bid);
+            if (ratio == null) return bid;
+            return formatPlacementPercentFromRatio(ratio);
         }
 
         function placementStoredFromDisplay(raw) {
             const text = String(raw || '').trim();
             if (!text) return '';
-            if (text.includes('%')) {
-                const parsed = parseFloat(text.replace(/%/g, '').replace(/,/g, '').trim());
-                if (!Number.isFinite(parsed) || parsed < 0) return text;
-                return formatDecimalMetric(parsed / 100, 4);
-            }
-            const parsed = parseFloat(text.replace(/,/g, ''));
-            if (!Number.isFinite(parsed) || parsed < 0) return text;
-            if (parsed <= 1) {
-                return formatDecimalMetric(parsed, 4);
-            }
-            return formatDecimalMetric(parsed / 100, 4);
+            const ratio = placementRatioFromStored(text);
+            if (ratio == null) return text;
+            return formatDecimalMetric(ratio, 4);
         }
 
         function formatAdjustmentValueDisplay(value, operationName) {
