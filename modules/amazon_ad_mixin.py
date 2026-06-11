@@ -3930,13 +3930,44 @@ class AmazonAdMixin:
         return cache[key]
 
     def _adjustment_observe_kind_rank(self, kind):
-        if kind == 'delivery':
+        if kind in ('delivery', 'placement'):
             return 0
         if kind == 'product':
             return 1
-        if kind == 'placement':
-            return 2
         return 9
+
+    def _adjustment_observe_sort_datetime(self, value):
+        if value is None:
+            return datetime.max
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(str(value).replace(' ', 'T', 1))
+        except Exception:
+            return datetime.max
+
+    def _find_adjustment_observe_candidate_index(self, candidates, ad_item_id, target_object, preferred_kind=None):
+        ad_item_id = self._parse_int(ad_item_id)
+        target_object = (target_object or '').strip()
+        if not ad_item_id or not target_object or target_object == '-':
+            return -1
+        preferred_kind = (preferred_kind or '').strip() or None
+
+        if preferred_kind:
+            for idx, item in enumerate(candidates):
+                if self._parse_int(item.get('ad_item_id')) != ad_item_id:
+                    continue
+                if str(item.get('target_object') or '').strip() != target_object:
+                    continue
+                if item.get('kind') == preferred_kind:
+                    return idx
+
+        for idx, item in enumerate(candidates):
+            if self._parse_int(item.get('ad_item_id')) != ad_item_id:
+                continue
+            if str(item.get('target_object') or '').strip() == target_object:
+                return idx
+        return -1
 
     def _collect_adjustment_observe_candidates(self, cur, ad_item_ids, allowed_kinds):
         if not ad_item_ids:
@@ -3955,6 +3986,7 @@ class AmazonAdMixin:
                 SELECT ad_item_id, id, target_desc, next_observe_at
                 FROM amazon_ad_targets
                 WHERE ad_item_id IN ({placeholders})
+                  AND status='启动'
                   AND next_observe_at IS NOT NULL
                   AND next_observe_at <= NOW()
                 ORDER BY next_observe_at ASC, target_desc ASC, id ASC
@@ -3987,6 +4019,7 @@ class AmazonAdMixin:
                 FROM amazon_ad_products p
                 LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
                 WHERE p.ad_item_id IN ({placeholders})
+                  AND p.status='启动'
                   AND p.next_observe_at IS NOT NULL
                   AND p.next_observe_at <= NOW()
                   AND sp.platform_sku IS NOT NULL
@@ -4014,6 +4047,7 @@ class AmazonAdMixin:
             return (
                 ad_rank.get(item.get('ad_item_id'), 999999),
                 self._adjustment_observe_kind_rank(item.get('kind')),
+                self._adjustment_observe_sort_datetime(item.get('next_observe_at')),
                 str(item.get('target_object') or ''),
                 self._parse_int(item.get('entity_id')) or 0,
             )
@@ -4115,57 +4149,14 @@ class AmazonAdMixin:
             op_row = cur.fetchone() or {}
             preferred_kind = self._infer_observe_kind_from_operation_name(op_row.get('name'))
 
-        current_match = self._find_current_adjustment_observe_match(
+        start_idx = 0
+        current_idx = self._find_adjustment_observe_candidate_index(
             candidates, ad_item_id, target_object, preferred_kind,
         )
-        if current_match:
-            return self._serialize_adjustment_observe_pick(cur, current_match, stay_on_current=True)
+        if current_idx >= 0:
+            start_idx = current_idx + 1
 
-        current_ad_candidates = [
-            item for item in candidates
-            if self._parse_int(item.get('ad_item_id')) == ad_item_id
-        ]
-        current_ad_rank = self._adjustment_observe_ad_rank(ad_item_order, ad_item_id)
-
-        picked = None
-        if target_object and target_object != '-':
-            found_idx = -1
-            for idx, item in enumerate(current_ad_candidates):
-                if str(item.get('target_object') or '').strip() == target_object:
-                    found_idx = idx
-                    break
-            if found_idx >= 0:
-                if found_idx + 1 < len(current_ad_candidates):
-                    picked = current_ad_candidates[found_idx + 1]
-                else:
-                    picked = self._first_adjustment_observe_candidate_after_ad_rank(
-                        candidates, ad_item_order, current_ad_rank,
-                    )
-            elif current_ad_candidates:
-                picked = current_ad_candidates[0]
-            else:
-                picked = self._first_adjustment_observe_candidate_after_ad_rank(
-                    candidates, ad_item_order, current_ad_rank,
-                )
-        elif current_ad_candidates:
-            picked = current_ad_candidates[0]
-        else:
-            picked = self._first_adjustment_observe_candidate_after_ad_rank(
-                candidates, ad_item_order, current_ad_rank,
-            )
-
-        start_idx = 0
-        if picked:
-            for idx, item in enumerate(candidates):
-                if (
-                    self._parse_int(item.get('ad_item_id')) == self._parse_int(picked.get('ad_item_id'))
-                    and item.get('kind') == picked.get('kind')
-                    and str(item.get('target_object') or '').strip() == str(picked.get('target_object') or '').strip()
-                    and self._parse_int(item.get('entity_id')) == self._parse_int(picked.get('entity_id'))
-                ):
-                    start_idx = idx
-                    break
-
+        err = None
         for idx in range(start_idx, len(candidates)):
             result, err = self._serialize_adjustment_observe_pick(cur, candidates[idx], stay_on_current=False)
             if result:
