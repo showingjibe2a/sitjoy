@@ -8242,23 +8242,74 @@
         document.querySelectorAll('script[data-sitjoy-page-script]').forEach(el => el.remove());
     }
 
+    function runCapturedPageInitHandlers(handlers, event, context){
+        handlers.forEach(fn => {
+            try {
+                fn.call(context, event);
+            } catch (err) {
+                console.warn('Sitjoy page init handler failed', err);
+            }
+        });
+    }
+
     async function runSitjoyPageScripts(doc){
         removeSitjoyPageScripts();
-        const scriptNodes = [...doc.querySelectorAll('body script')];
-        for(const oldScript of scriptNodes){
-            const src = oldScript.getAttribute('src') || '';
-            if(SITJOY_SHELL_SKIP_SCRIPT_RE.test(src)) continue;
-            const script = document.createElement('script');
-            script.dataset.sitjoyPageScript = '1';
-            [...oldScript.attributes].forEach(attr => script.setAttribute(attr.name, attr.value));
-            if(!src) script.textContent = oldScript.textContent;
-            document.body.appendChild(script);
-            if(src){
-                await new Promise(resolve => {
-                    script.addEventListener('load', resolve, { once: true });
-                    script.addEventListener('error', resolve, { once: true });
-                });
+        const pendingDomReady = [];
+        const pendingLoad = [];
+        const origDocAdd = document.addEventListener;
+        const origWinAdd = window.addEventListener;
+
+        function capturePageInitListener(type, listener){
+            if(typeof listener !== 'function') return;
+            if(type === 'DOMContentLoaded') pendingDomReady.push(listener);
+            else if(type === 'load') pendingLoad.push(listener);
+        }
+
+        document.addEventListener = function(type, listener, options){
+            if(type === 'DOMContentLoaded'){
+                capturePageInitListener(type, listener);
+                return;
             }
+            return origDocAdd.call(document, type, listener, options);
+        };
+        window.addEventListener = function(type, listener, options){
+            if(type === 'DOMContentLoaded' || type === 'load'){
+                capturePageInitListener(type, listener);
+                return;
+            }
+            return origWinAdd.call(window, type, listener, options);
+        };
+
+        try {
+            const scriptNodes = [...doc.querySelectorAll('body script')];
+            for(const oldScript of scriptNodes){
+                const src = oldScript.getAttribute('src') || '';
+                if(SITJOY_SHELL_SKIP_SCRIPT_RE.test(src)) continue;
+                const script = document.createElement('script');
+                script.dataset.sitjoyPageScript = '1';
+                [...oldScript.attributes].forEach(attr => script.setAttribute(attr.name, attr.value));
+                if(!src) script.textContent = oldScript.textContent;
+                document.body.appendChild(script);
+                if(src){
+                    await new Promise(resolve => {
+                        script.addEventListener('load', resolve, { once: true });
+                        script.addEventListener('error', resolve, { once: true });
+                    });
+                }
+            }
+        } finally {
+            document.addEventListener = origDocAdd;
+            window.addEventListener = origWinAdd;
+        }
+
+        const domReadyEvent = new Event('DOMContentLoaded', { bubbles: true });
+        runCapturedPageInitHandlers(pendingDomReady, domReadyEvent, document);
+        const loadEvent = new Event('load');
+        runCapturedPageInitHandlers(pendingLoad, loadEvent, window);
+        if(typeof window.onload === 'function'){
+            const legacyOnload = window.onload;
+            window.onload = null;
+            runCapturedPageInitHandlers([legacyOnload], loadEvent, window);
         }
     }
 
@@ -8292,6 +8343,9 @@
         const pageBody = document.getElementById('sitjoyPageBody');
         if(!pageBody) throw new Error('Missing #sitjoyPageBody');
 
+        window.__sitjoyNavEpoch = (window.__sitjoyNavEpoch || 0) + 1;
+        window.__sitjoyActivePath = normalizeNavPath(href);
+
         if(doc.title) document.title = doc.title;
         applySitjoyPageStyles(doc);
         syncSitjoyBodyClasses(doc);
@@ -8302,8 +8356,6 @@
         });
 
         await runSitjoyPageScripts(doc);
-        document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
-        window.dispatchEvent(new Event('load'));
 
         refreshSitjoyTabsForCurrentPath(href, doc);
         syncSidebarActiveState();

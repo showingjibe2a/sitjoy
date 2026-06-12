@@ -3590,6 +3590,7 @@
 
         function renderAdList() {
             const wrap = document.getElementById('adList');
+            if (!wrap) return;
             if (!adItems.length) {
                 wrap.innerHTML = '<div class="aa-list-empty">暂无广告信息</div>';
                 scheduleSyncAaLeftColumnWidth();
@@ -3632,12 +3633,14 @@
         }
 
         function loadAdList(options = {}) {
+            const navEpoch = window.__sitjoyNavEpoch;
             if (options.clearFilters !== false) {
                 clearAdjustmentContentFilters();
             }
             return fetch('/api/amazon-ad-adjustment?action=ad-search')
                 .then(r => r.json())
                 .then(data => {
+                    if (window.__sitjoyNavEpoch !== navEpoch) return;
                     if (data.status !== 'success') {
                         adItemsRaw = [];
                         adItems = [];
@@ -3649,6 +3652,7 @@
                     savePageState();
                 })
                 .catch(() => {
+                    if (window.__sitjoyNavEpoch !== navEpoch) return;
                     adItemsRaw = [];
                     adItems = [];
                     renderAdList();
