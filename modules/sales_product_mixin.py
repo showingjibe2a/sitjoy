@@ -2991,6 +2991,94 @@ class SalesProductMixin:
         text = (raw or '').strip().lower()
         return text if text in self._SALES_DISCOUNT_FORM_TYPES else None
 
+    _SALES_PREVIEW_FIELD_NAMES = frozenset({
+        'child_code',
+        'gtin',
+        'upc',
+        'sale_price_usd',
+        'promotion_activity_type',
+        'discount_form_type',
+        'actual_discount_rate',
+        'actual_discount_amount_usd',
+        'discounted_price_usd',
+    })
+
+    def _sales_product_preview_col_exists(self, conn):
+        """预览批量保存可用列（一次探测，结果走 _table_has_column 缓存）。"""
+        exists = {
+            'gtin': self._table_has_column(conn, 'sales_products', 'gtin'),
+            'upc': self._table_has_column(conn, 'sales_products', 'upc'),
+        }
+        for col in (
+            'promotion_activity_type',
+            'discount_form_type',
+            'actual_discount_rate',
+            'actual_discount_amount_usd',
+            'discounted_price_usd',
+        ):
+            exists[col] = self._table_has_column(conn, 'sales_products', col)
+        return exists
+
+    def _sales_product_preview_batch_update(self, cur, row_map, touched_map, col_exists, chunk_size=120):
+        """预览行内编辑批量保存：按列 CASE WHEN 合并 UPDATE，减少数据库往返。"""
+        if not row_map:
+            return 0
+        patch_by_id = {}
+        for item_id, values in row_map.items():
+            touched = touched_map.get(item_id) or set()
+            if not touched:
+                continue
+            patch = {}
+            if 'child_code' in touched:
+                patch['child_code'] = values.get('child_code')
+            if col_exists.get('gtin') and 'gtin' in touched:
+                patch['gtin'] = values.get('gtin')
+            if col_exists.get('upc') and 'upc' in touched:
+                patch['upc'] = values.get('upc')
+            if 'sale_price_usd' in touched:
+                patch['sale_price_usd'] = values.get('sale_price_usd')
+            for col in (
+                'promotion_activity_type',
+                'discount_form_type',
+                'actual_discount_rate',
+                'actual_discount_amount_usd',
+                'discounted_price_usd',
+            ):
+                if col_exists.get(col) and col in touched:
+                    patch[col] = values.get(col)
+            if patch:
+                patch_by_id[int(item_id)] = patch
+        if not patch_by_id:
+            return 0
+
+        updated = 0
+        all_ids = list(patch_by_id.keys())
+        size = max(1, int(chunk_size or 120))
+        for offset in range(0, len(all_ids), size):
+            chunk_ids = all_ids[offset:offset + size]
+            all_columns = set()
+            for rid in chunk_ids:
+                all_columns.update(patch_by_id[rid].keys())
+            set_parts = []
+            params = []
+            for col in sorted(all_columns):
+                when_parts = []
+                for rid in chunk_ids:
+                    patch = patch_by_id[rid]
+                    if col not in patch:
+                        continue
+                    when_parts.append('WHEN %s THEN %s')
+                    params.extend([rid, patch[col]])
+                if when_parts:
+                    set_parts.append(f'{col} = CASE id {" ".join(when_parts)} ELSE {col} END')
+            if not set_parts:
+                continue
+            in_ph = ','.join(['%s'] * len(chunk_ids))
+            sql = f'UPDATE sales_products SET {", ".join(set_parts)} WHERE id IN ({in_ph})'
+            cur.execute(sql, tuple(params + chunk_ids))
+            updated += int(cur.rowcount or 0)
+        return updated
+
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
@@ -4514,17 +4602,7 @@ class SalesProductMixin:
                     if not isinstance(batch_items, list) or not batch_items:
                         return self.send_json({'status': 'error', 'message': 'Missing preview items'}, start_response)
 
-                    preview_field_names = (
-                        'child_code',
-                        'gtin',
-                        'upc',
-                        'sale_price_usd',
-                        'promotion_activity_type',
-                        'discount_form_type',
-                        'actual_discount_rate',
-                        'actual_discount_amount_usd',
-                        'discounted_price_usd',
-                    )
+                    preview_field_names = self._SALES_PREVIEW_FIELD_NAMES
                     row_map = {}
                     touched_map = {}
                     for item in batch_items:
@@ -4567,46 +4645,12 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
 
                     with self._get_db_connection() as conn:
-                        has_gtin = self._table_has_column(conn, 'sales_products', 'gtin')
-                        has_upc = self._table_has_column(conn, 'sales_products', 'upc')
-                        preview_cols = (
-                            'promotion_activity_type',
-                            'discount_form_type',
-                            'actual_discount_rate',
-                            'actual_discount_amount_usd',
-                            'discounted_price_usd',
-                        )
+                        col_exists = self._sales_product_preview_col_exists(conn)
                         with conn.cursor() as cur:
-                            for item_id, values in row_map.items():
-                                touched = touched_map.get(item_id) or set()
-                                if not touched:
-                                    continue
-                                set_parts = []
-                                params = []
-                                if 'child_code' in touched:
-                                    set_parts.append('child_code=%s')
-                                    params.append(values.get('child_code'))
-                                if has_gtin and 'gtin' in touched:
-                                    set_parts.append('gtin=%s')
-                                    params.append(values.get('gtin'))
-                                if has_upc and 'upc' in touched:
-                                    set_parts.append('upc=%s')
-                                    params.append(values.get('upc'))
-                                if 'sale_price_usd' in touched:
-                                    set_parts.append('sale_price_usd=%s')
-                                    params.append(values.get('sale_price_usd'))
-                                for col in preview_cols:
-                                    if col in touched and self._table_has_column(conn, 'sales_products', col):
-                                        set_parts.append(f'{col}=%s')
-                                        params.append(values.get(col))
-                                if not set_parts:
-                                    continue
-                                params.append(item_id)
-                                cur.execute(
-                                    f"UPDATE sales_products SET {', '.join(set_parts)} WHERE id=%s",
-                                    tuple(params),
-                                )
-                    return self.send_json({'status': 'success', 'updated': len(row_map)}, start_response)
+                            updated = self._sales_product_preview_batch_update(
+                                cur, row_map, touched_map, col_exists
+                            )
+                    return self.send_json({'status': 'success', 'updated': updated}, start_response)
 
                 item_id = self._parse_int(data.get('id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
