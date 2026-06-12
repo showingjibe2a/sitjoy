@@ -495,7 +495,7 @@
                             <th data-manage-col-key="成本总计" data-sort-key="est_total_cost_usd" class="sales-econ-col">成本总计</th>
                             <th data-manage-col-key="佣金" data-sort-key="est_commission_usd" class="sales-econ-col">佣金</th>
                             <th data-manage-col-key="单件净利" data-sort-key="est_net_profit_usd" class="sales-econ-col">单件净利</th>
-                            <th data-manage-col-key="净利率" data-sort-key="est_net_margin_rate" class="sales-econ-col"><span class="label-help">净利率<span class="help-dot" data-tip="净利率 = 单件净利 ÷ 售价。单件净利 = 折后价 − 佣金(基于折后价) − 成本总计 − 广告费(售价×父体预估ACOAS) − 退款(折后价×父体预估退款率)。折后价未填时按折扣记录计算；折扣记录为空时使用父体预估折扣率。"></span></span></th>
+                            <th data-manage-col-key="净利率" data-sort-key="est_net_margin_rate" class="sales-econ-col"><span class="label-help">净利率<span class="help-dot" data-tip="净利率 = 单件净利 ÷ 售价。单件净利 = 售价×(1−退款率)×(1−折扣率)×(1−ACOAS−佣金费率) − 成本总计。佣金按折后价(净收入)计算；佣金费率 = 佣金÷折后价。折后价未填时按折扣记录计算；折扣记录为空时使用父体预估折扣率。"></span></span></th>
                             <th data-manage-col-key="创建时间" data-sort-key="created_at">创建时间</th>
                             <th style="width:160px;" data-manage-col-key="操作">操作</th>
                         </tr>
@@ -1778,9 +1778,9 @@
             document.getElementById('spParentEditSkuMarker').value = (item && item.sku_marker) || '';
             document.getElementById('spParentEditIsEnabled').checked = String(item && item.is_enabled != null ? item.is_enabled : 1) !== '0';
             document.getElementById('spParentEditShopId').value = item && item.shop_id ? String(item.shop_id) : '';
-            document.getElementById('spParentEditEstimatedRefundRate').value = item && item.estimated_refund_rate != null ? item.estimated_refund_rate : '';
-            document.getElementById('spParentEditEstimatedDiscountRate').value = item && item.estimated_discount_rate != null ? item.estimated_discount_rate : '';
-            document.getElementById('spParentEditEstimatedAcoas').value = item && item.estimated_acoas != null ? item.estimated_acoas : '';
+            document.getElementById('spParentEditEstimatedRefundRate').value = salesFormatParentRateFieldValue(item && item.estimated_refund_rate);
+            document.getElementById('spParentEditEstimatedDiscountRate').value = salesFormatParentRateFieldValue(item && item.estimated_discount_rate);
+            document.getElementById('spParentEditEstimatedAcoas').value = salesFormatParentRateFieldValue(item && item.estimated_acoas);
         }
 
         async function openSalesParentGroupEditModal(parentId, parentCode) {
@@ -1884,6 +1884,19 @@
             const s = Math.max(0, Number(salePriceUsd) || 0);
             if (s <= 0) return 0;
             return Math.round((Math.min(s, 200) * 0.15 + Math.max(s - 200, 0) * 0.10) * 100) / 100;
+        }
+
+        function salesEstFurnitureCommissionRate(netSalesUsd) {
+            const net = Math.max(0, Number(netSalesUsd) || 0);
+            if (net <= 0) return 0;
+            return Math.round((salesEstFurnitureCommissionUsd(net) / net) * 1e6) / 1e6;
+        }
+
+        function salesFormatParentRateFieldValue(raw) {
+            if (raw == null || raw === '') return '';
+            const n = Number(raw);
+            if (!Number.isFinite(n)) return '';
+            return (Math.round(n * 100) / 100).toFixed(2);
         }
 
         function salesPlatformTypeNameOf(itemOrName) {
@@ -2055,16 +2068,19 @@
             const amazon = salesUsesAmazonEconomics(item);
             const lastMile = amazon ? lastMileRaw : 0;
             const totalCost = Math.round((bom + lastMile) * 100) / 100;
-            const commission = amazon ? salesEstFurnitureCommissionUsd(salePrice) : 0;
             const discountRate = salesResolveDiscountRateRatio(item);
             const refundRate = salesNormalizeParentRateRatio(item && item.estimated_refund_rate);
             const acoas = salesNormalizeParentRateRatio(item && item.estimated_acoas);
             const gross = salePrice;
             const netSales = salesComputeDiscountedPrice(item);
-            const netCommission = amazon ? salesEstFurnitureCommissionUsd(netSales) : 0;
-            const adSpend = Math.round(gross * acoas * 100) / 100;
-            const refundAmt = Math.round(netSales * refundRate * 100) / 100;
-            const netProfit = Math.round((netSales - netCommission - totalCost - adSpend - refundAmt) * 100) / 100;
+            const commission = amazon ? salesEstFurnitureCommissionUsd(netSales) : 0;
+            const commissionRate = amazon ? salesEstFurnitureCommissionRate(netSales) : 0;
+            const revenueAfterDiscountRefund = gross > 0
+                ? Math.round(gross * (1 - refundRate) * (1 - discountRate) * 100) / 100
+                : 0;
+            const netProfit = Math.round((
+                revenueAfterDiscountRefund * (1 - acoas - commissionRate) - totalCost
+            ) * 100) / 100;
             const netMarginRate = gross > 0 ? Math.round((netProfit / gross) * 1e6) / 1e6 : 0;
             return {
                 salePrice,
@@ -2074,6 +2090,7 @@
                 commissionApplicable: amazon,
                 totalCost,
                 commission,
+                commissionRate,
                 discountRate,
                 netSales,
                 netProfit,
