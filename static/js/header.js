@@ -8084,6 +8084,9 @@
 
     let sitjoyHeaderHtmlCache = null;
     let sitjoyNavInFlight = null;
+    let sitjoyNavToken = 0;
+    const sitjoyPageHtmlCache = new Map();
+    const SITJOY_PAGE_CACHE_MAX = 16;
 
     function normalizeNavPath(path){
         const raw = String(path || '/').split('?')[0].split('#')[0] || '/';
@@ -8182,7 +8185,74 @@
         let state = ensureDefaultPinnedTabs(loadSitjoyTabsState());
         state = upsertCurrentTab(state, pageInfo);
         saveSitjoyTabsState(state);
-        renderSitjoyTabs(state);
+        renderSitjoyTabs(state, normalizedPath);
+    }
+
+    function updateSitjoyTabsActive(activeHref){
+        const host = document.getElementById('sitjoyTopTabs');
+        if(!host || host.dataset.sitjoyTabsBound !== '1') return;
+        renderSitjoyTabs(ensureDefaultPinnedTabs(loadSitjoyTabsState()), activeHref);
+    }
+
+    function collectInlineScriptGlobalNames(code, doc){
+        const names = new Set();
+        const fnRe = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
+        let match;
+        while((match = fnRe.exec(code))) names.add(match[1]);
+        doc.querySelectorAll('[onclick]').forEach(el => {
+            const attr = el.getAttribute('onclick') || '';
+            const callRe = /\b([A-Za-z_$][\w$]*)\s*\(/g;
+            while((match = callRe.exec(attr))) names.add(match[1]);
+        });
+        return names;
+    }
+
+    function wrapInlinePageScript(code, doc){
+        const globals = collectInlineScriptGlobalNames(code, doc);
+        const exportLines = [...globals].map(name => (
+            `try{if(typeof ${name}==='function'){window.${name}=${name};}}catch(e){}`
+        )).join('\n');
+        return `(function(){\n${code}\n${exportLines}\n}).call(window);`;
+    }
+
+    function sitjoyExternalScriptLoaded(src){
+        if(!src) return false;
+        try {
+            const abs = new URL(src, location.origin).href;
+            return Array.from(document.scripts).some(script => {
+                if(!script.src) return false;
+                return script.src === abs || script.getAttribute('src') === src;
+            });
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function fetchSitjoyPageHtml(href, force){
+        const key = normalizeNavPath(href);
+        if(force) sitjoyPageHtmlCache.delete(key);
+        if(!force && sitjoyPageHtmlCache.has(key)) return sitjoyPageHtmlCache.get(key);
+        const fetchUrl = force
+            ? `${key}${key.includes('?') ? '&' : '?'}_sitjoy=${Date.now()}`
+            : key;
+        const resp = await fetch(fetchUrl, {
+            credentials: 'include',
+            headers: { Accept: 'text/html' }
+        });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const html = await resp.text();
+        sitjoyPageHtmlCache.set(key, html);
+        while(sitjoyPageHtmlCache.size > SITJOY_PAGE_CACHE_MAX){
+            const oldest = sitjoyPageHtmlCache.keys().next().value;
+            sitjoyPageHtmlCache.delete(oldest);
+        }
+        return html;
+    }
+
+    function prefetchSitjoyPage(href){
+        const key = normalizeNavPath(href);
+        if(!key || sitjoyPageHtmlCache.has(key)) return;
+        fetchSitjoyPageHtml(key, false).catch(() => {});
     }
 
     function shouldUseSitjoySoftNav(ev, anchor){
@@ -8230,9 +8300,10 @@
                 nodes.push(el);
             });
         });
-        if(nodes.length) return nodes;
         doc.querySelectorAll('body > *').forEach(el => {
-            if(el.id === 'site-header' || el.tagName === 'SCRIPT') return;
+            if(el.id === 'site-header' || el.tagName === 'SCRIPT' || el.tagName === 'FOOTER') return;
+            if(seen.has(el)) return;
+            seen.add(el);
             nodes.push(el);
         });
         return nodes;
@@ -8243,16 +8314,23 @@
     }
 
     function runCapturedPageInitHandlers(handlers, event, context){
+        const epoch = window.__sitjoyNavEpoch;
         handlers.forEach(fn => {
             try {
-                fn.call(context, event);
+                const result = fn.call(context, event);
+                if(result && typeof result.then === 'function'){
+                    result.catch(err => {
+                        if(window.__sitjoyNavEpoch !== epoch) return;
+                        console.warn('Sitjoy page init handler failed', err);
+                    });
+                }
             } catch (err) {
                 console.warn('Sitjoy page init handler failed', err);
             }
         });
     }
 
-    async function runSitjoyPageScripts(doc){
+    async function runSitjoyPageScripts(doc, pageBody, href){
         removeSitjoyPageScripts();
         const pendingDomReady = [];
         const pendingLoad = [];
@@ -8285,10 +8363,11 @@
             for(const oldScript of scriptNodes){
                 const src = oldScript.getAttribute('src') || '';
                 if(SITJOY_SHELL_SKIP_SCRIPT_RE.test(src)) continue;
+                if(src && sitjoyExternalScriptLoaded(src)) continue;
                 const script = document.createElement('script');
                 script.dataset.sitjoyPageScript = '1';
                 [...oldScript.attributes].forEach(attr => script.setAttribute(attr.name, attr.value));
-                if(!src) script.textContent = oldScript.textContent;
+                if(!src) script.textContent = wrapInlinePageScript(oldScript.textContent, doc);
                 document.body.appendChild(script);
                 if(src){
                     await new Promise(resolve => {
@@ -8301,6 +8380,11 @@
             document.addEventListener = origDocAdd;
             window.addEventListener = origWinAdd;
         }
+
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        if(normalizeNavPath(window.__sitjoyActivePath) !== normalizeNavPath(href)) return;
+        if(!pageBody || !pageBody.isConnected || !pageBody.firstElementChild) return;
 
         const domReadyEvent = new Event('DOMContentLoaded', { bubbles: true });
         runCapturedPageInitHandlers(pendingDomReady, domReadyEvent, document);
@@ -8355,7 +8439,7 @@
             pageBody.appendChild(document.importNode(node, true));
         });
 
-        await runSitjoyPageScripts(doc);
+        await runSitjoyPageScripts(doc, pageBody, href);
 
         refreshSitjoyTabsForCurrentPath(href, doc);
         syncSidebarActiveState();
@@ -8367,34 +8451,39 @@
         const href = normalizeNavPath(rawHref);
         const current = normalizeNavPath(location.pathname);
         const force = !!opts.force || href === current;
+        const navToken = ++sitjoyNavToken;
+        const previousPath = current;
+
+        if(href !== current && !opts.skipHistory){
+            history.pushState({ sitjoy: true, path: href }, '', href);
+            updateSitjoyTabsActive(href);
+        }
 
         if(sitjoyNavInFlight){
             try { await sitjoyNavInFlight; } catch (e) { /* ignore */ }
         }
+        if(navToken !== sitjoyNavToken) return sitjoyNavInFlight;
 
         sitjoyNavInFlight = (async () => {
+            const pageBody = document.getElementById('sitjoyPageBody');
             try {
-                const fetchUrl = force && href === current
-                    ? `${href}${href.includes('?') ? '&' : '?'}_sitjoy=${Date.now()}`
-                    : href;
-                const resp = await fetch(fetchUrl, {
-                    credentials: 'include',
-                    headers: { Accept: 'text/html' }
-                });
-                if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const html = await resp.text();
+                if(pageBody) pageBody.classList.add('is-sitjoy-nav-loading');
+                const html = await fetchSitjoyPageHtml(href, force);
+                if(navToken !== sitjoyNavToken) return;
+
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 await applySitjoyPageSwap(doc, href);
-                if(!opts.skipHistory){
-                    const stateObj = { sitjoy: true, path: href };
-                    if(opts.replace) history.replaceState(stateObj, '', href);
-                    else history.pushState(stateObj, '', href);
-                }
+                if(navToken !== sitjoyNavToken) return;
             } catch (err) {
+                if(href !== previousPath && !opts.skipHistory){
+                    history.replaceState({ sitjoy: true, path: previousPath }, '', previousPath);
+                    updateSitjoyTabsActive(previousPath);
+                }
                 console.warn('Sitjoy soft navigation failed, falling back to full load', err);
                 window.location.assign(rawHref);
             } finally {
-                sitjoyNavInFlight = null;
+                if(pageBody) pageBody.classList.remove('is-sitjoy-nav-loading');
+                if(navToken === sitjoyNavToken) sitjoyNavInFlight = null;
             }
         })();
 
@@ -8415,10 +8504,10 @@
     const SITJOY_TAB_ICON_PIN = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
     const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
 
-    function renderSitjoyTabs(state){
+    function renderSitjoyTabs(state, activeHref){
         const host = document.getElementById('sitjoyTopTabs');
         if(!host) return;
-        const current = normalizeNavPath(location.pathname);
+        const current = normalizeNavPath(activeHref || location.pathname);
         host.innerHTML = '';
         (state.tabs || []).forEach(tab => {
             const href = normalizeNavPath(tab.href);
@@ -8474,7 +8563,7 @@
                     return Object.assign({}, t, { pinned: !t.pinned });
                 });
                 saveSitjoyTabsState(state);
-                renderSitjoyTabs(state);
+                renderSitjoyTabs(state, location.pathname);
                 return;
             }
             if(closeBtn){
@@ -8488,14 +8577,21 @@
                     else sitjoyNavigateTo('/');
                     return;
                 }
-                renderSitjoyTabs(state);
+                renderSitjoyTabs(state, location.pathname);
                 return;
             }
             if(shouldUseSitjoySoftNav(ev, tabEl)){
                 ev.preventDefault();
+                ev.stopPropagation();
                 sitjoyNavigateTo(href, { force: href === normalizeNavPath(location.pathname) });
             }
         });
+
+        host.addEventListener('pointerenter', (ev) => {
+            const tabEl = ev.target.closest('.sitjoy-tab');
+            if(!tabEl) return;
+            prefetchSitjoyPage(tabEl.dataset.tabHref);
+        }, true);
 
         host.addEventListener('mousedown', (ev) => {
             if(ev.target.closest('.sitjoy-tab-pin, .sitjoy-tab-close')) ev.stopPropagation();
@@ -8598,6 +8694,12 @@
             ev.preventDefault();
             sitjoyNavigateTo(link.getAttribute('href'));
         });
+
+        sidebar.addEventListener('pointerenter', (ev) => {
+            const link = ev.target.closest('.sitjoy-sidebar a[href]');
+            if(!link) return;
+            prefetchSitjoyPage(link.getAttribute('href'));
+        }, true);
 
         syncSidebarActiveState();
     }

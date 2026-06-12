@@ -1543,11 +1543,14 @@
         }
 
         function setTodayRange() {
+            const startEl = document.getElementById('filterStartDate');
+            const endEl = document.getElementById('filterEndDate');
+            if (!startEl || !endEl) return;
             const end = new Date();
             const start = new Date();
             start.setDate(end.getDate() - 30);
-            document.getElementById('filterStartDate').value = toDateStr(start);
-            document.getElementById('filterEndDate').value = toDateStr(end);
+            startEl.value = toDateStr(start);
+            endEl.value = toDateStr(end);
         }
 
         function formatNumber(v) {
@@ -3904,15 +3907,32 @@
             });
         }
 
+        function pageDomReady() {
+            return document.getElementById('btnQuery')
+                && document.getElementById('btnReset')
+                && document.getElementById('btnPerfSearch');
+        }
+
+        function bindEl(id, type, handler) {
+            const el = document.getElementById(id);
+            if (!el) return false;
+            el.addEventListener(type, handler);
+            return true;
+        }
+
         function bindEvents() {
+            if (!pageDomReady()) return;
+            if (window.__salesPerfBindEpoch === window.__sitjoyNavEpoch) return;
+            window.__salesPerfBindEpoch = window.__sitjoyNavEpoch;
+
             document.addEventListener('click', e => {
                 if (!e.target.closest('.check-select')) {
                     document.querySelectorAll('.check-select').forEach(x => x.classList.remove('open'));
                 }
             });
 
-            document.getElementById('btnQuery').addEventListener('click', loadDashboard);
-            document.getElementById('btnReset').addEventListener('click', async () => {
+            bindEl('btnQuery', 'click', loadDashboard);
+            bindEl('btnReset', 'click', async () => {
                 setTodayRange();
                 Object.keys(state.filterDefs).forEach(name => {
                     state.filterDefs[name].selected = new Set();
@@ -3922,16 +3942,18 @@
                 state.metricOrder = getDefaultMetricOrder();
                 renderMetricCheckboxBar();
                 state.dashboardQueried = false;
-                document.getElementById('dataStatus').textContent = '筛选已重置，请点击查询';
-                document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
+                const dataStatus = document.getElementById('dataStatus');
+                const groupContainer = document.getElementById('groupContainer');
+                if (dataStatus) dataStatus.textContent = '筛选已重置，请点击查询';
+                if (groupContainer) groupContainer.innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
                 hideChartDetailPanel();
                 renderChart([], []);
             });
 
-            document.getElementById('toggleTodos').addEventListener('change', () => {
+            bindEl('toggleTodos', 'change', () => {
                 if (state.dashboardQueried) loadDashboard();
             });
-            document.getElementById('toggleAds').addEventListener('change', () => {
+            bindEl('toggleAds', 'change', () => {
                 if (state.dashboardQueried) loadDashboard();
             });
             const granSel = document.getElementById('chartGranularity');
@@ -3945,35 +3967,37 @@
                 });
             }
 
-            document.getElementById('btnPerfSearch').addEventListener('click', () => loadSalesProductPerformanceList(1));
-            document.getElementById('btnPerfReset').addEventListener('click', () => {
-                document.getElementById('performanceSearchInput').value = '';
+            bindEl('btnPerfSearch', 'click', () => loadSalesProductPerformanceList(1));
+            bindEl('btnPerfReset', 'click', () => {
+                const searchInput = document.getElementById('performanceSearchInput');
+                if (searchInput) searchInput.value = '';
                 resetRecordManageShopFilter();
                 loadSalesProductPerformanceList(1);
             });
-            document.getElementById('btnPerfTemplate').addEventListener('click', () => {
+            bindEl('btnPerfTemplate', 'click', () => {
                 window.location.href = '/api/sales-product-performance-template';
             });
-            document.getElementById('btnPerfImport').addEventListener('click', () => {
-                document.getElementById('salesProductPerformanceUploadInput').click();
+            bindEl('btnPerfImport', 'click', () => {
+                const input = document.getElementById('salesProductPerformanceUploadInput');
+                if (input) input.click();
             });
-            document.getElementById('salesProductPerformanceUploadInput').addEventListener('change', function() {
+            bindEl('salesProductPerformanceUploadInput', 'change', function() {
                 const f = this.files && this.files[0];
                 if (f) openPerfImportShopModal(f);
                 this.value = '';
             });
-            document.getElementById('btnPerfImportShopCancel').addEventListener('click', () => closePerfImportShopModal(true));
-            document.getElementById('btnPerfImportShopConfirm').addEventListener('click', confirmPerfImportShopAndUpload);
+            bindEl('btnPerfImportShopCancel', 'click', () => closePerfImportShopModal(true));
+            bindEl('btnPerfImportShopConfirm', 'click', confirmPerfImportShopAndUpload);
             document.addEventListener('change', function(e) {
                 const target = e.target;
                 if (target && target.id === 'perfSelectAll') {
                     togglePerfSelectAll(!!target.checked);
                 }
             });
-            document.getElementById('btnPerfCreate').addEventListener('click', openCreatePerformanceModal);
-            document.getElementById('btnPerfModalCancel').addEventListener('click', closePerformanceModal);
-            document.getElementById('btnPerfModalSave').addEventListener('click', saveSalesProductPerformanceFromModal);
-            document.getElementById('performanceSearchInput').addEventListener('keydown', e => {
+            bindEl('btnPerfCreate', 'click', openCreatePerformanceModal);
+            bindEl('btnPerfModalCancel', 'click', closePerformanceModal);
+            bindEl('btnPerfModalSave', 'click', saveSalesProductPerformanceFromModal);
+            bindEl('performanceSearchInput', 'keydown', e => {
                 if (e.key === 'Enter') loadSalesProductPerformanceList(1);
             });
             (function() {
@@ -3989,18 +4013,23 @@
         }
 
         async function initPage() {
+            if (!pageDomReady()) return;
+            const navEpoch = window.__sitjoyNavEpoch;
             setTodayRange();
             bindChartInteractions();
             bindEvents();
             await Promise.all([loadFilters(), loadSalesProductSkuPool()]);
+            if (window.__sitjoyNavEpoch !== navEpoch || !pageDomReady()) return;
             state.performancePageSize = loadPerfPageSizeFromStorage();
             state.chartGranularity = loadChartGranularityFromStorage();
             const granSel = document.getElementById('chartGranularity');
             if (granSel) granSel.value = state.chartGranularity;
             const titleEl = document.getElementById('chartTitle');
             if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
-            document.getElementById('dataStatus').textContent = '请设置条件后点击查询';
-            document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
+            const dataStatus = document.getElementById('dataStatus');
+            const groupContainer = document.getElementById('groupContainer');
+            if (dataStatus) dataStatus.textContent = '请设置条件后点击查询';
+            if (groupContainer) groupContainer.innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
             renderChart([], []);
             await loadSalesProductPerformanceList(1);
         }

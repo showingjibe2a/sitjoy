@@ -5704,7 +5704,194 @@
             }).catch(() => { orderSkuOptions = []; });
         }
 
+        function pageDomReady() {
+            return document.getElementById('searchInput')
+                && document.getElementById('salesProductTable');
+        }
+
+        function bindEl(id, type, handler) {
+            const el = document.getElementById(id);
+            if (!el) return false;
+            el.addEventListener(type, handler);
+            return true;
+        }
+
+        function fallbackCopyText(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            ta.style.top = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            let ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (e) {
+                ok = false;
+            }
+            document.body.removeChild(ta);
+            return ok;
+        }
+
+        function bindPageEvents() {
+            if (!pageDomReady()) return;
+            if (window.__salesProductBindEpoch === window.__sitjoyNavEpoch) return;
+            window.__salesProductBindEpoch = window.__sitjoyNavEpoch;
+
+            bindEl('searchInput', 'keydown', function(e) {
+                if (e.key === 'Enter') loadSalesProductList();
+            });
+            bindEl('salesSelectAll', 'change', function() {
+                toggleSelectAllSalesRows(this.checked);
+            });
+            document.querySelectorAll('#modalProductStatusSegment .status-pill').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentProductStatus = normalizeProductStatus(btn.getAttribute('data-status'));
+                    renderModalProductStatus();
+                });
+            });
+            bindEl('copySearchInput', 'input', renderCopyList);
+            bindEl('modalSkuFamilyTrigger', 'click', () => toggleSelectPanel('sku'));
+            bindEl('modalSkuFamilySearch', 'input', renderSkuFamilyList);
+            bindEl('modalParentShop', 'change', function() {
+                renderParentCodeSuggestions();
+                updateParentSkuMarkerVisibility();
+                updateCostWarning();
+            });
+            bindEl('modalParentCode', 'input', updateParentSkuMarkerVisibility);
+            bindEl('modalSalePrice', 'input', updateCostWarning);
+            bindEl('modalFabricId', 'change', function() {
+                manualFabric = !!String(this.value || '').trim();
+                syncFabricHiddenText();
+                autoComputeFabricSpec();
+                scheduleVariantPrefillFromDb();
+            });
+            (function bindSpecNameAssist() {
+                const specInp = document.getElementById('modalSpecName');
+                if (!specInp || specInp.dataset._specAssistBound === '1') return;
+                specInp.dataset._specAssistBound = '1';
+                specInp.addEventListener('input', function() {
+                    manualSpecName = this.value.trim() !== '';
+                    scheduleSpecSuggestFetch();
+                    scheduleVariantPrefillFromDb();
+                });
+                specInp.addEventListener('focus', function() { scheduleSpecSuggestFetch(); });
+            })();
+            document.addEventListener('mousedown', function(e) {
+                const sugg = document.getElementById('modalSpecSuggest');
+                const wrap = document.querySelector('.sales-spec-field-wrap');
+                if (!sugg || !wrap || !sugg.classList.contains('open')) return;
+                if (wrap.contains(e.target)) return;
+                hideSpecSuggestPanel();
+            }, true);
+            const modalPlatformSkuEl = document.getElementById('modalPlatformSku');
+            if (modalPlatformSkuEl) {
+                modalPlatformSkuEl.addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
+            }
+            const salesProductUploadInputEl = document.getElementById('salesProductUploadInput');
+            if (salesProductUploadInputEl) {
+                salesProductUploadInputEl.addEventListener('change', function() {
+                    const file = this.files && this.files[0];
+                    if (file) {
+                        uploadSalesProductTemplate(file);
+                    }
+                    this.value = '';
+                });
+            }
+            const modalMainImageUploadEl = document.getElementById('modalMainImageUpload');
+            if (modalMainImageUploadEl) {
+                modalMainImageUploadEl.addEventListener('change', function() {
+                const raw = this.files;
+                const files = raw && raw.length ? Array.from(raw) : [];
+                this.value = '';
+                if (!files.length) return;
+                preflightMainImageUpload(files).then(data => {
+                    const st = String((data && data.status) || '');
+                    if (!data || (st !== 'success' && st !== 'info')) {
+                        const msg = String((data && data.message) || '');
+                        if (msg.indexOf('Method not allowed') >= 0) {
+                            uploadMainImages(files, false);
+                            return;
+                        }
+                        showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
+                        return;
+                    }
+                    const fc = Number(data.file_count || 0);
+                    if (!Number.isFinite(fc) || fc <= 0) {
+                        uploadMainImages(files, false);
+                        return;
+                    }
+                    if ((data.duplicate_count || 0) > 0) {
+                        const names = (data.duplicates || []).map(x => x.filename).join('、');
+                        showUploadDialog({
+                            title: '检测到重复图片',
+                            message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
+                            confirmText: '复用并上传',
+                            cancelText: '取消',
+                            onConfirm: function() {
+                                uploadMainImages(files, true);
+                            }
+                        });
+                    } else {
+                        uploadMainImages(files, false);
+                    }
+                }).catch(err => showModalStatus('主图预检失败: ' + err, true));
+                });
+            }
+            window.setTimeout(function() {
+                var b = window.bindPmModalBackdropClose;
+                if (typeof b !== 'function') return;
+                var ud = document.getElementById('uploadDialogModal');
+                if (ud) b(ud, function() { ud.classList.remove('active'); });
+                var bulk = document.getElementById('bulk-sku-modal');
+                if (bulk) b(bulk, closeBulkSkuImportModal);
+                var mid = document.getElementById('main-image-desc-modal');
+                if (mid) b(mid, closeMainImageDescModal);
+                var sit = document.getElementById('sales-image-type-modal');
+                if (sit) b(sit, closeSalesImageTypeCreateModal);
+            }, 0);
+            bindEl('uploadDialogCopyBtn', 'click', function() {
+                const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}\t${item.error || ''}`);
+                const text = lines.join('\n') || '无失败明细';
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        showTimeoutToast('失败明细已复制');
+                    }).catch(() => {
+                        if (fallbackCopyText(text)) {
+                            showTimeoutToast('失败明细已复制');
+                        } else {
+                            showTimeoutToast('复制失败，请手动复制');
+                        }
+                    });
+                } else {
+                    if (fallbackCopyText(text)) {
+                        showTimeoutToast('失败明细已复制');
+                    } else {
+                        showTimeoutToast('当前环境不支持剪贴板复制');
+                    }
+                }
+            });
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#modalSkuFamilySelect')) {
+                    closeAllSelectPanels();
+                }
+            });
+            const mainImageReplaceInput = document.getElementById('mainImageReplaceInput');
+            if (mainImageReplaceInput) {
+                mainImageReplaceInput.addEventListener('change', function() {
+                    const f = (this.files && this.files[0]) ? this.files[0] : null;
+                    if (!f) return;
+                    uploadReplaceMainImage(f);
+                });
+            }
+        }
+
         function initPage() {
+            if (!pageDomReady()) return;
+            bindPageEvents();
             restoreSalesProductAggregateModeFromStorage();
             salesApplyManageLayoutSig();
             syncSalesAggregateSegmentUi();
@@ -5749,185 +5936,6 @@
             })();
         }
 
-        document.getElementById('searchInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') loadSalesProductList();
-        });
-        document.getElementById('salesSelectAll').addEventListener('change', function() {
-            toggleSelectAllSalesRows(this.checked);
-        });
-        document.querySelectorAll('#modalProductStatusSegment .status-pill').forEach(btn => {
-            btn.addEventListener('click', () => {
-                currentProductStatus = normalizeProductStatus(btn.getAttribute('data-status'));
-                renderModalProductStatus();
-            });
-        });
-        document.getElementById('copySearchInput').addEventListener('input', renderCopyList);
-        document.getElementById('modalSkuFamilyTrigger').addEventListener('click', () => toggleSelectPanel('sku'));
-        document.getElementById('modalSkuFamilySearch').addEventListener('input', renderSkuFamilyList);
-        document.getElementById('modalParentShop').addEventListener('change', function() {
-            renderParentCodeSuggestions();
-            updateParentSkuMarkerVisibility();
-            updateCostWarning();
-        });
-        document.getElementById('modalParentCode').addEventListener('input', updateParentSkuMarkerVisibility);
-        document.getElementById('modalSalePrice').addEventListener('input', updateCostWarning);
-        document.getElementById('modalFabricId').addEventListener('change', function() {
-            manualFabric = !!String(this.value || '').trim();
-            syncFabricHiddenText();
-            autoComputeFabricSpec();
-            scheduleVariantPrefillFromDb();
-        });
-        (function bindSpecNameAssist() {
-            const specInp = document.getElementById('modalSpecName');
-            if (!specInp || specInp.dataset._specAssistBound === '1') return;
-            specInp.dataset._specAssistBound = '1';
-            specInp.addEventListener('input', function() {
-                manualSpecName = this.value.trim() !== '';
-                scheduleSpecSuggestFetch();
-                scheduleVariantPrefillFromDb();
-            });
-            specInp.addEventListener('focus', function() { scheduleSpecSuggestFetch(); });
-        })();
-        document.addEventListener('mousedown', function(e) {
-            const sugg = document.getElementById('modalSpecSuggest');
-            const wrap = document.querySelector('.sales-spec-field-wrap');
-            if (!sugg || !wrap || !sugg.classList.contains('open')) return;
-            if (wrap.contains(e.target)) return;
-            hideSpecSuggestPanel();
-        }, true);
-        const modalPlatformSkuEl = document.getElementById('modalPlatformSku');
-        if (modalPlatformSkuEl) {
-            modalPlatformSkuEl.addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
-        }
-        const salesProductUploadInputEl = document.getElementById('salesProductUploadInput');
-        if (salesProductUploadInputEl) {
-            salesProductUploadInputEl.addEventListener('change', function() {
-                const file = this.files && this.files[0];
-                if (file) {
-                    uploadSalesProductTemplate(file);
-                }
-                this.value = '';
-            });
-        }
-        const modalMainImageUploadEl = document.getElementById('modalMainImageUpload');
-        if (modalMainImageUploadEl) {
-            modalMainImageUploadEl.addEventListener('change', function() {
-            const raw = this.files;
-            // Snapshot File objects immediately: clearing `this.value` empties the live FileList in many
-            // browsers, which would otherwise make the async upload step see `files.length === 0` and skip
-            // the real POST (no second request in Network).
-            const files = raw && raw.length ? Array.from(raw) : [];
-            this.value = '';
-            if (!files.length) return;
-            preflightMainImageUpload(files).then(data => {
-                const st = String((data && data.status) || '');
-                if (!data || (st !== 'success' && st !== 'info')) {
-                    const msg = String((data && data.message) || '');
-                    if (msg.indexOf('Method not allowed') >= 0) {
-                        uploadMainImages(files, false);
-                        return;
-                    }
-                    showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
-                    return;
-                }
-                // If the server couldn't see any file parts during preflight (proxy/parsing edge cases),
-                // skip preflight and proceed with the real upload path.
-                const fc = Number(data.file_count || 0);
-                if (!Number.isFinite(fc) || fc <= 0) {
-                    uploadMainImages(files, false);
-                    return;
-                }
-                if ((data.duplicate_count || 0) > 0) {
-                    const names = (data.duplicates || []).map(x => x.filename).join('、');
-                    showUploadDialog({
-                        title: '检测到重复图片',
-                        message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
-                        confirmText: '复用并上传',
-                        cancelText: '取消',
-                        onConfirm: function() {
-                            uploadMainImages(files, true);
-                        }
-                    });
-                } else {
-                    uploadMainImages(files, false);
-                }
-            }).catch(err => showModalStatus('主图预检失败: ' + err, true));
-            });
-        }
-        window.setTimeout(function() {
-            var b = window.bindPmModalBackdropClose;
-            if (typeof b !== 'function') return;
-            var ud = document.getElementById('uploadDialogModal');
-            if (ud) b(ud, function() { ud.classList.remove('active'); });
-            var bulk = document.getElementById('bulk-sku-modal');
-            if (bulk) b(bulk, closeBulkSkuImportModal);
-            var mid = document.getElementById('main-image-desc-modal');
-            if (mid) b(mid, closeMainImageDescModal);
-            var sit = document.getElementById('sales-image-type-modal');
-            if (sit) b(sit, closeSalesImageTypeCreateModal);
-        }, 0);
-        function fallbackCopyText(text) {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.setAttribute('readonly', 'readonly');
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            ta.style.top = '0';
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            let ok = false;
-            try {
-                ok = document.execCommand('copy');
-            } catch (e) {
-                ok = false;
-            }
-            document.body.removeChild(ta);
-            return ok;
-        }
-
-        document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {
-            const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}\t${item.error || ''}`);
-            const text = lines.join('\n') || '无失败明细';
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(() => {
-                    showTimeoutToast('失败明细已复制');
-                }).catch(() => {
-                    if (fallbackCopyText(text)) {
-                        showTimeoutToast('失败明细已复制');
-                    } else {
-                        showTimeoutToast('复制失败，请手动复制');
-                    }
-                });
-            } else {
-                if (fallbackCopyText(text)) {
-                    showTimeoutToast('失败明细已复制');
-                } else {
-                    showTimeoutToast('当前环境不支持剪贴板复制');
-                }
-            }
-        });
-        window.setTimeout(function() {
-            var b = window.bindPmModalBackdropClose;
-            if (typeof b !== 'function') return;
-            var pm = document.getElementById('pm-modal');
-            if (pm) b(pm, closeModal);
-            var cm = document.getElementById('copy-modal');
-            if (cm) b(cm, closeCopyModal);
-        }, 0);
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('#modalSkuFamilySelect')) {
-                closeAllSelectPanels();
-            }
-        });
-        const mainImageReplaceInput = document.getElementById('mainImageReplaceInput');
-        if (mainImageReplaceInput) {
-            mainImageReplaceInput.addEventListener('change', function() {
-                const f = (this.files && this.files[0]) ? this.files[0] : null;
-                if (!f) return;
-                uploadReplaceMainImage(f);
-            });
-        }
         window.addEventListener('load', initPage);
     </script>
     <script src="/static/js/header.js"></script>

@@ -396,6 +396,12 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     -webkit-overflow-scrolling: touch;
     background-color: var(--sj-bg-body-base);
     background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
+    transition: opacity 0.12s ease;
+}
+
+.sitjoy-page-body.is-sitjoy-nav-loading {
+    opacity: 0.72;
+    pointer-events: none;
 }
 
 body.sitjoy-has-shell .sitjoy-page-body > .container,
