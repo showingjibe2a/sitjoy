@@ -1,13 +1,17 @@
 /**
  * SITJOY 设计令牌（语义层）
  * - 业务样式请使用 --sj-* / --sj-cmp-{组件}-*，不要写死色值
- * - 未来主题：新增 themes/xxx.css 覆盖变量，html[data-theme="xxx"]
- * - 组件变体：html[data-sj-{组件id}="{变体名}"] 覆盖 --sj-cmp-* 变量（见 theme-engine.css）
+ * - 组件样式页通过 theme.js 覆盖下列 --sj-variant-* / --sj-cmp-* / --morandi-*
+ * - 组件变体：html[data-sj-{组件id}="{变体名}"] 覆盖变量（见 theme-engine.css）
  */
 
 :root,
 html[data-theme="default"] {
     --sitjoy-page-min-width: 1300px;
+    --sitjoy-sidebar-width: 152px;
+    --sitjoy-sidebar-width-collapsed: 42px;
+    --sitjoy-topbar-height: 36px;
+
     --sj-radius-xs: 6px;
     --sj-radius-sm: 10px;
     --sj-radius-md: 12px;
@@ -18,7 +22,7 @@ html[data-theme="default"] {
     --sj-font-body: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     --sj-font-accent: 'Noto Serif SC', 'Songti SC', serif;
 
-    /* 兼容旧变量 */
+    /* —— 基础色板（palette 组件） —— */
     --morandi-dark: #2f2f33;
     --morandi-ink: #4a4e57;
     --morandi-slate: #7b8088;
@@ -38,18 +42,41 @@ html[data-theme="default"] {
     --sj-color-on-primary: #ffffff;
     --sj-color-on-body: var(--morandi-cream);
 
-    /* 页面背景（深色渐变，勿改亮） */
-    --sj-bg-body: linear-gradient(180deg, #3a3a40 0%, #2f2f33 70%);
+    /* —— 页面底纹（pageBody 组件） —— */
+    --sj-variant-page-bg-top: #3a3a40;
+    --sj-bg-body: linear-gradient(180deg, var(--sj-variant-page-bg-top) 0%, var(--morandi-dark) 70%);
+    --sj-bg-body-base: var(--morandi-dark);
+    --sj-bg-body-spotlight: radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.03) 0%, transparent 40%);
     --sj-bg-body-pattern: none;
     --sj-bg-body-size: auto;
 
-    /* —— 全局组件（--sj-variant-*） —— */
+    /* —— 顶栏（navbar 组件） —— */
     --sj-variant-navbar-bg: rgba(236, 231, 223, 0.92);
-    --sj-variant-navbar-border: transparent;
+    --sj-variant-navbar-border: rgba(207, 199, 189, 0.22);
     --sj-variant-navbar-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
     --sj-variant-navbar-backdrop: none;
     --sj-variant-navbar-text: var(--morandi-ink);
 
+    /* —— 侧栏（sidebar 组件） —— */
+    --sj-variant-sidebar-bg: var(--morandi-dark);
+    --sj-variant-sidebar-text: var(--morandi-sand);
+    --sj-variant-sidebar-text-active: var(--morandi-cream);
+    --sj-variant-sidebar-text-muted: rgba(207, 199, 189, 0.72);
+    --sj-variant-sidebar-accent: #7fa88b;
+    --sj-variant-sidebar-hover: rgba(255, 255, 255, 0.06);
+    --sj-variant-sidebar-active-bg: rgba(127, 168, 139, 0.16);
+    --sj-variant-sidebar-border: rgba(255, 255, 255, 0.07);
+
+    /* —— 顶栏页签（tabs 组件） —— */
+    --sj-variant-tab-text: var(--morandi-slate);
+    --sj-variant-tab-text-active: var(--morandi-ink);
+    --sj-variant-tab-bg-hover: #f7f4ef;
+    --sj-variant-tab-bg-active: #faf8f5;
+
+    /* —— 页标题（hero 组件，深色底上） —— */
+    --sj-variant-hero-text: var(--morandi-cream);
+
+    /* —— 卡片（card 组件） —— */
     --sj-variant-card-bg: var(--morandi-cream);
     --sj-variant-card-border: rgba(207, 199, 189, 0.42);
     --sj-variant-card-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
@@ -57,46 +84,74 @@ html[data-theme="default"] {
     --sj-variant-card-radius: var(--sj-radius-sm);
     --sj-variant-card-hover-transform: translateY(-5px);
 
+    /* —— 弹窗（modal 组件） —— */
     --sj-variant-modal-backdrop: rgba(3, 6, 12, 0.6);
     --sj-variant-modal-panel-bg: var(--morandi-cream);
     --sj-variant-modal-panel-border: rgba(255, 255, 255, 0.35);
     --sj-variant-modal-panel-shadow: 0 24px 70px rgba(4, 6, 12, 0.35);
 
+    /* —— 按钮（button 组件） —— */
     --sj-variant-btn-primary-bg: linear-gradient(90deg, var(--morandi-bluegray), var(--morandi-olive));
     --sj-variant-btn-primary-shadow-hover: 0 10px 30px rgba(154, 155, 143, 0.18);
     --sj-variant-btn-secondary-bg: var(--morandi-mist);
     --sj-variant-btn-secondary-border: var(--morandi-sand);
+    --sj-variant-btn-secondary-hover-bg: #e8e2da;
 
+    /* —— 首页资料卡（profile 组件） —— */
     --sj-variant-profile-bg: linear-gradient(135deg, rgba(255, 252, 247, 0.96) 0%, rgba(245, 239, 229, 0.88) 52%, rgba(236, 228, 216, 0.82) 100%);
     --sj-variant-profile-border: rgba(207, 199, 189, 0.55);
     --sj-variant-profile-shadow: 0 18px 40px rgba(62, 67, 61, 0.06);
     --sj-variant-profile-text: #3e433d;
 
+    /* —— 表格（table 组件） —— */
     --sj-variant-table-head-bg: rgba(248, 244, 238, 0.95);
     --sj-variant-table-row-hover: rgba(236, 231, 223, 0.45);
+
+    /* —— 面板 / 表单（formInput 组件） —— */
     --sj-variant-panel-bg: rgba(248, 244, 238, 0.86);
     --sj-variant-panel-border: rgba(207, 199, 189, 0.85);
     --sj-variant-input-bg: rgba(236, 231, 223, 0.88);
     --sj-variant-input-border: rgba(207, 199, 189, 0.72);
 
-    /* —— 子组件令牌（--sj-cmp-*，供变体覆盖） —— */
+    /* —— 圆形图标按钮（iconCircle 组件） —— */
+    --sj-cmp-icon-close-color: var(--morandi-rose);
+    --sj-cmp-icon-close-border: var(--morandi-rose);
+    --sj-cmp-icon-close-hover-bg: rgba(182, 127, 127, 0.14);
+    --sj-cmp-icon-tool-border: var(--morandi-sand);
+    --sj-cmp-icon-tool-color: var(--morandi-slate);
+    --sj-cmp-icon-tool-bg: #ffffff;
+    --sj-cmp-icon-tool-hover-bg: rgba(182, 127, 127, 0.08);
+    --sj-cmp-icon-pin-active-color: var(--morandi-bluegray);
+    --sj-cmp-icon-pin-active-border: var(--morandi-bluegray);
+
+    /* —— 通知（notification 组件） —— */
+    --sj-variant-notification-panel-bg: var(--morandi-cream);
+    --sj-variant-notification-panel-border: rgba(207, 199, 189, 0.55);
+    --sj-variant-notification-badge-bg: var(--morandi-rose);
+
+    /* —— 提示条（toast 组件） —— */
+    --sj-variant-toast-success-from: #2f8a42;
+    --sj-variant-toast-success-to: #2f6f2f;
+    --sj-variant-toast-error-from: #d74b4b;
+    --sj-variant-toast-error-to: #b13636;
+
+    /* —— 状态分段（statusSegment 组件） —— */
     --sj-cmp-status-segment-bg: rgba(207, 199, 189, 0.3);
     --sj-cmp-status-segment-border: rgba(207, 199, 189, 0.8);
     --sj-cmp-status-segment-radius: 999px;
     --sj-cmp-status-segment-gap: 0.32rem;
     --sj-cmp-status-segment-pill-color: var(--morandi-ink);
     --sj-cmp-status-segment-pill-active-bg: #7fa88b;
-
     --sj-cmp-status-segment-inline-radius: 10px;
     --sj-cmp-status-segment-inline-scale: 0.95;
 
+    /* —— 日期输入（dateInput 组件） —— */
     --sj-cmp-date-input-border: var(--morandi-sand);
     --sj-cmp-date-input-border-width: 2px;
     --sj-cmp-date-input-radius: 6px;
     --sj-cmp-date-input-min-height: 42px;
     --sj-cmp-date-input-bg-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2016%2016%27%3E%3Crect%20x%3D%272%27%20y%3D%273%27%20width%3D%2712%27%20height%3D%2711%27%20rx%3D%272%27%20fill%3D%27%23ffffff%27%20stroke%3D%27%233b2f2a%27%20stroke-width%3D%271%27/%3E%3Crect%20x%3D%272%27%20y%3D%273%27%20width%3D%2712%27%20height%3D%273%27%20rx%3D%272%27%20fill%3D%27%23d54b4b%27/%3E%3Crect%20x%3D%275%27%20y%3D%271%27%20width%3D%272%27%20height%3D%273%27%20rx%3D%271%27%20fill%3D%27%233b2f2a%27/%3E%3Crect%20x%3D%279%27%20y%3D%271%27%20width%3D%272%27%20height%3D%273%27%20rx%3D%271%27%20fill%3D%27%233b2f2a%27/%3E%3Cline%20x1%3D%274%27%20y1%3D%278%27%20x2%3D%2712%27%20y2%3D%278%27%20stroke%3D%27%23cfc7bd%27%20stroke-width%3D%271%27/%3E%3Cline%20x1%3D%274%27%20y1%3D%2711%27%20x2%3D%2712%27%20y2%3D%2711%27%20stroke%3D%27%23cfc7bd%27%20stroke-width%3D%271%27/%3E%3C/svg%3E");
     --sj-cmp-date-input-bg-gradient: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
-
     --sj-cmp-date-text-min-height: 28px;
     --sj-cmp-date-text-radius: 10px;
     --sj-cmp-date-text-border-width: 1px;

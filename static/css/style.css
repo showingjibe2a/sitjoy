@@ -8,24 +8,7 @@
     box-sizing: border-box;
 }
 
-:root {
-    /* 莫兰迪配色（低饱和、高级感） */
-    --morandi-dark: #2f2f33;
-    --morandi-ink: #4a4e57;
-    --morandi-slate: #7b8088;
-    --morandi-bluegray: #8b97a3;
-    --morandi-olive: #9a9b8f;
-    --morandi-sand: #cfc7bd;
-    --morandi-cream: #ece7df;
-    --morandi-mist: #f3f0ec;
-    --morandi-accent: #9aa3a8;
-    /* 莫兰迪红（关闭、弱警示等，低饱和） */
-    --morandi-rose: #b67f7f;
-    /** 主图/媒体卡片内透明 PNG 的衬底（避免在深色 body 合成下透出发黑）；可按页覆盖 */
-    --sj-media-image-canvas: #ffffff;
-    /** 与 .container 一致的最小内容宽度，顶栏底色与主内容区横向对齐 */
-    --sitjoy-page-min-width: 1300px;
-}
+/* 色板与组件令牌见 tokens.css；组件样式页可覆盖 --sj-variant-* / --morandi-* */
 
 /**
  * 通用圆形关闭（×）：外圈与字重视觉一致（2px 描边 + 粗体字形），莫兰迪红
@@ -43,8 +26,8 @@ button.modal-close {
     padding: 0;
     margin: 0;
     background: transparent;
-    color: var(--morandi-rose);
-    border: 2px solid var(--morandi-rose);
+    color: var(--sj-cmp-icon-close-color);
+    border: 2px solid var(--sj-cmp-icon-close-border);
     border-radius: 50%;
     font-size: 0.8125rem;
     font-weight: 700;
@@ -65,9 +48,9 @@ button.modal-close::-moz-focus-inner {
 }
 
 button.modal-close:hover {
-    background: rgba(182, 127, 127, 0.14);
-    color: var(--morandi-rose);
-    border-color: var(--morandi-rose);
+    background: var(--sj-cmp-icon-close-hover-bg);
+    color: var(--sj-cmp-icon-close-color);
+    border-color: var(--sj-cmp-icon-close-border);
 }
 
 button.modal-close:focus-visible {
@@ -77,8 +60,8 @@ button.modal-close:focus-visible {
 
 body {
     font-family: var(--sj-font-body);
-    background: var(--sj-bg-body);
-    background-image: var(--sj-bg-body-pattern);
+    background-color: var(--sj-bg-body-base);
+    background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
     background-size: var(--sj-bg-body-size);
     min-height: 100vh;
     display: flex;
@@ -585,23 +568,31 @@ body.sitjoy-has-shell {
 
 .sitjoy-notification-trigger {
     position: relative;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
-    border: 1px solid rgba(207, 199, 189, 0.75);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.72);
-    color: var(--morandi-ink);
-    cursor: pointer;
+    width: 1.375rem;
+    height: 1.375rem;
+    min-width: 1.375rem;
+    min-height: 1.375rem;
     padding: 0;
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    line-height: 0;
 }
 
-.sitjoy-notification-trigger:hover,
-.sitjoy-notification-trigger[aria-expanded="true"] {
-    background: rgba(255, 255, 255, 0.95);
-    border-color: rgba(154, 144, 131, 0.85);
+button.help-dot {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    font-size: 0;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .sitjoy-notification-badge {
@@ -612,7 +603,7 @@ body.sitjoy-has-shell {
     height: 16px;
     padding: 0 4px;
     border-radius: 999px;
-    background: #b67f7f;
+    background: var(--sj-variant-notification-badge-bg);
     color: #fff;
     font-size: 10px;
     font-weight: 700;
@@ -633,9 +624,9 @@ body.sitjoy-has-shell {
     max-height: min(420px, calc(100vh - 24px));
     display: flex;
     flex-direction: column;
-    border: 1px solid rgba(207, 199, 189, 0.85);
+    border: 1px solid var(--sj-variant-notification-panel-border);
     border-radius: 12px;
-    background: var(--morandi-cream);
+    background: var(--sj-variant-notification-panel-bg);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.14);
     z-index: 12050;
     overflow: hidden;
@@ -836,7 +827,7 @@ body.sitjoy-has-shell {
 
 .hero {
     text-align: left;
-    color: var(--morandi-cream);
+    color: var(--sj-variant-hero-text);
     margin-bottom: 1rem;
     animation: slideDown 0.6s ease-out;
 }
@@ -3706,14 +3697,14 @@ table.sf-table td.sf-cell-thumb {
 
 .btn-secondary,
 .btn-small {
-    background: var(--morandi-mist);
-    border: 1px solid var(--morandi-sand);
+    background: var(--sj-variant-btn-secondary-bg);
+    border: 1px solid var(--sj-variant-btn-secondary-border);
     color: var(--morandi-ink);
 }
 .btn-secondary:hover,
 .btn-small:hover {
     color: var(--morandi-ink);
-    background: rgba(207, 199, 189, 0.55);
+    background: var(--sj-variant-btn-secondary-hover-bg);
 }
 
 .form-group {
@@ -3849,15 +3840,6 @@ button:hover {
 .app-toast.show {
     transform: translateY(0);
     opacity: 1;
-}
-
-.app-toast.success {
-    background: linear-gradient(135deg, #2f8a42, #2f6f2f);
-}
-
-.app-toast.error {
-    background: linear-gradient(135deg, #d74b4b, #b13636);
-    border: 1px solid rgba(255, 225, 225, 0.5);
 }
 
 .app-toast-message {
@@ -4001,12 +3983,6 @@ footer {
     to {
         opacity: 1;
     }
-}
-
-/* 页面底纹（莫兰迪深色） */
-body {
-    background-color: var(--morandi-dark);
-    background-image: radial-gradient(circle at 10% 10%, rgba(255,255,255,0.03) 0%, transparent 40%);
 }
 
 /* 宽布局容器（供 gallery 使用） */
@@ -6247,7 +6223,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除图标微按钮、小号按钮、状态 pill 等） */
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn) {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -6308,11 +6284,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):active {
     transform: translateY(0);
 }
 
@@ -6998,38 +6974,3 @@ select.pm-inline-compact-select,
     padding: 0.65rem 1rem;
 }
 
-/* 应用壳微按钮：不受全站胶囊按钮规范影响（须位于 style.css 末尾） */
-.sitjoy-app-shell .sitjoy-shell-icon-btn,
-.sitjoy-app-shell .sitjoy-topbar-logout,
-.sitjoy-app-shell .sitjoy-tab-pin,
-.sitjoy-app-shell .sitjoy-tab-close,
-.sitjoy-app-shell .sitjoy-notification-trigger {
-    min-height: unset;
-    height: auto;
-    padding: 0;
-    border: none;
-    border-radius: 0;
-    font-size: inherit;
-    font-weight: inherit;
-    line-height: inherit;
-    display: inline-flex;
-    transform: none;
-    box-shadow: none;
-    white-space: normal;
-    min-width: unset;
-    background: transparent;
-    color: inherit;
-}
-
-.sitjoy-app-shell .sitjoy-shell-icon-btn:hover,
-.sitjoy-app-shell .sitjoy-shell-icon-btn:active,
-.sitjoy-app-shell .sitjoy-topbar-logout:hover,
-.sitjoy-app-shell .sitjoy-topbar-logout:active,
-.sitjoy-app-shell .sitjoy-tab-pin:hover,
-.sitjoy-app-shell .sitjoy-tab-pin:active,
-.sitjoy-app-shell .sitjoy-tab-close:hover,
-.sitjoy-app-shell .sitjoy-tab-close:active,
-.sitjoy-app-shell .sitjoy-notification-trigger:hover,
-.sitjoy-app-shell .sitjoy-notification-trigger:active {
-    transform: none;
-}

@@ -19,6 +19,98 @@ html[data-sj-date-input="compact"] {
     --sj-cmp-date-text-min-height: 26px;
 }
 
+/* —— 圆形图标按钮（iconCircle） —— */
+button.modal-close {
+    color: var(--sj-cmp-icon-close-color);
+    border-color: var(--sj-cmp-icon-close-border);
+}
+
+button.modal-close:hover {
+    background: var(--sj-cmp-icon-close-hover-bg);
+    color: var(--sj-cmp-icon-close-color);
+    border-color: var(--sj-cmp-icon-close-border);
+}
+
+.help-dot,
+button.help-dot {
+    border-color: var(--sj-cmp-icon-tool-border) !important;
+    color: var(--sj-cmp-icon-tool-color) !important;
+    background: var(--sj-cmp-icon-tool-bg) !important;
+}
+
+.sitjoy-notification-trigger {
+    border-color: var(--sj-cmp-icon-tool-border);
+    color: var(--sj-cmp-icon-tool-color);
+}
+
+.sitjoy-notification-trigger:hover,
+.sitjoy-notification-trigger[aria-expanded="true"] {
+    background: var(--sj-cmp-icon-tool-hover-bg);
+    color: var(--sj-color-ink);
+    border-color: var(--sj-cmp-icon-tool-border);
+}
+
+button.modal-close.sitjoy-tab-pin,
+button.modal-close.sitjoy-sidebar-collapse-btn {
+    border-color: var(--sj-cmp-icon-tool-border);
+    color: var(--sj-cmp-icon-tool-color);
+}
+
+.sitjoy-tab.is-pinned .sitjoy-tab-pin {
+    border-color: var(--sj-cmp-icon-pin-active-border);
+    color: var(--sj-cmp-icon-pin-active-color);
+}
+
+/* —— 顶栏页签（tabs） —— */
+.sitjoy-tab {
+    color: var(--sj-variant-tab-text);
+}
+
+.sitjoy-tab:hover {
+    background: var(--sj-variant-tab-bg-hover);
+    color: var(--sj-variant-tab-text-active);
+}
+
+.sitjoy-tab.is-active {
+    background: var(--sj-variant-tab-bg-active);
+    color: var(--sj-variant-tab-text-active);
+}
+
+/* —— 页标题（hero） —— */
+.hero,
+.hero h1,
+.hero h2,
+body.sitjoy-has-shell .hero.is-standard-page-hero,
+body.sitjoy-has-shell .hero.is-standard-page-hero h1,
+body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
+    color: var(--sj-variant-hero-text);
+}
+
+/* —— 提示条（toast） —— */
+.app-toast.success {
+    background: linear-gradient(135deg, var(--sj-variant-toast-success-from), var(--sj-variant-toast-success-to));
+}
+
+.app-toast.error {
+    background: linear-gradient(135deg, var(--sj-variant-toast-error-from), var(--sj-variant-toast-error-to));
+}
+
+/* —— 通知面板（notification） —— */
+.sitjoy-notification-panel {
+    background: var(--sj-variant-notification-panel-bg);
+    border-color: var(--sj-variant-notification-panel-border);
+}
+
+.sitjoy-notification-badge {
+    background: var(--sj-variant-notification-badge-bg);
+}
+
+/* —— 次要按钮悬停 —— */
+.btn-secondary:hover,
+button.btn-secondary:hover {
+    background: var(--sj-variant-btn-secondary-hover-bg);
+}
+
 /* 状态分段 status-segment */
 .status-segment {
     background: var(--sj-cmp-status-segment-bg);
@@ -242,6 +334,103 @@ html[data-sj-date-input="compact"] {
 .sitjoy-theme-preview-navbar-links {
     color: var(--sj-color-muted);
     font-size: 0.72rem;
+}
+
+.sitjoy-theme-preview-sidebar {
+    width: 9rem;
+    max-height: 5.5rem;
+    overflow: hidden;
+    border-radius: var(--sj-radius-xs);
+}
+
+.sitjoy-theme-preview-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: center;
+}
+
+.sitjoy-theme-preview-palette span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--morandi-ink);
+    border: 1px solid var(--sj-variant-panel-border);
+}
+
+.sitjoy-theme-preview-palette span:first-child {
+    color: var(--morandi-cream);
+}
+
+.sitjoy-theme-preview-page-body {
+    width: 100%;
+    max-width: 16rem;
+    min-height: 4.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--sj-radius-xs);
+    background-color: var(--sj-bg-body-base);
+    background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
+    color: var(--sj-variant-hero-text);
+    font-size: 0.76rem;
+}
+
+.sitjoy-theme-preview-tabs {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--sj-radius-xs);
+    background: var(--sj-variant-navbar-bg);
+}
+
+.sitjoy-theme-preview-icon-circles {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    justify-content: center;
+}
+
+.sitjoy-theme-preview-hero {
+    width: 100%;
+    max-width: 16rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--sj-radius-xs);
+    background-color: var(--sj-bg-body-base);
+    background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
+}
+
+.sitjoy-theme-preview-hero h2 {
+    margin: 0;
+    font-size: 0.92rem;
+}
+
+.sitjoy-theme-preview-toasts {
+    display: grid;
+    gap: 0.4rem;
+    width: 100%;
+    max-width: 14rem;
+}
+
+.sitjoy-theme-preview-toasts .app-toast {
+    position: static;
+    transform: none;
+    opacity: 1;
+}
+
+.sitjoy-theme-preview-notification {
+    width: 100%;
+    max-width: 14rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: var(--sj-radius-xs);
+    border: 1px solid var(--sj-variant-notification-panel-border);
 }
 
 .sitjoy-theme-preview-card {

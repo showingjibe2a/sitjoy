@@ -166,7 +166,6 @@ PAGE_TEMPLATE_MAP = {
     '/factory-stock-management': ('templates/factory_stock_management.html', 'factory_stock_management'),
     '/factory-wip-management': ('templates/factory_wip_management.html', 'factory_wip_management'),
     '/aplus-management': ('templates/aplus_management.html', 'aplus_management'),
-    '/widgets': ('templates/widgets.html', 'widgets'),
     '/widgets/theme': ('templates/widgets_theme.html', 'widgets_theme'),
     '/widgets/go-play': ('templates/widgets_go_play.html', 'widgets_go_play'),
     '/widgets/go-play/board': ('templates/widgets_go_play_board.html', 'widgets_go_play'),

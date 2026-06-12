@@ -8,13 +8,21 @@
     const STORAGE_KEY = 'sitjoy_theme_prefs_v2';
 
     const COMPONENT_REGISTRY = [
+        { id: 'palette', dataAttr: 'sjPalette', label: '基础色板', variants: { default: '默认' } },
+        { id: 'pageBody', dataAttr: 'sjPageBody', label: '页面底纹', variants: { default: '默认' } },
         { id: 'navbar', dataAttr: 'sjNavbar', label: '顶栏', variants: { default: '默认' } },
+        { id: 'sidebar', dataAttr: 'sjSidebar', label: '侧栏导航', variants: { default: '默认' } },
+        { id: 'tabs', dataAttr: 'sjTabs', label: '顶栏页签', variants: { default: '默认' } },
+        { id: 'iconCircle', dataAttr: 'sjIconCircle', label: '圆形图标按钮', variants: { default: '默认' } },
+        { id: 'hero', dataAttr: 'sjHero', label: '页标题', variants: { default: '默认' } },
         { id: 'card', dataAttr: 'sjCard', label: '卡片', variants: { default: '默认' } },
         { id: 'modal', dataAttr: 'sjModal', label: '弹窗', variants: { default: '默认' } },
         { id: 'profile', dataAttr: 'sjProfile', label: '首页资料卡', variants: { default: '默认' } },
         { id: 'button', dataAttr: 'sjButton', label: '按钮', variants: { default: '默认' } },
         { id: 'table', dataAttr: 'sjTable', label: '表格', variants: { default: '默认' } },
         { id: 'formInput', dataAttr: 'sjFormInput', label: '表单输入', variants: { default: '默认' } },
+        { id: 'notification', dataAttr: 'sjNotification', label: '通知', variants: { default: '默认' } },
+        { id: 'toast', dataAttr: 'sjToast', label: '提示条', variants: { default: '默认' } },
         {
             id: 'statusSegment',
             dataAttr: 'sjStatusSegment',
@@ -31,9 +39,66 @@
 
     /** @type {Record<string, { description: string, colors?: Array<{ token: string, label: string, default: string }> }>} */
     const COMPONENT_META = {
+        palette: {
+            description: '全站莫兰迪基础色；其它组件中引用这些颜色的区域会随之联动。',
+            colors: [
+                { token: '--morandi-dark', label: '深色底', default: '#2f2f33' },
+                { token: '--morandi-ink', label: '正文墨', default: '#4a4e57' },
+                { token: '--morandi-slate', label: '次要文字', default: '#7b8088' },
+                { token: '--morandi-sand', label: '沙色', default: '#cfc7bd' },
+                { token: '--morandi-cream', label: '奶油', default: '#ece7df' },
+                { token: '--morandi-rose', label: '弱警示/关闭', default: '#b67f7f' },
+                { token: '--morandi-bluegray', label: '蓝灰强调', default: '#8b97a3' },
+                { token: '--morandi-olive', label: '橄榄辅助', default: '#9a9b8f' }
+            ]
+        },
+        pageBody: {
+            description: '主内容区深色底纹与渐变顶色。',
+            colors: [
+                { token: '--sj-bg-body-base', label: '底色', default: '#2f2f33' },
+                { token: '--sj-variant-page-bg-top', label: '渐变顶色', default: '#3a3a40' }
+            ]
+        },
         navbar: {
-            description: '全站顶部导航栏背景与阴影，影响 logo、菜单与用户信息区域。',
-            colors: [{ token: '--sj-variant-navbar-bg', label: '背景色', default: '#ece7df' }]
+            description: '顶栏背景、描边与文字（页签右侧用户信息区同色）。',
+            colors: [
+                { token: '--sj-variant-navbar-bg', label: '背景色', default: '#ece7df' },
+                { token: '--sj-variant-navbar-text', label: '文字色', default: '#4a4e57' },
+                { token: '--sj-variant-navbar-border', label: '底部分割线', default: '#e0d9cf' }
+            ]
+        },
+        sidebar: {
+            description: '左侧导航背景与链接/分组标题色。',
+            colors: [
+                { token: '--sj-variant-sidebar-bg', label: '背景色', default: '#2f2f33' },
+                { token: '--sj-variant-sidebar-text', label: '链接文字', default: '#cfc7bd' },
+                { token: '--sj-variant-sidebar-text-active', label: '选中/标题', default: '#ece7df' },
+                { token: '--sj-variant-sidebar-accent', label: '选中指示条', default: '#7fa88b' }
+            ]
+        },
+        tabs: {
+            description: '顶栏已打开页面页签的悬停与选中态。',
+            colors: [
+                { token: '--sj-variant-tab-text', label: '默认文字', default: '#7b8088' },
+                { token: '--sj-variant-tab-text-active', label: '选中文字', default: '#4a4e57' },
+                { token: '--sj-variant-tab-bg-hover', label: '悬停背景', default: '#f7f4ef' },
+                { token: '--sj-variant-tab-bg-active', label: '选中背景', default: '#faf8f5' }
+            ]
+        },
+        iconCircle: {
+            description: '关闭(×)、固定、通知、帮助(?) 等圆形微按钮。',
+            colors: [
+                { token: '--sj-cmp-icon-close-color', label: '关闭图标/描边', default: '#b67f7f' },
+                { token: '--sj-cmp-icon-close-border', label: '关闭描边', default: '#b67f7f' },
+                { token: '--sj-cmp-icon-tool-border', label: '工具钮描边', default: '#cfc7bd' },
+                { token: '--sj-cmp-icon-tool-color', label: '工具钮图标', default: '#7b8088' },
+                { token: '--sj-cmp-icon-tool-bg', label: '工具钮底色', default: '#ffffff' },
+                { token: '--sj-cmp-icon-pin-active-color', label: '已固定图标', default: '#8b97a3' }
+            ]
+        },
+        hero: {
+            description: '深色页面底上的标题与 hero 区文字。',
+            colors: [{ token: '--sj-variant-hero-text', label: '标题文字', default: '#ece7df' }]
         },
         card: {
             description: '业务页主内容卡片容器，含圆角、边框与悬停阴影。',
@@ -43,8 +108,11 @@
             ]
         },
         modal: {
-            description: '弹窗面板背景与边框，用于编辑、确认等对话框。',
-            colors: [{ token: '--sj-variant-modal-panel-bg', label: '面板背景', default: '#ece7df' }]
+            description: '弹窗遮罩与面板背景。',
+            colors: [
+                { token: '--sj-variant-modal-panel-bg', label: '面板背景', default: '#ece7df' },
+                { token: '--sj-variant-modal-backdrop', label: '遮罩色', default: '#03060c' }
+            ]
         },
         profile: {
             description: '首页个人信息卡片，展示头像、问候语与快捷入口。',
@@ -54,18 +122,41 @@
             ]
         },
         button: {
-            description: '主要与次要操作按钮，含胶囊形与悬停反馈。',
-            colors: [{ token: '--sj-variant-btn-secondary-bg', label: '次要按钮背景', default: '#f3f0ec' }]
+            description: '主要与次要操作按钮（胶囊形）。',
+            colors: [
+                { token: '--sj-variant-btn-secondary-bg', label: '次要按钮背景', default: '#f3f0ec' },
+                { token: '--sj-variant-btn-secondary-border', label: '次要按钮边框', default: '#cfc7bd' },
+                { token: '--sj-variant-btn-secondary-hover-bg', label: '次要悬停背景', default: '#e8e2da' }
+            ]
         },
         table: {
-            description: '数据表格表头、行悬停与斑马纹区域。',
-            colors: [{ token: '--sj-variant-table-head-bg', label: '表头背景', default: '#f8f4ee' }]
+            description: '数据表格表头与行悬停。',
+            colors: [
+                { token: '--sj-variant-table-head-bg', label: '表头背景', default: '#f8f4ee' },
+                { token: '--sj-variant-table-row-hover', label: '行悬停', default: '#ece7df' }
+            ]
         },
         formInput: {
             description: '文本框、下拉与可选字段的输入区域样式。',
             colors: [
                 { token: '--sj-variant-input-bg', label: '输入背景', default: '#ece7df' },
                 { token: '--sj-variant-input-border', label: '输入边框', default: '#cfc7bd' }
+            ]
+        },
+        notification: {
+            description: '顶栏通知铃铛角标与下拉面板。',
+            colors: [
+                { token: '--sj-variant-notification-panel-bg', label: '面板背景', default: '#ece7df' },
+                { token: '--sj-variant-notification-badge-bg', label: '未读角标', default: '#b67f7f' }
+            ]
+        },
+        toast: {
+            description: '右下角成功/错误提示条。',
+            colors: [
+                { token: '--sj-variant-toast-success-from', label: '成功渐变起点', default: '#2f8a42' },
+                { token: '--sj-variant-toast-success-to', label: '成功渐变终点', default: '#2f6f2f' },
+                { token: '--sj-variant-toast-error-from', label: '错误渐变起点', default: '#d74b4b' },
+                { token: '--sj-variant-toast-error-to', label: '错误渐变终点', default: '#b13636' }
             ]
         },
         statusSegment: {
@@ -268,11 +359,43 @@
 
     function buildPreviewHtml(componentId) {
         switch (componentId) {
+            case 'palette':
+                return `<div class="sitjoy-theme-preview-palette" aria-hidden="true">
+                    <span style="background:var(--morandi-dark)">深</span>
+                    <span style="background:var(--morandi-sand)">沙</span>
+                    <span style="background:var(--morandi-cream)">奶</span>
+                    <span style="background:var(--morandi-rose)">红</span>
+                </div>`;
+            case 'pageBody':
+                return `<div class="sitjoy-theme-preview-page-body" aria-hidden="true"><span>深色底纹区</span></div>`;
             case 'navbar':
                 return `<div class="sitjoy-theme-preview-navbar navbar" aria-hidden="true">
                     <span class="sitjoy-theme-preview-navbar-brand">SITJOY</span>
                     <span class="sitjoy-theme-preview-navbar-links">首页 · 产品 · 小组件</span>
                 </div>`;
+            case 'sidebar':
+                return `<aside class="sitjoy-sidebar sitjoy-theme-preview-sidebar" aria-hidden="true">
+                    <div class="sitjoy-sidebar-nav-wrap">
+                        <div class="sitjoy-sidebar-group-label">销售管理</div>
+                        <a class="sitjoy-sidebar-link" href="#">销量预测</a>
+                        <a class="sitjoy-sidebar-link active" href="#">销售产品</a>
+                    </div>
+                </aside>`;
+            case 'tabs':
+                return `<div class="sitjoy-theme-preview-tabs" aria-hidden="true">
+                    <a class="sitjoy-tab" href="#">首页</a>
+                    <a class="sitjoy-tab is-active" href="#">销量预测</a>
+                </div>`;
+            case 'iconCircle':
+                return `<div class="sitjoy-theme-preview-icon-circles" aria-hidden="true">
+                    <button type="button" class="help-dot" tabindex="-1"></button>
+                    <button type="button" class="sitjoy-notification-trigger" tabindex="-1" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+                    </button>
+                    <button type="button" class="modal-close sitjoy-tab-pin" tabindex="-1" aria-hidden="true">×</button>
+                </div>`;
+            case 'hero':
+                return `<div class="sitjoy-theme-preview-hero hero is-standard-page-hero" aria-hidden="true"><h2>页面标题示例</h2></div>`;
             case 'card':
                 return `<div class="card sitjoy-theme-preview-card" aria-hidden="true">
                     <h4>示例卡片</h4>
@@ -310,6 +433,16 @@
             case 'formInput':
                 return `<div class="sitjoy-theme-preview-form" aria-hidden="true">
                     <label>字段名<input type="text" class="optional-field" value="示例文本" tabindex="-1" readonly></label>
+                </div>`;
+            case 'notification':
+                return `<div class="sitjoy-theme-preview-notification sitjoy-notification-panel" aria-hidden="true" style="position:relative;display:block;box-shadow:var(--sj-variant-modal-panel-shadow);">
+                    <div class="sitjoy-notification-panel-head"><strong>通知</strong></div>
+                    <div class="sitjoy-notification-empty">暂无通知</div>
+                </div>`;
+            case 'toast':
+                return `<div class="sitjoy-theme-preview-toasts" aria-hidden="true">
+                    <div class="app-toast success show">保存成功</div>
+                    <div class="app-toast error show">操作失败</div>
                 </div>`;
             case 'statusSegment':
                 return `<div class="status-segment status-segment--inline sitjoy-theme-preview-segment" aria-hidden="true">
@@ -478,7 +611,7 @@
         const prefs = loadPrefs();
         const rows = COMPONENT_REGISTRY.map(def => buildStudioRowHtml(def, prefs)).join('');
         root.innerHTML = `<div class="sitjoy-theme-studio-toolbar">
-            <p class="sitjoy-theme-studio-hint">为各组件选择变体并微调颜色；扩展方式见 static/css/STYLE_GUIDE.md。</p>
+            <p class="sitjoy-theme-studio-hint">全站 UI 按组件分区管理：先调「基础色板」再微调各组件；设置保存在本浏览器，全站即时生效。</p>
             <button type="button" class="btn-secondary btn-small" id="sitjoyThemeResetAll">全部恢复默认</button>
         </div>
         <div class="pm-table-wrap sitjoy-theme-studio-table-wrap">

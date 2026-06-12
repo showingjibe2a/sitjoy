@@ -8280,9 +8280,8 @@
 
     let sitjoyTabsDragId = null;
 
-    const SITJOY_TAB_ICON_PIN = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
-    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
-    const SITJOY_TAB_ICON_CLOSE = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>';
+    const SITJOY_TAB_ICON_PIN = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
+    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
 
     function renderSitjoyTabs(state){
         const host = document.getElementById('sitjoyTopTabs');
@@ -8301,8 +8300,8 @@
             const pinIcon = tab.pinned ? SITJOY_TAB_ICON_PIN_ACTIVE : SITJOY_TAB_ICON_PIN;
             el.innerHTML = `<span class="sitjoy-tab-label">${escapeSitjoyTabHtml(tab.label || href)}</span>
                 <span class="sitjoy-tab-actions">
-                    <button type="button" class="sitjoy-tab-pin" title="${tab.pinned ? '取消固定' : '固定到顶栏'}" aria-label="${tab.pinned ? '取消固定' : '固定到顶栏'}">${pinIcon}</button>
-                    ${tab.pinned ? '' : `<button type="button" class="sitjoy-tab-close" title="关闭" aria-label="关闭">${SITJOY_TAB_ICON_CLOSE}</button>`}
+                    <button type="button" class="modal-close sitjoy-tab-pin" title="${tab.pinned ? '取消固定' : '固定到顶栏'}" aria-label="${tab.pinned ? '取消固定' : '固定到顶栏'}">${pinIcon}</button>
+                    ${tab.pinned ? '' : `<button type="button" class="modal-close sitjoy-tab-close" title="关闭" aria-label="关闭">×</button>`}
                 </span>`;
             host.appendChild(el);
         });
@@ -8475,23 +8474,17 @@
     }
 
     function initTopbarUser(authData){
-        const block = document.getElementById('sitjoyTopbarUserBlock');
         const el = document.getElementById('sitjoyTopbarUser');
-        const avatar = document.getElementById('sitjoyTopbarAvatar');
         if(!el) return;
         if(!authData || authData.status === 'error'){
-            if(block) block.hidden = true;
+            el.hidden = true;
             el.textContent = '';
             return;
         }
-        if(block) block.hidden = false;
+        el.hidden = false;
         const name = authData.display_name || authData.name || authData.username || '用户';
         el.textContent = name;
         el.title = name;
-        if(avatar){
-            const initial = String(name).trim().charAt(0) || '?';
-            avatar.textContent = initial;
-        }
     }
 
     function initTopbarClock(){

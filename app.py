@@ -133,7 +133,6 @@ class WSGIApp(
             'gallery': '图片管理',
             'image_type_management': '图片类型管理',
             'aplus_management': 'A+管理',
-            'widgets': '小组件',
             'widgets_theme': '组件样式',
             'widgets_go_play': '围棋对弈',
             'widgets_mahjong': '麻将',
@@ -155,7 +154,7 @@ class WSGIApp(
             {'key': 'system_management', 'title': '系统管理', 'page_keys': ['system_employee_management', 'system_audit_log_management']},
             {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
             {'key': 'about', 'title': '关于', 'page_keys': ['about']},
-            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets', 'widgets_theme', 'widgets_go_play', 'widgets_mahjong']},
+            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets_theme', 'widgets_go_play', 'widgets_mahjong']},
         ]
 
     @staticmethod
