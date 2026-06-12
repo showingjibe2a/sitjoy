@@ -1,11 +1,16 @@
 /**
- * 应用壳布局（颜色均来自 tokens.css / 组件样式页）
+ * 应用壳布局（颜色均来自 tokens.css，由组件样式页管理）
  */
 
-:root {
-    --sitjoy-sidebar-width: 152px;
-    --sitjoy-sidebar-width-collapsed: 42px;
-    --sitjoy-topbar-height: 36px;
+.sitjoy-sidebar {
+    flex: 0 0 var(--sitjoy-sidebar-width);
+    width: var(--sitjoy-sidebar-width);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--sj-variant-sidebar-bg);
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.18);
+    transition: flex-basis 0.2s ease, width 0.2s ease;
 }
 
 body.sitjoy-has-shell {
@@ -14,7 +19,7 @@ body.sitjoy-has-shell {
     max-height: 100dvh;
     overflow: hidden;
     min-width: 0;
-    background: var(--morandi-dark);
+    background-color: var(--sj-bg-body-base);
     color: var(--sj-color-on-body);
 }
 
@@ -40,17 +45,6 @@ body.sitjoy-has-shell > footer {
     overflow: hidden;
 }
 
-.sitjoy-sidebar {
-    flex: 0 0 var(--sitjoy-sidebar-width);
-    width: var(--sitjoy-sidebar-width);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--sj-variant-sidebar-bg);
-    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.18);
-    transition: flex-basis 0.2s ease, width 0.2s ease;
-}
-
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar {
     flex-basis: var(--sitjoy-sidebar-width-collapsed);
     width: var(--sitjoy-sidebar-width-collapsed);
@@ -64,7 +58,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar {
     gap: 0.2rem;
     padding: 0 0.35rem 0 0.55rem;
     min-height: var(--sitjoy-topbar-height);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    border-bottom: 1px solid var(--sj-variant-sidebar-border);
 }
 
 .sitjoy-sidebar-logo {
@@ -114,30 +108,31 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 .sitjoy-sidebar-sub a {
     display: block;
     position: relative;
-    padding: 0.28rem 0.4rem 0.28rem 0.46rem;
-    color: var(--sj-variant-sidebar-text);
     text-decoration: none;
-    font-size: 0.76rem;
-    font-weight: 400;
     line-height: 1.38;
     transition: color 0.12s ease, background 0.12s ease;
 }
 
-.sitjoy-sidebar-link:hover,
-.sitjoy-sidebar-sub a:hover {
+/* 大模块：首页 + 分组标题 */
+.sitjoy-sidebar-link {
+    padding: 0.32rem 0.4rem 0.28rem 0.46rem;
+    color: var(--sj-variant-sidebar-group-text);
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.sitjoy-sidebar-link:hover {
     background: var(--sj-variant-sidebar-hover);
     color: var(--sj-variant-sidebar-text-active);
 }
 
-.sitjoy-sidebar-link.active,
-.sitjoy-sidebar-sub a.active {
+.sitjoy-sidebar-link.active {
     background: var(--sj-variant-sidebar-active-bg);
     color: var(--sj-variant-sidebar-text-active);
-    font-weight: 500;
 }
 
-.sitjoy-sidebar-link.active::before,
-.sitjoy-sidebar-sub a.active::before {
+.sitjoy-sidebar-link.active::before {
     content: '';
     position: absolute;
     left: 0;
@@ -148,8 +143,46 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
     background: var(--sj-variant-sidebar-accent);
 }
 
+.sitjoy-sidebar-sub a {
+    padding: 0.18rem 0.35rem 0.18rem 0.38rem;
+    color: var(--sj-variant-sidebar-sub-text);
+    font-size: 0.67rem;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.sitjoy-sidebar-sub a:hover {
+    background: var(--sj-variant-sidebar-hover);
+    color: var(--sj-variant-sidebar-text);
+}
+
+.sitjoy-sidebar-sub a.active {
+    background: var(--sj-variant-sidebar-active-bg);
+    color: var(--sj-variant-sidebar-text-active);
+    font-weight: 500;
+}
+
+.sitjoy-sidebar-sub a.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 46%;
+    background: var(--sj-variant-sidebar-accent);
+}
+
 .sitjoy-sidebar-group {
-    margin-top: 0.14rem;
+    margin-top: 0.1rem;
+    padding-top: 0.32rem;
+    border-top: 1px solid var(--sj-variant-sidebar-border);
+}
+
+.sitjoy-sidebar-group:first-of-type {
+    margin-top: 0.22rem;
+    padding-top: 0;
+    border-top: none;
 }
 
 .sitjoy-sidebar-details {
@@ -162,13 +195,14 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
     align-items: center;
     width: 100%;
     margin: 0;
-    padding: 0.16rem 0.4rem 0.12rem 0.46rem;
+    padding: 0.22rem 0.4rem 0.14rem 0.46rem;
     background: transparent;
-    color: var(--sj-variant-sidebar-text-muted);
+    color: var(--sj-variant-sidebar-group-text);
     font-family: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    line-height: 1.35;
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
     cursor: pointer;
     list-style: none;
     user-select: none;
@@ -185,7 +219,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 
 .sitjoy-sidebar-group-label:hover,
 .sitjoy-sidebar-details[open] > .sitjoy-sidebar-group-label {
-    color: var(--sj-variant-sidebar-text);
+    color: var(--sj-variant-sidebar-text-active);
 }
 
 .sitjoy-sidebar-group-label::after {
@@ -213,13 +247,9 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 
 .sitjoy-sidebar-sub {
     list-style: none;
-    margin: 0;
-    padding: 0 0 0.06rem;
-}
-
-.sitjoy-sidebar-sub a {
-    padding: 0.24rem 0.4rem 0.24rem 0.56rem;
-    font-size: 0.74rem;
+    margin: 0.06rem 0 0.1rem 0.42rem;
+    padding: 0.06rem 0 0.1rem 0.36rem;
+    border-left: 1px solid var(--sj-variant-sidebar-sub-guide);
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
@@ -243,7 +273,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     height: var(--sitjoy-topbar-height);
     padding: 0 0.55rem 0 0.5rem;
     background: var(--sj-variant-navbar-bg);
-    border-bottom: 1px solid rgba(207, 199, 189, 0.22);
+    border-bottom: 1px solid var(--sj-variant-navbar-border);
     box-shadow: var(--sj-variant-navbar-shadow);
     color: var(--sj-variant-navbar-text);
     z-index: 11000;
@@ -277,26 +307,11 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     border: none;
     border-radius: var(--sj-radius-xs);
     background: transparent;
-    color: var(--morandi-slate);
-    font-size: 0.76rem;
-    font-weight: 400;
-    line-height: 1;
     text-decoration: none;
     cursor: grab;
     user-select: none;
     white-space: nowrap;
     transition: background 0.12s ease, color 0.12s ease;
-}
-
-.sitjoy-tab:hover {
-    background: rgba(255, 255, 255, 0.48);
-    color: var(--morandi-ink);
-}
-
-.sitjoy-tab.is-active {
-    background: rgba(255, 255, 255, 0.88);
-    color: var(--morandi-ink);
-    font-weight: 600;
 }
 
 .sitjoy-tab-label {
@@ -351,7 +366,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
 
 .sitjoy-topbar-clock {
     font-size: 0.68rem;
-    color: var(--morandi-slate);
+    color: var(--sj-color-muted);
     font-variant-numeric: tabular-nums;
 }
 
@@ -365,8 +380,8 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     min-width: 0;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
-    background-color: var(--morandi-dark);
-    background-image: radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.03) 0%, transparent 40%), var(--sj-bg-body);
+    background-color: var(--sj-bg-body-base);
+    background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
 }
 
 body.sitjoy-has-shell .sitjoy-page-body > .container,
@@ -381,12 +396,10 @@ body.sitjoy-has-shell .sitjoy-page-body > .home-container {
 body.sitjoy-has-shell .hero.is-standard-page-hero {
     margin-bottom: 0.1rem;
     padding: 0.08rem 0 0.25rem;
-    color: var(--morandi-cream);
 }
 
 body.sitjoy-has-shell .hero.is-standard-page-hero h1,
 body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
-    color: var(--morandi-cream);
     font-size: 1rem;
     font-weight: 700;
 }

@@ -31,13 +31,6 @@ button.modal-close:hover {
     border-color: var(--sj-cmp-icon-close-border);
 }
 
-.help-dot,
-button.help-dot {
-    border-color: var(--sj-cmp-icon-tool-border) !important;
-    color: var(--sj-cmp-icon-tool-color) !important;
-    background: var(--sj-cmp-icon-tool-bg) !important;
-}
-
 .sitjoy-notification-trigger {
     border-color: var(--sj-cmp-icon-tool-border);
     color: var(--sj-cmp-icon-tool-color);
@@ -109,6 +102,14 @@ body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
 .btn-secondary:hover,
 button.btn-secondary:hover {
     background: var(--sj-variant-btn-secondary-hover-bg);
+}
+
+button.modal-close.sitjoy-sidebar-collapse-btn {
+    font-size: 0.65rem;
+}
+
+.app-toast.error {
+    border: 1px solid rgba(255, 225, 225, 0.5);
 }
 
 /* 状态分段 status-segment */
@@ -323,6 +324,7 @@ button.btn-secondary:hover {
     padding: 0.45rem 0.65rem;
     border-radius: var(--sj-radius-xs);
     font-size: 0.78rem;
+    background: var(--sj-variant-navbar-bg);
     color: var(--sj-variant-navbar-text);
     box-shadow: var(--sj-variant-navbar-shadow);
 }

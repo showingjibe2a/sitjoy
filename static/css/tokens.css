@@ -61,7 +61,10 @@ html[data-theme="default"] {
     --sj-variant-sidebar-bg: var(--morandi-dark);
     --sj-variant-sidebar-text: var(--morandi-sand);
     --sj-variant-sidebar-text-active: var(--morandi-cream);
-    --sj-variant-sidebar-text-muted: rgba(207, 199, 189, 0.72);
+    --sj-variant-sidebar-text-muted: rgba(207, 199, 189, 0.58);
+    --sj-variant-sidebar-group-text: var(--morandi-cream);
+    --sj-variant-sidebar-sub-text: rgba(207, 199, 189, 0.62);
+    --sj-variant-sidebar-sub-guide: rgba(207, 199, 189, 0.22);
     --sj-variant-sidebar-accent: #7fa88b;
     --sj-variant-sidebar-hover: rgba(255, 255, 255, 0.06);
     --sj-variant-sidebar-active-bg: rgba(127, 168, 139, 0.16);

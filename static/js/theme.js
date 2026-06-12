@@ -71,8 +71,9 @@
             description: '左侧导航背景与链接/分组标题色。',
             colors: [
                 { token: '--sj-variant-sidebar-bg', label: '背景色', default: '#2f2f33' },
-                { token: '--sj-variant-sidebar-text', label: '链接文字', default: '#cfc7bd' },
-                { token: '--sj-variant-sidebar-text-active', label: '选中/标题', default: '#ece7df' },
+                { token: '--sj-variant-sidebar-group-text', label: '大模块标题', default: '#ece7df' },
+                { token: '--sj-variant-sidebar-sub-text', label: '小模块链接', default: '#cfc7bd' },
+                { token: '--sj-variant-sidebar-text-active', label: '选中项', default: '#ece7df' },
                 { token: '--sj-variant-sidebar-accent', label: '选中指示条', default: '#7fa88b' }
             ]
         },
@@ -376,9 +377,14 @@
             case 'sidebar':
                 return `<aside class="sitjoy-sidebar sitjoy-theme-preview-sidebar" aria-hidden="true">
                     <div class="sitjoy-sidebar-nav-wrap">
-                        <div class="sitjoy-sidebar-group-label">销售管理</div>
-                        <a class="sitjoy-sidebar-link" href="#">销量预测</a>
-                        <a class="sitjoy-sidebar-link active" href="#">销售产品</a>
+                        <a class="sitjoy-sidebar-link" href="#">首页</a>
+                        <details class="sitjoy-sidebar-details" open>
+                            <summary class="sitjoy-sidebar-group-label"><span class="sitjoy-sidebar-link-text">销售管理</span></summary>
+                            <ul class="sitjoy-sidebar-sub">
+                                <li><a href="#">销量预测</a></li>
+                                <li><a href="#" class="active">销售产品</a></li>
+                            </ul>
+                        </details>
                     </div>
                 </aside>`;
             case 'tabs':

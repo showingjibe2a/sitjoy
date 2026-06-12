@@ -78,30 +78,35 @@ html[data-theme="your-name"] {
 
 ## 用户界面
 
-- **小组件 → 组件样式**（`/widgets/theme`）：表格布局，左侧为各组件标题、说明、变体下拉与 RGB 配色，右侧为实时预览。
-- **应用壳**（`app-shell.css`）：深色页面底（`--sj-bg-body`）+ 奶油色顶栏/卡片；侧栏分组为扁平小字标签，不用按钮外框。
+- **小组件 → 组件样式**（`/widgets/theme`）：全站 UI 按组件分区管理；先调「基础色板」，再微调各组件颜色；设置保存在本浏览器，全站即时生效。
+- **应用壳**（`app-shell.css`）：仅布局；颜色一律走 `tokens.css` 中的 `--sj-variant-*`。
 - 「关于」位于侧栏 **系统管理** 分组下。
-- 「编辑资料」「登出」在首页姓名右侧；登出使用 `btn-danger btn-small`。
-- 仅当某组件 `variants` 多于 `default` 时，变体下拉框可切换。
+
+## 已注册组件（组件样式页）
+
+| id | 说明 |
+|----|------|
+| palette | 莫兰迪基础色（`--morandi-*`），联动全站 |
+| pageBody | 页面深色底纹与渐变顶色 |
+| navbar / sidebar / tabs | 应用壳顶栏、侧栏、页签 |
+| iconCircle | 关闭(×)、帮助(?)、通知、固定等圆形微按钮 |
+| hero | 深色底上的页标题 |
+| card / modal / button / table / formInput | 业务卡片、弹窗、按钮、表格、输入 |
+| notification / toast | 通知面板与右下角提示条 |
+| statusSegment / dateInput | 状态分段、日期输入（含 compact 变体） |
 
 ## JS API
 
 ```javascript
 SitjoyTheme.setComponentVariant('statusSegment', 'compact');
-SitjoyTheme.setCustomColor('--sj-cmp-status-segment-pill-active-bg', '#7fa88b');
+SitjoyTheme.setCustomColor('--morandi-cream', '#ece7df');
 SitjoyTheme.loadPrefs();
 SitjoyTheme.mountStudioPage('sitjoyThemeStudio');
 SitjoyTheme.resetAllPrefs();
 document.addEventListener('sitjoy:theme-change', (e) => console.log(e.detail));
 ```
 
-## 已注册组件（示例）
-
-| id | data 属性 | 说明 |
-|----|-----------|------|
-| statusSegment | `data-sj-status-segment` | `.status-segment` / `--inline` |
-| dateInput | `data-sj-date-input` | `.app-date-input` 等 |
-| navbar, card, modal, profile, button, table, formInput | 同上 | 预留，变体可在 CSS 中自行添加 |
+仅当某组件 `variants` 多于 `default` 时，变体下拉框可切换。
 
 ## 约定
 

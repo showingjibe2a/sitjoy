@@ -1390,20 +1390,17 @@ section.card.pm-card .pm-toolbar .btn-accent {
     border-radius: 50%;
     font-size: 11px;
     line-height: 1;
-    border: 1px solid var(--morandi-sand);
-    color: var(--morandi-slate);
-    background: #fff;
+    border: 1px solid var(--sj-cmp-icon-tool-border);
+    color: var(--sj-cmp-icon-tool-color);
+    background: var(--sj-cmp-icon-tool-bg);
     cursor: help;
-    color: var(--morandi-slate) !important;
-    border-color: var(--morandi-sand) !important;
-    background: #fff !important;
     font-size: 0;
 }
 
 .help-dot::before {
     content: '?';
     font-weight: 700;
-    color: var(--morandi-slate);
+    color: var(--sj-cmp-icon-tool-color);
     font-size: 11px;
 }
 
