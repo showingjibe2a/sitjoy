@@ -3819,13 +3819,15 @@
     }
 
     function mapRowByKey(row){
-        const map = new Map();
+        const map = getRowCellMap(row);
+        if(map) return map;
+        const out = new Map();
         Array.from(row.cells || []).forEach((cell, idx) => {
             const key = String(cell.dataset.manageColKey || '').trim() || `字段${idx + 1}`;
             if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
-            if(!map.has(key)) map.set(key, cell);
+            if(!out.has(key)) out.set(key, cell);
         });
-        return map;
+        return out;
     }
 
     function buildManagedOriginToKeyMap(state, headerMeta){
@@ -5309,11 +5311,24 @@
         return readManagedCellDisplayText(cell);
     }
 
+    function getRowCellMap(row){
+        if(!row || !row.cells) return null;
+        if(row._pmCellKeyMap) return row._pmCellKeyMap;
+        const map = new Map();
+        Array.from(row.cells || []).forEach((cell) => {
+            const key = String(cell.dataset.manageColKey || '').trim();
+            if(key && !map.has(key)) map.set(key, cell);
+        });
+        row._pmCellKeyMap = map;
+        return map;
+    }
+
     function getRowCellByKey(row, columnKey){
         if(!row || !row.cells) return null;
         const key = String(columnKey || '').trim();
         if(!key) return null;
-        return mapRowByKey(row).get(key) || null;
+        const map = getRowCellMap(row);
+        return map ? (map.get(key) || null) : null;
     }
 
     /** 行是否通过列筛选；excludeColumnKey 为当前正在编辑的列时跳过该列条件（用于联动可选项） */
@@ -6110,7 +6125,7 @@
         if(!state || !state.table) return;
         syncManagedTableBodyLayout(state);
         ensureRowSortOrigin(state);
-        if(managedSortStackHasEntries(state) || tableBodyHasGroupedAggregateRows(state)){
+        if(managedSortStackHasEntries(state) || state.sortApplied){
             applySort(state);
         }
         refreshSortHeaderUi(state);

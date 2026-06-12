@@ -1150,28 +1150,48 @@
         }
 
         function bindSalesPreviewEditEvents() {
-            document.querySelectorAll('#salesProductTable .preview-edit-field').forEach(el => {
-                if (el.dataset._salesPreviewBound === '1') return;
-                el.dataset._salesPreviewBound = '1';
-                const handler = function() {
-                    const id = this.getAttribute('data-id');
-                    const field = this.getAttribute('data-field');
-                    updateSalesPreviewDraft(id, field, this.value);
-                    if (SALES_ECON_LINKED_FIELDS.has(field)) {
-                        refreshSalesRowEconomicsCells(id, field);
-                    }
-                };
-                el.addEventListener('change', handler);
-                el.addEventListener('input', function() {
-                    const id = this.getAttribute('data-id');
-                    const field = this.getAttribute('data-field');
-                    if (field !== 'discounted_price_usd' && field !== 'sale_price_usd'
-                        && field !== 'actual_discount_rate' && field !== 'actual_discount_amount_usd') return;
-                    updateSalesPreviewDraft(id, field, this.value);
-                    if (SALES_ECON_LINKED_FIELDS.has(field)) {
-                        refreshSalesRowEconomicsCells(id, field);
-                    }
-                });
+            /* 预览编辑已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
+        }
+
+        function initSalesTableInteractionDelegation() {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!tbody || tbody.dataset._salesInteractionDelegated === '1') return;
+            tbody.dataset._salesInteractionDelegated = '1';
+
+            tbody.addEventListener('change', function(e) {
+                const el = e.target && e.target.closest ? e.target.closest('.preview-edit-field') : null;
+                if (!el || !tbody.contains(el)) return;
+                const id = el.getAttribute('data-id');
+                const field = el.getAttribute('data-field');
+                if (!id || !field) return;
+                updateSalesPreviewDraft(id, field, el.value);
+                if (SALES_ECON_LINKED_FIELDS.has(field)) {
+                    refreshSalesRowEconomicsCells(id, field);
+                }
+            });
+
+            tbody.addEventListener('input', function(e) {
+                const el = e.target && e.target.closest ? e.target.closest('.preview-edit-field') : null;
+                if (!el || !tbody.contains(el)) return;
+                const field = el.getAttribute('data-field');
+                if (field !== 'discounted_price_usd' && field !== 'sale_price_usd'
+                    && field !== 'actual_discount_rate' && field !== 'actual_discount_amount_usd') return;
+                const id = el.getAttribute('data-id');
+                if (!id) return;
+                updateSalesPreviewDraft(id, field, el.value);
+                if (SALES_ECON_LINKED_FIELDS.has(field)) {
+                    refreshSalesRowEconomicsCells(id, field);
+                }
+            });
+
+            tbody.addEventListener('change', function(e) {
+                const el = e.target && e.target.closest ? e.target.closest('.sales-row-checkbox') : null;
+                if (!el || !tbody.contains(el)) return;
+                const id = String(el.getAttribute('data-id') || '');
+                if (!id) return;
+                if (el.checked) selectedSalesProductIds.add(id);
+                else selectedSalesProductIds.delete(id);
+                syncSalesSelectAllCheckbox();
             });
         }
 
@@ -2235,8 +2255,6 @@
                 const salePriceLow = econ.salePrice > 0 && econ.totalCost > 0 && econ.salePrice < econ.totalCost;
                 salePriceTd.classList.toggle('danger-note', salePriceLow);
             }
-
-            bindSalesPreviewEditEvents();
         }
 
         function compareSalesParentGroupEntries(a, b) {
@@ -2298,10 +2316,7 @@
                 if (!lines.length) return '-';
                 return `<div class="sales-order-sku-lines">${lines.join('')}</div>`;
             })();
-            const previewB64 = String(item.preview_image_b64 || '').trim();
-            const previewCell = previewB64
-                ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=60" alt="预览" loading="lazy">`
-                : `<span class="sj-table-thumb-empty">暂无</span>`;
+            const previewCell = sjSalesListThumbHtml(item.preview_image_b64);
             const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
             const childCodeVal = getSalesPreviewEffectiveValue(item, 'child_code');
             const childCodeText = childCodeVal == null ? '' : String(childCodeVal);
@@ -2324,12 +2339,12 @@
                     <td style="text-align:center;" data-manage-col-key="__sales_chk__"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"></td>
                     <td class="sj-cell-thumb cell-center" data-manage-col-key="图片" style="text-align:center;" data-sj-preview="1">${previewCell}</td>
-                    <td>${renderInlineProductStatus(item)}</td>
-                    <td>${escapeHtml(item.shop_name || '')}</td>
-                    <td>${item.sku_family || ''}</td>
-                    <td>${item.fabric || ''}</td>
-                    <td>${item.spec_name || ''}</td>
-                    <td>${item.platform_sku || ''}</td>
+                    <td data-display-value="${escapeAttr(normalizeProductStatus(item.product_status))}">${renderInlineProductStatus(item)}</td>
+                    <td data-display-value="${escapeAttr(item.shop_name || '')}">${escapeHtml(item.shop_name || '')}</td>
+                    <td data-display-value="${escapeAttr(item.sku_family || '')}">${item.sku_family || ''}</td>
+                    <td data-display-value="${escapeAttr(item.fabric || '')}">${item.fabric || ''}</td>
+                    <td data-display-value="${escapeAttr(item.spec_name || '')}">${item.spec_name || ''}</td>
+                    <td data-display-value="${escapeAttr(item.platform_sku || '')}">${item.platform_sku || ''}</td>
                     ${renderSalesChildCodeCell(item, childCodeText)}
                     <td class="preview-edit-cell" data-field-wrap="gtin"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gtin" type="text" value="${escapeAttr(gtinText)}"></td>
                     <td class="preview-edit-cell" data-field-wrap="upc"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="upc" type="text" value="${escapeAttr(upcText)}"></td>
@@ -2344,9 +2359,9 @@
                     <td class="sales-econ-cell" data-manage-col-key="成本总计" data-sales-econ-col="total_cost">${formatSalesEconomicsUsd(econ.totalCost, true)}</td>
                     <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${salesFormatEconCommission(econ)}</td>
                     <td class="sales-econ-cell ${netProfitLow ? 'danger-note' : ''}" data-manage-col-key="单件净利" data-sales-econ-col="net_profit">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.netProfit, false) : '-'}</td>
-                    <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-'}</td>
+                    <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate" data-display-value="${econ.salePrice > 0 ? String(econ.netMarginRate) : ''}">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-'}</td>
                     <td class="preview-edit-cell sales-notes-cell" data-field-wrap="notes"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="notes" type="text" maxlength="512" value="${escapeAttr(notesText)}" placeholder="备注"></td>
-                    <td>${createdDateStr}</td>
+                    <td data-display-value="${escapeAttr(createdDateStr)}">${createdDateStr}</td>
                     <td>
                         <div class="pm-actions">
                             <button class="btn-secondary" onclick='openEditModal(${item.id})'>编辑</button>
@@ -2369,6 +2384,29 @@
             }
         }
 
+        function salesSyncGroupCollapseDom() {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!tbody || salesProductAggregateMode !== 'parent') return;
+            tbody.querySelectorAll('tr.sales-parent-group-row[data-group-key]').forEach((groupRow) => {
+                const key = String(groupRow.getAttribute('data-group-key') || '').trim();
+                if (!key) return;
+                const collapsed = salesProductCollapsedParentGroups.has(key);
+                const toggle = groupRow.querySelector('.sales-parent-group-toggle');
+                if (toggle) toggle.textContent = collapsed ? '▶' : '▼';
+            });
+            tbody.querySelectorAll('tr[data-group-key]').forEach((tr) => {
+                if (tr.classList.contains('sales-parent-group-row')) return;
+                const gk = String(tr.getAttribute('data-group-key') || '').trim();
+                tr.classList.toggle('sales-row-hidden', salesProductCollapsedParentGroups.has(gk));
+            });
+            salesSyncAggregateToggleHeaderUi();
+            syncSalesSelectAllCheckbox();
+            syncSalesParentGroupCheckboxes();
+            if (window.SitjoyManagedPmTable && typeof SitjoyManagedPmTable.syncSelectAllMasters === 'function') {
+                SitjoyManagedPmTable.syncSelectAllMasters('#salesProductTable');
+            }
+        }
+
         function initSalesGroupedAggregateHelpers() {
             if (!window.SitjoyGroupedAggregate) return;
             SitjoyGroupedAggregate.bindGroupRowToggle({
@@ -2378,7 +2416,7 @@
                     return salesProductCollapsedParentGroups;
                 },
                 onAfterToggle() {
-                    renderSalesGroupedTable(salesProductItems || []);
+                    salesSyncGroupCollapseDom();
                     salesPersistTablePageFilters(300);
                 }
             });
@@ -2391,7 +2429,7 @@
                     const allExpanded = keys.length > 0 && keys.every(k => !salesProductCollapsedParentGroups.has(k));
                     if (allExpanded) keys.forEach(k => salesProductCollapsedParentGroups.add(k));
                     else salesProductCollapsedParentGroups.clear();
-                    renderSalesGroupedTable(salesProductItems || []);
+                    salesSyncGroupCollapseDom();
                     salesPersistTablePageFilters(300);
                 }
             });
@@ -2602,27 +2640,18 @@
             if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
             salesApplyAggregateToggleLockedAndRefresh();
             refreshSalesProductTableHeaderSortUi();
-            bindSalesRowSelectionEvents();
             bindSalesParentGroupSelectionEvents();
             bindSalesParentGroupEditEvents();
-            bindSalesPreviewEditEvents();
             syncSalesSelectAllCheckbox();
             syncSalesPreviewSaveBar();
+            if (window.SitjoyRowImageRefresh && typeof SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
+                SitjoyRowImageRefresh.observeLazyThumbsIn(tbody);
+            }
             salesEndManagedTableBodyUpdate();
         }
 
         function bindSalesRowSelectionEvents() {
-            document.querySelectorAll('.sales-row-checkbox').forEach(el => {
-                if (el.dataset._salesRowCbBound === '1') return;
-                el.dataset._salesRowCbBound = '1';
-                el.addEventListener('change', function() {
-                    const id = String(this.getAttribute('data-id') || '');
-                    if (!id) return;
-                    if (this.checked) selectedSalesProductIds.add(id);
-                    else selectedSalesProductIds.delete(id);
-                    syncSalesSelectAllCheckbox();
-                });
-            });
+            /* 行勾选已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
         }
 
         function syncSalesParentGroupCheckboxes() {
@@ -5515,9 +5544,6 @@
                 Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
                 renderSalesGroupedTable(items);
                 salesPersistTablePageFilters();
-                if (window.SitjoyRowImageRefresh) {
-                    window.SitjoyRowImageRefresh.bustImagesIn(tbody);
-                }
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 tbody.innerHTML = `<tr><td colspan="${SALES_PRODUCT_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
@@ -5525,6 +5551,13 @@
                 if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                 salesApplyAggregateToggleLockedAndRefresh();
             });
+        }
+
+        function sjSalesListThumbHtml(previewB64) {
+            const b64 = String(previewB64 || '').trim();
+            if (!b64) return sjSalesListThumbEmptyHtml();
+            const src = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60`;
+            return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttr(src)}" aria-hidden="true"></span>`;
         }
 
         function sjSalesListThumbEmptyHtml() {
@@ -5582,7 +5615,6 @@
                 const hidden = row.classList.contains('sales-row-hidden');
                 const html = renderSalesDataRowHtml(item, groupKeyRaw, hidden);
                 if (!window.SitjoyRowImageRefresh.patchTableRow(row, html)) return { ok: false, fullReload: true };
-                bindSalesRowSelectionEvents();
                 syncSalesSelectAllCheckbox();
                 return { ok: true, fullReload: false };
             } catch (e) {
@@ -5940,6 +5972,7 @@
             salesApplyManageLayoutSig();
             syncSalesAggregateSegmentUi();
             bindSalesAggregateSegment();
+            initSalesTableInteractionDelegation();
             initSalesGroupedAggregateHelpers();
             loadSalesProductList();
             Promise.all([

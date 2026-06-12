@@ -135,4 +135,44 @@
   };
 
   global.SitjoyRowImageRefresh = NS;
+
+  var lazyThumbObserver = null;
+
+  function ensureLazyThumbObserver() {
+    if (lazyThumbObserver || typeof IntersectionObserver === 'undefined') return lazyThumbObserver;
+    lazyThumbObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var host = entry.target;
+        lazyThumbObserver.unobserve(host);
+        var src = String(host.getAttribute('data-sj-lazy-thumb') || '').trim();
+        if (!src) return;
+        var img = document.createElement('img');
+        img.className = 'sj-table-thumb-img';
+        img.alt = '';
+        img.loading = 'lazy';
+        img.src = NS.withCacheBust(src);
+        host.replaceWith(img);
+      });
+    }, { root: null, rootMargin: '120px 0px', threshold: 0.01 });
+    return lazyThumbObserver;
+  }
+
+  /**
+   * 表格缩略图懒加载：仅当单元格进入视口附近才请求 /api/image-preview
+   * @param {Element|string} root
+   * @returns {number}
+   */
+  NS.observeLazyThumbsIn = function (root) {
+    var rootEl = typeof root === 'string' ? document.querySelector(root) : root;
+    if (!rootEl || !rootEl.querySelectorAll) return 0;
+    var obs = ensureLazyThumbObserver();
+    if (!obs) return 0;
+    var n = 0;
+    rootEl.querySelectorAll('[data-sj-lazy-thumb]').forEach(function (el) {
+      obs.observe(el);
+      n++;
+    });
+    return n;
+  };
 })(typeof window !== 'undefined' ? window : this);

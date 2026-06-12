@@ -3493,6 +3493,17 @@ table.sf-table td.sf-cell-thumb {
     text-align: center;
 }
 
+.sj-table-thumb-lazy {
+    display: inline-block;
+    width: 44px;
+    height: 44px;
+    vertical-align: middle;
+    border: 1px solid rgba(207, 199, 189, 0.45);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f4f0ea 0%, #ebe4db 100%);
+    box-sizing: border-box;
+}
+
 .cell-center {
     text-align: center;
 }
