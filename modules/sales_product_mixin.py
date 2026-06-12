@@ -2963,6 +2963,34 @@ class SalesProductMixin:
             columns.append('upc')
             values.append(upc)
 
+    _SALES_PROMOTION_ACTIVITY_TYPES = frozenset({
+        'Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销',
+    })
+    _SALES_DISCOUNT_FORM_TYPES = frozenset({'percent', 'amount'})
+
+    def _sales_product_preview_select_sql(self, conn):
+        parts = []
+        for col in (
+            'promotion_activity_type',
+            'discount_form_type',
+            'actual_discount_rate',
+            'actual_discount_amount_usd',
+            'discounted_price_usd',
+        ):
+            if self._table_has_column(conn, 'sales_products', col):
+                parts.append(f'sp.{col}')
+            else:
+                parts.append(f'NULL AS {col}')
+        return ', '.join(parts)
+
+    def _normalize_sales_promotion_activity_type(self, raw):
+        text = (raw or '').strip()
+        return text if text in self._SALES_PROMOTION_ACTIVITY_TYPES else None
+
+    def _normalize_sales_discount_form_type(self, raw):
+        text = (raw or '').strip().lower()
+        return text if text in self._SALES_DISCOUNT_FORM_TYPES else None
+
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
@@ -2984,7 +3012,7 @@ class SalesProductMixin:
                         sql = """
                             SELECT sp.id, sp.parent_code, sp.is_enabled, sp.shop_id, sp.sku_marker,
                                    estimated_refund_rate, estimated_discount_rate,
-                                   commission_rate, estimated_acoas,
+                                   estimated_acoas,
                                    sp.created_at, sp.updated_at,
                                    s.shop_name, b.name AS brand_name, pt.name AS platform_type_name
                             FROM sales_parents sp
@@ -3028,8 +3056,8 @@ class SalesProductMixin:
                         cur.execute(
                             """
                             INSERT INTO sales_parents
-                            (parent_code, is_enabled, shop_id, sku_marker, estimated_refund_rate, estimated_discount_rate, commission_rate, estimated_acoas)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            (parent_code, is_enabled, shop_id, sku_marker, estimated_refund_rate, estimated_discount_rate, estimated_acoas)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 parent_code,
@@ -3038,7 +3066,6 @@ class SalesProductMixin:
                                 sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
-                                self._parse_float(data.get('commission_rate')),
                                 self._parse_float(data.get('estimated_acoas'))
                             )
                         )
@@ -3068,7 +3095,6 @@ class SalesProductMixin:
                                 sku_marker=%s,
                                 estimated_refund_rate=%s,
                                 estimated_discount_rate=%s,
-                                commission_rate=%s,
                                 estimated_acoas=%s
                             WHERE id=%s
                             """,
@@ -3079,7 +3105,6 @@ class SalesProductMixin:
                                 sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
-                                self._parse_float(data.get('commission_rate')),
                                 self._parse_float(data.get('estimated_acoas')),
                                 item_id
                             )
@@ -4260,6 +4285,7 @@ class SalesProductMixin:
                         else:
                             fabric_select = "v.fabric" if has_fabric_text else "''"
                         barcode_select = self._sales_product_barcode_select_sql(conn, 'sp')
+                        preview_fields_select = self._sales_product_preview_select_sql(conn)
                         base_sql = """
                             SELECT
                                 sp.id,
@@ -4276,13 +4302,17 @@ class SalesProductMixin:
                                 {fabric_select} AS fabric,
                                 {fabric_id_select} AS fabric_id,
                                 sp.sale_price_usd,
+                                {preview_fields_select},
                                 sp.created_at,
                                 sp.updated_at,
                                 s.shop_name,
                                 pt.name AS platform_type_name,
                                 b.name AS brand_name,
                                 p.parent_code,
-                                p.sku_marker AS parent_sku_marker
+                                p.sku_marker AS parent_sku_marker,
+                                p.estimated_refund_rate,
+                                p.estimated_discount_rate,
+                                p.estimated_acoas
                             FROM sales_products sp
                             LEFT JOIN sales_parents p ON p.id = sp.parent_id
                             LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
@@ -4297,6 +4327,7 @@ class SalesProductMixin:
                             fabric_join=fabric_join,
                             fabric_select=fabric_select,
                             fabric_id_select=("v.fabric_id" if has_fabric_id else "NULL"),
+                            preview_fields_select=preview_fields_select,
                         )
                         filters = []
                         params = []
@@ -4503,6 +4534,11 @@ class SalesProductMixin:
                             'gtin': gtin,
                             'upc': upc,
                             'sale_price_usd': self._parse_float(item.get('sale_price_usd')),
+                            'promotion_activity_type': self._normalize_sales_promotion_activity_type(item.get('promotion_activity_type')),
+                            'discount_form_type': self._normalize_sales_discount_form_type(item.get('discount_form_type')),
+                            'actual_discount_rate': self._parse_float(item.get('actual_discount_rate')),
+                            'actual_discount_amount_usd': self._parse_float(item.get('actual_discount_amount_usd')),
+                            'discounted_price_usd': self._parse_float(item.get('discounted_price_usd')),
                         }
 
                     if not row_map:
@@ -4528,6 +4564,16 @@ class SalesProductMixin:
                         if self._table_has_column(conn, 'sales_products', 'upc'):
                             insert_at = 2 if self._table_has_column(conn, 'sales_products', 'gtin') else 1
                             set_clause.insert(insert_at, f"upc = {build_case('upc')}")
+                        preview_cols = (
+                            'promotion_activity_type',
+                            'discount_form_type',
+                            'actual_discount_rate',
+                            'actual_discount_amount_usd',
+                            'discounted_price_usd',
+                        )
+                        for col in preview_cols:
+                            if self._table_has_column(conn, 'sales_products', col):
+                                set_clause.append(f"{col} = {build_case(col)}")
                     where_placeholders = ','.join(['%s'] * len(ids))
                     sql = f"UPDATE sales_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
                     with self._get_db_connection() as conn:

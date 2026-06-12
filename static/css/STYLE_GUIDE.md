@@ -9,9 +9,9 @@
 | 文件 | 职责 |
 |------|------|
 | `tokens.css` | 全局与组件默认令牌 `--sj-*`、`--sj-cmp-*` |
-| `theme-engine.css` | `html[data-sj-*="变体"]` 对令牌的覆盖 + 首页样式面板 |
+| `theme-engine.css` | `html[data-sj-*="变体"]` 对令牌的覆盖 + 小组件样式配置页 |
 | `style.css` | 布局与组件结构；颜色/质感优先 `var(--sj-…)` |
-| `theme.js` | 组件注册表、持久化、`mountPanel` |
+| `theme.js` | 组件注册表、持久化、`mountStudioPage` |
 
 ## 三层模型
 
@@ -78,19 +78,20 @@ html[data-theme="your-name"] {
 
 ## 用户界面
 
-- 首页个人信息区最右侧：**「桌面美化」** 文件夹分组，内含图标+文字的快捷入口（如「组件样式」）。
-- 点击「组件样式」打开 **弹窗** 配置各组件变体。
-- 「编辑资料」「登出」在姓名右侧；登出使用 `btn-danger btn-small`。
-- 仅当某组件 `variants` 多于 `default` 时，弹窗内下拉框可切换。
+- **小组件 → 组件样式**（`/widgets/theme`）：表格布局，左侧为各组件标题、说明、变体下拉与 RGB 配色，右侧为实时预览。
+- **应用壳**（`app-shell.css`）：深色页面底（`--sj-bg-body`）+ 奶油色顶栏/卡片；侧栏分组为扁平小字标签，不用按钮外框。
+- 「关于」位于侧栏 **系统管理** 分组下。
+- 「编辑资料」「登出」在首页姓名右侧；登出使用 `btn-danger btn-small`。
+- 仅当某组件 `variants` 多于 `default` 时，变体下拉框可切换。
 
 ## JS API
 
 ```javascript
 SitjoyTheme.setComponentVariant('statusSegment', 'compact');
+SitjoyTheme.setCustomColor('--sj-cmp-status-segment-pill-active-bg', '#7fa88b');
 SitjoyTheme.loadPrefs();
-SitjoyTheme.mountHomeLauncher();
-SitjoyTheme.openModal();
-SitjoyTheme.closeModal();
+SitjoyTheme.mountStudioPage('sitjoyThemeStudio');
+SitjoyTheme.resetAllPrefs();
 document.addEventListener('sitjoy:theme-change', (e) => console.log(e.detail));
 ```
 

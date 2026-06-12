@@ -2471,7 +2471,7 @@ class OrderManagementMixin:
                             sql = """
                                 SELECT sp.id, sp.parent_code, sp.is_enabled, sp.shop_id, sp.sku_marker,
                                        estimated_refund_rate, estimated_discount_rate,
-                                       commission_rate, estimated_acoas,
+                                       estimated_acoas,
                                        sp.created_at, sp.updated_at,
                                        s.shop_name, b.name AS brand_name, pt.name AS platform_type_name
                                 FROM sales_parents sp
@@ -2483,7 +2483,7 @@ class OrderManagementMixin:
                             sql = """
                                 SELECT sp.id, sp.parent_code, sp.is_enabled, sp.shop_id, sp.sku_marker,
                                        estimated_refund_rate, estimated_discount_rate,
-                                       commission_rate, estimated_acoas,
+                                       estimated_acoas,
                                        sales_title, sales_intro,
                                        sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5,
                                     sp.created_at, sp.updated_at,
@@ -2540,9 +2540,9 @@ class OrderManagementMixin:
                         cur.execute(
                             """
                             INSERT INTO sales_parents
-                            (parent_code, is_enabled, shop_id, sku_marker, estimated_refund_rate, estimated_discount_rate, commission_rate, estimated_acoas,
+                            (parent_code, is_enabled, shop_id, sku_marker, estimated_refund_rate, estimated_discount_rate, estimated_acoas,
                              sales_title, sales_intro, sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 parent_code,
@@ -2551,7 +2551,6 @@ class OrderManagementMixin:
                                 sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
-                                self._parse_float(data.get('commission_rate')),
                                 self._parse_float(data.get('estimated_acoas')),
                                 sales_title,
                                 sales_intro,
@@ -2595,7 +2594,6 @@ class OrderManagementMixin:
                                 sku_marker=%s,
                                 estimated_refund_rate=%s,
                                 estimated_discount_rate=%s,
-                                commission_rate=%s,
                                 estimated_acoas=%s,
                                 sales_title=%s,
                                 sales_intro=%s,
@@ -2613,7 +2611,6 @@ class OrderManagementMixin:
                                 sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
-                                self._parse_float(data.get('commission_rate')),
                                 self._parse_float(data.get('estimated_acoas')),
                                 sales_title,
                                 sales_intro,

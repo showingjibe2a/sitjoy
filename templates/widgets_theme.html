@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>组件样式 - SITJOY</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/widgets.css">
+</head>
+<body class="widgets-theme-page">
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="content">
+            <div class="card pm-card">
+                <div class="sitjoy-theme-studio-head">
+                    <h2 class="label-help">组件样式<span class="help-dot" data-tip="为各 UI 组件选择变体并微调颜色；设置保存在本浏览器，全站生效。"></span></h2>
+                    <a href="/widgets" class="btn-secondary btn-small">返回小组件</a>
+                </div>
+                <div id="sitjoyThemeStudio" class="sitjoy-theme-studio-wrap" aria-label="组件样式配置"></div>
+            </div>
+        </section>
+    </div>
+    <script src="/static/js/header.js"></script>
+    <script>
+        window.addEventListener('load', () => {
+            if (window.SitjoyTheme && typeof window.SitjoyTheme.mountStudioPage === 'function') {
+                window.SitjoyTheme.mountStudioPage('sitjoyThemeStudio');
+            }
+        });
+    </script>
+</body>
+</html>

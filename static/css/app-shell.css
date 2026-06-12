@@ -1,0 +1,632 @@
+/**
+ * 应用壳：左侧导航 + 顶栏标签 + 主内容区
+ * 层级：奶油色侧栏/顶栏（--sj-variant-navbar-*）+ 深色主内容底纹（--sj-bg-body）+ 奶油卡片
+ */
+
+:root {
+    --sitjoy-sidebar-width: 136px;
+    --sitjoy-sidebar-width-collapsed: 40px;
+    --sitjoy-topbar-height: 34px;
+    --sitjoy-shell-accent: #7fa88b;
+    --sitjoy-nav-hover: rgba(74, 78, 87, 0.06);
+    --sitjoy-nav-active-bg: rgba(127, 168, 139, 0.18);
+}
+
+body.sitjoy-has-shell {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    min-width: 0;
+    background: var(--morandi-dark);
+    color: var(--sj-color-on-body);
+}
+
+body.sitjoy-has-shell > footer {
+    display: none !important;
+}
+
+#site-header {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sitjoy-app-shell {
+    display: flex;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+}
+
+.sitjoy-shell-icon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease;
+    box-shadow: none;
+    min-height: unset;
+    font-weight: inherit;
+}
+
+.sitjoy-shell-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.sitjoy-shell-icon-btn svg {
+    display: block;
+    flex-shrink: 0;
+}
+
+/* 侧栏：奶油色，与顶栏统一；禁止分组外框 */
+.sitjoy-sidebar {
+    flex: 0 0 var(--sitjoy-sidebar-width);
+    width: var(--sitjoy-sidebar-width);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--sj-variant-navbar-bg);
+    border-right: none;
+    box-shadow: 1px 0 0 rgba(207, 199, 189, 0.38);
+    transition: flex-basis 0.2s ease, width 0.2s ease;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar {
+    flex-basis: var(--sitjoy-sidebar-width-collapsed);
+    width: var(--sitjoy-sidebar-width-collapsed);
+}
+
+.sitjoy-sidebar-brand {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.15rem;
+    padding: 0 0.32rem 0 0.52rem;
+    min-height: var(--sitjoy-topbar-height);
+    border-bottom: 1px solid rgba(207, 199, 189, 0.32);
+}
+
+.sitjoy-sidebar-logo {
+    font-family: var(--sj-font-display);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    color: var(--morandi-ink);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
+    font-size: 0.52rem;
+    letter-spacing: 0.02em;
+}
+
+.sitjoy-sidebar .sitjoy-sidebar-collapse-btn {
+    color: var(--morandi-slate);
+}
+
+.sitjoy-sidebar .sitjoy-sidebar-collapse-btn:hover {
+    color: var(--morandi-ink);
+}
+
+.sitjoy-sidebar-nav-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.22rem 0.28rem 0.38rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(154, 163, 168, 0.35) transparent;
+}
+
+.sitjoy-sidebar-nav {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.sitjoy-sidebar-group,
+.sitjoy-sidebar-group *,
+.sitjoy-sidebar-details,
+.sitjoy-sidebar-details summary {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none;
+}
+
+.sitjoy-sidebar-link,
+.sitjoy-sidebar-sub a {
+    display: block;
+    position: relative;
+    padding: 0.22rem 0.34rem 0.22rem 0.4rem;
+    border-radius: 0;
+    color: var(--morandi-slate);
+    text-decoration: none;
+    font-size: 0.68rem;
+    font-weight: 400;
+    line-height: 1.36;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.sitjoy-sidebar-link:hover,
+.sitjoy-sidebar-sub a:hover {
+    background: var(--sitjoy-nav-hover);
+    color: var(--morandi-ink);
+}
+
+.sitjoy-sidebar-link.active,
+.sitjoy-sidebar-sub a.active {
+    background: var(--sitjoy-nav-active-bg);
+    color: var(--morandi-ink);
+    font-weight: 500;
+}
+
+.sitjoy-sidebar-link.active::before,
+.sitjoy-sidebar-sub a.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 48%;
+    background: var(--sitjoy-shell-accent);
+}
+
+.sitjoy-sidebar-group {
+    margin-top: 0.12rem;
+    padding: 0;
+    background: transparent;
+}
+
+.sitjoy-sidebar-group:first-of-type {
+    margin-top: 0.04rem;
+}
+
+.sitjoy-sidebar-details {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+}
+
+.sitjoy-sidebar-group-label {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin: 0;
+    padding: 0.1rem 0.34rem 0.08rem 0.4rem;
+    background: transparent;
+    color: rgba(123, 128, 136, 0.88);
+    font-family: inherit;
+    font-size: 0.56rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    transition: color 0.12s ease;
+}
+
+.sitjoy-sidebar-group-label::-webkit-details-marker {
+    display: none;
+}
+
+.sitjoy-sidebar-group-label::marker {
+    content: '';
+}
+
+.sitjoy-sidebar-group-label:hover {
+    color: var(--morandi-ink);
+}
+
+.sitjoy-sidebar-details[open] > .sitjoy-sidebar-group-label {
+    color: var(--morandi-slate);
+}
+
+.sitjoy-sidebar-group-label::after {
+    content: '';
+    flex-shrink: 0;
+    width: 0.3rem;
+    height: 0.3rem;
+    margin-left: auto;
+    background: currentColor;
+    opacity: 0.45;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M4 6l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M4 6l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: transform 0.14s ease;
+}
+
+.sitjoy-sidebar-details:not([open]) > .sitjoy-sidebar-group-label::after {
+    transform: rotate(-90deg);
+}
+
+.sitjoy-sidebar-link-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sitjoy-sidebar-sub {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0.04rem;
+}
+
+.sitjoy-sidebar-sub a {
+    padding: 0.2rem 0.34rem 0.2rem 0.48rem;
+    font-size: 0.66rem;
+    color: var(--morandi-slate);
+}
+
+.sitjoy-sidebar-sub a.active {
+    color: var(--morandi-ink);
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
+    display: none;
+}
+
+.sitjoy-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: transparent;
+}
+
+.sitjoy-topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: var(--sitjoy-topbar-height);
+    height: var(--sitjoy-topbar-height);
+    padding: 0 0.48rem 0 0.42rem;
+    background: var(--sj-variant-navbar-bg);
+    border-bottom: 1px solid rgba(207, 199, 189, 0.28);
+    box-shadow: var(--sj-variant-navbar-shadow);
+    color: var(--sj-variant-navbar-text);
+    z-index: 11000;
+}
+
+.sitjoy-topbar-tabs-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.sitjoy-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.12rem;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    padding: 0.04rem 0;
+}
+
+.sitjoy-tab {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    max-width: 9rem;
+    height: 23px;
+    padding: 0 0.24rem 0 0.4rem;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--morandi-slate);
+    font-size: 0.68rem;
+    font-weight: 400;
+    line-height: 1;
+    text-decoration: none;
+    cursor: grab;
+    user-select: none;
+    white-space: nowrap;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sitjoy-tab:hover {
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--morandi-ink);
+}
+
+.sitjoy-tab.is-active {
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--morandi-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.sitjoy-tab.is-pinned .sitjoy-tab-pin {
+    color: var(--sitjoy-shell-accent);
+}
+
+.sitjoy-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sitjoy-tab-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.02rem;
+    flex-shrink: 0;
+}
+
+.sitjoy-tab-pin,
+.sitjoy-tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--morandi-slate);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: background 0.12s ease, opacity 0.12s ease;
+    min-height: unset;
+    box-shadow: none;
+}
+
+.sitjoy-tab:hover .sitjoy-tab-pin,
+.sitjoy-tab:hover .sitjoy-tab-close {
+    opacity: 1;
+}
+
+.sitjoy-tab-pin:hover,
+.sitjoy-tab-close:hover {
+    background: rgba(154, 163, 168, 0.14);
+}
+
+.sitjoy-tab-icon {
+    display: block;
+    pointer-events: none;
+}
+
+.sitjoy-tab.is-dragging {
+    opacity: 0.45;
+}
+
+.sitjoy-usage-ticker-track--hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.sitjoy-topbar .sitjoy-shell-icon-btn {
+    color: var(--morandi-slate);
+}
+
+.sitjoy-topbar .sitjoy-shell-icon-btn:hover {
+    color: var(--morandi-ink);
+}
+
+.sitjoy-topbar-right {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding-left: 0.38rem;
+    margin-left: 0.08rem;
+    border-left: 1px solid rgba(207, 199, 189, 0.32);
+    white-space: nowrap;
+}
+
+.sitjoy-topbar-right .sitjoy-notification-center {
+    position: relative;
+}
+
+.sitjoy-topbar-right .sitjoy-notification-trigger {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--morandi-slate);
+    min-height: unset;
+}
+
+.sitjoy-topbar-right .sitjoy-notification-trigger:hover,
+.sitjoy-topbar-right .sitjoy-notification-trigger[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.55);
+    color: var(--morandi-ink);
+}
+
+.sitjoy-topbar-user-block {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    max-width: 9.5rem;
+    padding: 0.06rem 0.32rem 0.06rem 0.08rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.38);
+}
+
+.sitjoy-topbar-user-block[hidden] {
+    display: none !important;
+}
+
+.sitjoy-topbar-avatar {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #9aa899, #7fa88b);
+    color: #fff;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.sitjoy-topbar-user-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+}
+
+.sitjoy-topbar-user {
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--morandi-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.22;
+}
+
+.sitjoy-topbar-clock {
+    font-size: 0.56rem;
+    color: var(--morandi-slate);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+
+.sitjoy-topbar-logout {
+    height: 23px;
+    padding: 0 0.4rem;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--morandi-slate);
+    font-size: 0.66rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    min-height: unset;
+    box-shadow: none;
+}
+
+.sitjoy-topbar-logout:hover {
+    background: rgba(182, 127, 127, 0.1);
+    color: var(--morandi-rose);
+    transform: none;
+}
+
+/* 主内容：深色底纹（右下区域），卡片保持奶油色 */
+.sitjoy-page-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    background-color: var(--morandi-dark);
+    background-image: radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.03) 0%, transparent 40%), var(--sj-bg-body);
+}
+
+body.sitjoy-has-shell .sitjoy-page-body > .container,
+body.sitjoy-has-shell .sitjoy-page-body > .home-container {
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    padding: 0.55rem 0.75rem 0.85rem;
+    background: transparent;
+}
+
+body.sitjoy-has-shell .hero.is-standard-page-hero {
+    margin-bottom: 0.1rem;
+    padding: 0.08rem 0 0.25rem;
+    color: var(--morandi-cream);
+}
+
+body.sitjoy-has-shell .hero.is-standard-page-hero h1,
+body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
+    color: var(--morandi-cream);
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+body.sitjoy-has-shell.widgets-theme-page {
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell .navbar-page-heading,
+body.sitjoy-has-shell #navbarPageHeading {
+    display: none !important;
+}
+
+body.sitjoy-has-shell .hero.page-hero--navbar-only,
+body.sitjoy-has-shell section.header.header-row.header-row--title-in-navbar {
+    display: none;
+}
+
+.sitjoy-app-shell .navbar,
+.sitjoy-app-shell > .nav-menu {
+    display: none !important;
+}
+
+@media (max-width: 900px) {
+    :root {
+        --sitjoy-sidebar-width: 120px;
+    }
+
+    .sitjoy-topbar-user-block {
+        max-width: 6rem;
+    }
+
+    .sitjoy-topbar-clock {
+        display: none;
+    }
+}
+
+@media (max-width: 680px) {
+    .sitjoy-topbar-user-meta {
+        display: none;
+    }
+
+    .sitjoy-topbar-user-block {
+        padding: 0.06rem;
+        background: transparent;
+    }
+}

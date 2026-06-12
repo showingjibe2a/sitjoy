@@ -1,3 +1,52 @@
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0.65rem;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container .content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    animation: none;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container .content > .card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    width: 100%;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-head {
+    flex-shrink: 0;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 0.55rem;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-toolbar {
+    flex-shrink: 0;
+    margin-bottom: 0.55rem;
+}
+
+body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
 .widgets-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

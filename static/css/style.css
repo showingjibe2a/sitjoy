@@ -1,5 +1,6 @@
 @import url('tokens.css');
 @import url('theme-engine.css');
+@import url('app-shell.css');
 
 * {
     margin: 0;
@@ -359,9 +360,21 @@ input[type="month"] {
 
 #site-header {
     width: 100%;
-    min-width: var(--sitjoy-page-min-width);
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
+body.sitjoy-has-shell {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 登录页等无壳页面仍可使用 --sj-bg-body 深色底；有壳页面由 app-shell.css 覆盖 */
+
+/* 旧横向顶栏（已由 app-shell 替代，保留样式供残留页面参考） */
 .navbar {
     width: 100%;
     min-width: var(--sitjoy-page-min-width);
@@ -6983,4 +6996,40 @@ select.pm-inline-compact-select,
 .preview-savebar .btn-primary,
 .preview-savebar .btn-secondary {
     padding: 0.65rem 1rem;
+}
+
+/* 应用壳微按钮：不受全站胶囊按钮规范影响（须位于 style.css 末尾） */
+.sitjoy-app-shell .sitjoy-shell-icon-btn,
+.sitjoy-app-shell .sitjoy-topbar-logout,
+.sitjoy-app-shell .sitjoy-tab-pin,
+.sitjoy-app-shell .sitjoy-tab-close,
+.sitjoy-app-shell .sitjoy-notification-trigger {
+    min-height: unset;
+    height: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    display: inline-flex;
+    transform: none;
+    box-shadow: none;
+    white-space: normal;
+    min-width: unset;
+    background: transparent;
+    color: inherit;
+}
+
+.sitjoy-app-shell .sitjoy-shell-icon-btn:hover,
+.sitjoy-app-shell .sitjoy-shell-icon-btn:active,
+.sitjoy-app-shell .sitjoy-topbar-logout:hover,
+.sitjoy-app-shell .sitjoy-topbar-logout:active,
+.sitjoy-app-shell .sitjoy-tab-pin:hover,
+.sitjoy-app-shell .sitjoy-tab-pin:active,
+.sitjoy-app-shell .sitjoy-tab-close:hover,
+.sitjoy-app-shell .sitjoy-tab-close:active,
+.sitjoy-app-shell .sitjoy-notification-trigger:hover,
+.sitjoy-app-shell .sitjoy-notification-trigger:active {
+    transform: none;
 }

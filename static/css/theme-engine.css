@@ -74,3 +74,317 @@ html[data-sj-date-input="compact"] {
     opacity: 0.55;
     cursor: not-allowed;
 }
+
+/* 小组件 · 组件样式配置页 */
+.sitjoy-theme-studio-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.sitjoy-theme-studio-wrap {
+    margin-top: 0.85rem;
+}
+
+.sitjoy-theme-studio-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.sitjoy-theme-studio-hint {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 12rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-studio-table-wrap {
+    margin: 0;
+}
+
+.sitjoy-theme-studio-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.sitjoy-theme-studio-table th,
+.sitjoy-theme-studio-table td {
+    vertical-align: top;
+}
+
+.sitjoy-theme-studio-th-config {
+    width: 42%;
+}
+
+.sitjoy-theme-studio-th-preview {
+    width: 58%;
+}
+
+.sitjoy-theme-studio-config {
+    padding: 0.85rem 1rem !important;
+}
+
+.sitjoy-theme-studio-preview {
+    padding: 0.85rem 1rem !important;
+    background: var(--sj-variant-panel-bg);
+}
+
+.sitjoy-theme-studio-config h4 {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--sj-color-ink);
+}
+
+.sitjoy-theme-studio-desc {
+    margin: 0 0 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-studio-field {
+    margin-bottom: 0.45rem;
+}
+
+.sitjoy-theme-studio-field label,
+.sitjoy-theme-studio-color-label {
+    display: block;
+    margin-bottom: 0.2rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-studio-field select {
+    width: 100%;
+    max-width: 14rem;
+    padding: 0.32rem 0.45rem;
+    border-radius: var(--sj-radius-xs);
+    border: 1px solid var(--sj-variant-input-border);
+    background: var(--sj-variant-input-bg);
+    color: var(--sj-color-ink);
+    font: inherit;
+    font-size: 0.8rem;
+}
+
+.sitjoy-theme-studio-field select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.sitjoy-theme-studio-colors {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.sitjoy-theme-studio-color-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.sitjoy-theme-studio-color-row .sitjoy-theme-studio-color-label {
+    flex: 0 0 100%;
+    margin-bottom: 0;
+}
+
+.sitjoy-theme-studio-rgb {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.sitjoy-theme-studio-rgb-input {
+    width: 2.75rem !important;
+    min-width: 2.75rem !important;
+    padding: 0.22rem 0.28rem !important;
+    text-align: center;
+    font-size: 0.78rem !important;
+}
+
+.sitjoy-theme-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 5.5rem;
+    padding: 0.35rem;
+}
+
+.sitjoy-theme-preview-navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 20rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: var(--sj-radius-xs);
+    font-size: 0.78rem;
+    color: var(--sj-variant-navbar-text);
+    box-shadow: var(--sj-variant-navbar-shadow);
+}
+
+.sitjoy-theme-preview-navbar-brand {
+    font-weight: 700;
+}
+
+.sitjoy-theme-preview-navbar-links {
+    color: var(--sj-color-muted);
+    font-size: 0.72rem;
+}
+
+.sitjoy-theme-preview-card {
+    width: 100%;
+    max-width: 16rem;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    transform: none !important;
+}
+
+.sitjoy-theme-preview-card h4 {
+    margin: 0 0 0.25rem;
+    font-size: 0.88rem;
+}
+
+.sitjoy-theme-preview-card p {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-preview-modal {
+    width: 100%;
+    max-width: 16rem;
+}
+
+.sitjoy-theme-preview-modal-panel {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    box-shadow: var(--sj-variant-modal-panel-shadow);
+}
+
+.sitjoy-theme-preview-modal-panel .modal-header {
+    margin-bottom: 0.35rem;
+}
+
+.sitjoy-theme-preview-modal-panel .modal-header h2 {
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.sitjoy-theme-preview-modal-panel p {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-preview-profile {
+    width: 100%;
+    max-width: 18rem;
+    margin: 0;
+    padding: 0.55rem 0.65rem;
+}
+
+.sitjoy-theme-preview-profile .home-profile-main {
+    gap: 0.55rem;
+}
+
+.sitjoy-theme-preview-profile .home-profile-avatar {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 0.82rem;
+}
+
+.sitjoy-theme-preview-profile h2 {
+    font-size: 0.92rem;
+    margin: 0;
+}
+
+.sitjoy-theme-preview-profile .home-profile-kicker {
+    font-size: 0.68rem;
+}
+
+.sitjoy-theme-preview-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: center;
+}
+
+.sitjoy-theme-preview-table-wrap {
+    width: 100%;
+    max-width: 18rem;
+    margin: 0;
+}
+
+.sitjoy-theme-preview-table {
+    font-size: 0.76rem;
+}
+
+.sitjoy-theme-preview-form {
+    width: 100%;
+    max-width: 14rem;
+}
+
+.sitjoy-theme-preview-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-preview-form input {
+    width: 100%;
+}
+
+.sitjoy-theme-preview-segment {
+    pointer-events: none;
+}
+
+.sitjoy-theme-preview-date {
+    max-width: 11rem;
+    pointer-events: none;
+}
+
+@media (max-width: 860px) {
+    .sitjoy-theme-studio-table,
+    .sitjoy-theme-studio-table thead,
+    .sitjoy-theme-studio-table tbody,
+    .sitjoy-theme-studio-table tr,
+    .sitjoy-theme-studio-table th,
+    .sitjoy-theme-studio-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .sitjoy-theme-studio-table thead {
+        display: none;
+    }
+
+    .sitjoy-theme-studio-table tr {
+        margin-bottom: 0.85rem;
+        border: 1px solid var(--sj-variant-panel-border);
+        border-radius: var(--sj-radius-sm);
+        overflow: hidden;
+    }
+
+    .sitjoy-theme-studio-config {
+        border-bottom: 1px solid var(--sj-variant-panel-border);
+    }
+}

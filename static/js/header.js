@@ -1485,6 +1485,8 @@
     }
 
     function hoistPageHeroToNavbar(){
+        if(document.getElementById('sitjoyPageBody')) return;
+
         const inner = document.getElementById('navbarPageHeadingInner');
         const wrap = document.getElementById('navbarPageHeading');
         if(!inner || !wrap) return;
@@ -4021,6 +4023,7 @@
             const host = state.table && state.table.closest
                 ? state.table.closest('.sj-sales-table-host, .sj-wip-table-host')
                 : null;
+            if(host && host.classList.contains('sj-aggregate-active')) return false;
             if(host && !host.classList.contains('sj-aggregate-active')) return true;
         }
         return false;
@@ -4137,11 +4140,19 @@
         if(total < 3) return 1;
         const excludeLast = !!(options && options.excludeTrailingAction);
         const end = excludeLast ? total - 1 : total;
-        let span = 0;
+        // colspan 须覆盖全部列槽（含 visibility:collapse 的隐藏列），否则分组行尾列会错位
+        return Math.max(1, end - 2);
+    }
+
+    function groupedAggregateMiddleHasVisibleSlot(state, headerCells, options){
+        const total = headerCells.length;
+        if(total < 3) return true;
+        const excludeLast = !!(options && options.excludeTrailingAction);
+        const end = excludeLast ? total - 1 : total;
         for(let i = 2; i < end; i += 1){
-            if(!managedColumnHiddenAtIndex(state, headerCells, i)) span += 1;
+            if(!managedColumnHiddenAtIndex(state, headerCells, i)) return true;
         }
-        return Math.max(1, span);
+        return false;
     }
 
     function groupedAggregateRowHasActionsCell(cells){
@@ -4190,6 +4201,9 @@
             const middleSpan = countGroupedAggregateMiddleColspan(state, headerCells, {
                 excludeTrailingAction: hasActionsCell,
             });
+            const middleVisible = groupedAggregateMiddleHasVisibleSlot(state, headerCells, {
+                excludeTrailingAction: hasActionsCell,
+            });
 
             const toggleGroupedCellHide = (cell, hide) => {
                 if(!cell) return;
@@ -4212,7 +4226,7 @@
             }) || null;
             if(middleCell){
                 middleCell.colSpan = middleSpan;
-                toggleGroupedCellHide(middleCell, middleSpan < 1);
+                toggleGroupedCellHide(middleCell, !middleVisible);
             }
             if(actionsCell && headerCells[lastIdx]){
                 stampManagedCellColumnKey(actionsCell, headerCells[lastIdx]);
@@ -5785,6 +5799,8 @@
         });
 
         const clickHandler = (event) => {
+            if(Date.now() < suppressSortUntil) return;
+            if(event.target && event.target.closest && event.target.closest('.pm-col-resizer')) return;
             const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-btn[data-column-key]') : null;
             const managed = managedTableState.get(table) || null;
             const inMainTable = !!(button && table.contains(button));
@@ -8160,30 +8176,350 @@
             if(!key) return;
             const allowed = adminUser || !!permissions[key];
             const item = link.closest('li');
-            if(item && !item.classList.contains('dropdown')){
+            if(item){
                 item.style.display = allowed ? '' : 'none';
-            }
-            if(link.closest('.dropdown-menu')){
-                const childItem = link.closest('li');
-                if(childItem) childItem.style.display = allowed ? '' : 'none';
             }
         });
 
-        document.querySelectorAll('.nav-item.dropdown').forEach(item => {
-            const topLink = item.querySelector(':scope > a');
-            const visibleChildren = Array.from(item.querySelectorAll(':scope .dropdown-menu li')).filter(li => li.style.display !== 'none');
+        document.querySelectorAll('.sitjoy-sidebar-group').forEach(group => {
+            const visibleChildren = Array.from(group.querySelectorAll(':scope .sitjoy-sidebar-sub > li')).filter(li => li.style.display !== 'none');
             if(!visibleChildren.length){
-                item.style.display = 'none';
+                group.style.display = 'none';
                 return;
             }
-            item.style.display = '';
-            if(topLink){
-                const ownKey = String(topLink.dataset.pageKey || '');
-                if(ownKey && !permissions[ownKey]){
-                    const firstVisible = visibleChildren[0] && visibleChildren[0].querySelector('a[href]');
-                    if(firstVisible) topLink.setAttribute('href', firstVisible.getAttribute('href'));
+            group.style.display = '';
+        });
+    }
+
+    const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
+    const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
+
+    function normalizeNavPath(path){
+        const raw = String(path || '/').split('?')[0].split('#')[0] || '/';
+        if(raw.length > 1 && raw.endsWith('/')) return raw.slice(0, -1);
+        return raw || '/';
+    }
+
+    function buildNavLinkIndex(){
+        const map = new Map();
+        document.querySelectorAll('.sitjoy-sidebar-nav a[href]').forEach(a => {
+            const href = normalizeNavPath(a.getAttribute('href'));
+            if(!href) return;
+            map.set(href, {
+                href,
+                label: (a.textContent || '').trim() || href,
+                pageKey: String(a.dataset.pageKey || '').trim()
+            });
+        });
+        return map;
+    }
+
+    function resolvePageInfoFromPath(path, navIndex){
+        const normalized = normalizeNavPath(path);
+        const index = navIndex || buildNavLinkIndex();
+        if(index.has(normalized)) return Object.assign({ id: normalized }, index.get(normalized));
+
+        let best = null;
+        index.forEach((info, href) => {
+            if(href === '/') return;
+            if(normalized === href || normalized.startsWith(href + '/')){
+                if(!best || href.length > best.href.length) best = Object.assign({ id: href }, info);
+            }
+        });
+        if(best) return best;
+
+        const title = (document.title || '').replace(/\s*-\s*SITJOY\s*$/i, '').trim();
+        return {
+            id: normalized,
+            href: normalized,
+            label: title || normalized,
+            pageKey: ''
+        };
+    }
+
+    function loadSitjoyTabsState(){
+        try {
+            const raw = localStorage.getItem(SITJOY_TABS_STORAGE_KEY);
+            if(!raw) return { tabs: [] };
+            const parsed = JSON.parse(raw);
+            if(!parsed || !Array.isArray(parsed.tabs)) return { tabs: [] };
+            return { tabs: parsed.tabs.filter(t => t && t.href) };
+        } catch (e) {
+            return { tabs: [] };
+        }
+    }
+
+    function saveSitjoyTabsState(state){
+        try {
+            localStorage.setItem(SITJOY_TABS_STORAGE_KEY, JSON.stringify({ tabs: state.tabs || [] }));
+        } catch (e) { /* ignore */ }
+    }
+
+    function ensureDefaultPinnedTabs(state){
+        const tabs = state.tabs.slice();
+        const hasHome = tabs.some(t => normalizeNavPath(t.href) === '/');
+        if(!hasHome){
+            tabs.unshift({ href: '/', label: '首页', pageKey: 'home', pinned: true });
+        }
+        state.tabs = tabs;
+        return state;
+    }
+
+    function upsertCurrentTab(state, pageInfo){
+        const href = normalizeNavPath(pageInfo.href);
+        let tabs = state.tabs.slice();
+        const existingIdx = tabs.findIndex(t => normalizeNavPath(t.href) === href);
+        if(existingIdx >= 0){
+            tabs[existingIdx] = Object.assign({}, tabs[existingIdx], pageInfo, { href });
+        } else {
+            tabs.push(Object.assign({ pinned: false }, pageInfo, { href }));
+        }
+        state.tabs = tabs;
+        return state;
+    }
+
+    let sitjoyTabsDragId = null;
+
+    const SITJOY_TAB_ICON_PIN = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
+    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
+    const SITJOY_TAB_ICON_CLOSE = '<svg class="sitjoy-tab-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>';
+
+    function renderSitjoyTabs(state){
+        const host = document.getElementById('sitjoyTopTabs');
+        if(!host) return;
+        const current = normalizeNavPath(location.pathname);
+        host.innerHTML = '';
+        (state.tabs || []).forEach(tab => {
+            const href = normalizeNavPath(tab.href);
+            const el = document.createElement('a');
+            el.className = 'sitjoy-tab' + (href === current ? ' is-active' : '') + (tab.pinned ? ' is-pinned' : '');
+            el.href = href;
+            el.dataset.tabHref = href;
+            el.draggable = true;
+            el.setAttribute('role', 'tab');
+            el.setAttribute('aria-selected', href === current ? 'true' : 'false');
+            const pinIcon = tab.pinned ? SITJOY_TAB_ICON_PIN_ACTIVE : SITJOY_TAB_ICON_PIN;
+            el.innerHTML = `<span class="sitjoy-tab-label">${escapeSitjoyTabHtml(tab.label || href)}</span>
+                <span class="sitjoy-tab-actions">
+                    <button type="button" class="sitjoy-tab-pin" title="${tab.pinned ? '取消固定' : '固定到顶栏'}" aria-label="${tab.pinned ? '取消固定' : '固定到顶栏'}">${pinIcon}</button>
+                    ${tab.pinned ? '' : `<button type="button" class="sitjoy-tab-close" title="关闭" aria-label="关闭">${SITJOY_TAB_ICON_CLOSE}</button>`}
+                </span>`;
+            host.appendChild(el);
+        });
+    }
+
+    function escapeSitjoyTabHtml(value){
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function initSitjoyAppTabs(){
+        const host = document.getElementById('sitjoyTopTabs');
+        if(!host || host.dataset.sitjoyTabsBound === '1') return;
+        host.dataset.sitjoyTabsBound = '1';
+
+        const navIndex = buildNavLinkIndex();
+        let state = ensureDefaultPinnedTabs(loadSitjoyTabsState());
+        const pageInfo = resolvePageInfoFromPath(location.pathname, navIndex);
+        state = upsertCurrentTab(state, pageInfo);
+        saveSitjoyTabsState(state);
+        renderSitjoyTabs(state);
+
+        host.addEventListener('click', (ev) => {
+            const pinBtn = ev.target.closest('.sitjoy-tab-pin');
+            const closeBtn = ev.target.closest('.sitjoy-tab-close');
+            const tabEl = ev.target.closest('.sitjoy-tab');
+            if(!tabEl) return;
+            const href = normalizeNavPath(tabEl.dataset.tabHref);
+            if(pinBtn){
+                ev.preventDefault();
+                ev.stopPropagation();
+                state.tabs = state.tabs.map(t => {
+                    if(normalizeNavPath(t.href) !== href) return t;
+                    return Object.assign({}, t, { pinned: !t.pinned });
+                });
+                saveSitjoyTabsState(state);
+                renderSitjoyTabs(state);
+                return;
+            }
+            if(closeBtn){
+                ev.preventDefault();
+                ev.stopPropagation();
+                state.tabs = state.tabs.filter(t => normalizeNavPath(t.href) !== href);
+                saveSitjoyTabsState(state);
+                if(href === normalizeNavPath(location.pathname)){
+                    const last = state.tabs[state.tabs.length - 1];
+                    window.location.href = last ? last.href : '/';
+                    return;
+                }
+                renderSitjoyTabs(state);
+            }
+        });
+
+        host.addEventListener('mousedown', (ev) => {
+            if(ev.target.closest('.sitjoy-tab-pin, .sitjoy-tab-close')) ev.stopPropagation();
+        });
+
+        host.addEventListener('dragstart', (ev) => {
+            const tabEl = ev.target.closest('.sitjoy-tab');
+            if(!tabEl) return;
+            sitjoyTabsDragId = normalizeNavPath(tabEl.dataset.tabHref);
+            tabEl.classList.add('is-dragging');
+            if(ev.dataTransfer){
+                ev.dataTransfer.effectAllowed = 'move';
+                ev.dataTransfer.setData('text/plain', sitjoyTabsDragId);
+            }
+        });
+
+        host.addEventListener('dragend', (ev) => {
+            const tabEl = ev.target.closest('.sitjoy-tab');
+            if(tabEl) tabEl.classList.remove('is-dragging');
+            sitjoyTabsDragId = null;
+        });
+
+        host.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            if(ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+        });
+
+        host.addEventListener('drop', (ev) => {
+            ev.preventDefault();
+            const targetTab = ev.target.closest('.sitjoy-tab');
+            const fromId = sitjoyTabsDragId || (ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '');
+            const toId = targetTab ? normalizeNavPath(targetTab.dataset.tabHref) : '';
+            if(!fromId || !toId || fromId === toId) return;
+            const tabs = state.tabs.slice();
+            const fromIdx = tabs.findIndex(t => normalizeNavPath(t.href) === fromId);
+            const toIdx = tabs.findIndex(t => normalizeNavPath(t.href) === toId);
+            if(fromIdx < 0 || toIdx < 0) return;
+            const [moved] = tabs.splice(fromIdx, 1);
+            tabs.splice(toIdx, 0, moved);
+            state.tabs = tabs;
+            saveSitjoyTabsState(state);
+            renderSitjoyTabs(state);
+        });
+    }
+
+    function syncSidebarActiveState(){
+        const path = normalizeNavPath(location.pathname);
+        document.querySelectorAll('.sitjoy-sidebar-nav a[href]').forEach(a => {
+            const href = normalizeNavPath(a.getAttribute('href'));
+            const isActive = href === path || (href !== '/' && path.startsWith(href + '/'));
+            a.classList.toggle('active', isActive);
+            if(isActive){
+                const group = a.closest('.sitjoy-sidebar-group');
+                if(group){
+                    const details = group.querySelector('.sitjoy-sidebar-details');
+                    if(details) details.open = true;
                 }
             }
+        });
+    }
+
+    function initSitjoySidebar(){
+        const sidebar = document.getElementById('sitjoySidebar');
+        if(!sidebar || sidebar.dataset.sitjoySidebarBound === '1') return;
+        sidebar.dataset.sitjoySidebarBound = '1';
+
+        try {
+            if(localStorage.getItem(SITJOY_SIDEBAR_COLLAPSED_KEY) === '1'){
+                document.body.classList.add('sitjoy-sidebar-collapsed');
+            }
+        } catch (e) { /* ignore */ }
+
+        document.querySelectorAll('.sitjoy-sidebar-details').forEach(details => {
+            if(details.dataset.sitjoyDetailsBound === '1') return;
+            details.dataset.sitjoyDetailsBound = '1';
+            details.addEventListener('toggle', () => {
+                if(!details.open) return;
+                const group = details.closest('.sitjoy-sidebar-group');
+                if(!group) return;
+                group.parentElement.querySelectorAll(':scope > .sitjoy-sidebar-group .sitjoy-sidebar-details[open]').forEach(other => {
+                    if(other !== details) other.open = false;
+                });
+            });
+        });
+
+        const collapseBtn = document.getElementById('sitjoySidebarCollapseBtn');
+        if(collapseBtn && collapseBtn.dataset.sitjoyCollapseBound !== '1'){
+            collapseBtn.dataset.sitjoyCollapseBound = '1';
+            collapseBtn.addEventListener('click', () => {
+                document.body.classList.toggle('sitjoy-sidebar-collapsed');
+                try {
+                    localStorage.setItem(SITJOY_SIDEBAR_COLLAPSED_KEY, document.body.classList.contains('sitjoy-sidebar-collapsed') ? '1' : '0');
+                } catch (e) { /* ignore */ }
+            });
+        }
+
+        syncSidebarActiveState();
+    }
+
+    function mountAppShellLayout(){
+        const headerHost = document.getElementById('site-header');
+        const pageBody = document.getElementById('sitjoyPageBody');
+        if(!headerHost || !pageBody || headerHost.dataset.shellMounted === '1') return;
+
+        const moveSelectors = ['.container', '.home-container', '.pm-layout-root', '.go-play-layout-root', '.mj-layout-root'];
+        moveSelectors.forEach(sel => {
+            document.querySelectorAll(`body > ${sel}`).forEach(el => {
+                if(!pageBody.contains(el)) pageBody.appendChild(el);
+            });
+        });
+
+        document.querySelectorAll('body > footer').forEach(el => el.remove());
+        document.body.classList.add('sitjoy-has-shell');
+        headerHost.dataset.shellMounted = '1';
+    }
+
+    function initTopbarUser(authData){
+        const block = document.getElementById('sitjoyTopbarUserBlock');
+        const el = document.getElementById('sitjoyTopbarUser');
+        const avatar = document.getElementById('sitjoyTopbarAvatar');
+        if(!el) return;
+        if(!authData || authData.status === 'error'){
+            if(block) block.hidden = true;
+            el.textContent = '';
+            return;
+        }
+        if(block) block.hidden = false;
+        const name = authData.display_name || authData.name || authData.username || '用户';
+        el.textContent = name;
+        el.title = name;
+        if(avatar){
+            const initial = String(name).trim().charAt(0) || '?';
+            avatar.textContent = initial;
+        }
+    }
+
+    function initTopbarClock(){
+        const el = document.getElementById('sitjoyTopbarClock');
+        if(!el || el.dataset.sitjoyClockBound === '1') return;
+        el.dataset.sitjoyClockBound = '1';
+        function tick(){
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            el.textContent = `${y}-${m}-${d} ${hh}:${mm}`;
+        }
+        tick();
+        window.setInterval(tick, 30000);
+    }
+
+    function initTopbarLogout(){
+        const btn = document.getElementById('sitjoyTopbarLogout');
+        if(!btn || btn.dataset.sitjoyLogoutBound === '1') return;
+        btn.dataset.sitjoyLogoutBound = '1';
+        btn.addEventListener('click', async () => {
+            try {
+                await fetch('/api/auth?action=logout', { method: 'POST', credentials: 'include' });
+            } catch (e) { /* ignore */ }
+            window.location.href = '/';
         });
     }
 
@@ -8359,6 +8695,10 @@
         track.innerHTML = '';
         track.appendChild(lineEl);
 
+        const iconOnlyTicker = track.classList.contains('sitjoy-usage-ticker-track--hidden')
+            || track.hasAttribute('hidden')
+            || track.closest('[hidden]');
+
         let tipIndex = 0;
         let tipPaused = false;
 
@@ -8370,6 +8710,7 @@
             }
             const cur = SHORT_ITEMS[tipIndex % SHORT_ITEMS.length];
             lineEl.textContent = cur;
+            if(iconOnlyTicker) tickerBtn.title = `使用提示：${cur}`;
             const wait = dwellMsForTip(cur);
             window.__sitjoyUsageTickerTimerId = window.setTimeout(() => {
                 window.__sitjoyUsageTickerTimerId = null;
@@ -8638,33 +8979,16 @@
                 const el = document.getElementById('site-header');
                 if(!el) return;
                 el.innerHTML = html;
+                mountAppShellLayout();
                 applyHeaderPermissions(authData);
+                initSitjoySidebar();
+                initSitjoyAppTabs();
+                initTopbarUser(authData);
+                initTopbarClock();
+                initTopbarLogout();
                 initSitjoyNotifications(authData);
                 initSitjoyUsageGuide();
                 hoistPageHeroToNavbar();
-
-                // 设置当前激活的菜单样式
-                const path = location.pathname || '/';
-                document.querySelectorAll('.nav-menu a').forEach(a => a.classList.remove('active'));
-                if(path === '/' || path === '/index.html'){
-                    const elHome = document.querySelector('.nav-home'); if(elHome) elHome.classList.add('active');
-                } else if(path.startsWith('/shop-brand-management') || path.startsWith('/amazon-account-health-management') || path.startsWith('/sales-product-management') || path.startsWith('/sales-product-performance-management') || path.startsWith('/sales-forecast-management') || path.startsWith('/container-draft-management') || path.startsWith('/sales-order-registration-management')){
-                    const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
-                } else if(path.startsWith('/system-employee-management') || path.startsWith('/system-audit-log-management')){
-                    const elSys = document.querySelector('.nav-system'); if(elSys) elSys.classList.add('active');
-                } else if(path.startsWith('/gallery') || path.startsWith('/spec-main-image-management') || path.startsWith('/image-type-management') || path.startsWith('/aplus-management')){
-                    const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
-                } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-target-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-adjustment-records-management') || path.startsWith('/amazon-ad-keyword-management')){
-                    const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
-                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management') || path.startsWith('/factory-stock-management') || path.startsWith('/factory-wip-management') || path.startsWith('/logistics-warehouse-dashboard')){
-                    const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
-                } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
-                    const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
-                } else if(path.startsWith('/about')){
-                    const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');
-                } else if(path.startsWith('/widgets')){
-                    const elW = document.querySelector('.nav-widgets'); if(elW) elW.classList.add('active');
-                }
             })
             .catch(err => console.error('Load header failed', err));
     }
