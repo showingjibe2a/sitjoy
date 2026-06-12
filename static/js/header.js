@@ -8169,10 +8169,199 @@
         return state;
     }
 
+    function refreshSitjoyTabsForCurrentPath(path, doc){
+        const host = document.getElementById('sitjoyTopTabs');
+        if(!host || host.dataset.sitjoyTabsBound !== '1') return;
+        const navIndex = buildNavLinkIndex();
+        const normalizedPath = normalizeNavPath(path || location.pathname);
+        const pageInfo = resolvePageInfoFromPath(normalizedPath, navIndex);
+        if(doc && doc.title){
+            const titleLabel = doc.title.replace(/\s*-\s*SITJOY\s*$/i, '').trim();
+            if(titleLabel) pageInfo.label = titleLabel;
+        }
+        let state = ensureDefaultPinnedTabs(loadSitjoyTabsState());
+        state = upsertCurrentTab(state, pageInfo);
+        saveSitjoyTabsState(state);
+        renderSitjoyTabs(state);
+    }
+
+    function shouldUseSitjoySoftNav(ev, anchor){
+        if(!anchor || ev.defaultPrevented) return false;
+        if(ev.button !== 0) return false;
+        if(ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return false;
+        if(anchor.target === '_blank') return false;
+        const href = anchor.getAttribute('href');
+        if(!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return false;
+        if(/^https?:\/\//i.test(href) && !href.startsWith(location.origin)) return false;
+        return document.body.classList.contains('sitjoy-has-shell');
+    }
+
+    function removeSitjoyPageStyles(){
+        document.querySelectorAll('style[data-sitjoy-page-style], link[data-sitjoy-page-style]').forEach(el => el.remove());
+    }
+
+    function applySitjoyPageStyles(doc){
+        removeSitjoyPageStyles();
+        doc.querySelectorAll('head style').forEach(oldStyle => {
+            const style = document.createElement('style');
+            style.dataset.sitjoyPageStyle = '1';
+            style.textContent = oldStyle.textContent;
+            document.head.appendChild(style);
+        });
+        doc.querySelectorAll('head link[rel="stylesheet"]').forEach(oldLink => {
+            const href = oldLink.getAttribute('href') || '';
+            if(!href || href.includes('/static/css/style.css') || href.includes('/static/css/tokens.css') || href.includes('/static/css/theme-engine.css') || href.includes('/static/css/app-shell.css')) return;
+            if(document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) return;
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.dataset.sitjoyPageStyle = '1';
+            document.head.appendChild(link);
+        });
+    }
+
+    function extractSitjoyPageNodes(doc){
+        const seen = new Set();
+        const nodes = [];
+        SITJOY_PAGE_CONTENT_SELECTORS.forEach(sel => {
+            doc.querySelectorAll(`body > ${sel}`).forEach(el => {
+                if(seen.has(el)) return;
+                seen.add(el);
+                nodes.push(el);
+            });
+        });
+        if(nodes.length) return nodes;
+        doc.querySelectorAll('body > *').forEach(el => {
+            if(el.id === 'site-header' || el.tagName === 'SCRIPT') return;
+            nodes.push(el);
+        });
+        return nodes;
+    }
+
+    function removeSitjoyPageScripts(){
+        document.querySelectorAll('script[data-sitjoy-page-script]').forEach(el => el.remove());
+    }
+
+    async function runSitjoyPageScripts(doc){
+        removeSitjoyPageScripts();
+        const scriptNodes = [...doc.querySelectorAll('body script')];
+        for(const oldScript of scriptNodes){
+            const src = oldScript.getAttribute('src') || '';
+            if(SITJOY_SHELL_SKIP_SCRIPT_RE.test(src)) continue;
+            const script = document.createElement('script');
+            script.dataset.sitjoyPageScript = '1';
+            [...oldScript.attributes].forEach(attr => script.setAttribute(attr.name, attr.value));
+            if(!src) script.textContent = oldScript.textContent;
+            document.body.appendChild(script);
+            if(src){
+                await new Promise(resolve => {
+                    script.addEventListener('load', resolve, { once: true });
+                    script.addEventListener('error', resolve, { once: true });
+                });
+            }
+        }
+    }
+
+    function syncSitjoyBodyClasses(doc){
+        const preserve = new Set(['sitjoy-has-shell', 'sitjoy-sidebar-collapsed']);
+        const classes = [...doc.body.classList].filter(cls => !preserve.has(cls));
+        document.body.className = ['sitjoy-has-shell', ...classes].join(' ');
+        try {
+            if(localStorage.getItem(SITJOY_SIDEBAR_COLLAPSED_KEY) === '1'){
+                document.body.classList.add('sitjoy-sidebar-collapsed');
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    function enhanceSitjoyPageContent(root){
+        const scope = root || document.getElementById('sitjoyPageBody') || document;
+        initUniversalSingleSelects(scope);
+        enhanceCustomDateInputs(scope);
+        initOptionalDateInputs(scope);
+        normalizeResetButtons(scope);
+        enhanceManagedTables(document);
+        bindFloatingHelpDots(document);
+        partitionPmCardToolbars(document);
+        bridgeLegacyResponseToToast(document);
+        initColorSwatchPickers(scope);
+        repositionManagedBatchBars();
+        syncModalScrollLock();
+    }
+
+    async function applySitjoyPageSwap(doc, href){
+        const pageBody = document.getElementById('sitjoyPageBody');
+        if(!pageBody) throw new Error('Missing #sitjoyPageBody');
+
+        if(doc.title) document.title = doc.title;
+        applySitjoyPageStyles(doc);
+        syncSitjoyBodyClasses(doc);
+
+        pageBody.replaceChildren();
+        extractSitjoyPageNodes(doc).forEach(node => {
+            pageBody.appendChild(document.importNode(node, true));
+        });
+
+        await runSitjoyPageScripts(doc);
+        document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+        window.dispatchEvent(new Event('load'));
+
+        refreshSitjoyTabsForCurrentPath(href, doc);
+        syncSidebarActiveState();
+        window.requestAnimationFrame(() => enhanceSitjoyPageContent(pageBody));
+    }
+
+    async function sitjoyNavigateTo(rawHref, options){
+        const opts = options || {};
+        const href = normalizeNavPath(rawHref);
+        const current = normalizeNavPath(location.pathname);
+        const force = !!opts.force || href === current;
+
+        if(sitjoyNavInFlight){
+            try { await sitjoyNavInFlight; } catch (e) { /* ignore */ }
+        }
+
+        sitjoyNavInFlight = (async () => {
+            try {
+                const fetchUrl = force && href === current
+                    ? `${href}${href.includes('?') ? '&' : '?'}_sitjoy=${Date.now()}`
+                    : href;
+                const resp = await fetch(fetchUrl, {
+                    credentials: 'include',
+                    headers: { Accept: 'text/html' }
+                });
+                if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const html = await resp.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                await applySitjoyPageSwap(doc, href);
+                if(!opts.skipHistory){
+                    const stateObj = { sitjoy: true, path: href };
+                    if(opts.replace) history.replaceState(stateObj, '', href);
+                    else history.pushState(stateObj, '', href);
+                }
+            } catch (err) {
+                console.warn('Sitjoy soft navigation failed, falling back to full load', err);
+                window.location.assign(rawHref);
+            } finally {
+                sitjoyNavInFlight = null;
+            }
+        })();
+
+        return sitjoyNavInFlight;
+    }
+
+    function bindSitjoyPopstate(){
+        if(window.__sitjoyPopstateBound) return;
+        window.__sitjoyPopstateBound = true;
+        window.addEventListener('popstate', () => {
+            if(!document.body.classList.contains('sitjoy-has-shell')) return;
+            sitjoyNavigateTo(location.pathname, { skipHistory: true });
+        });
+    }
+
     let sitjoyTabsDragId = null;
 
-    const SITJOY_TAB_ICON_PIN = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
-    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v8.5l-3.5-2.2-3.5 2.2V2.5z"/></svg>';
+    const SITJOY_TAB_ICON_PIN = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
+    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
 
     function renderSitjoyTabs(state){
         const host = document.getElementById('sitjoyTopTabs');
@@ -8217,6 +8406,7 @@
         state = upsertCurrentTab(state, pageInfo);
         saveSitjoyTabsState(state);
         renderSitjoyTabs(state);
+        bindSitjoyPopstate();
 
         host.addEventListener('click', (ev) => {
             const pinBtn = ev.target.closest('.sitjoy-tab-pin');
@@ -8242,10 +8432,16 @@
                 saveSitjoyTabsState(state);
                 if(href === normalizeNavPath(location.pathname)){
                     const last = state.tabs[state.tabs.length - 1];
-                    window.location.href = last ? last.href : '/';
+                    if(last) sitjoyNavigateTo(last.href);
+                    else sitjoyNavigateTo('/');
                     return;
                 }
                 renderSitjoyTabs(state);
+                return;
+            }
+            if(shouldUseSitjoySoftNav(ev, tabEl)){
+                ev.preventDefault();
+                sitjoyNavigateTo(href, { force: href === normalizeNavPath(location.pathname) });
             }
         });
 
@@ -8343,6 +8539,13 @@
                 } catch (e) { /* ignore */ }
             });
         }
+
+        sidebar.addEventListener('click', (ev) => {
+            const link = ev.target.closest('.sitjoy-sidebar a[href]');
+            if(!link || !shouldUseSitjoySoftNav(ev, link)) return;
+            ev.preventDefault();
+            sitjoyNavigateTo(link.getAttribute('href'));
+        });
 
         syncSidebarActiveState();
     }
@@ -8854,24 +9057,75 @@
         };
     }
 
+    function fetchHeaderHtml(){
+        if(sitjoyHeaderHtmlCache) return Promise.resolve(sitjoyHeaderHtmlCache);
+        try {
+            const cached = sessionStorage.getItem(SITJOY_HEADER_CACHE_KEY);
+            if(cached){
+                sitjoyHeaderHtmlCache = cached;
+                fetch('/static/partials/header.html')
+                    .then(r => r.text())
+                    .then(html => {
+                        sitjoyHeaderHtmlCache = html;
+                        try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { /* ignore */ }
+                    })
+                    .catch(() => {});
+                return Promise.resolve(cached);
+            }
+        } catch (e) { /* ignore */ }
+        return fetch('/static/partials/header.html')
+            .then(r => r.text())
+            .then(html => {
+                sitjoyHeaderHtmlCache = html;
+                try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { /* ignore */ }
+                return html;
+            });
+    }
+
+    function paintCachedHeaderShell(){
+        const el = document.getElementById('site-header');
+        if(!el || el.dataset.shellMounted === '1') return false;
+        try {
+            const cached = sessionStorage.getItem(SITJOY_HEADER_CACHE_KEY) || sitjoyHeaderHtmlCache;
+            if(!cached) return false;
+            el.innerHTML = cached;
+            mountAppShellLayout();
+            initSitjoySidebar();
+            initSitjoyAppTabs();
+            bindSitjoyPopstate();
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function loadHeader(){
+        paintCachedHeaderShell();
         Promise.all([
-            fetch('/static/partials/header.html').then(r => r.text()),
+            fetchHeaderHtml(),
             getCurrentAuthState()
         ])
             .then(([html, authData]) => {
                 const el = document.getElementById('site-header');
                 if(!el) return;
-                el.innerHTML = html;
-                mountAppShellLayout();
+                const shellReady = el.dataset.shellMounted === '1';
+                if(!shellReady){
+                    el.innerHTML = html;
+                    mountAppShellLayout();
+                    initSitjoySidebar();
+                    initSitjoyAppTabs();
+                    bindSitjoyPopstate();
+                }
                 applyHeaderPermissions(authData);
-                initSitjoySidebar();
-                initSitjoyAppTabs();
                 initTopbarUser(authData);
                 initTopbarClock();
                 initTopbarLogout();
                 initSitjoyNotifications(authData);
                 initSitjoyUsageGuide();
+                if(shellReady){
+                    refreshSitjoyTabsForCurrentPath(location.pathname);
+                    syncSidebarActiveState();
+                }
             })
             .catch(err => console.error('Load header failed', err));
     }
