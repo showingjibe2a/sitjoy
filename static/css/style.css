@@ -2563,6 +2563,18 @@ table th.pm-col-num .perf-th-head-metric {
     color: rgba(123, 128, 136, 0.7);
 }
 
+.pm-sortable[data-sort-order]::before {
+    content: attr(data-sort-order);
+    display: inline-block;
+    min-width: 0.95em;
+    margin-right: 0.15em;
+    font-size: 0.68em;
+    font-weight: 700;
+    line-height: 1;
+    color: rgba(74, 78, 87, 0.92);
+    vertical-align: middle;
+}
+
 .pm-sort-asc::after {
     content: ' \2191';
     color: rgba(74, 78, 87, 0.9);
@@ -6274,6 +6286,7 @@ button.btn-capsule-sm:active {
 .pm-table-toolbar .pm-table-next,
 .pm-table-toolbar .pm-table-columns-trigger,
 .pm-table-toolbar .pm-table-clear-filters,
+.pm-table-toolbar .pm-table-clear-sort,
 .pm-table-toolbar .pm-table-columns-reset {
     min-height: var(--ui-compact-height) !important;
     height: var(--ui-compact-height) !important;

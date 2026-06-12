@@ -1022,6 +1022,55 @@
                 actual_discount_rate: item.actual_discount_rate,
                 actual_discount_amount_usd: item.actual_discount_amount_usd,
                 discounted_price_usd: item.discounted_price_usd,
+                _touched: {},
+            };
+        }
+
+        function salesPreviewMarkDraftFieldTouched(draft, field) {
+            if (!draft) return;
+            if (!draft._touched || typeof draft._touched !== 'object') draft._touched = {};
+            draft._touched[field] = true;
+        }
+
+        function salesPreviewDraftTouchedFields(draft) {
+            if (!draft || !draft._touched || typeof draft._touched !== 'object') return [];
+            return SALES_PREVIEW_DRAFT_FIELDS.filter((field) => !!draft._touched[field]);
+        }
+
+        function readSalesPreviewFieldFromRow(row, field) {
+            if (!row) return undefined;
+            const el = row.querySelector(`.preview-edit-field[data-field="${field}"]`);
+            if (!el) return undefined;
+            return normalizeSalesPreviewFieldValue(field, el.value);
+        }
+
+        function buildSalesPreviewSaveItem(id) {
+            const item = (salesProductItems || []).find(x => String(x.id) === String(id));
+            const draft = salesPreviewEditDraft[id];
+            if (!item || !draft) return null;
+            const row = sjFindSalesProductTableRow(id);
+            const touched = salesPreviewDraftTouchedFields(draft);
+            if (!touched.length) return null;
+            const pick = (field) => {
+                if (draft._touched && draft._touched[field]) {
+                    const domVal = readSalesPreviewFieldFromRow(row, field);
+                    if (domVal !== undefined) return domVal;
+                    return normalizeSalesPreviewFieldValue(field, draft[field]);
+                }
+                return normalizeSalesPreviewFieldValue(field, item[field]);
+            };
+            return {
+                id: Number(id),
+                touched_fields: touched.slice(),
+                child_code: pick('child_code'),
+                gtin: pick('gtin'),
+                upc: pick('upc'),
+                sale_price_usd: pick('sale_price_usd'),
+                promotion_activity_type: pick('promotion_activity_type'),
+                discount_form_type: pick('discount_form_type'),
+                actual_discount_rate: pick('actual_discount_rate'),
+                actual_discount_amount_usd: pick('actual_discount_amount_usd'),
+                discounted_price_usd: pick('discounted_price_usd'),
             };
         }
 
@@ -1063,10 +1112,16 @@
                 salesPreviewEditDraft[id] = salesPreviewDraftSnapshot(item);
             }
             salesPreviewEditDraft[id][field] = normalized;
+            salesPreviewMarkDraftFieldTouched(salesPreviewEditDraft[id], field);
             const draft = salesPreviewEditDraft[id];
             if (field === 'discount_form_type') {
-                if (normalized === 'amount') draft.actual_discount_rate = null;
-                else draft.actual_discount_amount_usd = null;
+                if (normalized === 'amount') {
+                    draft.actual_discount_rate = null;
+                    salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_rate');
+                } else {
+                    draft.actual_discount_amount_usd = null;
+                    salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_amount_usd');
+                }
             }
             if (field !== 'discounted_price_usd' && SALES_ECON_LINKED_FIELDS.has(field)) {
                 salesSyncDiscountedPriceDraft(item, draft);
@@ -1080,7 +1135,11 @@
         function salesSyncDiscountedPriceDraft(item, draft) {
             const merged = Object.assign({}, item, draft);
             const price = salesComputeDiscountedPrice(merged, { allowExplicit: false });
-            draft.discounted_price_usd = price > 0 ? price : null;
+            const next = price > 0 ? price : null;
+            if (draft.discounted_price_usd !== next) {
+                draft.discounted_price_usd = next;
+                salesPreviewMarkDraftFieldTouched(draft, 'discounted_price_usd');
+            }
         }
 
         function bindSalesPreviewEditEvents() {
@@ -1120,18 +1179,11 @@
                 syncSalesPreviewSaveBar();
                 return;
             }
-            const items = ids.map(id => ({
-                id: Number(id),
-                child_code: normalizeSalesPreviewFieldValue('child_code', salesPreviewEditDraft[id].child_code),
-                gtin: normalizeSalesPreviewFieldValue('gtin', salesPreviewEditDraft[id].gtin),
-                upc: normalizeSalesPreviewFieldValue('upc', salesPreviewEditDraft[id].upc),
-                sale_price_usd: normalizeSalesPreviewFieldValue('sale_price_usd', salesPreviewEditDraft[id].sale_price_usd),
-                promotion_activity_type: normalizeSalesPreviewFieldValue('promotion_activity_type', salesPreviewEditDraft[id].promotion_activity_type),
-                discount_form_type: normalizeSalesPreviewFieldValue('discount_form_type', salesPreviewEditDraft[id].discount_form_type),
-                actual_discount_rate: normalizeSalesPreviewFieldValue('actual_discount_rate', salesPreviewEditDraft[id].actual_discount_rate),
-                actual_discount_amount_usd: normalizeSalesPreviewFieldValue('actual_discount_amount_usd', salesPreviewEditDraft[id].actual_discount_amount_usd),
-                discounted_price_usd: normalizeSalesPreviewFieldValue('discounted_price_usd', salesPreviewEditDraft[id].discounted_price_usd),
-            }));
+            const items = ids.map(id => buildSalesPreviewSaveItem(id)).filter(Boolean);
+            if (!items.length) {
+                syncSalesPreviewSaveBar();
+                return;
+            }
             fetch('/api/sales-product?action=preview_update', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1146,15 +1198,16 @@
                     items.forEach(up => {
                         const row = (salesProductItems || []).find(x => String(x.id) === String(up.id));
                         if (!row) return;
-                        row.child_code = up.child_code ? up.child_code : null;
-                        row.gtin = up.gtin ? up.gtin : null;
-                        row.upc = up.upc ? up.upc : null;
-                        row.sale_price_usd = up.sale_price_usd;
-                        row.promotion_activity_type = up.promotion_activity_type;
-                        row.discount_form_type = up.discount_form_type;
-                        row.actual_discount_rate = up.actual_discount_rate;
-                        row.actual_discount_amount_usd = up.actual_discount_amount_usd;
-                        row.discounted_price_usd = up.discounted_price_usd;
+                        const touched = new Set(Array.isArray(up.touched_fields) ? up.touched_fields : []);
+                        if (touched.has('child_code')) row.child_code = up.child_code ? up.child_code : null;
+                        if (touched.has('gtin')) row.gtin = up.gtin ? up.gtin : null;
+                        if (touched.has('upc')) row.upc = up.upc ? up.upc : null;
+                        if (touched.has('sale_price_usd')) row.sale_price_usd = up.sale_price_usd;
+                        if (touched.has('promotion_activity_type')) row.promotion_activity_type = up.promotion_activity_type;
+                        if (touched.has('discount_form_type')) row.discount_form_type = up.discount_form_type;
+                        if (touched.has('actual_discount_rate')) row.actual_discount_rate = up.actual_discount_rate;
+                        if (touched.has('actual_discount_amount_usd')) row.actual_discount_amount_usd = up.actual_discount_amount_usd;
+                        if (touched.has('discounted_price_usd')) row.discounted_price_usd = up.discounted_price_usd;
                         delete salesPreviewEditDraft[String(up.id)];
                     });
                     renderSalesGroupedTable(salesProductItems || []);
@@ -2159,7 +2212,13 @@
                 if (priceInput) {
                     const val = salesFormatDiscountedPriceCell(merged);
                     priceInput.value = val;
-                    if (draft) draft.discounted_price_usd = val === '' ? null : parseNumber(val);
+                    if (draft) {
+                        const next = val === '' ? null : parseNumber(val);
+                        if (draft.discounted_price_usd !== next) {
+                            draft.discounted_price_usd = next;
+                            salesPreviewMarkDraftFieldTouched(draft, 'discounted_price_usd');
+                        }
+                    }
                 }
             }
 

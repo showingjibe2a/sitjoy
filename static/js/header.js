@@ -1436,6 +1436,7 @@
 
     const PAGE_PREFS_COLUMN_FILTERS_SUFFIX = 'column-filters';
     const PAGE_PREFS_CUSTOM_SUFFIX = 'page-filters';
+    const PAGE_PREFS_SORT_STACK_SUFFIX = 'sort-stack';
     const tableFilterProviders = new Map();
     const tablePagePrefsSaveTimers = new Map();
 
@@ -1491,6 +1492,51 @@
         if(!table) return;
         removeStorageKey(makeStorageKey(table, PAGE_PREFS_COLUMN_FILTERS_SUFFIX));
         removeStorageKey(makeStorageKey(table, PAGE_PREFS_CUSTOM_SUFFIX));
+    }
+
+    function normalizeManagedSortStack(raw){
+        if(!Array.isArray(raw)) return [];
+        const out = [];
+        const seen = new Set();
+        raw.forEach((item) => {
+            const key = String(item && item.key != null ? item.key : '').trim();
+            if(!key || seen.has(key)) return;
+            const dir = String(item && item.dir != null ? item.dir : 'desc').trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
+            seen.add(key);
+            out.push({ key, dir });
+        });
+        return out;
+    }
+
+    function readPersistedSortStack(table){
+        if(!table || tableSkipsFilterPersist(table)) return [];
+        const parsed = readJsonStorage(makeStorageKey(table, PAGE_PREFS_SORT_STACK_SUFFIX));
+        if(Array.isArray(parsed)) return normalizeManagedSortStack(parsed);
+        if(parsed && Array.isArray(parsed.stack)) return normalizeManagedSortStack(parsed.stack);
+        return [];
+    }
+
+    function persistManagedSortStack(table, stack){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        writeJsonStorage(makeStorageKey(table, PAGE_PREFS_SORT_STACK_SUFFIX), normalizeManagedSortStack(stack));
+    }
+
+    function clearPersistedSortStack(table){
+        if(!table) return;
+        removeStorageKey(makeStorageKey(table, PAGE_PREFS_SORT_STACK_SUFFIX));
+    }
+
+    function syncLegacySortFieldsFromStack(state){
+        if(!state) return;
+        const stack = normalizeManagedSortStack(state.sortStack);
+        state.sortStack = stack;
+        const first = stack[0] || null;
+        state.sortOrigin = first ? first.key : null;
+        state.sortDir = first ? first.dir : null;
+    }
+
+    function managedSortStackHasEntries(state){
+        return normalizeManagedSortStack(state && state.sortStack).length > 0;
     }
 
     function resolveTableFilterProvider(table){
@@ -5974,7 +6020,7 @@
         if(!state || !state.table) return;
         syncManagedTableBodyLayout(state);
         ensureRowSortOrigin(state);
-        if(state.sortOrigin && state.sortDir){
+        if(managedSortStackHasEntries(state)){
             applySort(state);
         }
         applyPagination(state);
@@ -6090,6 +6136,12 @@
             if(!t) return;
             const state = managedTableState.get(t);
             if(state) clearAllManagedTableFilters(state);
+        },
+        clearSort(tableOrSelector){
+            const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            if(!t) return;
+            const state = managedTableState.get(t);
+            if(state) clearManagedTableSort(state);
         },
         /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
         enhance(root){
@@ -6764,12 +6816,13 @@
     }
 
     function applySort(state){
-        const sortOrigin = String(state.sortOrigin || '').trim();
-        const sortDir = state.sortDir;
+        const stack = normalizeManagedSortStack(state && state.sortStack);
+        state.sortStack = stack;
+        syncLegacySortFieldsFromStack(state);
         const rows = getDataRows(state);
         if(!rows.length) return;
 
-        if(!sortOrigin || !sortDir){
+        if(!stack.length){
             if(!state.sortApplied) return;
             rows.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
             const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
@@ -6779,15 +6832,7 @@
             return;
         }
 
-        rows.sort((a, b) => {
-            const aCell = mapRowByKey(a).get(sortOrigin);
-            const bCell = mapRowByKey(b).get(sortOrigin);
-            const av = readCellComparableValue(aCell);
-            const bv = readCellComparableValue(bCell);
-            if(typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? (av - bv) : (bv - av);
-            if(av === bv) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
-            return sortDir === 'asc' ? String(av).localeCompare(String(bv), 'zh') : String(bv).localeCompare(String(av), 'zh');
-        });
+        rows.sort((a, b) => compareRowsForManagedSortStack(a, b, stack));
 
         const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
         const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
@@ -6795,19 +6840,88 @@
         state.sortApplied = true;
     }
 
+    function compareRowsForManagedSortStack(a, b, stack){
+        for(let i = 0; i < stack.length; i++){
+            const entry = stack[i];
+            const key = String(entry.key || '').trim();
+            if(!key) continue;
+            const dir = entry.dir === 'asc' ? 'asc' : 'desc';
+            const aCell = mapRowByKey(a).get(key);
+            const bCell = mapRowByKey(b).get(key);
+            const av = readCellComparableValue(aCell);
+            const bv = readCellComparableValue(bCell);
+            let cmp = 0;
+            if(typeof av === 'number' && typeof bv === 'number'){
+                cmp = av - bv;
+            } else if(av === bv){
+                cmp = 0;
+            } else {
+                cmp = String(av).localeCompare(String(bv), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+            }
+            if(cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+        }
+        return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
+    }
+
+    function toggleManagedSortStackEntry(state, origin){
+        const key = String(origin || '').trim();
+        if(!key) return;
+        const stack = normalizeManagedSortStack(state.sortStack);
+        const idx = stack.findIndex(item => item.key === key);
+        if(idx < 0){
+            stack.push({ key, dir: 'desc' });
+        } else if(stack[idx].dir === 'desc'){
+            stack[idx].dir = 'asc';
+        } else {
+            stack.splice(idx, 1);
+        }
+        state.sortStack = stack;
+        syncLegacySortFieldsFromStack(state);
+        if(state.table && !tableSkipsFilterPersist(state.table)){
+            persistManagedSortStack(state.table, stack);
+        }
+    }
+
+    function restoreManagedSortStackFromStorageIfNeeded(state){
+        if(!state || !state.table || tableSkipsFilterPersist(state.table)) return;
+        if(managedSortStackHasEntries(state)) return;
+        const saved = readPersistedSortStack(state.table);
+        if(!saved.length) return;
+        state.sortStack = saved;
+        syncLegacySortFieldsFromStack(state);
+    }
+
+    function clearManagedTableSort(state){
+        if(!state || !state.table) return;
+        state.sortStack = [];
+        syncLegacySortFieldsFromStack(state);
+        clearPersistedSortStack(state.table);
+        refreshSortHeaderUi(state);
+        applySort(state);
+        applyPagination(state);
+        if(typeof showAppToast === 'function'){
+            showAppToast('排序已清除', false, 1200);
+        }
+    }
+
     function refreshSortHeaderUi(state){
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow) return;
+        const stack = normalizeManagedSortStack(state && state.sortStack);
+        const stackMap = new Map(stack.map((item, idx) => [item.key, { dir: item.dir, order: idx + 1 }]));
         Array.from(headerRow.cells || []).forEach(cell => {
             const origin = String(cell.dataset.manageColKey || '').trim();
             if(cell.dataset.disableSort === '1') return;
             cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
+            cell.removeAttribute('data-sort-order');
             if(isManagedTableNoSortNoFilterHeaderCell(cell)) return;
             if(state.lockedColumns.has(origin)) return;
             cell.classList.add('pm-sortable');
-            if(state.sortOrigin !== origin || !state.sortDir) return;
-            if(state.sortDir === 'asc') cell.classList.add('pm-sort-asc');
-            if(state.sortDir === 'desc') cell.classList.add('pm-sort-desc');
+            const active = stackMap.get(origin);
+            if(!active) return;
+            if(active.dir === 'asc') cell.classList.add('pm-sort-asc');
+            else cell.classList.add('pm-sort-desc');
+            cell.dataset.sortOrder = String(active.order);
         });
     }
 
@@ -6828,16 +6942,7 @@
                 if(cell.querySelector('input[type="checkbox"]')) return;
                 const origin = String(cell.dataset.manageColKey || '').trim();
                 if(state.lockedColumns.has(origin)) return;
-                if(state.sortOrigin !== origin){
-                    state.sortOrigin = origin;
-                    state.sortDir = 'desc';
-                } else if(state.sortDir === 'desc'){
-                    state.sortDir = 'asc';
-                } else if(state.sortDir === 'asc'){
-                    state.sortDir = null;
-                } else {
-                    state.sortDir = 'desc';
-                }
+                toggleManagedSortStackEntry(state, origin);
                 refreshSortHeaderUi(state);
                 applySort(state);
                 applyPagination(state);
@@ -7029,10 +7134,9 @@
             }
         }
         ensureSortableHeaders(state);
+        restoreManagedSortStackFromStorageIfNeeded(state);
         refreshSortHeaderUi(state);
-        if(!state.sortOrigin || !state.sortDir) {
-            /* 页面自管排序时分组重绘 tbody 后跳过托管排序 */
-        } else {
+        if(managedSortStackHasEntries(state)) {
             applySort(state);
         }
         if(!state.light){
@@ -7112,6 +7216,7 @@
                 </div>
                 <div class="pm-table-toolbar-right">
                     <button type="button" class="pm-table-clear-filters btn-secondary" title="清除列筛选与页面筛选记忆">清除筛选</button>
+                    <button type="button" class="pm-table-clear-sort btn-secondary" title="清除多级列排序">清除排序</button>
                     <div class="pm-table-reset-group">
                         <button type="button" class="pm-table-columns-reset btn-secondary" title="重置列宽、字段排序、字段显示">重置</button>
                         <div class="pm-table-reset-menu" aria-label="重置菜单">
@@ -7163,6 +7268,7 @@
             columnPanel: toolbar ? toolbar.querySelector('.pm-table-columns-panel') : null,
             resetBtn: toolbar ? toolbar.querySelector('.pm-table-columns-reset') : null,
             clearFiltersBtn: toolbar ? toolbar.querySelector('.pm-table-clear-filters') : null,
+            clearSortBtn: toolbar ? toolbar.querySelector('.pm-table-clear-sort') : null,
             resetWrap: toolbar ? toolbar.querySelector('.pm-table-reset-group') : null,
             resetMenu: toolbar ? toolbar.querySelector('.pm-table-reset-menu') : null,
             pageSize: readPersistedPageSize(table),
@@ -7179,6 +7285,7 @@
             templateColumnWidths: {},
             dragOrigin: null,
             dragPlacement: null,
+            sortStack: [],
             sortOrigin: null,
             sortDir: null,
             sortApplied: false,
@@ -7247,6 +7354,16 @@
                     closeAllResetMenus(null);
                     if(activeColumnsPanelState) closeColumnsPanel(activeColumnsPanelState);
                     clearAllManagedTableFilters(state);
+                });
+            }
+
+            if(state.clearSortBtn){
+                state.clearSortBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeAllResetMenus(null);
+                    if(activeColumnsPanelState) closeColumnsPanel(activeColumnsPanelState);
+                    clearManagedTableSort(state);
                 });
             }
 

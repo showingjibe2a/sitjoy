@@ -4514,7 +4514,19 @@ class SalesProductMixin:
                     if not isinstance(batch_items, list) or not batch_items:
                         return self.send_json({'status': 'error', 'message': 'Missing preview items'}, start_response)
 
+                    preview_field_names = (
+                        'child_code',
+                        'gtin',
+                        'upc',
+                        'sale_price_usd',
+                        'promotion_activity_type',
+                        'discount_form_type',
+                        'actual_discount_rate',
+                        'actual_discount_amount_usd',
+                        'discounted_price_usd',
+                    )
                     row_map = {}
+                    touched_map = {}
                     for item in batch_items:
                         if not isinstance(item, dict):
                             continue
@@ -4540,30 +4552,23 @@ class SalesProductMixin:
                             'actual_discount_amount_usd': self._parse_float(item.get('actual_discount_amount_usd')),
                             'discounted_price_usd': self._parse_float(item.get('discounted_price_usd')),
                         }
+                        touched_raw = item.get('touched_fields')
+                        if isinstance(touched_raw, list):
+                            touched = {
+                                str(name).strip()
+                                for name in touched_raw
+                                if str(name).strip() in preview_field_names
+                            }
+                        else:
+                            touched = set(preview_field_names)
+                        touched_map[int(item_id)] = touched
 
                     if not row_map:
                         return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
 
-                    ids = list(row_map.keys())
-                    case_params = []
-
-                    def build_case(field_name):
-                        parts = []
-                        for rid in ids:
-                            parts.append('WHEN %s THEN %s')
-                            case_params.extend([rid, row_map[rid][field_name]])
-                        return f"CASE id {' '.join(parts)} ELSE {field_name} END"
-
-                    set_clause = [
-                        f"child_code = {build_case('child_code')}",
-                        f"sale_price_usd = {build_case('sale_price_usd')}",
-                    ]
                     with self._get_db_connection() as conn:
-                        if self._table_has_column(conn, 'sales_products', 'gtin'):
-                            set_clause.insert(1, f"gtin = {build_case('gtin')}")
-                        if self._table_has_column(conn, 'sales_products', 'upc'):
-                            insert_at = 2 if self._table_has_column(conn, 'sales_products', 'gtin') else 1
-                            set_clause.insert(insert_at, f"upc = {build_case('upc')}")
+                        has_gtin = self._table_has_column(conn, 'sales_products', 'gtin')
+                        has_upc = self._table_has_column(conn, 'sales_products', 'upc')
                         preview_cols = (
                             'promotion_activity_type',
                             'discount_form_type',
@@ -4571,15 +4576,37 @@ class SalesProductMixin:
                             'actual_discount_amount_usd',
                             'discounted_price_usd',
                         )
-                        for col in preview_cols:
-                            if self._table_has_column(conn, 'sales_products', col):
-                                set_clause.append(f"{col} = {build_case(col)}")
-                    where_placeholders = ','.join(['%s'] * len(ids))
-                    sql = f"UPDATE sales_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
-                    with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
-                            cur.execute(sql, tuple(case_params + ids))
-                    return self.send_json({'status': 'success', 'updated': len(ids)}, start_response)
+                            for item_id, values in row_map.items():
+                                touched = touched_map.get(item_id) or set()
+                                if not touched:
+                                    continue
+                                set_parts = []
+                                params = []
+                                if 'child_code' in touched:
+                                    set_parts.append('child_code=%s')
+                                    params.append(values.get('child_code'))
+                                if has_gtin and 'gtin' in touched:
+                                    set_parts.append('gtin=%s')
+                                    params.append(values.get('gtin'))
+                                if has_upc and 'upc' in touched:
+                                    set_parts.append('upc=%s')
+                                    params.append(values.get('upc'))
+                                if 'sale_price_usd' in touched:
+                                    set_parts.append('sale_price_usd=%s')
+                                    params.append(values.get('sale_price_usd'))
+                                for col in preview_cols:
+                                    if col in touched and self._table_has_column(conn, 'sales_products', col):
+                                        set_parts.append(f'{col}=%s')
+                                        params.append(values.get(col))
+                                if not set_parts:
+                                    continue
+                                params.append(item_id)
+                                cur.execute(
+                                    f"UPDATE sales_products SET {', '.join(set_parts)} WHERE id=%s",
+                                    tuple(params),
+                                )
+                    return self.send_json({'status': 'success', 'updated': len(row_map)}, start_response)
 
                 item_id = self._parse_int(data.get('id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
