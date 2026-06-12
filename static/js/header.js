@@ -2760,6 +2760,9 @@
             cell.classList.remove('pm-grid-detail-selected', 'pm-grid-detail-anchor');
         });
         table.classList.remove('is-grid-selecting');
+        if(activeGridSelection && activeGridSelection.paintedCells){
+            activeGridSelection.paintedCells.clear();
+        }
     }
 
     function clearTransitSkuGridPaintNodes(nodes){
@@ -2797,14 +2800,83 @@
 
     function clearGridSelection(){
         if(!activeGridSelection) return;
+        const dragState = activeGridSelection.state;
         clearTransitSkuGridPaintNodes(activeGridSelection.skuPaintedNodes);
         clearGridSelectionClasses(activeGridSelection.state && activeGridSelection.state.table);
+        if(dragState) endGridDragVisibleRowCache(dragState);
         activeGridSelection = null;
         notifySitjoyGridSelectionChange();
     }
 
     function getVisibleRows(state){
+        if(state && state._gridDragVisibleRows) return state._gridDragVisibleRows;
         return getDataRows(state).filter(row => row && row.style.display !== 'none');
+    }
+
+    function beginGridDragVisibleRowCache(state){
+        if(!state) return;
+        const rows = getDataRows(state).filter(row => row && row.style.display !== 'none');
+        rows.forEach((row, idx) => {
+            row.dataset.pmGridRowIndex = String(idx);
+        });
+        state._gridDragVisibleRows = rows;
+    }
+
+    function endGridDragVisibleRowCache(state){
+        if(!state) return;
+        (state._gridDragVisibleRows || []).forEach((row) => {
+            if(row && row.dataset) delete row.dataset.pmGridRowIndex;
+        });
+        state._gridDragVisibleRows = null;
+    }
+
+    function gridDragRectSignature(anchor, current){
+        if(!anchor || !current) return '';
+        return [
+            Math.min(anchor.row, current.row),
+            Math.max(anchor.row, current.row),
+            Math.min(anchor.col, current.col),
+            Math.max(anchor.col, current.col)
+        ].join('|');
+    }
+
+    function updateGridDragRectSelection(state, anchor, currentCoord){
+        if(!state || !anchor || !currentCoord) return;
+        const selection = ensureGridSelectionState(state);
+        const sig = gridDragRectSignature(anchor, currentCoord);
+        if(sig && sig === selection.lastPaintedRectSig) return;
+        selection.lastPaintedRectSig = sig;
+        selection.dragCurrentCoord = currentCoord;
+        selection.selectedCells = new Set(getRectCells(state, anchor, currentCoord));
+        selection.anchorCoord = anchor;
+        selection.transitSkuGrid = null;
+        selection.detailSelections = new Map();
+        selection.detailDragging = null;
+        schedulePaintGridSelection();
+    }
+
+    function paintNormalGridCellsIncremental(state, selection){
+        if(!state || !selection) return;
+        const newSet = selection.selectedCells || new Set();
+        const prevPainted = selection.paintedCells || new Set();
+        const anchorCell = getCellByCoord(state, selection.anchorCoord);
+
+        prevPainted.forEach(cell => {
+            if(!cell || !cell.isConnected) return;
+            if(newSet.has(cell)) return;
+            cell.classList.remove('pm-grid-cell-selected', 'pm-grid-cell-anchor');
+        });
+
+        newSet.forEach(cell => {
+            if(!cell || !cell.isConnected) return;
+            cell.classList.add('pm-grid-cell-selected');
+            if(cell === anchorCell) cell.classList.add('pm-grid-cell-anchor');
+            else cell.classList.remove('pm-grid-cell-anchor');
+        });
+
+        selection.paintedCells = new Set(Array.from(newSet).filter(cell => cell && cell.isConnected));
+        if(newSet.size > 0) state.table.classList.add('is-grid-selecting');
+        else state.table.classList.remove('is-grid-selecting');
     }
 
     function getVisibleCellsInRow(row){
@@ -3099,6 +3171,15 @@
 
     function getCellCoord(state, cell){
         if(!state || !cell) return null;
+        const row = cell.parentElement;
+        if(row && row.dataset && row.dataset.pmGridRowIndex != null){
+            const r = Number(row.dataset.pmGridRowIndex);
+            if(Number.isFinite(r)){
+                const cells = getVisibleCellsInRow(row);
+                const c = cells.indexOf(cell);
+                if(c >= 0) return { row: r, col: c };
+            }
+        }
         const rows = getVisibleRows(state);
         for(let r = 0; r < rows.length; r += 1){
             const cells = getVisibleCellsInRow(rows[r]);
@@ -3137,6 +3218,7 @@
     }
 
     function notifySitjoyGridSelectionChange(){
+        if(activeGridSelection && (activeGridSelection.dragging || activeGridSelection.detailDragging)) return;
         let cells = (activeGridSelection && activeGridSelection.selectedCells)
             ? Array.from(activeGridSelection.selectedCells).filter(cell => cell && cell.isConnected)
             : [];
@@ -3207,21 +3289,22 @@
         activeGridSelection.skuGridPaintSig = '';
         activeGridSelection.skuPaintedNodes = [];
 
-        clearGridSelectionClasses(state.table);
+        const hasDetailSelections = !!(activeGridSelection.detailSelections && activeGridSelection.detailSelections.size);
+        if(hasDetailSelections){
+            clearGridSelectionClasses(state.table);
+        }
 
-        activeGridSelection.selectedCells.forEach(cell => {
-            if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
-        });
-        const anchorCell = getCellByCoord(state, activeGridSelection.anchorCoord);
-        if(anchorCell) anchorCell.classList.add('pm-grid-cell-anchor');
-        (activeGridSelection.detailSelections || new Map()).forEach((detailSel, cell) => {
+        paintNormalGridCellsIncremental(state, activeGridSelection);
+        if(hasDetailSelections){
+            (activeGridSelection.detailSelections || new Map()).forEach((detailSel, cell) => {
             if(!cell || !cell.isConnected || !detailSel || !detailSel.anchor || !detailSel.current) return;
             const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
             const nodes = getTransitSubcellNodesByRect(cell, rect);
             nodes.forEach(node => node.classList.add('pm-grid-detail-selected'));
             const anchorNodes = getTransitSubcellNodesByRect(cell, normalizeTransitDetailRect(detailSel.anchor, detailSel.anchor));
             if(anchorNodes[0]) anchorNodes[0].classList.add('pm-grid-detail-anchor');
-        });
+            });
+        }
         if(activeGridSelection.selectedCells.size > 0){
             state.table.classList.add('is-grid-selecting');
         }
@@ -3237,6 +3320,9 @@
             anchorCoord: null,
             dragging: false,
             dragAnchor: null,
+            dragCurrentCoord: null,
+            lastPaintedRectSig: '',
+            paintedCells: new Set(),
             detailSelections: new Map(),
             detailDragging: null,
             transitSkuGrid: null,
@@ -3667,6 +3753,7 @@
 
             const skuGridCoord = getTransitSkuGridCoord(state, event.target);
             if(skuGridCoord){
+                beginGridDragVisibleRowCache(state);
                 if(event.shiftKey && selection.transitSkuGrid && selection.transitSkuGrid.anchor){
                     selection.transitSkuGrid.current = skuGridCoord;
                     selection.detailSelections = new Map();
@@ -3688,6 +3775,7 @@
 
             const detailCoord = isTransitDetailCell(cell) ? getTransitSubcellCoord(event.target, cell) : null;
             if(detailCoord){
+                beginGridDragVisibleRowCache(state);
                 selection.transitSkuGrid = null;
                 selectCellsForState(state, [cell], coord);
                 selection.detailSelections = new Map();
@@ -3713,8 +3801,10 @@
             selection.detailSelections = new Map();
             selection.detailDragging = null;
             if(activeGridSelection){
+                beginGridDragVisibleRowCache(state);
                 activeGridSelection.dragging = true;
                 activeGridSelection.dragAnchor = coord;
+                activeGridSelection.lastPaintedRectSig = gridDragRectSignature(coord, coord);
             }
         });
     }
@@ -9912,9 +10002,7 @@
             if(!cell || !state.tbody.contains(cell) || cell.classList.contains('pm-table-hide-col')) return;
             const coord = getCellCoord(state, cell);
             if(!coord) return;
-            selectCellsForState(state, getRectCells(state, anchor, coord), anchor);
-            activeGridSelection.dragging = true;
-            activeGridSelection.dragAnchor = anchor;
+            updateGridDragRectSelection(state, anchor, coord);
         }
     });
 
@@ -9948,8 +10036,13 @@
         }
 
         if(activeGridSelection){
+            const dragState = activeGridSelection.state;
+            const wasDragging = !!activeGridSelection.dragging;
+            const wasDetailDragging = !!activeGridSelection.detailDragging;
             activeGridSelection.dragging = false;
             activeGridSelection.detailDragging = null;
+            if(dragState) endGridDragVisibleRowCache(dragState);
+            if(wasDragging || wasDetailDragging) notifySitjoyGridSelectionChange();
         }
     });
 
