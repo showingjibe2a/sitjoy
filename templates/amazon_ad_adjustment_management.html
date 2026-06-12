@@ -994,6 +994,8 @@
             'attribution_checked', 'attribution_orders', 'attribution_sales', 'remark',
         ];
         const PERIOD_RATIO_FIELDS = new Set(['acos', 'ctr', 'cvr']);
+        const PERIOD_COMPUTED_FIELDS = ['acos', 'cpc', 'ctr', 'cvr'];
+        const PERIOD_METRIC_SOURCE_FIELDS = new Set(['impressions', 'clicks', 'cost', 'orders', 'sales']);
         const PERIOD_DATETIME_FIELDS = new Set(['adjust_date', 'start_time', 'end_time']);
 
         const AA_BID_STRATEGIES = [
@@ -1657,12 +1659,37 @@
             return adjustmentPeriodAllCache.find(x => String(x.id) === String(recordId)) || null;
         }
 
+        function recalcPeriodDraftDerivedMetrics(draft) {
+            if (!draft) return;
+            const impressions = parseMetricNumber(draft.impressions);
+            const clicks = parseMetricNumber(draft.clicks);
+            const cost = parseMetricNumber(draft.cost);
+            const orders = parseMetricNumber(draft.orders);
+            const sales = parseMetricNumber(draft.sales);
+
+            if (cost != null && sales != null && sales > 0) {
+                draft.acos = formatPercentFromRatio(cost / sales);
+            }
+            if (cost != null && clicks != null && clicks > 0) {
+                draft.cpc = formatDecimalMetric(cost / clicks);
+            }
+            if (clicks != null && impressions != null && impressions > 0) {
+                draft.ctr = formatPercentFromRatio(clicks / impressions);
+            }
+            if (orders != null && clicks != null && clicks > 0) {
+                draft.cvr = formatPercentFromRatio(orders / clicks);
+            }
+        }
+
         function updatePeriodDraft(recordId, field, rawValue) {
             const item = findAdjustmentPeriodItem(recordId);
             if (!item) return;
             const id = String(recordId);
             const draft = adjustmentPeriodDraft[id] || buildPeriodDraftFromItem(item);
             draft[field] = normalizePeriodDraftValue(field, rawValue);
+            if (PERIOD_METRIC_SOURCE_FIELDS.has(field)) {
+                recalcPeriodDraftDerivedMetrics(draft);
+            }
             if (field === 'attribution_orders' || field === 'attribution_sales') {
                 if (draft.attribution_orders || draft.attribution_sales) {
                     draft.attribution_checked = '1';
@@ -1674,6 +1701,11 @@
                 adjustmentPeriodDraft[id] = draft;
             }
             refreshPeriodCardAfterEdit(id, field);
+            if (PERIOD_METRIC_SOURCE_FIELDS.has(field)) {
+                PERIOD_COMPUTED_FIELDS.forEach((computedField) => {
+                    refreshPeriodCardAfterEdit(id, computedField);
+                });
+            }
             if (field === 'attribution_orders' || field === 'attribution_sales') {
                 refreshPeriodCardAfterEdit(id, 'attribution_checked');
             }

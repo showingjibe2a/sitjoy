@@ -8,7 +8,6 @@
     let hooks = {};
     let readyPromise = null;
     let adEditId = null;
-    let adItemsCache = [];
     let skuOptions = [];
     let categoryMap = new Map();
     let portfolioOptions = [];
@@ -19,8 +18,7 @@
     let eventsBound = false;
     let modalDefaultTargets = [];
     let defaultTargetsSourceKey = '';
-    let groupPlatformSkus = new Set();
-    let groupPlatformSkusCampaignKey = '';
+    let operationTypeOptionsPromise = null;
 
     function escapeHtml(text) {
         return String(text ?? '')
@@ -54,7 +52,7 @@
             '}',
             '#adDefaultTargetsWrap .default-target-list { display: grid; gap: 0.5rem; }',
             '#adDefaultTargetsWrap .default-target-item {',
-            '  display: grid; grid-template-columns: 1fr 120px auto; gap: 0.55rem; align-items: center;',
+            '  display: grid; grid-template-columns: 1fr 100px 132px auto; gap: 0.55rem; align-items: center;',
             '  border: 2px solid var(--morandi-sand); border-radius: 8px; padding: 0.45rem 0.55rem; background: #fff;',
             '}',
             '#adDefaultTargetsWrap .default-target-item-name {',
@@ -194,7 +192,7 @@
             '      </div>',
             '      <div class="form-group pm-form-full level-campaign level-group" id="adDefaultTargetsWrap" style="display:none;">',
             '        <div class="pm-section">',
-            '          <h4 style="margin-top:0;" class="label-help">默认投放<span class="help-dot" data-tip="根据细分类预设，保存广告时将一并创建以下投放（可修改竞价或增删）。"></span></h4>',
+            '          <h4 style="margin-top:0;" class="label-help">默认投放<span class="help-dot" data-tip="细分类关联「修改投放」或「修改广告位」时显示。保存广告时将一并创建以下投放，可修改竞价、启动/暂停状态或增删。"></span></h4>',
             '          <div class="default-target-toolbar">',
             '            <input type="text" id="adDefaultTargetNameInput" placeholder="投放描述">',
             '            <input type="text" id="adDefaultTargetValueInput" placeholder="竞价">',
@@ -243,13 +241,11 @@
         el.innerText = '';
     }
 
-    function loadAdItemsCache() {
-        return fetch('/api/amazon-ad')
-            .then(r => r.json())
-            .then(data => {
-                adItemsCache = data.status === 'success' ? (data.items || []) : [];
-            })
-            .catch(() => { adItemsCache = []; });
+    function getReferenceItemsForDupCheck() {
+        if (typeof hooks.getReferenceItems === 'function') {
+            return hooks.getReferenceItems() || [];
+        }
+        return [];
     }
 
     function loadCategoryMap() {
@@ -317,6 +313,14 @@
             .catch(() => { operationTypeOptions = []; });
     }
 
+    function ensureOperationTypeOptions() {
+        if (operationTypeOptions.length) return Promise.resolve();
+        if (!operationTypeOptionsPromise) {
+            operationTypeOptionsPromise = loadOperationTypeOptions();
+        }
+        return operationTypeOptionsPromise;
+    }
+
     function normalizeOperationTypeName(name) {
         return String(name || '').replace(/[『』【】「」]/g, '').trim();
     }
@@ -324,6 +328,42 @@
     function isModifyProductOperationName(name) {
         const n = normalizeOperationTypeName(name);
         return n.includes('修改') && n.includes('商品');
+    }
+
+    function isModifyDeliveryTargetOperationName(name) {
+        const n = normalizeOperationTypeName(name);
+        return n.includes('修改') && n.includes('投放') && !n.includes('广告位');
+    }
+
+    function isModifyPlacementOperationName(name) {
+        const n = normalizeOperationTypeName(name);
+        return n.includes('修改') && n.includes('广告位');
+    }
+
+    function subtypeHasModifyTargetOp(subtype) {
+        if (!subtype || !Array.isArray(subtype.operation_type_ids)) return false;
+        const idSet = new Set(subtype.operation_type_ids.map(String));
+        return (operationTypeOptions || []).some((op) => {
+            if (!idSet.has(String(op.id))) return false;
+            const opName = op.name || '';
+            return isModifyDeliveryTargetOperationName(opName)
+                || isModifyPlacementOperationName(opName);
+        });
+    }
+
+    function normalizeDefaultTargetStatus(status) {
+        const s = String(status || '').trim();
+        return s === '暂停' ? '暂停' : '启动';
+    }
+
+    function shouldShowDefaultTargetsSection() {
+        if (adEditId) return false;
+        const level = $('modalAdLevel')?.value;
+        if (level !== 'campaign' && level !== 'group') return false;
+        if (level === 'group' && !($('modalGroupCampaign')?.value || '')) return false;
+        if (level === 'campaign' && !($('modalSubtype')?.value || '')) return false;
+        const subtype = getActiveSubtypeForDefaultTargets();
+        return subtypeHasModifyTargetOp(subtype);
     }
 
     function subtypeHasModifyProductOp(subtype) {
@@ -357,12 +397,6 @@
         return lines;
     }
 
-    function isProductSkuInShop(sku) {
-        const s = String(sku || '').trim();
-        if (!s) return false;
-        return groupPlatformSkus.has(s);
-    }
-
     function renderInitialProductSkusValidation(message, mode) {
         const el = $('adInitialProductSkusValidation');
         const input = $('adInitialProductSkusInput');
@@ -384,70 +418,59 @@
         const skus = parseInitialProductSkusFromTextarea();
         if (!skus.length) {
             renderInitialProductSkusValidation('', null);
-            return true;
+            return Promise.resolve(true);
         }
-        if (!groupPlatformSkus.size) {
-            renderInitialProductSkusValidation('无法加载店铺销售平台SKU列表，请重新选择广告活动', 'error');
-            return false;
-        }
-        const invalid = skus.filter(sku => !isProductSkuInShop(sku));
-        if (invalid.length) {
-            renderInitialProductSkusValidation(
-                `以下SKU不是当前广告归属店铺的销售平台SKU：${invalid.join('、')}`,
-                'error',
-            );
-            return false;
-        }
-        if (!showEmptyAsValid) {
-            renderInitialProductSkusValidation(`已校验 ${skus.length} 个销售平台SKU`, 'ok');
-        } else {
-            renderInitialProductSkusValidation('', null);
-        }
-        return true;
-    }
-
-    function loadGroupPlatformSkusForValidation() {
         const campaignId = $('modalGroupCampaign')?.value || '';
         if (!campaignId) {
-            groupPlatformSkus = new Set();
-            groupPlatformSkusCampaignKey = '';
-            return Promise.resolve();
+            renderInitialProductSkusValidation('请先选择广告活动', 'error');
+            return Promise.resolve(false);
         }
-        const key = String(campaignId);
-        if (key === groupPlatformSkusCampaignKey && groupPlatformSkus.size) {
-            return Promise.resolve();
-        }
-        return fetch(`/api/amazon-ad?action=shop-platform-skus&campaign_id=${encodeURIComponent(campaignId)}`)
+        const qs = skus.map(sku => `sku=${encodeURIComponent(sku)}`).join('&');
+        return fetch(
+            `/api/amazon-ad?action=validate-platform-skus&campaign_id=${encodeURIComponent(campaignId)}&${qs}`,
+        )
             .then(r => r.json())
             .then((data) => {
-                if (data.status === 'success') {
-                    groupPlatformSkus = new Set(
-                        Array.isArray(data.platform_skus) ? data.platform_skus : [],
-                    );
-                    groupPlatformSkusCampaignKey = key;
-                } else {
-                    groupPlatformSkus = new Set();
-                    groupPlatformSkusCampaignKey = '';
+                if (data.status !== 'success') {
+                    renderInitialProductSkusValidation(data.message || 'SKU 校验失败', 'error');
+                    return false;
                 }
+                const invalid = Array.isArray(data.invalid_skus) ? data.invalid_skus : [];
+                if (invalid.length) {
+                    renderInitialProductSkusValidation(
+                        `以下SKU不是当前广告归属店铺的销售平台SKU：${invalid.join('、')}`,
+                        'error',
+                    );
+                    return false;
+                }
+                if (!showEmptyAsValid) {
+                    renderInitialProductSkusValidation(`已校验 ${skus.length} 个销售平台SKU`, 'ok');
+                } else {
+                    renderInitialProductSkusValidation('', null);
+                }
+                return true;
             })
             .catch(() => {
-                groupPlatformSkus = new Set();
-                groupPlatformSkusCampaignKey = '';
+                renderInitialProductSkusValidation('SKU 校验请求失败', 'error');
+                return false;
             });
     }
 
     function refreshInitialProductSkusSection() {
         const wrap = $('adInitialProductSkusWrap');
         if (!wrap) return;
-        if (!shouldShowInitialProductSkusSection()) {
-            wrap.style.display = 'none';
-            renderInitialProductSkusValidation('', null);
-            return;
-        }
-        wrap.style.display = '';
-        loadGroupPlatformSkusForValidation().then(() => {
-            if (shouldShowInitialProductSkusSection()) {
+        ensureOperationTypeOptions().then(() => {
+            if (!shouldShowInitialProductSkusSection()) {
+                wrap.style.display = 'none';
+                renderInitialProductSkusValidation('', null);
+                return;
+            }
+            wrap.style.display = '';
+            const skus = parseInitialProductSkusFromTextarea();
+            if (skus.length) {
                 validateInitialProductSkus(true);
+            } else {
+                renderInitialProductSkusValidation('', null);
             }
         });
     }
@@ -712,6 +735,7 @@
             .map(item => ({
                 name: item && item.name ? String(item.name).trim() : '',
                 value: item && item.value ? String(item.value).trim() : '',
+                status: normalizeDefaultTargetStatus(item && item.status),
             }))
             .filter(item => item.name && item.value)
             .filter(item => {
@@ -757,24 +781,40 @@
         return [];
     }
 
+    function setDefaultTargetRowStatus(idx, status) {
+        if (!modalDefaultTargets[idx]) return;
+        modalDefaultTargets[idx].status = normalizeDefaultTargetStatus(status);
+        renderAdDefaultTargetList();
+    }
+
     function renderAdDefaultTargetList() {
         const list = $('adDefaultTargetList');
         const empty = $('adDefaultTargetEmpty');
         if (!list || !empty) return;
         list.innerHTML = '';
         modalDefaultTargets.forEach((item, idx) => {
+            const rowStatus = normalizeDefaultTargetStatus(item.status);
             const row = document.createElement('div');
             row.className = 'default-target-item';
             row.innerHTML = `
                 <span class="default-target-item-name">${escapeHtml(item.name)}</span>
                 <input type="text" class="inline-input default-target-value-input" value="${escapeHtml(item.value)}" aria-label="竞价">
+                <div class="default-target-status-segment status-segment status-segment--inline">
+                    <button type="button" class="status-pill status-pill--enabled ${rowStatus === '启动' ? 'is-active' : ''}" data-status="启动">启动</button>
+                    <button type="button" class="status-pill status-pill--paused ${rowStatus === '暂停' ? 'is-active' : ''}" data-status="暂停">暂停</button>
+                </div>
                 <button type="button" class="btn-danger btn-small">删除</button>
             `;
             const valueInput = row.querySelector('.default-target-value-input');
             valueInput.addEventListener('input', () => {
                 modalDefaultTargets[idx].value = valueInput.value;
             });
-            row.querySelector('button').addEventListener('click', () => {
+            row.querySelectorAll('.default-target-status-segment [data-status]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    setDefaultTargetRowStatus(idx, btn.getAttribute('data-status'));
+                });
+            });
+            row.querySelector('button.btn-danger').addEventListener('click', () => {
                 modalDefaultTargets.splice(idx, 1);
                 renderAdDefaultTargetList();
             });
@@ -786,31 +826,23 @@
     function refreshDefaultTargetsSection() {
         const wrap = $('adDefaultTargetsWrap');
         if (!wrap) return;
-        if (adEditId) {
-            wrap.style.display = 'none';
-            return;
-        }
-        const level = $('modalAdLevel')?.value;
-        if (level !== 'campaign' && level !== 'group') {
-            wrap.style.display = 'none';
-            return;
-        }
-        if (level === 'group' && !($('modalGroupCampaign')?.value || '')) {
-            wrap.style.display = 'none';
-            return;
-        }
-        const defaults = getSubtypeDefaultTargetsForLevel();
-        if (!defaults.length) {
-            wrap.style.display = 'none';
-            return;
-        }
-        wrap.style.display = '';
-        const key = defaultTargetsSourceKeyForState();
-        if (key !== defaultTargetsSourceKey) {
-            defaultTargetsSourceKey = key;
-            modalDefaultTargets = defaults.map(item => ({ ...item }));
-        }
-        renderAdDefaultTargetList();
+        ensureOperationTypeOptions().then(() => {
+            if (!shouldShowDefaultTargetsSection()) {
+                wrap.style.display = 'none';
+                return;
+            }
+            wrap.style.display = '';
+            const key = defaultTargetsSourceKeyForState();
+            if (key !== defaultTargetsSourceKey) {
+                defaultTargetsSourceKey = key;
+                modalDefaultTargets = getSubtypeDefaultTargetsForLevel().map((item) => ({
+                    name: item.name,
+                    value: item.value,
+                    status: normalizeDefaultTargetStatus(item.status),
+                }));
+            }
+            renderAdDefaultTargetList();
+        });
     }
 
     function addAdDefaultTargetFromInput() {
@@ -832,7 +864,7 @@
             valueInput.focus();
             return;
         }
-        modalDefaultTargets.push({ name, value });
+        modalDefaultTargets.push({ name, value, status: '启动' });
         nameInput.value = '';
         valueInput.value = '';
         renderAdDefaultTargetList();
@@ -846,6 +878,7 @@
             modalDefaultTargets.map(item => ({
                 name: item.name,
                 value: String(item.value || '').trim(),
+                status: normalizeDefaultTargetStatus(item.status),
             })).filter(item => item.name && item.value),
         );
     }
@@ -882,8 +915,6 @@
         $('modalAmazonId').value = '';
         modalDefaultTargets = [];
         defaultTargetsSourceKey = '';
-        groupPlatformSkus = new Set();
-        groupPlatformSkusCampaignKey = '';
         const skuInput = $('adInitialProductSkusInput');
         if (skuInput) skuInput.value = '';
         renderInitialProductSkusValidation('', null);
@@ -906,14 +937,14 @@
             if (global.initUniversalSingleSelects) global.initUniversalSingleSelects($(MODAL_ID));
             if (global.syncModalScrollLock) global.syncModalScrollLock();
         };
-        return (readyPromise || Promise.resolve()).then(run);
+        return ensureModalDataLoaded().then(run);
     }
 
     function openEditModal(id) {
         const run = () => {
             const item = typeof hooks.getEditItem === 'function'
                 ? hooks.getEditItem(id)
-                : (adItemsCache || []).find(x => String(x.id) === String(id));
+                : getReferenceItemsForDupCheck().find(x => String(x.id) === String(id));
             if (!item) return;
             adEditId = item.id;
             $('ad-modal-title').innerText = '编辑广告信息';
@@ -968,7 +999,7 @@
             if (global.initUniversalSingleSelects) global.initUniversalSingleSelects($(MODAL_ID));
             if (global.syncModalScrollLock) global.syncModalScrollLock();
         };
-        return (readyPromise || Promise.resolve()).then(run);
+        return ensureModalDataLoaded().then(run);
     }
 
     function closeAdModal() {
@@ -981,7 +1012,7 @@
         const nm = String(name || '').trim();
         if (!nm) return null;
         const excludeId = adEditId ? Number(adEditId) : null;
-        const list = adItemsCache || [];
+        const list = getReferenceItemsForDupCheck();
         const sameName = (item) => String(item.name || '').trim() === nm;
         const notSelf = (item) => !excludeId || Number(item.id) !== excludeId;
         if (level === 'portfolio') {
@@ -1082,53 +1113,60 @@
             }
         }
 
-        if (!adEditId && level === 'group' && shouldShowInitialProductSkusSection()) {
-            const skus = parseInitialProductSkusFromTextarea();
-            if (skus.length) {
-                if (!validateInitialProductSkus(false)) {
-                    showAdStatus('请修正不合法的销售平台SKU', true);
-                    return;
-                }
-                payload.initial_product_skus = skus;
-            }
-        }
-
         let method = 'POST';
         if (adEditId) {
             payload.id = adEditId;
             method = 'PUT';
         }
 
-        fetch('/api/amazon-ad', {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    closeAdModal();
-                    const afterSave = Promise.all([
-                        loadAdItemsCache(),
-                        loadPortfolioOptions(),
-                        loadCampaignOptions(),
-                    ]);
-                    const hookResult = typeof hooks.onSaveSuccess === 'function'
-                        ? hooks.onSaveSuccess(data)
-                        : null;
-                    const chained = hookResult && typeof hookResult.then === 'function'
-                        ? Promise.all([afterSave, hookResult])
-                        : afterSave;
-                    chained.then(() => {
-                        if (typeof hooks.showSuccessToast === 'function') {
-                            hooks.showSuccessToast('保存成功');
-                        }
-                    });
-                } else {
-                    showAdStatus(data.message || '操作失败', true);
-                }
+        const submitPayload = () => {
+            fetch('/api/amazon-ad', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
             })
-            .catch(err => showAdStatus('请求失败: ' + err, true));
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        closeAdModal();
+                        const afterSave = Promise.all([
+                            loadPortfolioOptions(),
+                            loadCampaignOptions(),
+                        ]);
+                        const hookResult = typeof hooks.onSaveSuccess === 'function'
+                            ? hooks.onSaveSuccess(data)
+                            : null;
+                        const chained = hookResult && typeof hookResult.then === 'function'
+                            ? Promise.all([afterSave, hookResult])
+                            : afterSave;
+                        chained.then(() => {
+                            if (typeof hooks.showSuccessToast === 'function') {
+                                hooks.showSuccessToast('保存成功');
+                            }
+                        });
+                    } else {
+                        showAdStatus(data.message || '操作失败', true);
+                    }
+                })
+                .catch(err => showAdStatus('请求失败: ' + err, true));
+        };
+
+        if (!adEditId && level === 'group' && shouldShowInitialProductSkusSection()) {
+            const skus = parseInitialProductSkusFromTextarea();
+            if (skus.length) {
+                validateInitialProductSkus(false).then((ok) => {
+                    if (!ok) {
+                        showAdStatus('请修正不合法的销售平台SKU', true);
+                        return;
+                    }
+                    payload.initial_product_skus = skus;
+                    submitPayload();
+                });
+                return;
+            }
+        }
+
+        submitPayload();
     }
 
     function bindEvents() {
@@ -1179,25 +1217,34 @@
         }, 0);
     }
 
+    function buildModalDataPromise() {
+        return Promise.all([
+            loadCategoryMap(),
+            loadSkuOptions(),
+            loadSubtypeOptions(),
+            loadShopOptions(),
+            loadPortfolioOptions(),
+            loadCampaignOptions(),
+        ]);
+    }
+
+    function ensureModalDataLoaded() {
+        if (!readyPromise) {
+            readyPromise = buildModalDataPromise();
+        }
+        return readyPromise;
+    }
+
     function init(options) {
         hooks = options && typeof options === 'object' ? options : {};
         ensureModalDom();
         bindEvents();
-        readyPromise = Promise.all([
-            loadCategoryMap(),
-            loadSkuOptions(),
-            loadSubtypeOptions(),
-            loadOperationTypeOptions(),
-            loadShopOptions(),
-            loadPortfolioOptions(),
-            loadCampaignOptions(),
-            loadAdItemsCache(),
-        ]);
-        return readyPromise;
+        return Promise.resolve();
     }
 
     function refreshReferenceOptions() {
-        return Promise.all([loadPortfolioOptions(), loadCampaignOptions(), loadAdItemsCache()]);
+        readyPromise = buildModalDataPromise();
+        return readyPromise;
     }
 
     global.setSegmentValue = setSegmentValue;

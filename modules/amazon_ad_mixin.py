@@ -107,7 +107,10 @@ class AmazonAdMixin:
             if key in seen:
                 continue
             seen.add(key)
-            out.append({'name': name, 'value': bid_value})
+            status = str(raw.get('status') or '').strip() or '启动'
+            if status not in ('启动', '暂停'):
+                status = '启动'
+            out.append({'name': name, 'value': bid_value, 'status': status})
         return out
 
     def _encode_subtype_default_targets(self, targets):
@@ -178,31 +181,50 @@ class AmazonAdMixin:
 
     def _create_initial_products_for_ad_item(self, cur, ad_item_id, shop_id, skus):
         ad_item_id = self._parse_int(ad_item_id)
+        shop_id = self._parse_int(shop_id)
         skus = self._parse_initial_product_skus(skus) or []
-        if not ad_item_id or not skus:
+        if not ad_item_id or not shop_id or not skus:
             return
+        placeholders = ','.join(['%s'] * len(skus))
+        cur.execute(
+            f"""
+            SELECT id, platform_sku
+            FROM sales_products
+            WHERE shop_id=%s AND platform_sku IN ({placeholders})
+            """,
+            (shop_id, *skus),
+        )
+        sales_product_by_sku = {}
+        for row in cur.fetchall() or []:
+            sku_text = str(row.get('platform_sku') or '').strip()
+            if sku_text:
+                sales_product_by_sku[sku_text] = int(row['id'])
+        sales_product_ids = list(sales_product_by_sku.values())
+        existing_sales_product_ids = set()
+        if sales_product_ids:
+            sp_placeholders = ','.join(['%s'] * len(sales_product_ids))
+            cur.execute(
+                f"""
+                SELECT sales_product_id
+                FROM amazon_ad_products
+                WHERE ad_item_id=%s AND sales_product_id IN ({sp_placeholders})
+                """,
+                (ad_item_id, *sales_product_ids),
+            )
+            existing_sales_product_ids = {
+                int(row['sales_product_id'])
+                for row in (cur.fetchall() or [])
+            }
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         updated_dt, next_dt = self._resolve_observe_datetimes(
             now_text, None, self._AMAZON_AD_PRODUCT_DEFAULT_OBSERVE_MINUTES,
         )
         updated_dt = updated_dt or now_text
         for platform_sku in skus:
-            sales_product_id, sp_err = self._resolve_sales_product_id_for_shop(
-                cur, shop_id, platform_sku,
-            )
-            if sp_err or not sales_product_id:
+            sales_product_id = sales_product_by_sku.get(platform_sku)
+            if not sales_product_id or sales_product_id in existing_sales_product_ids:
                 continue
-            cur.execute(
-                """
-                SELECT p.id
-                FROM amazon_ad_products p
-                WHERE p.ad_item_id=%s AND p.sales_product_id=%s
-                LIMIT 1
-                """,
-                (ad_item_id, sales_product_id),
-            )
-            if cur.fetchone():
-                continue
+            existing_sales_product_ids.add(sales_product_id)
             cur.execute(
                 """
                 INSERT INTO amazon_ad_products (
@@ -228,6 +250,9 @@ class AmazonAdMixin:
             bid_value = item.get('value')
             if not name or not bid_value:
                 continue
+            status, status_err = self._normalize_ad_record_status(item.get('status'))
+            if status_err:
+                status = '启动'
             cur.execute(
                 """
                 SELECT id FROM amazon_ad_targets
@@ -244,7 +269,7 @@ class AmazonAdMixin:
                     next_observe_at, updated_at
                 ) VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                ('启动', ad_item_id, name, bid_value, next_dt, updated_dt),
+                (status, ad_item_id, name, bid_value, next_dt, updated_dt),
             )
 
     def _create_subtype_default_targets_for_ad_item(self, cur, ad_item_id, subtype_id, ad_level):
@@ -636,6 +661,109 @@ class AmazonAdMixin:
             p.shop_id
         )
     """
+
+    _AMAZON_AD_ITEM_OPTIONS_PORTFOLIO_SELECT = """
+        SELECT
+            id, ad_level, sku_family_id, shop_id, portfolio_id, campaign_id,
+            strategy_code, subtype_id, name, amazon_id, is_shared_budget, status, budget,
+            bid_strategy, created_at, updated_at
+        FROM amazon_ad_items
+        WHERE ad_level = 'portfolio'
+        ORDER BY id DESC
+        LIMIT 500
+    """
+
+    _AMAZON_AD_ITEM_OPTIONS_CAMPAIGN_SELECT = """
+        SELECT
+            c.id, c.ad_level, c.sku_family_id,
+            COALESCE(c.shop_id, p.shop_id) AS shop_id,
+            c.portfolio_id, c.campaign_id, c.strategy_code, c.subtype_id, c.name, c.amazon_id,
+            c.is_shared_budget, c.status, c.budget, c.bid_strategy, c.created_at, c.updated_at
+        FROM amazon_ad_items c
+        LEFT JOIN amazon_ad_items p ON p.id = c.portfolio_id AND p.ad_level = 'portfolio'
+        WHERE c.ad_level = 'campaign'
+        ORDER BY c.id DESC
+        LIMIT 500
+    """
+
+    _AMAZON_AD_ADJUSTMENT_LIST_SELECT = """
+        SELECT
+            i.id, i.ad_level, i.name, i.status, i.amazon_id,
+            i.portfolio_id, i.campaign_id, i.subtype_id,
+            p.name AS portfolio_name,
+            c.name AS campaign_name,
+            st.description AS subtype_description,
+            st.ad_class,
+            st.subtype_code
+        FROM amazon_ad_items i
+        LEFT JOIN amazon_ad_items c ON i.campaign_id = c.id AND c.ad_level = 'campaign'
+        LEFT JOIN amazon_ad_items p ON p.id = COALESCE(NULLIF(i.portfolio_id, 0), c.portfolio_id)
+            AND p.ad_level = 'portfolio'
+        LEFT JOIN amazon_ad_subtypes st ON i.subtype_id = st.id
+    """
+
+    def _fetch_amazon_ad_option_rows(self, cur, level):
+        if level == 'portfolio':
+            cur.execute(self._AMAZON_AD_ITEM_OPTIONS_PORTFOLIO_SELECT)
+        elif level == 'campaign':
+            cur.execute(self._AMAZON_AD_ITEM_OPTIONS_CAMPAIGN_SELECT)
+        else:
+            return []
+        return [self._serialize_amazon_ad_item(row) for row in (cur.fetchall() or [])]
+
+    def _resolve_shop_id_for_campaign(self, cur, campaign_id):
+        campaign_id = self._parse_int(campaign_id)
+        if not campaign_id:
+            return None
+        cur.execute(
+            """
+            SELECT COALESCE(c.shop_id, p.shop_id) AS shop_id
+            FROM amazon_ad_items c
+            LEFT JOIN amazon_ad_items p ON p.id = c.portfolio_id AND p.ad_level = 'portfolio'
+            WHERE c.id=%s AND c.ad_level = 'campaign'
+            LIMIT 1
+            """,
+            (campaign_id,),
+        )
+        row = cur.fetchone() or {}
+        return self._parse_int(row.get('shop_id'))
+
+    def _parse_platform_skus_from_query(self, query_params):
+        raw_items = query_params.get('sku') or []
+        if not isinstance(raw_items, list):
+            raw_items = [raw_items]
+        out = []
+        seen = set()
+        for raw in raw_items:
+            text = str(raw or '').strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(text)
+        return out
+
+    def _find_invalid_platform_skus_for_shop(self, cur, shop_id, skus):
+        shop_id = self._parse_int(shop_id)
+        skus = self._parse_initial_product_skus(skus) or []
+        if not shop_id or not skus:
+            return []
+        placeholders = ','.join(['%s'] * len(skus))
+        cur.execute(
+            f"""
+            SELECT platform_sku
+            FROM sales_products
+            WHERE shop_id=%s AND platform_sku IN ({placeholders})
+            """,
+            (shop_id, *skus),
+        )
+        found = {
+            str(row.get('platform_sku') or '').strip()
+            for row in (cur.fetchall() or [])
+        }
+        return [sku for sku in skus if sku not in found]
 
     def _normalize_shared_budget(self, value):
         if value is None or value == '':
@@ -1168,39 +1296,50 @@ class AmazonAdMixin:
 
             if method == 'GET':
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
-                if action == 'shop-platform-skus':
+                if action == 'validate-platform-skus':
                     campaign_id = self._parse_int(
                         (query_params.get('campaign_id', [''])[0] or '').strip()
                     )
                     shop_id = self._parse_int(
                         (query_params.get('shop_id', [''])[0] or '').strip()
                     )
+                    skus = self._parse_platform_skus_from_query(query_params)
+                    if not skus:
+                        return self.send_json(
+                            {'status': 'error', 'message': 'Missing sku'},
+                            start_response,
+                        )
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             if campaign_id and not shop_id:
-                                campaign = self._fetch_amazon_ad_item_by_id(cur, campaign_id)
-                                if not campaign or str(campaign.get('ad_level') or '') != 'campaign':
+                                shop_id = self._resolve_shop_id_for_campaign(cur, campaign_id)
+                                if not shop_id:
                                     return self.send_json(
                                         {'status': 'error', 'message': '广告活动不存在'},
                                         start_response,
                                     )
-                                shop_id = self._parse_int(campaign.get('shop_id'))
                             if not shop_id:
                                 return self.send_json(
                                     {'status': 'error', 'message': 'Missing shop_id or campaign_id'},
                                     start_response,
                                 )
-                            platform_skus = sorted(
-                                self._fetch_shop_platform_skus(cur, shop_id)
+                            invalid_skus = self._find_invalid_platform_skus_for_shop(
+                                cur, shop_id, skus,
                             )
                     return self.send_json(
-                        {'status': 'success', 'platform_skus': platform_skus},
+                        {'status': 'success', 'invalid_skus': invalid_skus},
                         start_response,
                     )
 
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 level = (query_params.get('level', [''])[0] or '').strip().lower()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+
+                if level in ('portfolio', 'campaign') and not keyword and not item_id:
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            rows = self._fetch_amazon_ad_option_rows(cur, level)
+                    return self.send_json({'status': 'success', 'items': rows}, start_response)
 
                 sql = self._AMAZON_AD_ITEM_SELECT + ' WHERE 1=1'
                 params = []
@@ -1313,15 +1452,17 @@ class AmazonAdMixin:
                                         {'status': 'error', 'message': '无法解析广告归属店铺'},
                                         start_response,
                                     )
-                                for sku in initial_product_skus:
-                                    _, sku_err = self._resolve_sales_product_id_for_shop(
-                                        cur, shop_id, sku,
+                                invalid_skus = self._find_invalid_platform_skus_for_shop(
+                                    cur, shop_id, initial_product_skus,
+                                )
+                                if invalid_skus:
+                                    return self.send_json(
+                                        {
+                                            'status': 'error',
+                                            'message': f'未找到店铺销售平台SKU: {invalid_skus[0]}',
+                                        },
+                                        start_response,
                                     )
-                                    if sku_err:
-                                        return self.send_json(
-                                            {'status': 'error', 'message': sku_err},
-                                            start_response,
-                                        )
 
                         cur.execute(
                             """
@@ -4582,7 +4723,7 @@ class AmazonAdMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            self._AMAZON_AD_ITEM_SELECT
+                            self._AMAZON_AD_ADJUSTMENT_LIST_SELECT
                             + " WHERE i.ad_level IN ('portfolio', 'campaign', 'group') "
                             + " ORDER BY FIELD(i.ad_level, 'portfolio', 'campaign', 'group'), i.id DESC LIMIT 500"
                         )

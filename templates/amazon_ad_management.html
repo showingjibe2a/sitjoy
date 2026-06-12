@@ -319,6 +319,7 @@
             const modalInit = window.AmazonAdFormModal
                 ? window.AmazonAdFormModal.init({
                     getEditItem: (id) => adItemsById[id],
+                    getReferenceItems: () => adItemsCache,
                     onSaveSuccess: () => loadAdList(),
                     showSuccessToast: (msg) => showTimeoutToast(msg || '保存成功'),
                 })
