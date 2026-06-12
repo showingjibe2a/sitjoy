@@ -2943,6 +2943,16 @@ class SalesProductMixin:
         text = (str(value) if value is not None else '').strip()
         return text or None
 
+    def _parse_sales_notes(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if len(text) > 512:
+            text = text[:512]
+        return text
+
     def _sales_product_barcode_select_sql(self, conn, alias='sp'):
         parts = []
         if self._table_has_column(conn, 'sales_products', 'gtin'):
@@ -2976,6 +2986,7 @@ class SalesProductMixin:
             'actual_discount_rate',
             'actual_discount_amount_usd',
             'discounted_price_usd',
+            'notes',
         ):
             if self._table_has_column(conn, 'sales_products', col):
                 parts.append(f'sp.{col}')
@@ -3001,6 +3012,7 @@ class SalesProductMixin:
         'actual_discount_rate',
         'actual_discount_amount_usd',
         'discounted_price_usd',
+        'notes',
     })
 
     def _sales_product_preview_col_exists(self, conn):
@@ -3015,6 +3027,7 @@ class SalesProductMixin:
             'actual_discount_rate',
             'actual_discount_amount_usd',
             'discounted_price_usd',
+            'notes',
         ):
             exists[col] = self._table_has_column(conn, 'sales_products', col)
         return exists
@@ -3043,6 +3056,7 @@ class SalesProductMixin:
                 'actual_discount_rate',
                 'actual_discount_amount_usd',
                 'discounted_price_usd',
+                'notes',
             ):
                 if col_exists.get(col) and col in touched:
                     patch[col] = values.get(col)
@@ -3579,8 +3593,9 @@ class SalesProductMixin:
                             SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
                                 sp.platform_sku, sp.child_code,
                                 {self._sales_product_barcode_select_sql(conn, 'sp')},
-                                pf.sku_family, v.spec_name, {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
-                                sp.sale_price_usd
+                                pf.sku_family, v.spec_name,                                 {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
+                                sp.sale_price_usd,
+                                {('sp.notes' if self._table_has_column(conn, 'sales_products', 'notes') else 'NULL AS notes')}
                             FROM sales_products sp
                             LEFT JOIN sales_parents pa ON pa.id = sp.parent_id
                             LEFT JOIN shops sh ON sh.id = {shop_expr}
@@ -3630,7 +3645,8 @@ class SalesProductMixin:
                             row.get('spec_name') or '',
                             row.get('fabric') or '',
                             '\n'.join(link_map.get(row_id, [])),
-                            row.get('sale_price_usd') or ''
+                            row.get('sale_price_usd') or '',
+                            row.get('notes') or ''
                         ])
             
             # 第1行：模块标题（合并单元格）
@@ -3639,7 +3655,7 @@ class SalesProductMixin:
                 ('父体关联', 2, 4),
                 ('基础信息', 5, 8),
                 ('规格信息', 9, 12),
-                ('销售信息', 13, 13)
+                ('销售信息', 13, 14)
             ]
             # 第2行：字段标题
             cn_headers = [
@@ -3648,7 +3664,7 @@ class SalesProductMixin:
                 '销售平台SKU', '子体编号', 'GTIN', 'UPC',
                 '货号', '规格名称', '面料(面料编号)',
                 '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)',
-                '售价(USD)'
+                '售价(USD)', '备注'
             ]
 
             ws.append([''] * len(cn_headers))
@@ -3909,6 +3925,8 @@ class SalesProductMixin:
                 '关联下单SKU\n(支持换行|;分隔)': 'order_sku_links',
                 '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)': 'order_sku_links',
                 '售价(USD)': 'sale_price_usd',
+                '备注': 'notes',
+                'notes': 'notes',
                 '组装后长(in)': 'finished_length_in',
                 '组装后宽(in)': 'finished_width_in',
                 '组装后高(in)': 'finished_height_in',
@@ -4110,6 +4128,8 @@ class SalesProductMixin:
                         fabric = self._normalize_sales_import_fabric_cell(get_cell(row, 'fabric'))
                         spec_name = (get_cell(row, 'spec_name') or '').strip()
                         sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
+                        import_has_notes = 'notes' in header_map
+                        notes = self._parse_sales_notes(get_cell(row, 'notes')) if import_has_notes else None
                         order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
 
                         shop_name_text = (get_cell(row, 'shop_name') or '').strip()
@@ -4290,6 +4310,9 @@ class SalesProductMixin:
                                     update_values.append(upc)
                                 update_fields.append("sale_price_usd=%s")
                                 update_values.append(sale_price_usd)
+                                if import_has_notes and self._table_has_column(conn, 'sales_products', 'notes'):
+                                    update_fields.append("notes=%s")
+                                    update_values.append(notes)
                                 if sp_has_shop_col:
                                     update_fields.insert(0, "shop_id=%s")
                                     update_values.insert(0, shop_id)
@@ -4315,6 +4338,9 @@ class SalesProductMixin:
                                 if import_has_upc and self._table_has_column(conn, 'sales_products', 'upc'):
                                     insert_columns.append('upc')
                                     insert_values.append(upc)
+                                if import_has_notes and self._table_has_column(conn, 'sales_products', 'notes'):
+                                    insert_columns.append('notes')
+                                    insert_values.append(notes)
                                 placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                                 row_cur.execute(
                                     f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4439,6 +4465,9 @@ class SalesProductMixin:
                             if self._table_has_column(conn, 'sales_products', 'upc'):
                                 text_filters.append("sp.upc LIKE %s")
                                 kw_params.append(f"%{keyword}%")
+                            if self._table_has_column(conn, 'sales_products', 'notes'):
+                                text_filters.append("sp.notes LIKE %s")
+                                kw_params.append(f"%{keyword}%")
                             params.extend(kw_params)
                             if has_fabric_text:
                                 text_filters.append("v.fabric LIKE %s")
@@ -4500,6 +4529,7 @@ class SalesProductMixin:
                 upc = self._parse_sales_barcode(data.get('upc'))
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
                 fabric_id_input = self._parse_int(data.get('fabric_id'))
+                notes = self._parse_sales_notes(data.get('notes'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 
                 # 检查是否手动编辑了platform_sku
@@ -4582,6 +4612,9 @@ class SalesProductMixin:
                         insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
                         insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
                         self._extend_sales_product_barcode_write(conn, insert_columns, insert_values, gtin, upc)
+                        if self._table_has_column(conn, 'sales_products', 'notes'):
+                            insert_columns.append('notes')
+                            insert_values.append(notes)
                         placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                         cur.execute(
                             f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4619,6 +4652,8 @@ class SalesProductMixin:
                         gtin = self._parse_sales_barcode(gtin_raw) if gtin_raw is not None else None
                         upc_raw = item.get('upc')
                         upc = self._parse_sales_barcode(upc_raw) if upc_raw is not None else None
+                        notes_raw = item.get('notes')
+                        notes = self._parse_sales_notes(notes_raw) if notes_raw is not None else None
                         row_map[int(item_id)] = {
                             'child_code': child_code,
                             'gtin': gtin,
@@ -4629,6 +4664,7 @@ class SalesProductMixin:
                             'actual_discount_rate': self._parse_float(item.get('actual_discount_rate')),
                             'actual_discount_amount_usd': self._parse_float(item.get('actual_discount_amount_usd')),
                             'discounted_price_usd': self._parse_float(item.get('discounted_price_usd')),
+                            'notes': notes,
                         }
                         touched_raw = item.get('touched_fields')
                         if isinstance(touched_raw, list):
@@ -4665,6 +4701,7 @@ class SalesProductMixin:
                 gtin = self._parse_sales_barcode(data.get('gtin'))
                 upc = self._parse_sales_barcode(data.get('upc'))
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+                notes = self._parse_sales_notes(data.get('notes'))
                 fabric_id_input = self._parse_int(data.get('fabric_id'))
                 confirm_new_variant_folder = bool(data.get('confirm_new_variant_folder'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
@@ -4805,6 +4842,9 @@ class SalesProductMixin:
                             update_values.append(upc)
                         update_fields.append("sale_price_usd=%s")
                         update_values.append(sale_price_usd)
+                        if self._table_has_column(conn, 'sales_products', 'notes'):
+                            update_fields.append("notes=%s")
+                            update_values.append(notes)
                         if sp_has_shop_col:
                             update_fields.insert(0, "shop_id=%s")
                             update_values.insert(0, final_shop_id)

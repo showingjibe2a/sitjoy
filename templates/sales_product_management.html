@@ -496,6 +496,7 @@
                             <th data-manage-col-key="佣金" data-sort-key="est_commission_usd" class="sales-econ-col">佣金</th>
                             <th data-manage-col-key="单件净利" data-sort-key="est_net_profit_usd" class="sales-econ-col">单件净利</th>
                             <th data-manage-col-key="净利率" data-sort-key="est_net_margin_rate" class="sales-econ-col"><span class="label-help">净利率<span class="help-dot" data-tip="净利率 = 单件净利 ÷ 售价。单件净利 = 售价×(1−退款率)×(1−折扣率)×(1−ACOAS−佣金费率) − 成本总计。佣金按折后价(净收入)计算；佣金费率 = 佣金÷折后价。折后价未填时按折扣记录计算；折扣记录为空时使用父体预估折扣率。"></span></span></th>
+                            <th data-manage-col-key="备注" data-sort-key="notes">备注</th>
                             <th data-manage-col-key="创建时间" data-sort-key="created_at">创建时间</th>
                             <th style="width:160px;" data-manage-col-key="操作">操作</th>
                         </tr>
@@ -566,6 +567,10 @@
                                 <label for="modalUpc" class="label-help">UPC<span class="help-dot" data-tip="通用产品代码，绑定本销售平台SKU"></span></label>
                                 <input type="text" id="modalUpc" class="optional-field" maxlength="32" placeholder="可选">
                             </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label for="modalNotes">备注</label>
+                            <textarea id="modalNotes" class="optional-field" maxlength="512" rows="2" placeholder="可选，最多512字"></textarea>
                         </div>
                     </div>
                 </div>
@@ -923,7 +928,7 @@
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
         let salesProductAggregateMode = 'none';
         let salesProductCollapsedParentGroups = new Set();
-        const SALES_PRODUCT_TABLE_COLSPAN = 26;
+        const SALES_PRODUCT_TABLE_COLSPAN = 27;
         const SALES_PARENT_GROUP_MIDDLE_COLSPAN = SALES_PRODUCT_TABLE_COLSPAN - 3;
         const SALES_PROMOTION_ACTIVITY_TYPES = ['Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销'];
         const SALES_DISCOUNT_FORM_OPTIONS = [
@@ -934,6 +939,7 @@
             'child_code', 'gtin', 'upc', 'sale_price_usd',
             'promotion_activity_type', 'discount_form_type',
             'actual_discount_rate', 'actual_discount_amount_usd', 'discounted_price_usd',
+            'notes',
         ];
         const SALES_ECON_LINKED_FIELDS = new Set([
             'sale_price_usd', 'discount_form_type', 'actual_discount_rate',
@@ -996,7 +1002,7 @@
         }
 
         function normalizeSalesPreviewFieldValue(field, rawValue) {
-            if (field === 'child_code' || field === 'gtin' || field === 'upc') {
+            if (field === 'child_code' || field === 'gtin' || field === 'upc' || field === 'notes') {
                 return String(rawValue == null ? '' : rawValue).trim();
             }
             if (field === 'promotion_activity_type' || field === 'discount_form_type') {
@@ -1021,6 +1027,7 @@
                 actual_discount_rate: item.actual_discount_rate,
                 actual_discount_amount_usd: item.actual_discount_amount_usd,
                 discounted_price_usd: item.discounted_price_usd,
+                notes: item.notes == null ? '' : String(item.notes),
                 _touched: {},
             };
         }
@@ -1070,6 +1077,7 @@
                 actual_discount_rate: pick('actual_discount_rate'),
                 actual_discount_amount_usd: pick('actual_discount_amount_usd'),
                 discounted_price_usd: pick('discounted_price_usd'),
+                notes: pick('notes'),
             };
         }
 
@@ -1207,6 +1215,7 @@
                         if (touched.has('actual_discount_rate')) row.actual_discount_rate = up.actual_discount_rate;
                         if (touched.has('actual_discount_amount_usd')) row.actual_discount_amount_usd = up.actual_discount_amount_usd;
                         if (touched.has('discounted_price_usd')) row.discounted_price_usd = up.discounted_price_usd;
+                        if (touched.has('notes')) row.notes = up.notes ? up.notes : null;
                         delete salesPreviewEditDraft[String(up.id)];
                     });
                     renderSalesGroupedTable(salesProductItems || []);
@@ -2300,6 +2309,8 @@
             const gtinText = gtinVal == null ? '' : String(gtinVal);
             const upcVal = getSalesPreviewEffectiveValue(item, 'upc');
             const upcText = upcVal == null ? '' : String(upcVal);
+            const notesVal = getSalesPreviewEffectiveValue(item, 'notes');
+            const notesText = notesVal == null ? '' : String(notesVal);
             const salePriceVal = getSalesPreviewEffectiveValue(item, 'sale_price_usd');
             const econ = salesEnrichItemEconomics(item);
             const salePriceLow = econ.salePrice > 0 && econ.totalCost > 0 && econ.salePrice < econ.totalCost;
@@ -2334,6 +2345,7 @@
                     <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${salesFormatEconCommission(econ)}</td>
                     <td class="sales-econ-cell ${netProfitLow ? 'danger-note' : ''}" data-manage-col-key="单件净利" data-sales-econ-col="net_profit">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.netProfit, false) : '-'}</td>
                     <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-'}</td>
+                    <td class="preview-edit-cell sales-notes-cell" data-field-wrap="notes"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="notes" type="text" maxlength="512" value="${escapeAttr(notesText)}" placeholder="备注"></td>
                     <td>${createdDateStr}</td>
                     <td>
                         <div class="pm-actions">
@@ -5073,6 +5085,7 @@
             document.getElementById('modalChildCode').value = '';
             document.getElementById('modalGtin').value = '';
             document.getElementById('modalUpc').value = '';
+            document.getElementById('modalNotes').value = '';
             document.getElementById('modalFabric').value = '';
             renderFabricSelectBySkuFamily('');
             document.getElementById('modalSpecName').value = '';
@@ -5132,6 +5145,7 @@
             document.getElementById('modalChildCode').value = item.child_code || '';
             document.getElementById('modalGtin').value = item.gtin || '';
             document.getElementById('modalUpc').value = item.upc || '';
+            document.getElementById('modalNotes').value = item.notes || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             renderFabricSelectBySkuFamily(item.fabric_id || '');
             if (item.fabric_id) document.getElementById('modalFabricId').value = String(item.fabric_id);
@@ -5188,6 +5202,7 @@
                 child_code: document.getElementById('modalChildCode').value.trim(),
                 gtin: document.getElementById('modalGtin').value.trim(),
                 upc: document.getElementById('modalUpc').value.trim(),
+                notes: document.getElementById('modalNotes').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 fabric_id: document.getElementById('modalFabricId').value || null,
                 spec_name: document.getElementById('modalSpecName').value.trim(),
