@@ -27,6 +27,17 @@ body.sitjoy-has-shell > footer {
     display: none !important;
 }
 
+body.sitjoy-has-shell .sitjoy-page-body footer {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 旧全页布局为顶栏/页脚预留的表格高度上限；应用壳内由 .sitjoy-page-body 滚动，不再底部留白 */
+body.sitjoy-has-shell .pm-managed-body-wrap {
+    max-height: none;
+}
+
 #site-header {
     width: 100%;
     min-width: 0;
@@ -409,8 +420,9 @@ body.sitjoy-has-shell .sitjoy-page-body > .home-container {
     min-width: 0;
     width: 100%;
     max-width: none;
-    padding: 0.6rem 0.85rem 0.9rem;
+    padding: 0.6rem 0.85rem 0.45rem;
     background: transparent;
+    flex: 0 0 auto;
 }
 
 body.sitjoy-has-shell section.hero {

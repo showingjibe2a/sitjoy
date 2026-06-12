@@ -9366,6 +9366,7 @@
         });
 
         document.querySelectorAll('body > footer').forEach(el => el.remove());
+        pageBody.querySelectorAll('footer').forEach(el => el.remove());
         document.body.classList.add('sitjoy-has-shell');
         headerHost.dataset.shellMounted = '1';
     }
