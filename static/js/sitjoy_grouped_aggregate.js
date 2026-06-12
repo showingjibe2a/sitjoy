@@ -123,7 +123,7 @@
 
         tbody.addEventListener('click', function(e) {
             if (e.target && e.target.closest && e.target.closest(
-                'input, button, a, label, .pm-column-filter-btn, .sj-group-row-edit-btn, .sj-group-row-actions-cell'
+                'input, button, a, label, .pm-column-filter-btn, .sj-group-row-edit-btn, .sj-group-row-actions-cell, td[data-manage-col-key$="_chk__"], th[data-manage-col-key$="_chk__"]'
             )) return;
             const row = e.target && e.target.closest ? e.target.closest(sel) : null;
             if (!row) return;

@@ -3729,6 +3729,9 @@
             const cell = event.target && event.target.closest ? event.target.closest('td') : null;
             if(!cell || !state.tbody.contains(cell)) return;
             if(cell.classList.contains('pm-table-hide-col')) return;
+            const manageColKey = String(cell.dataset.manageColKey || '').trim();
+            if(manageColKey.endsWith('_chk__')) return;
+            if(event.target && event.target.closest && event.target.closest('input[type="checkbox"]')) return;
             if(isEditableDomTarget(event.target) && event.target !== cell) return;
 
             const activeEl = document.activeElement;

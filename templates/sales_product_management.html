@@ -1158,6 +1158,20 @@
             if (!tbody || tbody.dataset._salesInteractionDelegated === '1') return;
             tbody.dataset._salesInteractionDelegated = '1';
 
+            tbody.addEventListener('mousedown', function(e) {
+                if (!e.target || !e.target.closest) return;
+                if (e.target.closest('.sales-row-checkbox, .sales-parent-group-checkbox, td[data-manage-col-key="__sales_chk__"]')) {
+                    e.stopPropagation();
+                }
+            }, true);
+
+            tbody.addEventListener('click', function(e) {
+                if (!e.target || !e.target.closest) return;
+                if (e.target.closest('.sales-row-checkbox, .sales-parent-group-checkbox, td[data-manage-col-key="__sales_chk__"]')) {
+                    e.stopPropagation();
+                }
+            }, true);
+
             tbody.addEventListener('change', function(e) {
                 const el = e.target && e.target.closest ? e.target.closest('.preview-edit-field') : null;
                 if (!el || !tbody.contains(el)) return;
@@ -1185,6 +1199,25 @@
             });
 
             tbody.addEventListener('change', function(e) {
+                const parentEl = e.target && e.target.closest ? e.target.closest('.sales-parent-group-checkbox') : null;
+                if (parentEl && tbody.contains(parentEl)) {
+                    const gk = String(parentEl.getAttribute('data-group-key') || '').trim();
+                    if (!gk) return;
+                    const want = !!parentEl.checked;
+                    Array.from(tbody.querySelectorAll('tr[data-group-key]')).forEach((tr) => {
+                        if (tr.classList.contains('sales-parent-group-row')) return;
+                        if (String(tr.getAttribute('data-group-key') || '').trim() !== gk) return;
+                        const cb = tr.querySelector('.sales-row-checkbox');
+                        if (!cb) return;
+                        const id = String(cb.getAttribute('data-id') || '').trim();
+                        if (!id) return;
+                        cb.checked = want;
+                        if (want) selectedSalesProductIds.add(id);
+                        else selectedSalesProductIds.delete(id);
+                    });
+                    syncSalesSelectAllCheckbox();
+                    return;
+                }
                 const el = e.target && e.target.closest ? e.target.closest('.sales-row-checkbox') : null;
                 if (!el || !tbody.contains(el)) return;
                 const id = String(el.getAttribute('data-id') || '');
@@ -2719,34 +2752,16 @@
         }
 
         function bindSalesParentGroupSelectionEvents() {
-            document.querySelectorAll('.sales-parent-group-checkbox').forEach((el) => {
-                if (el.dataset._salesParentCbBound === '1') return;
-                el.dataset._salesParentCbBound = '1';
-                el.addEventListener('change', function() {
-                    const gk = String(this.getAttribute('data-group-key') || '').trim();
-                    if (!gk) return;
-                    const tbody = document.querySelector('#salesProductTable tbody');
-                    if (!tbody) return;
-                    const want = !!this.checked;
-                    Array.from(tbody.querySelectorAll('tr[data-group-key]')).forEach((tr) => {
-                        if (tr.classList.contains('sales-parent-group-row')) return;
-                        if (String(tr.getAttribute('data-group-key') || '').trim() !== gk) return;
-                        const cb = tr.querySelector('.sales-row-checkbox');
-                        if (!cb) return;
-                        const id = String(cb.getAttribute('data-id') || '').trim();
-                        if (!id) return;
-                        cb.checked = want;
-                        if (want) selectedSalesProductIds.add(id);
-                        else selectedSalesProductIds.delete(id);
-                    });
-                    syncSalesSelectAllCheckbox();
-                });
-            });
+            /* 父体组勾选已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
+        }
+
+        function getSalesSelectAllCheckboxes() {
+            return Array.from(document.querySelectorAll('input#salesSelectAll'));
         }
 
         function syncSalesSelectAllCheckbox() {
-            const master = document.getElementById('salesSelectAll');
-            if (!master) return;
+            const masters = getSalesSelectAllCheckboxes();
+            if (!masters.length) return;
             const checkboxes = Array.from(document.querySelectorAll('.sales-row-checkbox')).filter(cb => {
                 const tr = cb.closest('tr');
                 if (!tr) return false;
@@ -2756,14 +2771,20 @@
                 return true;
             });
             if (!checkboxes.length) {
-                master.checked = false;
-                master.indeterminate = false;
+                masters.forEach((master) => {
+                    master.checked = false;
+                    master.indeterminate = false;
+                });
                 syncSalesParentGroupCheckboxes();
                 return;
             }
             const checkedCount = checkboxes.filter(x => x.checked).length;
-            master.checked = checkedCount === checkboxes.length;
-            master.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+            const allChecked = checkedCount === checkboxes.length;
+            const partial = checkedCount > 0 && checkedCount < checkboxes.length;
+            masters.forEach((master) => {
+                master.checked = allChecked;
+                master.indeterminate = partial;
+            });
             syncSalesParentGroupCheckboxes();
         }
 
@@ -5840,6 +5861,16 @@
             return ok;
         }
 
+        function bindSalesSelectAllDocumentListener() {
+            if (window.__salesSelectAllDocChangeBound) return;
+            window.__salesSelectAllDocChangeBound = true;
+            document.addEventListener('change', function(e) {
+                const target = e.target;
+                if (!target || target.id !== 'salesSelectAll') return;
+                toggleSelectAllSalesRows(!!target.checked);
+            });
+        }
+
         function bindPageEvents() {
             if (!pageDomReady()) return;
             if (window.__salesProductBindEpoch === window.__sitjoyNavEpoch) return;
@@ -5847,9 +5878,6 @@
 
             bindEl('searchInput', 'keydown', function(e) {
                 if (e.key === 'Enter') loadSalesProductList();
-            });
-            bindEl('salesSelectAll', 'change', function() {
-                toggleSelectAllSalesRows(this.checked);
             });
             document.querySelectorAll('#modalProductStatusSegment .status-pill').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -5996,6 +6024,7 @@
         function initPage() {
             if (!pageDomReady()) return;
             bindPageEvents();
+            bindSalesSelectAllDocumentListener();
             registerSalesProductTablePageFilters();
             salesApplyManageLayoutSig();
             syncSalesAggregateSegmentUi();
