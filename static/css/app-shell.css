@@ -33,9 +33,82 @@ body.sitjoy-has-shell .sitjoy-page-body footer {
     padding: 0 !important;
 }
 
-/* 旧全页布局为顶栏/页脚预留的表格高度上限；应用壳内由 .sitjoy-page-body 滚动，不再底部留白 */
-body.sitjoy-has-shell .pm-managed-body-wrap {
+/**
+ * 大表格页：滚动限制在表格区域（.pm-managed-body-wrap / .board-body-wrap），
+ * 避免分组展开后撑出 .sitjoy-page-body 外层滚动。由 header.js 打上 .sj-page-fill-scroll。
+ */
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll > .container,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll > .home-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card.pm-card {
+    flex: 0 0 auto;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > div:not(.card):not(.board-body-wrap):not(.pm-managed-body-wrap) {
+    overflow: hidden;
+    min-height: 0;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-board-table-host > .board-body-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
     max-height: none;
+    height: auto;
+    overflow: auto;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-table-fill-host,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-sales-table-host,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-wip-table-host,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-board-table-host {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .board-header-wrap,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .board-top-scroll {
+    flex: 0 0 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-table-toolbar,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-managed-head-wrap,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-table-top-scroll {
+    flex: 0 0 auto;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-managed-body-wrap,
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .board-body-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: auto;
+    overflow: auto;
 }
 
 #site-header {

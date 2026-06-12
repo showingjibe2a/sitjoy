@@ -7960,6 +7960,7 @@
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('table').forEach((table, index) => createManagedTable(table, index));
         enhanceAllTableNumericAlign(scope);
+        syncSitjoyPageFillScrollLayout(scope);
     }
 
     function repositionManagedBatchBars(){
@@ -9057,6 +9058,30 @@
         } catch (e) { /* ignore */ }
     }
 
+    function syncSitjoyPageFillScrollLayout(root){
+        const pageBody = document.getElementById('sitjoyPageBody');
+        if(!pageBody || !document.body.classList.contains('sitjoy-has-shell')) return;
+        const scope = (root && root.querySelector) ? root : pageBody;
+        pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
+            el.classList.remove('sj-table-fill-host');
+        });
+        const hasFill = !!(scope.querySelector('.pm-managed-body-wrap, .board-body-wrap')
+            || pageBody.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
+        pageBody.classList.toggle('sj-page-fill-scroll', hasFill);
+        if(!hasFill) return;
+        pageBody.querySelectorAll('.pm-managed-body-wrap').forEach((wrap) => {
+            const inLayout = wrap.closest('.pm-layout');
+            if(!inLayout) return;
+            let host = wrap;
+            while(host && host.parentElement && host.parentElement !== inLayout){
+                host = host.parentElement;
+            }
+            if(host && host.parentElement === inLayout && host !== inLayout){
+                host.classList.add('sj-table-fill-host');
+            }
+        });
+    }
+
     function enhanceSitjoyPageContent(root){
         const scope = root || document.getElementById('sitjoyPageBody') || document;
         initUniversalSingleSelects(scope);
@@ -9064,6 +9089,7 @@
         initOptionalDateInputs(scope);
         normalizeResetButtons(scope);
         enhanceManagedTables(document);
+        syncSitjoyPageFillScrollLayout(scope);
         bindFloatingHelpDots(document);
         partitionPmCardToolbars(document);
         bridgeLegacyResponseToToast(document);
@@ -9369,6 +9395,7 @@
         pageBody.querySelectorAll('footer').forEach(el => el.remove());
         document.body.classList.add('sitjoy-has-shell');
         headerHost.dataset.shellMounted = '1';
+        syncSitjoyPageFillScrollLayout(pageBody);
     }
 
     function initTopbarUser(authData){
@@ -10281,6 +10308,7 @@
         initOptionalDateInputs(document);
         normalizeResetButtons(document);
         enhanceManagedTables(document);
+        syncSitjoyPageFillScrollLayout(document);
         bindFloatingHelpDots(document);
         partitionPmCardToolbars(document);
         bridgeLegacyResponseToToast(document);
@@ -10300,6 +10328,7 @@
         window.showAppConfirm = showAppConfirm;
         window.showAppConfirmAsync = showAppConfirmAsync;
         window.bindFloatingHelpDots = bindFloatingHelpDots;
+        window.syncSitjoyPageFillScrollLayout = syncSitjoyPageFillScrollLayout;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;
 
         if(typeof window.onManagedTableBatchDownload !== 'function'){
@@ -10323,6 +10352,7 @@
             window.requestAnimationFrame(() => {
                 bodyEnhanceScheduled = false;
                 enhanceManagedTables(document);
+                syncSitjoyPageFillScrollLayout(document);
                 bindFloatingHelpDots(document);
                 partitionPmCardToolbars(document);
                 enhanceCustomDateInputs(document);

@@ -60,11 +60,14 @@
     .board-body-wrap {
       overflow-x: auto;
       overflow-y: auto;
+      min-height: 12rem;
       text-align: left;
-      height: calc(100vh - 250px);
-      max-height: calc(100vh - 250px);
       background: var(--morandi-cream);
       border-radius: 0 0 12px 12px;
+    }
+    body:not(.sitjoy-has-shell) .board-body-wrap {
+      height: calc(100vh - 250px);
+      max-height: calc(100vh - 250px);
     }
     .board-table {
       width: max-content;
@@ -561,6 +564,7 @@
       <div id="status" class="response" style="display:none; margin-top:.65rem;"></div>
     </div>
 
+    <div class="sj-board-table-host">
     <div class="board-header-wrap" id="boardHeaderWrap">
       <table class="pm-table board-table" id="boardHeadTable" data-disable-table-manage="1">
         <colgroup id="boardHeadColgroup"></colgroup>
@@ -573,6 +577,7 @@
         <colgroup id="boardBodyColgroup"></colgroup>
         <tbody><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody>
       </table>
+    </div>
     </div>
   </section>
 </div>
@@ -1822,6 +1827,9 @@ function syncTopScrollbar(){
   }
   if(Math.abs(top.scrollLeft - wrap.scrollLeft) > 1){
     top.scrollLeft = wrap.scrollLeft;
+  }
+  if(typeof window.syncSitjoyPageFillScrollLayout === 'function'){
+    window.syncSitjoyPageFillScrollLayout();
   }
 }
 
