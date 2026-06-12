@@ -6020,9 +6020,10 @@
         if(!state || !state.table) return;
         syncManagedTableBodyLayout(state);
         ensureRowSortOrigin(state);
-        if(managedSortStackHasEntries(state)){
+        if(managedSortStackHasEntries(state) || tableBodyHasGroupedAggregateRows(state)){
             applySort(state);
         }
+        refreshSortHeaderUi(state);
         applyPagination(state);
         syncManagedBatchBar(state);
     }
@@ -6142,6 +6143,50 @@
             if(!t) return;
             const state = managedTableState.get(t);
             if(state) clearManagedTableSort(state);
+        },
+        getState(tableOrSelector){
+            const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            return t ? (managedTableState.get(t) || null) : null;
+        },
+        getSortStack(tableOrSelector){
+            const state = this.getState(tableOrSelector);
+            return state ? normalizeManagedSortStack(state.sortStack).slice() : [];
+        },
+        setSortStack(tableOrSelector, stack, options){
+            const opts = options || {};
+            const state = this.getState(tableOrSelector);
+            if(!state) return;
+            state.sortStack = normalizeManagedSortStack(stack);
+            syncLegacySortFieldsFromStack(state);
+            state._sortKeyToManageColKey = null;
+            if(!opts.skipPersist && state.table && !tableSkipsFilterPersist(state.table)){
+                persistManagedSortStack(state.table, state.sortStack);
+            }
+            refreshSortHeaderUi(state);
+            if(!opts.skipApply){
+                applySort(state);
+                applyPagination(state);
+                syncManagedBatchBar(state);
+            }
+            if(!opts.skipDispatch) dispatchManagedTableSortChange(state);
+        },
+        syncSortUi(tableOrSelector){
+            const state = this.getState(tableOrSelector);
+            if(state) refreshSortHeaderUi(state);
+        },
+        handleHeaderSortClick(th, stateOrTable){
+            const state = stateOrTable && stateOrTable.table ? stateOrTable : this.getState(stateOrTable);
+            if(!state || !th) return false;
+            const manageKey = String(th.dataset.manageColKey || '').trim();
+            const sortKey = resolveSortColumnKeyFromHeaderCell(th);
+            if(!sortKey || (manageKey && state.lockedColumns.has(manageKey))) return false;
+            toggleManagedSortStackEntry(state, sortKey);
+            refreshSortHeaderUi(state);
+            applySort(state);
+            applyPagination(state);
+            syncManagedBatchBar(state);
+            dispatchManagedTableSortChange(state);
+            return true;
         },
         /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
         enhance(root){
@@ -6815,12 +6860,110 @@
         }
     }
 
+    function resolveSortColumnKeyFromHeaderCell(cell){
+        if(!cell) return '';
+        const sortKey = String(cell.getAttribute('data-sort-key') || '').trim();
+        if(sortKey) return sortKey;
+        return String(cell.dataset.manageColKey || '').trim();
+    }
+
+    function buildSortKeyToManageColKeyMap(state){
+        const map = new Map();
+        const headerRow = state ? getPrimaryHeaderRow(state) : null;
+        const fallbackRow = state && state.table && state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        [headerRow, fallbackRow].filter(Boolean).forEach((row) => {
+            Array.from(row.cells || []).forEach((cell) => {
+                const manageKey = String(cell.dataset.manageColKey || '').trim();
+                const sortKey = String(cell.getAttribute('data-sort-key') || '').trim();
+                if(manageKey) map.set(manageKey, manageKey);
+                if(sortKey) map.set(sortKey, manageKey || sortKey);
+            });
+        });
+        return map;
+    }
+
+    function getRowCellForSortKey(row, state, sortKey){
+        if(!row) return null;
+        const key = String(sortKey || '').trim();
+        if(!key) return null;
+        const cellMap = mapRowByKey(row);
+        if(cellMap.has(key)) return cellMap.get(key);
+        if(state){
+            if(!state._sortKeyToManageColKey) state._sortKeyToManageColKey = buildSortKeyToManageColKeyMap(state);
+            const manageKey = state._sortKeyToManageColKey.get(key);
+            if(manageKey && cellMap.has(manageKey)) return cellMap.get(manageKey);
+        }
+        return null;
+    }
+
+    function tableBodyHasGroupedAggregateRows(state){
+        const tbody = state && (state.tbody || (state.table && state.table.tBodies && state.table.tBodies[0]));
+        if(!tbody || !tbody.rows) return false;
+        return Array.from(tbody.rows || []).some((row) => isGroupedAggregateRow(row));
+    }
+
+    function appendGroupedAggregateSort(state, stack){
+        const tbody = state && (state.tbody || (state.table && state.table.tBodies && state.table.tBodies[0]));
+        if(!tbody) return;
+        const bodyRows = Array.from(tbody.rows || []);
+        const normalizedStack = normalizeManagedSortStack(stack);
+        const cmp = normalizedStack.length
+            ? (a, b) => compareRowsForManagedSortStack(a, b, normalizedStack, state)
+            : (a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
+        const docFrag = document.createDocumentFragment();
+        let i = 0;
+        while(i < bodyRows.length){
+            const row = bodyRows[i];
+            if(!isGroupedAggregateRow(row)){
+                const flat = [];
+                while(i < bodyRows.length && !isGroupedAggregateRow(bodyRows[i])){
+                    flat.push(bodyRows[i]);
+                    i++;
+                }
+                flat.sort(cmp);
+                flat.forEach((child) => docFrag.appendChild(child));
+                continue;
+            }
+            const groupRow = row;
+            const children = [];
+            i++;
+            while(i < bodyRows.length && !isGroupedAggregateRow(bodyRows[i])){
+                children.push(bodyRows[i]);
+                i++;
+            }
+            children.sort(cmp);
+            docFrag.appendChild(groupRow);
+            children.forEach((child) => docFrag.appendChild(child));
+        }
+        tbody.appendChild(docFrag);
+    }
+
+    function dispatchManagedTableSortChange(state){
+        if(!state || !state.table) return;
+        try {
+            state.table.dispatchEvent(new CustomEvent('pm-managed-sort-change', {
+                bubbles: true,
+                detail: {
+                    table: state.table,
+                    stack: normalizeManagedSortStack(state.sortStack).slice()
+                }
+            }));
+        } catch (_e) {}
+    }
     function applySort(state){
         const stack = normalizeManagedSortStack(state && state.sortStack);
         state.sortStack = stack;
         syncLegacySortFieldsFromStack(state);
+        if(state) state._sortKeyToManageColKey = null;
         const rows = getDataRows(state);
         if(!rows.length) return;
+
+        if(tableBodyHasGroupedAggregateRows(state)){
+            appendGroupedAggregateSort(state, stack);
+            state.sortApplied = stack.length > 0;
+            syncGroupedAggregateRowsAfterFilter(state);
+            return;
+        }
 
         if(!stack.length){
             if(!state.sortApplied) return;
@@ -6832,7 +6975,7 @@
             return;
         }
 
-        rows.sort((a, b) => compareRowsForManagedSortStack(a, b, stack));
+        rows.sort((a, b) => compareRowsForManagedSortStack(a, b, stack, state));
 
         const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
         const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
@@ -6840,14 +6983,14 @@
         state.sortApplied = true;
     }
 
-    function compareRowsForManagedSortStack(a, b, stack){
+    function compareRowsForManagedSortStack(a, b, stack, state){
         for(let i = 0; i < stack.length; i++){
             const entry = stack[i];
             const key = String(entry.key || '').trim();
             if(!key) continue;
             const dir = entry.dir === 'asc' ? 'asc' : 'desc';
-            const aCell = mapRowByKey(a).get(key);
-            const bCell = mapRowByKey(b).get(key);
+            const aCell = getRowCellForSortKey(a, state, key);
+            const bCell = getRowCellForSortKey(b, state, key);
             const av = readCellComparableValue(aCell);
             const bv = readCellComparableValue(bCell);
             let cmp = 0;
@@ -6877,6 +7020,7 @@
         }
         state.sortStack = stack;
         syncLegacySortFieldsFromStack(state);
+        if(state) state._sortKeyToManageColKey = null;
         if(state.table && !tableSkipsFilterPersist(state.table)){
             persistManagedSortStack(state.table, stack);
         }
@@ -6899,6 +7043,7 @@
         refreshSortHeaderUi(state);
         applySort(state);
         applyPagination(state);
+        dispatchManagedTableSortChange(state);
         if(typeof showAppToast === 'function'){
             showAppToast('排序已清除', false, 1200);
         }
@@ -6917,7 +7062,8 @@
             if(isManagedTableNoSortNoFilterHeaderCell(cell)) return;
             if(state.lockedColumns.has(origin)) return;
             cell.classList.add('pm-sortable');
-            const active = stackMap.get(origin);
+            const sortKey = String(cell.getAttribute('data-sort-key') || '').trim();
+            const active = stackMap.get(sortKey) || stackMap.get(origin);
             if(!active) return;
             if(active.dir === 'asc') cell.classList.add('pm-sort-asc');
             else cell.classList.add('pm-sort-desc');
@@ -6940,12 +7086,15 @@
                 if(event.target.closest('.pm-col-resizer')) return;
                 if(event.target.closest('input, button, select, textarea, label, a')) return;
                 if(cell.querySelector('input[type="checkbox"]')) return;
-                const origin = String(cell.dataset.manageColKey || '').trim();
-                if(state.lockedColumns.has(origin)) return;
-                toggleManagedSortStackEntry(state, origin);
+                const manageKey = String(cell.dataset.manageColKey || '').trim();
+                const sortKey = resolveSortColumnKeyFromHeaderCell(cell);
+                if(state.lockedColumns.has(manageKey)) return;
+                toggleManagedSortStackEntry(state, sortKey);
                 refreshSortHeaderUi(state);
                 applySort(state);
                 applyPagination(state);
+                syncManagedBatchBar(state);
+                dispatchManagedTableSortChange(state);
             });
         });
     }

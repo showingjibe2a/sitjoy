@@ -922,7 +922,6 @@
         let salesPreviewEditDraft = {};
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
         let salesProductAggregateMode = 'none';
-        let salesProductGroupSort = { key: '', dir: 'asc' };
         let salesProductCollapsedParentGroups = new Set();
         const SALES_PRODUCT_TABLE_COLSPAN = 26;
         const SALES_PARENT_GROUP_MIDDLE_COLSPAN = SALES_PRODUCT_TABLE_COLSPAN - 3;
@@ -2246,59 +2245,6 @@
             return String(labelA).localeCompare(String(labelB), 'zh-CN');
         }
 
-        function compareSalesItemsByGroupSortKey(a, b) {
-            const key = String(salesProductGroupSort.key || '').trim();
-            if (!key) return 0;
-            const dir = salesProductGroupSort.dir === 'desc' ? -1 : 1;
-            const dateKeys = new Set(['created_at']);
-            const numberKeys = new Set([
-                'sale_price_usd',
-                'warehouse_cost_usd',
-                'last_mile_cost_usd',
-                'est_total_cost_usd',
-                'est_commission_usd',
-                'actual_discount_rate',
-                'actual_discount_amount_usd',
-                'discounted_price_usd',
-                'est_net_profit_usd',
-                'est_net_margin_rate',
-            ]);
-            if (key === 'product_status') {
-                const orderRank = (v) => {
-                    const n = normalizeProductStatus(v);
-                    return n === 'enabled' ? 0 : n === 'retained' ? 1 : n === 'discarded' ? 2 : 3;
-                };
-                const ra = orderRank(a && a.product_status);
-                const rb = orderRank(b && b.product_status);
-                if (ra === rb) return 0;
-                return (ra > rb ? 1 : -1) * dir;
-            }
-            const av = a && a[key];
-            const bv = b && b[key];
-            if (numberKeys.has(key)) {
-                if (key === 'est_total_cost_usd' || key === 'est_commission_usd' || key === 'actual_discount_rate'
-                    || key === 'actual_discount_amount_usd' || key === 'discounted_price_usd'
-                    || key === 'est_net_profit_usd' || key === 'est_net_margin_rate') {
-                    salesEnrichItemEconomics(a || {});
-                    salesEnrichItemEconomics(b || {});
-                }
-                const na = Number((a && a[key]) || 0);
-                const nb = Number((b && b[key]) || 0);
-                if (na === nb) return 0;
-                return (na > nb ? 1 : -1) * dir;
-            }
-            if (dateKeys.has(key)) {
-                const ta = Date.parse(String(av || '')) || 0;
-                const tb = Date.parse(String(bv || '')) || 0;
-                if (ta === tb) return 0;
-                return (ta > tb ? 1 : -1) * dir;
-            }
-            const sa = String(av || '').trim().toLowerCase();
-            const sb = String(bv || '').trim().toLowerCase();
-            if (sa === sb) return 0;
-            return (sa > sb ? 1 : -1) * dir;
-        }
-
         function escapeSalesGroupKeyAttr(groupKey) {
             return String(groupKey || '')
                 .replace(/&/g, '&amp;')
@@ -2406,31 +2352,9 @@
         }
 
         function refreshSalesProductTableHeaderSortUi() {
-            const main = document.getElementById('salesProductTable');
-            let headRow = null;
-            if (main && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.resolveBodyTableFromHeaderTh === 'function') {
-                const headTable = main.closest('.sj-sales-table-host')?.querySelector('.pm-managed-head-table');
-                if (headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0]) {
-                    headRow = headTable.tHead.rows[0];
-                }
+            if (window.SitjoyManagedPmTable && typeof SitjoyManagedPmTable.syncSortUi === 'function') {
+                SitjoyManagedPmTable.syncSortUi('#salesProductTable');
             }
-            if (!headRow) headRow = document.querySelector('#salesProductTable thead tr');
-            if (!headRow) return;
-            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
-                th.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
-                th.removeAttribute('title');
-            });
-            if (salesProductAggregateMode !== 'parent') return;
-            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
-                th.classList.add('pm-sortable');
-                th.title = '组内排序';
-            });
-            const sk = String(salesProductGroupSort.key || '').trim();
-            if (!sk) return;
-            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
-                if (String(th.getAttribute('data-sort-key') || '').trim() !== sk) return;
-                th.classList.add(salesProductGroupSort.dir === 'desc' ? 'pm-sort-desc' : 'pm-sort-asc');
-            });
         }
 
         function initSalesGroupedAggregateHelpers() {
@@ -2444,15 +2368,6 @@
                 onAfterToggle() {
                     renderSalesGroupedTable(salesProductItems || []);
                     salesPersistTablePageFilters(300);
-                }
-            });
-            SitjoyGroupedAggregate.bindDocumentAggregateGroupSort({
-                bodyTable: document.getElementById('salesProductTable'),
-                isAggregateMode: () => salesProductAggregateMode === 'parent',
-                getSortState: () => salesProductGroupSort,
-                setSortState() { /* sort object mutated in place */ },
-                onAfterSortChange() {
-                    renderSalesGroupedTable(salesProductItems || []);
                 }
             });
             SitjoyGroupedAggregate.bindAggregateHeaderExpandCollapse({
@@ -2479,7 +2394,6 @@
                     const val = String(this.getAttribute('data-value') || 'none');
                     const nextMode = val === 'parent' ? 'parent' : 'none';
                     if (salesProductAggregateMode !== nextMode) {
-                        salesProductGroupSort = { key: '', dir: 'asc' };
                         if (nextMode === 'parent') salesProductCollapsedParentGroups = new Set();
                     }
                     salesProductAggregateMode = nextMode;
@@ -2539,7 +2453,6 @@
                     if (searchEl) searchEl.value = '';
                     salesProductAggregateMode = 'none';
                     salesProductCollapsedParentGroups = new Set();
-                    salesProductGroupSort = { key: '', dir: 'asc' };
                     syncSalesAggregateSegmentUi();
                     loadSalesProductList();
                 },
@@ -2652,9 +2565,7 @@
                 });
                 Array.from(groups.entries()).sort(compareSalesParentGroupEntries).forEach(([groupKey, groupData]) => {
                     const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
-                    const sorted = salesProductGroupSort.key
-                        ? groupItems.slice().sort(compareSalesItemsByGroupSortKey)
-                        : groupItems.slice();
+                    const sorted = groupItems.slice();
                     const headerMeta = salesParentGroupMetaOf(sorted[0] || groupItems[0]);
                     const groupLabelHtml = formatSalesParentGroupRowLabel(headerMeta, sorted.length);
                     const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;

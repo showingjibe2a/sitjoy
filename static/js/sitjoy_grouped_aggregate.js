@@ -41,6 +41,15 @@
             if (!th) return;
             if (!resolveBodyTableForHeaderTh(th, bodyTable)) return;
 
+            if (global.SitjoyManagedPmTable && typeof global.SitjoyManagedPmTable.handleHeaderSortClick === 'function') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                const handled = global.SitjoyManagedPmTable.handleHeaderSortClick(th, bodyTable);
+                if (handled && typeof opts.onAfterSortChange === 'function') opts.onAfterSortChange();
+                if (handled) return;
+            }
+
             e.preventDefault();
             e.stopPropagation();
             if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();

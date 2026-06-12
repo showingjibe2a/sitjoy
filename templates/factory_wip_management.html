@@ -218,7 +218,6 @@ let wipAggregateMode = 'none';
 let wipCollapsedOrderGroups = new Set();
 let wipCollapsedFamilyGroups = new Set();
 let wipGroupCollapseInitDone = false;
-let wipGroupSort = { key: '', dir: 'asc' };
 
 const FACTORY_WIP_AGGREGATE_MODE_KEY = 'sj.factoryWip.aggregateMode.v1';
 
@@ -1311,10 +1310,35 @@ function wipInvalidateManagedTableLayout(){
   }
 }
 
+function wipManagedTableBodyApi() {
+  return window.SitjoyManagedPmTable || null;
+}
+
+function wipBeginManagedTableBodyUpdate() {
+  const api = wipManagedTableBodyApi();
+  if (api && typeof api.beginBodyUpdate === 'function') {
+    api.beginBodyUpdate(document.getElementById('mainTable'));
+  }
+}
+
+function wipEndManagedTableBodyUpdate() {
+  const api = wipManagedTableBodyApi();
+  if (api && typeof api.endBodyUpdate === 'function') {
+    api.endBodyUpdate(document.getElementById('mainTable'));
+  }
+}
+
+function refreshWipTableHeaderSortUi() {
+  if (window.SitjoyManagedPmTable && typeof SitjoyManagedPmTable.syncSortUi === 'function') {
+    SitjoyManagedPmTable.syncSortUi('#mainTable');
+  }
+}
+
 function renderFactoryWipTable(items){
   const tbody = document.querySelector('#mainTable tbody');
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
+  wipBeginManagedTableBodyUpdate();
   if(!rows.length){
     tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;">暂无数据</td></tr>';
     const wipHost0 = document.getElementById('factoryWipTableHost');
@@ -1325,7 +1349,8 @@ function renderFactoryWipTable(items){
     bindRowSelectionEvents();
     bindFactoryWipEditEvents();
     syncWipSelectAll();
-    wipInvalidateManagedTableLayout();
+    refreshWipTableHeaderSortUi();
+    wipEndManagedTableBodyUpdate();
     return;
   }
   const html = [];
@@ -1342,35 +1367,6 @@ function renderFactoryWipTable(items){
       return { key: `family-name:${familyName}`, label: familyName };
     }
     return { key: 'family:unknown', label: '（无货号）' };
-  };
-  const compareBySortKey = (a, b) => {
-    const key = String(wipGroupSort.key || '').trim();
-    if (!key) return 0;
-    const dir = wipGroupSort.dir === 'desc' ? -1 : 1;
-    const dateKeys = new Set(['expected_completion_date', 'initial_expected_completion_date', 'actual_completion_date', 'created_at', 'update_time']);
-    const numberKeys = new Set(['quantity']);
-    let av = a && a[key];
-    let bv = b && b[key];
-    if (key === 'update_time') {
-      av = av || (a && a.updated_at) || '';
-      bv = bv || (b && b.updated_at) || '';
-    }
-    if (numberKeys.has(key)) {
-      const na = Number(av || 0);
-      const nb = Number(bv || 0);
-      if (na === nb) return 0;
-      return (na > nb ? 1 : -1) * dir;
-    }
-    if (dateKeys.has(key)) {
-      const ta = Date.parse(String(av || '')) || 0;
-      const tb = Date.parse(String(bv || '')) || 0;
-      if (ta === tb) return 0;
-      return (ta > tb ? 1 : -1) * dir;
-    }
-    const sa = String(av || '').trim().toLowerCase();
-    const sb = String(bv || '').trim().toLowerCase();
-    if (sa === sb) return 0;
-    return (sa > sb ? 1 : -1) * dir;
   };
   const renderDataRow = (item, groupKey, hidden) => {
     const quantity = getWipMergedValue(item, 'quantity');
@@ -1453,7 +1449,7 @@ function renderFactoryWipTable(items){
     Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
       const groupLabel = String((groupData && groupData.label) || groupKey || '').trim() || '（无货号）';
       const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
-      const sorted = wipGroupSort.key ? groupItems.slice().sort(compareBySortKey) : groupItems.slice();
+      const sorted = groupItems.slice();
       const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
       const gkAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       html.push(`
@@ -1479,7 +1475,8 @@ function renderFactoryWipTable(items){
   bindWipParentGroupSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
-  wipInvalidateManagedTableLayout();
+  refreshWipTableHeaderSortUi();
+  wipEndManagedTableBodyUpdate();
 }
 
 function initWipGroupedAggregateHelpers(){
@@ -1493,16 +1490,6 @@ function initWipGroupedAggregateHelpers(){
       return wipCollapsedOrderGroups;
     },
     onAfterToggle(){
-      renderFactoryWipTable(applyWipColumnFilters(listCache));
-      syncFactoryWipSaveBar();
-    }
-  });
-  SitjoyGroupedAggregate.bindDocumentAggregateGroupSort({
-    bodyTable: document.getElementById('mainTable'),
-    isAggregateMode: () => wipAggregateMode !== 'none',
-    getSortState: () => wipGroupSort,
-    setSortState(s){ wipGroupSort = s; },
-    onAfterSortChange(){
       renderFactoryWipTable(applyWipColumnFilters(listCache));
       syncFactoryWipSaveBar();
     }
@@ -1529,31 +1516,10 @@ function bindWipAggregateSegment(){
   const seg = document.getElementById('wipAggregateSegment');
   if(!seg || seg.dataset.bound === '1') return;
   seg.dataset.bound = '1';
-  const resetManagedTableSortState = () => {
-    const host = document.querySelector('.pm-managed-head-table') || document.querySelector('#mainTable thead');
-    if(!host) return;
-    const sortedCell = host.querySelector('th.pm-sort-asc, th.pm-sort-desc');
-    if(!sortedCell) return;
-    const clickCell = (cell) => {
-      if(!cell) return;
-      cell.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    };
-    if (sortedCell.classList.contains('pm-sort-asc')) {
-      clickCell(sortedCell); // asc -> none
-      return;
-    }
-    if (sortedCell.classList.contains('pm-sort-desc')) {
-      clickCell(sortedCell); // desc -> asc
-      clickCell(sortedCell); // asc -> none
-    }
-  };
   seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
     btn.addEventListener('click', function(){
       const val = String(this.getAttribute('data-value') || 'none');
       const nextMode = ['order', 'family', 'none'].includes(val) ? val : 'none';
-      if(wipAggregateMode === 'none' && nextMode !== 'none'){
-        resetManagedTableSortState();
-      }
       wipAggregateMode = nextMode;
       safeSetLocalStorage(FACTORY_WIP_AGGREGATE_MODE_KEY, wipAggregateMode);
       seg.setAttribute('data-value', wipAggregateMode);
