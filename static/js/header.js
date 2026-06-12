@@ -3818,15 +3818,27 @@
         return map;
     }
 
+    function invalidatePmRowCellKeyMap(row){
+        if(row) row._pmCellKeyMap = null;
+    }
+
+    function invalidatePmRowCellKeyMapsInTbody(tbody){
+        if(!tbody || !tbody.rows) return;
+        Array.from(tbody.rows || []).forEach(invalidatePmRowCellKeyMap);
+    }
+
     function mapRowByKey(row){
-        const map = getRowCellMap(row);
-        if(map) return map;
+        const cached = row && row._pmCellKeyMap;
+        if(cached && cached.size > 0) return cached;
         const out = new Map();
         Array.from(row.cells || []).forEach((cell, idx) => {
             const key = String(cell.dataset.manageColKey || '').trim() || `字段${idx + 1}`;
             if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
             if(!out.has(key)) out.set(key, cell);
         });
+        if(row){
+            row._pmCellKeyMap = out.size > 0 ? out : null;
+        }
         return out;
     }
 
@@ -3892,6 +3904,7 @@
         Array.from(state.table.rows || []).forEach((row) => {
             if(row.parentNode && String(row.parentNode.tagName || '').toUpperCase() === 'THEAD') return;
             stampBodyRowByOrigin(row);
+            invalidatePmRowCellKeyMap(row);
         });
     }
 
@@ -5313,13 +5326,13 @@
 
     function getRowCellMap(row){
         if(!row || !row.cells) return null;
-        if(row._pmCellKeyMap) return row._pmCellKeyMap;
+        if(row._pmCellKeyMap && row._pmCellKeyMap.size > 0) return row._pmCellKeyMap;
         const map = new Map();
         Array.from(row.cells || []).forEach((cell) => {
             const key = String(cell.dataset.manageColKey || '').trim();
             if(key && !map.has(key)) map.set(key, cell);
         });
-        row._pmCellKeyMap = map;
+        row._pmCellKeyMap = map.size > 0 ? map : null;
         return map;
     }
 
@@ -5328,7 +5341,11 @@
         const key = String(columnKey || '').trim();
         if(!key) return null;
         const map = getRowCellMap(row);
-        return map ? (map.get(key) || null) : null;
+        if(map && map.has(key)) return map.get(key);
+        for(const cell of Array.from(row.cells || [])){
+            if(String(cell.dataset.manageColKey || '').trim() === key) return cell;
+        }
+        return null;
     }
 
     /** 行是否通过列筛选；excludeColumnKey 为当前正在编辑的列时跳过该列条件（用于联动可选项） */
@@ -5433,6 +5450,7 @@
         const filters = snapshot || {};
         const rows = getDataRows(state);
         rows.forEach(row => {
+            invalidatePmRowCellKeyMap(row);
             const pass = rowPassesManagedColumnFilters(row, filters, null);
             row.dataset.pmFilterHidden = pass ? '0' : '1';
         });
@@ -6123,9 +6141,12 @@
 
     function finishManagedTableBodyUpdate(state){
         if(!state || !state.table) return;
+        if(state.table.tBodies && state.table.tBodies[0]){
+            state.tbody = state.table.tBodies[0];
+        }
         syncManagedTableBodyLayout(state);
         ensureRowSortOrigin(state);
-        if(managedSortStackHasEntries(state) || state.sortApplied){
+        if(managedSortStackHasEntries(state) || state.sortApplied || tableBodyHasGroupedAggregateRows(state)){
             applySort(state);
         }
         refreshSortHeaderUi(state);
@@ -6139,8 +6160,12 @@
         const state = managedTableState.get(t);
         if(!state) return;
         state.bodyUpdateDepth = (state.bodyUpdateDepth || 0) + 1;
+        if(state.table && state.table.tBodies && state.table.tBodies[0]){
+            state.tbody = state.table.tBodies[0];
+        }
         if(state.bodyUpdateDepth === 1){
             state.suppressManagedRefresh = true;
+            invalidatePmRowCellKeyMapsInTbody(state.tbody);
             if(state.observer && state.tbody){
                 try { state.observer.disconnect(); } catch(_e){}
             }
@@ -6152,7 +6177,21 @@
         if(!t) return;
         const state = managedTableState.get(t);
         if(!state) return;
-        state.bodyUpdateDepth = Math.max(0, (state.bodyUpdateDepth || 1) - 1);
+        const depth = Number(state.bodyUpdateDepth || 0);
+        if(depth <= 0){
+            if(state.suppressManagedRefresh){
+                state.bodyUpdateDepth = 0;
+                finishManagedTableBodyUpdate(state);
+                state.suppressManagedRefresh = false;
+                if(state.observer && state.tbody){
+                    try {
+                        state.observer.observe(state.tbody, { childList: true, subtree: false });
+                    } catch(_e){}
+                }
+            }
+            return;
+        }
+        state.bodyUpdateDepth = depth - 1;
         if(state.bodyUpdateDepth > 0) return;
         finishManagedTableBodyUpdate(state);
         state.suppressManagedRefresh = false;
@@ -6256,6 +6295,32 @@
         getSortStack(tableOrSelector){
             const state = this.getState(tableOrSelector);
             return state ? normalizeManagedSortStack(state.sortStack).slice() : [];
+        },
+        whenReady(tableOrSelector, callback, options){
+            const opts = options || {};
+            const maxAttempts = Math.max(1, Number(opts.maxAttempts || 120) || 120);
+            let attempt = 0;
+            const tick = () => {
+                const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+                const state = t ? (managedTableState.get(t) || null) : null;
+                if(state && state.tbody && typeof callback === 'function'){
+                    try { callback(state, t); } catch(err) {
+                        console.warn('SitjoyManagedPmTable.whenReady callback failed', err);
+                    }
+                    return;
+                }
+                attempt += 1;
+                if(attempt >= maxAttempts){
+                    if(typeof callback === 'function'){
+                        try { callback(null, t); } catch(err) {
+                            console.warn('SitjoyManagedPmTable.whenReady callback failed', err);
+                        }
+                    }
+                    return;
+                }
+                requestAnimationFrame(tick);
+            };
+            tick();
         },
         setSortStack(tableOrSelector, stack, options){
             const opts = options || {};
@@ -6997,8 +7062,16 @@
             if(!state._sortKeyToManageColKey) state._sortKeyToManageColKey = buildSortKeyToManageColKeyMap(state);
             const manageKey = state._sortKeyToManageColKey.get(key);
             if(manageKey && cellMap.has(manageKey)) return cellMap.get(manageKey);
+            if(manageKey){
+                for(const cell of Array.from(row.cells || [])){
+                    if(String(cell.dataset.manageColKey || '').trim() === manageKey) return cell;
+                }
+            }
         }
-        return null;
+        for(const cell of Array.from(row.cells || [])){
+            if(String(cell.getAttribute('data-sort-key') || '').trim() === key) return cell;
+        }
+        return getRowCellByKey(row, key);
     }
 
     function tableBodyHasGroupedAggregateRows(state){

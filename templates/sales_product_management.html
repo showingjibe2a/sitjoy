@@ -502,7 +502,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="26" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="27" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -2295,6 +2295,17 @@
             return `https://www.amazon.com/dp/${encodeURIComponent(code)}`;
         }
 
+        function sjSalesListThumbHtml(previewB64) {
+            const b64 = String(previewB64 || '').trim();
+            if (!b64) return sjSalesListThumbEmptyHtml();
+            const src = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60`;
+            return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttr(src)}" aria-hidden="true"></span>`;
+        }
+
+        function sjSalesListThumbEmptyHtml() {
+            return '<span class="sj-table-thumb-empty">暂无</span>';
+        }
+
         function renderSalesChildCodeCell(item, childCodeText) {
             const asin = String(childCodeText || '').trim();
             const linkHtml = (isSalesAmazonPlatform(item) && asin)
@@ -2360,7 +2371,7 @@
                     <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${salesFormatEconCommission(econ)}</td>
                     <td class="sales-econ-cell ${netProfitLow ? 'danger-note' : ''}" data-manage-col-key="单件净利" data-sales-econ-col="net_profit">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.netProfit, false) : '-'}</td>
                     <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate" data-display-value="${econ.salePrice > 0 ? String(econ.netMarginRate) : ''}">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-'}</td>
-                    <td class="preview-edit-cell sales-notes-cell" data-field-wrap="notes"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="notes" type="text" maxlength="512" value="${escapeAttr(notesText)}" placeholder="备注"></td>
+                    <td class="preview-edit-cell sales-notes-cell" data-manage-col-key="备注" data-field-wrap="notes"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="notes" type="text" maxlength="512" value="${escapeAttr(notesText)}" placeholder="备注"></td>
                     <td data-display-value="${escapeAttr(createdDateStr)}">${createdDateStr}</td>
                     <td>
                         <div class="pm-actions">
@@ -2561,6 +2572,27 @@
             return window.SitjoyManagedPmTable || null;
         }
 
+        function salesWhenManagedTableReady(fn) {
+            const api = salesManagedTableBodyApi();
+            const table = document.getElementById('salesProductTable');
+            if (api && typeof api.whenReady === 'function') {
+                api.whenReady(table, fn);
+                return;
+            }
+            if (typeof fn === 'function') fn(null, table);
+        }
+
+        function salesSyncManagedTableLayout() {
+            const table = document.getElementById('salesProductTable');
+            const api = salesManagedTableBodyApi();
+            if (!table || !api) return;
+            if (typeof api.syncLayout === 'function') {
+                api.syncLayout(table);
+            } else if (typeof api.invalidateLayout === 'function') {
+                api.invalidateLayout(table);
+            }
+        }
+
         function salesBeginManagedTableBodyUpdate() {
             const api = salesManagedTableBodyApi();
             if (api && typeof api.beginBodyUpdate === 'function') {
@@ -2580,48 +2612,48 @@
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!tbody) return;
             salesBeginManagedTableBodyUpdate();
-            if (!(items || []).length) {
-                tbody.innerHTML = `<tr><td colspan="${SALES_PRODUCT_TABLE_COLSPAN}" style="text-align:center;">暂无数据</td></tr>`;
-                const host = document.getElementById('salesProductTableHost');
-                if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
-                salesApplyAggregateToggleLockedAndRefresh();
-                refreshSalesProductTableHeaderSortUi();
-                syncSalesSelectAllCheckbox();
-                syncSalesPreviewSaveBar();
-                salesEndManagedTableBodyUpdate();
-                return;
-            }
+            try {
+                if (!(items || []).length) {
+                    tbody.innerHTML = `<tr><td colspan="${SALES_PRODUCT_TABLE_COLSPAN}" style="text-align:center;">暂无数据</td></tr>`;
+                    const host = document.getElementById('salesProductTableHost');
+                    if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+                    salesApplyAggregateToggleLockedAndRefresh();
+                    refreshSalesProductTableHeaderSortUi();
+                    syncSalesSelectAllCheckbox();
+                    syncSalesPreviewSaveBar();
+                    return;
+                }
 
-            const availableIdSet = new Set((items || []).map(x => String(x.id)));
-            selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
-            Object.keys(salesPreviewEditDraft).forEach(id => {
-                if (!availableIdSet.has(String(id))) delete salesPreviewEditDraft[id];
-            });
-
-            const rows = Array.isArray(items) ? items : [];
-            const html = [];
-            const activeCollapsedSet = salesProductAggregateMode === 'parent' ? salesProductCollapsedParentGroups : null;
-
-            if (salesProductAggregateMode === 'none') {
-                rows.forEach(item => {
-                    html.push(renderSalesDataRowHtml(item, '', false));
+                const availableIdSet = new Set((items || []).map(x => String(x.id)));
+                selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
+                Object.keys(salesPreviewEditDraft).forEach(id => {
+                    if (!availableIdSet.has(String(id))) delete salesPreviewEditDraft[id];
                 });
-            } else {
-                const groups = new Map();
-                rows.forEach(item => {
-                    const meta = salesParentGroupMetaOf(item);
-                    if (!groups.has(meta.key)) groups.set(meta.key, { label: meta.label, items: [] });
-                    groups.get(meta.key).items.push(item);
-                });
-                Array.from(groups.entries()).sort(compareSalesParentGroupEntries).forEach(([groupKey, groupData]) => {
-                    const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
-                    const sorted = groupItems.slice();
-                    const headerMeta = salesParentGroupMetaOf(sorted[0] || groupItems[0]);
-                    const groupLabelHtml = formatSalesParentGroupRowLabel(headerMeta, sorted.length);
-                    const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
-                    const safeKey = escapeSalesGroupKeyAttr(groupKey);
-                    const editActionsHtml = buildSalesParentGroupEditActionsHtml(headerMeta);
-                    html.push(`
+
+                const rows = Array.isArray(items) ? items : [];
+                const html = [];
+                const activeCollapsedSet = salesProductAggregateMode === 'parent' ? salesProductCollapsedParentGroups : null;
+
+                if (salesProductAggregateMode === 'none') {
+                    rows.forEach(item => {
+                        html.push(renderSalesDataRowHtml(item, '', false));
+                    });
+                } else {
+                    const groups = new Map();
+                    rows.forEach(item => {
+                        const meta = salesParentGroupMetaOf(item);
+                        if (!groups.has(meta.key)) groups.set(meta.key, { label: meta.label, items: [] });
+                        groups.get(meta.key).items.push(item);
+                    });
+                    Array.from(groups.entries()).sort(compareSalesParentGroupEntries).forEach(([groupKey, groupData]) => {
+                        const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
+                        const sorted = groupItems.slice();
+                        const headerMeta = salesParentGroupMetaOf(sorted[0] || groupItems[0]);
+                        const groupLabelHtml = formatSalesParentGroupRowLabel(headerMeta, sorted.length);
+                        const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
+                        const safeKey = escapeSalesGroupKeyAttr(groupKey);
+                        const editActionsHtml = buildSalesParentGroupEditActionsHtml(headerMeta);
+                        html.push(`
                 <tr class="sales-parent-group-row" data-group-key="${safeKey}" data-parent-code="${escapeAttr(headerMeta.code || '')}">
                     <td style="text-align:center;" data-manage-col-key="__sales_chk__"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
@@ -2629,25 +2661,30 @@
                     ${editActionsHtml}
                 </tr>
             `);
-                    sorted.forEach(item => {
-                        html.push(renderSalesDataRowHtml(item, groupKey, collapsed));
+                        sorted.forEach(item => {
+                            html.push(renderSalesDataRowHtml(item, groupKey, collapsed));
+                        });
                     });
+                }
+
+                tbody.innerHTML = html.join('');
+                const host = document.getElementById('salesProductTableHost');
+                if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+                salesApplyAggregateToggleLockedAndRefresh();
+                refreshSalesProductTableHeaderSortUi();
+                bindSalesParentGroupSelectionEvents();
+                bindSalesParentGroupEditEvents();
+                syncSalesSelectAllCheckbox();
+                syncSalesPreviewSaveBar();
+                if (window.SitjoyRowImageRefresh && typeof SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
+                    SitjoyRowImageRefresh.observeLazyThumbsIn(tbody);
+                }
+            } finally {
+                salesEndManagedTableBodyUpdate();
+                salesWhenManagedTableReady(function() {
+                    salesSyncManagedTableLayout();
                 });
             }
-
-            tbody.innerHTML = html.join('');
-            const host = document.getElementById('salesProductTableHost');
-            if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
-            salesApplyAggregateToggleLockedAndRefresh();
-            refreshSalesProductTableHeaderSortUi();
-            bindSalesParentGroupSelectionEvents();
-            bindSalesParentGroupEditEvents();
-            syncSalesSelectAllCheckbox();
-            syncSalesPreviewSaveBar();
-            if (window.SitjoyRowImageRefresh && typeof SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
-                SitjoyRowImageRefresh.observeLazyThumbsIn(tbody);
-            }
-            salesEndManagedTableBodyUpdate();
         }
 
         function bindSalesRowSelectionEvents() {
@@ -5537,6 +5574,7 @@
                     const h = document.getElementById('salesProductTableHost');
                     if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                     salesApplyAggregateToggleLockedAndRefresh();
+                    salesWhenManagedTableReady(function() { salesSyncManagedTableLayout(); });
                     return;
                 }
                 const items = data.items || [];
@@ -5550,18 +5588,8 @@
                 const h = document.getElementById('salesProductTableHost');
                 if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                 salesApplyAggregateToggleLockedAndRefresh();
+                salesWhenManagedTableReady(function() { salesSyncManagedTableLayout(); });
             });
-        }
-
-        function sjSalesListThumbHtml(previewB64) {
-            const b64 = String(previewB64 || '').trim();
-            if (!b64) return sjSalesListThumbEmptyHtml();
-            const src = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60`;
-            return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttr(src)}" aria-hidden="true"></span>`;
-        }
-
-        function sjSalesListThumbEmptyHtml() {
-            return '<span class="sj-table-thumb-empty">暂无</span>';
         }
 
         function sjRefreshSalesProductListRowThumb(entityId) {
@@ -5974,7 +6002,9 @@
             bindSalesAggregateSegment();
             initSalesTableInteractionDelegation();
             initSalesGroupedAggregateHelpers();
-            loadSalesProductList();
+            salesWhenManagedTableReady(function() {
+                loadSalesProductList();
+            });
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
