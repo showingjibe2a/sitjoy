@@ -1434,6 +1434,145 @@
         return makeStorageKey(table, 'pm-month-group-w');
     }
 
+    const PAGE_PREFS_COLUMN_FILTERS_SUFFIX = 'column-filters';
+    const PAGE_PREFS_CUSTOM_SUFFIX = 'page-filters';
+    const tableFilterProviders = new Map();
+    const tablePagePrefsSaveTimers = new Map();
+
+    function resolveTableForPagePrefs(tableOrSelector){
+        if(!tableOrSelector) return null;
+        if(typeof tableOrSelector === 'string') return document.querySelector(tableOrSelector);
+        if(tableOrSelector.tagName === 'TABLE') return tableOrSelector;
+        return null;
+    }
+
+    function tableRegistryKeyForPagePrefs(table){
+        if(!table) return '';
+        return String(table.id || table.dataset.manageKey || '').trim();
+    }
+
+    function tableSkipsFilterPersist(table){
+        return String(table && table.dataset ? table.dataset.pmNoFilterPersist || '' : '') === '1';
+    }
+
+    function readJsonStorage(key){
+        try {
+            const raw = localStorage.getItem(key);
+            if(!raw) return null;
+            return JSON.parse(raw);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function writeJsonStorage(key, value){
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (_) {}
+    }
+
+    function removeStorageKey(key){
+        try { localStorage.removeItem(key); } catch (_) {}
+    }
+
+    function readPersistedColumnFilters(table){
+        if(!table || tableSkipsFilterPersist(table)) return null;
+        const parsed = readJsonStorage(makeStorageKey(table, PAGE_PREFS_COLUMN_FILTERS_SUFFIX));
+        if(!parsed || typeof parsed !== 'object') return null;
+        return parsed;
+    }
+
+    function persistManagedColumnFilters(table, snapshot){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        writeJsonStorage(makeStorageKey(table, PAGE_PREFS_COLUMN_FILTERS_SUFFIX), snapshot || {});
+    }
+
+    function clearPersistedFiltersForTable(table){
+        if(!table) return;
+        removeStorageKey(makeStorageKey(table, PAGE_PREFS_COLUMN_FILTERS_SUFFIX));
+        removeStorageKey(makeStorageKey(table, PAGE_PREFS_CUSTOM_SUFFIX));
+    }
+
+    function resolveTableFilterProvider(table){
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return null;
+        return tableFilterProviders.get(key) || null;
+    }
+
+    function sitjoyPersistRegisteredTablePageFilters(table){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        const provider = resolveTableFilterProvider(table);
+        if(!provider || typeof provider.collect !== 'function') return;
+        let data = null;
+        try { data = provider.collect(); } catch (_) { return; }
+        writeJsonStorage(makeStorageKey(table, PAGE_PREFS_CUSTOM_SUFFIX), { v: 1, data });
+    }
+
+    function sitjoySchedulePersistRegisteredTablePageFilters(table, delayMs){
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return;
+        const prev = tablePagePrefsSaveTimers.get(key);
+        if(prev) window.clearTimeout(prev);
+        tablePagePrefsSaveTimers.set(key, window.setTimeout(() => {
+            tablePagePrefsSaveTimers.delete(key);
+            sitjoyPersistRegisteredTablePageFilters(table);
+        }, Math.max(0, Number(delayMs) || 240)));
+    }
+
+    function sitjoyRestoreRegisteredTablePageFilters(table){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        const provider = resolveTableFilterProvider(table);
+        if(!provider || typeof provider.apply !== 'function') return;
+        const parsed = readJsonStorage(makeStorageKey(table, PAGE_PREFS_CUSTOM_SUFFIX));
+        if(!parsed) return;
+        const data = parsed && parsed.data != null ? parsed.data : parsed;
+        try { provider.apply(data, { source: 'storage' }); } catch (_) {}
+    }
+
+    window.SitjoyPagePrefs = Object.assign({}, window.SitjoyPagePrefs || {}, {
+        makeKey: makeStorageKey,
+        load(scopeTable, suffix){
+            const table = resolveTableForPagePrefs(scopeTable);
+            if(!table) return null;
+            const parsed = readJsonStorage(makeStorageKey(table, String(suffix || PAGE_PREFS_CUSTOM_SUFFIX)));
+            if(!parsed) return null;
+            if(parsed && parsed.data != null) return parsed.data;
+            return parsed;
+        },
+        save(scopeTable, data, suffix){
+            const table = resolveTableForPagePrefs(scopeTable);
+            if(!table || tableSkipsFilterPersist(table)) return;
+            writeJsonStorage(makeStorageKey(table, String(suffix || PAGE_PREFS_CUSTOM_SUFFIX)), { v: 1, data });
+        },
+        clear(scopeTable, suffix){
+            const table = resolveTableForPagePrefs(scopeTable);
+            if(!table) return;
+            if(!suffix){
+                clearPersistedFiltersForTable(table);
+                return;
+            }
+            removeStorageKey(makeStorageKey(table, String(suffix)));
+        },
+        registerTableFilters(tableOrSelector, handlers){
+            const table = resolveTableForPagePrefs(tableOrSelector);
+            if(!table) return false;
+            const key = tableRegistryKeyForPagePrefs(table);
+            if(!key) return false;
+            tableFilterProviders.set(key, Object.assign({ table }, handlers || {}));
+            sitjoyRestoreRegisteredTablePageFilters(table);
+            return true;
+        },
+        saveTablePageFilters(tableOrSelector, debounceMs){
+            const table = resolveTableForPagePrefs(tableOrSelector);
+            if(!table) return;
+            if(debounceMs != null && Number(debounceMs) > 0){
+                sitjoySchedulePersistRegisteredTablePageFilters(table, debounceMs);
+                return;
+            }
+            sitjoyPersistRegisteredTablePageFilters(table);
+        }
+    });
+
     function shouldManageTable(table){
         if(!table || table.tagName !== 'TABLE') return false;
         if(table.dataset.disableTableManage === '1') return false;
@@ -5156,6 +5295,50 @@
         applyPagination(state);
         syncGroupedAggregateRowsAfterFilter(state);
         syncManagedBatchBar(state);
+        if(state.table && !tableSkipsFilterPersist(state.table)){
+            persistManagedColumnFilters(state.table, filters);
+        }
+        if(handle && typeof handle.refreshButtons === 'function'){
+            handle.refreshButtons();
+        }
+    }
+
+    function restoreManagedColumnFiltersFromStorageIfNeeded(state){
+        if(!state || !state.table || tableSkipsFilterPersist(state.table)) return;
+        if(String(state.table.dataset.pmLightNoColumnFilter || '') === '1') return;
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(!handle || typeof handle.getFilters !== 'function' || typeof handle.setFilters !== 'function') return;
+        const current = handle.getFilters();
+        if(snapshotHasActiveColumnFilters(current)) return;
+        const saved = readPersistedColumnFilters(state.table);
+        if(!snapshotHasActiveColumnFilters(saved)) return;
+        handle.setFilters(saved);
+    }
+
+    function clearAllManagedTableFilters(state){
+        if(!state || !state.table) return;
+        closeColumnFilterPopup();
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(handle && typeof handle.setFilters === 'function'){
+            handle.setFilters({});
+        }
+        applyManagedColumnFilters(state, {});
+        clearPersistedFiltersForTable(state.table);
+        const provider = resolveTableFilterProvider(state.table);
+        if(provider && typeof provider.clear === 'function'){
+            try { provider.clear(); } catch (_) {}
+        } else if(provider && typeof provider.apply === 'function'){
+            try { provider.apply({}, { source: 'clear' }); } catch (_) {}
+        }
+        state.table.dispatchEvent(new CustomEvent('pm-clear-page-filters', {
+            bubbles: true,
+            detail: { table: state.table }
+        }));
+        if(typeof showAppToast === 'function'){
+            showAppToast('筛选已清除', false, 1200);
+        }
     }
 
     function ensureManagedTableColumnFilter(state){
@@ -5901,6 +6084,12 @@
             if(!t) return;
             const state = managedTableState.get(t);
             if(state) reapplyManagedColumnFiltersFromHandle(state);
+        },
+        clearAllFilters(tableOrSelector){
+            const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            if(!t) return;
+            const state = managedTableState.get(t);
+            if(state) clearAllManagedTableFilters(state);
         },
         /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
         enhance(root){
@@ -6858,6 +7047,7 @@
             if(headerStructureChanged) ensureResizeHandles(state);
         }
         ensureManagedTableColumnFilter(state);
+        restoreManagedColumnFiltersFromStorageIfNeeded(state);
         reapplyManagedColumnFiltersFromHandle(state);
         applyNumericColumnLayoutForTable(state.table);
 
@@ -6921,6 +7111,7 @@
                     <span class="pm-table-info"></span>
                 </div>
                 <div class="pm-table-toolbar-right">
+                    <button type="button" class="pm-table-clear-filters btn-secondary" title="清除列筛选与页面筛选记忆">清除筛选</button>
                     <div class="pm-table-reset-group">
                         <button type="button" class="pm-table-columns-reset btn-secondary" title="重置列宽、字段排序、字段显示">重置</button>
                         <div class="pm-table-reset-menu" aria-label="重置菜单">
@@ -6971,6 +7162,7 @@
             columnsTrigger: toolbar ? toolbar.querySelector('.pm-table-columns-trigger') : null,
             columnPanel: toolbar ? toolbar.querySelector('.pm-table-columns-panel') : null,
             resetBtn: toolbar ? toolbar.querySelector('.pm-table-columns-reset') : null,
+            clearFiltersBtn: toolbar ? toolbar.querySelector('.pm-table-clear-filters') : null,
             resetWrap: toolbar ? toolbar.querySelector('.pm-table-reset-group') : null,
             resetMenu: toolbar ? toolbar.querySelector('.pm-table-reset-menu') : null,
             pageSize: readPersistedPageSize(table),
@@ -7047,6 +7239,16 @@
                 if(state.columnPanel.classList.contains('open')) closeColumnsPanel(state);
                 else openColumnsPanel(state);
             });
+
+            if(state.clearFiltersBtn){
+                state.clearFiltersBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeAllResetMenus(null);
+                    if(activeColumnsPanelState) closeColumnsPanel(activeColumnsPanelState);
+                    clearAllManagedTableFilters(state);
+                });
+            }
 
             if(state.resetBtn && state.resetWrap){
                 state.resetBtn.addEventListener('click', (event) => {

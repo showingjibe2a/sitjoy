@@ -2384,6 +2384,7 @@
                 },
                 onAfterToggle() {
                     renderSalesGroupedTable(salesProductItems || []);
+                    salesPersistTablePageFilters(300);
                 }
             });
             SitjoyGroupedAggregate.bindDocumentAggregateGroupSort({
@@ -2405,6 +2406,7 @@
                     if (allExpanded) keys.forEach(k => salesProductCollapsedParentGroups.add(k));
                     else salesProductCollapsedParentGroups.clear();
                     renderSalesGroupedTable(salesProductItems || []);
+                    salesPersistTablePageFilters(300);
                 }
             });
         }
@@ -2423,6 +2425,7 @@
                     }
                     salesProductAggregateMode = nextMode;
                     safeSetLocalStorage(SALES_PRODUCT_AGGREGATE_MODE_KEY, salesProductAggregateMode);
+                    salesPersistTablePageFilters();
                     seg.setAttribute('data-value', salesProductAggregateMode);
                     seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
                         b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === salesProductAggregateMode);
@@ -2441,9 +2444,47 @@
             });
         }
 
-        function restoreSalesProductAggregateModeFromStorage() {
-            const raw = String(safeGetLocalStorage(SALES_PRODUCT_AGGREGATE_MODE_KEY) || '').trim();
-            salesProductAggregateMode = raw === 'parent' ? 'parent' : 'none';
+        function salesPersistTablePageFilters(debounceMs) {
+            if (window.SitjoyPagePrefs && typeof SitjoyPagePrefs.saveTablePageFilters === 'function') {
+                SitjoyPagePrefs.saveTablePageFilters('#salesProductTable', debounceMs);
+            }
+        }
+
+        function registerSalesProductTablePageFilters() {
+            if (!window.SitjoyPagePrefs || typeof SitjoyPagePrefs.registerTableFilters !== 'function') return;
+            SitjoyPagePrefs.registerTableFilters('#salesProductTable', {
+                collect() {
+                    return {
+                        search: (document.getElementById('searchInput')?.value || '').trim(),
+                        aggregateMode: salesProductAggregateMode,
+                        collapsedGroups: Array.from(salesProductCollapsedParentGroups || []),
+                    };
+                },
+                apply(prefs) {
+                    if (!prefs || typeof prefs !== 'object') return;
+                    const searchEl = document.getElementById('searchInput');
+                    if (searchEl && prefs.search != null) searchEl.value = String(prefs.search);
+                    if (prefs.aggregateMode === 'parent' || prefs.aggregateMode === 'none') {
+                        salesProductAggregateMode = prefs.aggregateMode;
+                    } else {
+                        const legacy = String(safeGetLocalStorage(SALES_PRODUCT_AGGREGATE_MODE_KEY) || '').trim();
+                        salesProductAggregateMode = legacy === 'parent' ? 'parent' : 'none';
+                    }
+                    if (Array.isArray(prefs.collapsedGroups)) {
+                        salesProductCollapsedParentGroups = new Set(prefs.collapsedGroups.map(String));
+                    }
+                    syncSalesAggregateSegmentUi();
+                },
+                clear() {
+                    const searchEl = document.getElementById('searchInput');
+                    if (searchEl) searchEl.value = '';
+                    salesProductAggregateMode = 'none';
+                    salesProductCollapsedParentGroups = new Set();
+                    salesProductGroupSort = { key: '', dir: 'asc' };
+                    syncSalesAggregateSegmentUi();
+                    loadSalesProductList();
+                },
+            });
         }
 
         function salesCollectParentGroupKeysForToggle(rows) {
@@ -5488,6 +5529,7 @@
                 salesProductItems = items;
                 Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
                 renderSalesGroupedTable(items);
+                salesPersistTablePageFilters();
                 if (window.SitjoyRowImageRefresh) {
                     window.SitjoyRowImageRefresh.bustImagesIn(tbody);
                 }
@@ -5909,7 +5951,7 @@
         function initPage() {
             if (!pageDomReady()) return;
             bindPageEvents();
-            restoreSalesProductAggregateModeFromStorage();
+            registerSalesProductTablePageFilters();
             salesApplyManageLayoutSig();
             syncSalesAggregateSegmentUi();
             bindSalesAggregateSegment();
