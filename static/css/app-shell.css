@@ -288,8 +288,9 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
 .sitjoy-tabs {
     display: flex;
     align-items: center;
-    gap: 0.16rem;
+    gap: 0.22rem;
     min-width: 0;
+    padding: 0.1rem 0.05rem;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
@@ -299,19 +300,32 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 0.32rem;
-    max-width: 10rem;
+    gap: 0.24rem;
+    max-width: 9.5rem;
     height: auto;
-    min-height: 1.5rem;
-    padding: 0.12rem 0.28rem 0.12rem 0.42rem;
-    border: none;
+    min-height: 1.28rem;
+    padding: 0.06rem 0.2rem 0.06rem 0.36rem;
+    border: 1px solid var(--sj-variant-tab-border);
     border-radius: var(--sj-radius-xs);
-    background: transparent;
+    background: rgba(255, 255, 255, 0.35);
+    font-size: 0.68rem;
+    line-height: 1.2;
     text-decoration: none;
     cursor: grab;
     user-select: none;
     white-space: nowrap;
-    transition: background 0.12s ease, color 0.12s ease;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.sitjoy-tab + .sitjoy-tab {
+    margin-left: 0.02rem;
+}
+
+.sitjoy-tab:not(.is-active) {
+    border-color: var(--sj-variant-tab-divider);
+    background: transparent;
+    box-shadow: none;
 }
 
 .sitjoy-tab-label {
@@ -393,15 +407,11 @@ body.sitjoy-has-shell .sitjoy-page-body > .home-container {
     background: transparent;
 }
 
-body.sitjoy-has-shell .hero.is-standard-page-hero {
-    margin-bottom: 0.1rem;
-    padding: 0.08rem 0 0.25rem;
-}
-
-body.sitjoy-has-shell .hero.is-standard-page-hero h1,
-body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
-    font-size: 1rem;
-    font-weight: 700;
+body.sitjoy-has-shell section.hero {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
 }
 
 body.sitjoy-has-shell.widgets-theme-page {
@@ -420,16 +430,6 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-}
-
-body.sitjoy-has-shell .navbar-page-heading,
-body.sitjoy-has-shell #navbarPageHeading {
-    display: none !important;
-}
-
-body.sitjoy-has-shell .hero.page-hero--navbar-only,
-body.sitjoy-has-shell section.header.header-row.header-row--title-in-navbar {
-    display: none;
 }
 
 .sitjoy-app-shell .navbar,

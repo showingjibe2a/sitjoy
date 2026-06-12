@@ -54,32 +54,56 @@ button.modal-close.sitjoy-sidebar-collapse-btn {
     color: var(--sj-cmp-icon-pin-active-color);
 }
 
+.sitjoy-tab:not(.is-pinned) .sitjoy-tab-pin {
+    opacity: 0;
+    width: 0;
+    min-width: 0;
+    height: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.sitjoy-tab:not(.is-pinned):hover .sitjoy-tab-pin {
+    opacity: 1;
+    width: 1.375rem;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    min-height: 1.375rem;
+    margin: 0;
+    padding: 0;
+    border-width: 2px;
+    overflow: visible;
+    pointer-events: auto;
+}
+
+.sitjoy-tab.is-pinned .sitjoy-tab-close {
+    display: none !important;
+}
+
 /* —— 顶栏页签（tabs） —— */
 .sitjoy-tab {
     color: var(--sj-variant-tab-text);
+    border-color: var(--sj-variant-tab-divider);
 }
 
 .sitjoy-tab:hover {
     background: var(--sj-variant-tab-bg-hover);
     color: var(--sj-variant-tab-text-active);
+    border-color: var(--sj-variant-tab-border);
 }
 
 .sitjoy-tab.is-active {
     background: var(--sj-variant-tab-bg-active);
     color: var(--sj-variant-tab-text-active);
+    border-color: var(--sj-variant-tab-border);
+    box-shadow: 0 1px 2px rgba(42, 36, 32, 0.06);
 }
 
-/* —— 页标题（hero） —— */
-.hero,
-.hero h1,
-.hero h2,
-body.sitjoy-has-shell .hero.is-standard-page-hero,
-body.sitjoy-has-shell .hero.is-standard-page-hero h1,
-body.sitjoy-has-shell .hero.is-standard-page-hero h2 {
-    color: var(--sj-variant-hero-text);
-}
-
-/* —— 提示条（toast） —— */
+/* —— 顶栏页签（tabs） —— */
 .app-toast.success {
     background: linear-gradient(135deg, var(--sj-variant-toast-success-from), var(--sj-variant-toast-success-to));
 }
@@ -379,7 +403,7 @@ button.modal-close.sitjoy-sidebar-collapse-btn {
     border-radius: var(--sj-radius-xs);
     background-color: var(--sj-bg-body-base);
     background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
-    color: var(--sj-variant-hero-text);
+    color: var(--sj-color-on-body);
     font-size: 0.76rem;
 }
 
@@ -400,21 +424,7 @@ button.modal-close.sitjoy-sidebar-collapse-btn {
     justify-content: center;
 }
 
-.sitjoy-theme-preview-hero {
-    width: 100%;
-    max-width: 16rem;
-    padding: 0.35rem 0.5rem;
-    border-radius: var(--sj-radius-xs);
-    background-color: var(--sj-bg-body-base);
-    background-image: var(--sj-bg-body-spotlight), var(--sj-bg-body);
-}
-
-.sitjoy-theme-preview-hero h2 {
-    margin: 0;
-    font-size: 0.92rem;
-}
-
-.sitjoy-theme-preview-toasts {
+.sitjoy-theme-preview-tabs {
     display: grid;
     gap: 0.4rem;
     width: 100%;

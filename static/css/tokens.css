@@ -74,10 +74,9 @@ html[data-theme="default"] {
     --sj-variant-tab-text: var(--morandi-slate);
     --sj-variant-tab-text-active: var(--morandi-ink);
     --sj-variant-tab-bg-hover: #f7f4ef;
-    --sj-variant-tab-bg-active: #faf8f5;
-
-    /* —— 页标题（hero 组件，深色底上） —— */
-    --sj-variant-hero-text: var(--morandi-cream);
+    --sj-variant-tab-bg-active: #ffffff;
+    --sj-variant-tab-border: rgba(207, 199, 189, 0.55);
+    --sj-variant-tab-divider: rgba(207, 199, 189, 0.45);
 
     /* —— 卡片（card 组件） —— */
     --sj-variant-card-bg: var(--morandi-cream);

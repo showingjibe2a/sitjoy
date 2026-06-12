@@ -90,7 +90,6 @@ html[data-theme="your-name"] {
 | pageBody | 页面深色底纹与渐变顶色 |
 | navbar / sidebar / tabs | 应用壳顶栏、侧栏、页签 |
 | iconCircle | 关闭(×)、帮助(?)、通知、固定等圆形微按钮 |
-| hero | 深色底上的页标题 |
 | card / modal / button / table / formInput | 业务卡片、弹窗、按钮、表格、输入 |
 | notification / toast | 通知面板与右下角提示条 |
 | statusSegment / dateInput | 状态分段、日期输入（含 compact 变体） |

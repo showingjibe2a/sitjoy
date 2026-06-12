@@ -1434,121 +1434,6 @@
         return makeStorageKey(table, 'pm-month-group-w');
     }
 
-    function enhanceHeroLikeBlock(block, opts){
-        const addStandardClass = opts && opts.addStandardClass;
-        const title = block.querySelector('h2') || block.querySelector('h1');
-        if(!title) return;
-        if(addStandardClass) block.classList.add('is-standard-page-hero');
-
-        let titleRow = block.querySelector('.hero-title-row');
-        if(!titleRow){
-            titleRow = document.createElement('div');
-            titleRow.className = 'hero-title-row';
-            title.parentNode.insertBefore(titleRow, title);
-            titleRow.appendChild(title);
-        }
-
-        const note = block.querySelector('p');
-        if(!note) return;
-
-        let dot = titleRow.querySelector('.hero-help-dot');
-        if(!dot){
-            dot = document.createElement('span');
-            dot.className = 'help-dot hero-help-dot';
-            titleRow.appendChild(dot);
-        }
-        dot.textContent = '';
-        dot.dataset.tip = (note.textContent || '').trim();
-        dot.style.display = dot.dataset.tip ? '' : 'none';
-
-        if(!note.dataset.heroNoteObserved){
-            note.dataset.heroNoteObserved = '1';
-            const observer = new MutationObserver(() => {
-                dot.dataset.tip = (note.textContent || '').trim();
-                dot.style.display = dot.dataset.tip ? '' : 'none';
-            });
-            observer.observe(note, { childList: true, subtree: true, characterData: true });
-        }
-    }
-
-    function enhanceHeroSections(root){
-        const scope = root && root.querySelectorAll ? root : document;
-        scope.querySelectorAll('.hero').forEach(hero => {
-            enhanceHeroLikeBlock(hero, { addStandardClass: true });
-        });
-        scope.querySelectorAll('section.header.header-row').forEach(sec => {
-            const wrap = Array.from(sec.children || []).find(ch => ch && ch.tagName === 'DIV' && ch.querySelector && ch.querySelector('h2'));
-            if(!wrap) return;
-            enhanceHeroLikeBlock(wrap, { addStandardClass: false });
-            sec.classList.add('is-standard-page-hero');
-        });
-    }
-
-    function hoistPageHeroToNavbar(){
-        if(document.getElementById('sitjoyPageBody')) return;
-
-        const inner = document.getElementById('navbarPageHeadingInner');
-        const wrap = document.getElementById('navbarPageHeading');
-        if(!inner || !wrap) return;
-
-        const hero = document.querySelector('section.hero');
-        const headerRow = !hero ? document.querySelector('section.header.header-row') : null;
-        const block = hero || headerRow;
-        if(!block || block.dataset.navbarTitleHoisted === '1') return;
-
-        let titleRow = null;
-        if(hero){
-            titleRow = hero.querySelector(':scope > .hero-title-row');
-            if(!titleRow){
-                const h = hero.querySelector(':scope > h1, :scope > h2');
-                if(h){
-                    titleRow = document.createElement('div');
-                    titleRow.className = 'hero-title-row';
-                    h.parentNode.insertBefore(titleRow, h);
-                    titleRow.appendChild(h);
-                }
-            }
-        } else if(headerRow){
-            const col = Array.from(headerRow.children || []).find(ch => ch && ch.tagName === 'DIV' && ch.querySelector && ch.querySelector('h2'));
-            if(col){
-                titleRow = col.querySelector('.hero-title-row');
-                if(!titleRow){
-                    const h = col.querySelector('h2') || col.querySelector('h1');
-                    if(h){
-                        titleRow = document.createElement('div');
-                        titleRow.className = 'hero-title-row';
-                        h.parentNode.insertBefore(titleRow, h);
-                        titleRow.appendChild(h);
-                    }
-                }
-            }
-        }
-
-        if(!titleRow) return;
-        const hasHeading = !!(titleRow.querySelector('h1') || titleRow.querySelector('h2'));
-        if(!hasHeading) return;
-
-        inner.appendChild(titleRow);
-        block.dataset.navbarTitleHoisted = '1';
-
-        if(hero){
-            hero.classList.add('page-hero--title-in-navbar');
-            const stillUseful = Array.from(hero.children || []).some(ch => {
-                if(!ch || ch.nodeType !== 1) return false;
-                if(ch.classList && ch.classList.contains('hero-title-row')) return false;
-                const cs = window.getComputedStyle(ch);
-                const txt = (ch.textContent || '').replace(/\s+/g, '').trim();
-                if(!txt) return false;
-                return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
-            });
-            if(!stillUseful) hero.classList.add('page-hero--navbar-only');
-        } else if(headerRow){
-            headerRow.classList.add('header-row--title-in-navbar');
-        }
-
-        wrap.hidden = false;
-    }
-
     function shouldManageTable(table){
         if(!table || table.tagName !== 'TABLE') return false;
         if(table.dataset.disableTableManage === '1') return false;
@@ -8193,6 +8078,12 @@
 
     const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
     const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
+    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v1';
+    const SITJOY_PAGE_CONTENT_SELECTORS = ['.container', '.home-container', '.pm-layout-root', '.go-play-layout-root', '.mj-layout-root'];
+    const SITJOY_SHELL_SKIP_SCRIPT_RE = /header\.js|sitjoy_cell_selection_stats\.js/i;
+
+    let sitjoyHeaderHtmlCache = null;
+    let sitjoyNavInFlight = null;
 
     function normalizeNavPath(path){
         const raw = String(path || '/').split('?')[0].split('#')[0] || '/';
@@ -8981,7 +8872,6 @@
                 initTopbarLogout();
                 initSitjoyNotifications(authData);
                 initSitjoyUsageGuide();
-                hoistPageHeroToNavbar();
             })
             .catch(err => console.error('Load header failed', err));
     }
@@ -9329,7 +9219,6 @@
         enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
         normalizeResetButtons(document);
-        enhanceHeroSections(document);
         enhanceManagedTables(document);
         bindFloatingHelpDots(document);
         partitionPmCardToolbars(document);
@@ -9372,7 +9261,6 @@
             bodyEnhanceScheduled = true;
             window.requestAnimationFrame(() => {
                 bodyEnhanceScheduled = false;
-                enhanceHeroSections(document);
                 enhanceManagedTables(document);
                 bindFloatingHelpDots(document);
                 partitionPmCardToolbars(document);

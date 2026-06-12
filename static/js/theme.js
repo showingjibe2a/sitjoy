@@ -14,7 +14,6 @@
         { id: 'sidebar', dataAttr: 'sjSidebar', label: '侧栏导航', variants: { default: '默认' } },
         { id: 'tabs', dataAttr: 'sjTabs', label: '顶栏页签', variants: { default: '默认' } },
         { id: 'iconCircle', dataAttr: 'sjIconCircle', label: '圆形图标按钮', variants: { default: '默认' } },
-        { id: 'hero', dataAttr: 'sjHero', label: '页标题', variants: { default: '默认' } },
         { id: 'card', dataAttr: 'sjCard', label: '卡片', variants: { default: '默认' } },
         { id: 'modal', dataAttr: 'sjModal', label: '弹窗', variants: { default: '默认' } },
         { id: 'profile', dataAttr: 'sjProfile', label: '首页资料卡', variants: { default: '默认' } },
@@ -83,7 +82,9 @@
                 { token: '--sj-variant-tab-text', label: '默认文字', default: '#7b8088' },
                 { token: '--sj-variant-tab-text-active', label: '选中文字', default: '#4a4e57' },
                 { token: '--sj-variant-tab-bg-hover', label: '悬停背景', default: '#f7f4ef' },
-                { token: '--sj-variant-tab-bg-active', label: '选中背景', default: '#faf8f5' }
+                { token: '--sj-variant-tab-bg-active', label: '选中背景', default: '#ffffff' },
+                { token: '--sj-variant-tab-border', label: '选中/悬停边框', default: 'rgba(207, 199, 189, 0.55)' },
+                { token: '--sj-variant-tab-divider', label: '未选中分隔', default: 'rgba(207, 199, 189, 0.45)' }
             ]
         },
         iconCircle: {
@@ -96,10 +97,6 @@
                 { token: '--sj-cmp-icon-tool-bg', label: '工具钮底色', default: '#ffffff' },
                 { token: '--sj-cmp-icon-pin-active-color', label: '已固定图标', default: '#8b97a3' }
             ]
-        },
-        hero: {
-            description: '深色页面底上的标题与 hero 区文字。',
-            colors: [{ token: '--sj-variant-hero-text', label: '标题文字', default: '#ece7df' }]
         },
         card: {
             description: '业务页主内容卡片容器，含圆角、边框与悬停阴影。',
@@ -400,8 +397,6 @@
                     </button>
                     <button type="button" class="modal-close sitjoy-tab-pin" tabindex="-1" aria-hidden="true">×</button>
                 </div>`;
-            case 'hero':
-                return `<div class="sitjoy-theme-preview-hero hero is-standard-page-hero" aria-hidden="true"><h2>页面标题示例</h2></div>`;
             case 'card':
                 return `<div class="card sitjoy-theme-preview-card" aria-hidden="true">
                     <h4>示例卡片</h4>
