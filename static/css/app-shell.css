@@ -423,17 +423,16 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon {
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon svg {
     width: 1.44rem;
     height: 1.44rem;
-}
-
-body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon {
-    width: 1.58rem;
-    height: 1.58rem;
+    display: block;
+    overflow: visible;
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon svg,
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon .sj-amazon-mark {
-    width: 1.52rem;
-    height: 1.52rem;
+    width: 1.44rem;
+    height: 1.44rem;
+    display: block;
+    overflow: visible;
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-link.active,

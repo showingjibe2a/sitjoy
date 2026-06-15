@@ -9875,15 +9875,17 @@
         });
     }
 
+    const SJ_RAIL_SVG = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+
     const SITJOY_SIDEBAR_RAIL_ICONS = {
-        home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.8 3.5 9.8v10.4h6.2v-6.4h4.6v6.4h6.2V9.8L12 2.8z"/></svg>',
-        product: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.4 5.2 7.3v9.4L12 20.6l6.8-3.9V7.3L12 3.4zm0 2.5 4.6 2.6v5.2L12 16.3 7.4 13.7V8.5L12 5.9z"/><path fill="currentColor" opacity=".45" d="M12 3.4 7.4 6 12 8.6 16.6 6 12 3.4z"/></svg>',
-        logistics: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 16.8h1.6V10.2L5.6 7.2h8v5.4h1.4a2.6 2.6 0 1 1 0 1.2H3.6a2.6 2.6 0 1 1 0-1.2H2zm12.2 0h1.2a2.6 2.6 0 1 1 0 1.2h-1.2v-1.2zm-9 0a1.55 1.55 0 1 0 3.1 0 1.55 1.55 0 0 0-3.1 0zm10.2 0a1.55 1.55 0 1 0 3.1 0 1.55 1.55 0 0 0-3.1 0z"/><path fill="currentColor" d="M5.6 8.4h7.4v3.6H4.4l1.2-3.6z"/></svg>',
-        gallery: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M5.5 5.8h13a1.6 1.6 0 0 1 1.6 1.6v9.2a1.6 1.6 0 0 1-1.6 1.6h-13a1.6 1.6 0 0 1-1.6-1.6V7.4a1.6 1.6 0 0 1 1.6-1.6zm-.4 10.8V7.8h14.8v8.8l-3.8-5.1-2.6 2.3-4.1-5.5-2.1 2.8-.2-.3V16.6H5.1z"/><circle cx="9.4" cy="9.6" r="1.55" fill="currentColor" opacity=".32"/></svg>',
-        sales: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.5 18.8V11h3.8v7.8H4.5zm6.4-5.2V6.8h3.8v12H10.9zm6.4 3V4.2h3.8v14.6h-3.8z"/></svg>',
-        'amazon-ad': '<svg class="sj-amazon-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M14.35 5.4h-2.05v1.75c-.78-.9-1.82-1.38-3.05-1.38-2.48 0-4.42 1.88-4.42 4.18 0 2.25 1.88 4.08 4.35 4.08 1.18 0 2.18-.4 2.95-1.08V14.2h2.05V5.4zm-3.15 7.05c-1.48 0-2.52-1.08-2.52-2.42s1.04-2.42 2.52-2.42 2.52 1.08 2.52 2.42-1.04 2.42-2.52 2.42z"/><path fill="currentColor" d="M2.8 17.55c3.05 2.35 6.35 3.55 9.35 3.55 2.65 0 5.28-.75 7.45-2.15l-1.25-.98c-1.92 1.18-4.28 1.92-6.55 1.92-2.85 0-5.55-1.05-7.7-2.95l-1.35 1.61z"/></svg>',
-        system: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4zm6.85 3.95-.88-.22a4.2 4.2 0 0 0-.52-1.15l.55-.78-1.08-1.08-.78.55a4.2 4.2 0 0 0-1.15-.52l-.22-.88h-1.52l-.22.88a4.2 4.2 0 0 0-1.15.52l-.78-.55-1.08 1.08.55.78a4.2 4.2 0 0 0-.52 1.15l-.88.22v1.52l.88.22c.12.4.3.8.52 1.15l-.55.78 1.08 1.08.78-.55c.35.22.75.4 1.15.52l.22.88h1.52l.22-.88c.4-.12.8-.3 1.15-.52l.78.55 1.08-1.08-.55-.78c.22-.35.4-.75.52-1.15l.88-.22v-1.52z"/></svg>',
-        widgets: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.2 4.2h6.8v6.8H4.2V4.2zm9 0h6.8v6.8H13.2V4.2zM4.2 13h6.8v6.8H4.2V13zm9 2.4h6.8v4.4H13.2V15.4z"/><path fill="currentColor" opacity=".42" d="M15.8 13h4.2v4.2h-4.2V13z"/></svg>'
+        home: `<svg ${SJ_RAIL_SVG}><path d="M5.2 11.4V19a1 1 0 0 0 1 1h3.2"/><path d="M19 19v-7.6L12 5.8 5 11.4"/><path d="M15.6 20h-3.2"/><path d="M10.9 20v-3.5a1.15 1.15 0 0 1 2.2 0V20"/></svg>`,
+        product: `<svg ${SJ_RAIL_SVG}><path d="M12 6.2 6.4 8.9v7.2L12 18.8l5.6-2.7V8.9z"/><path d="M12 6.2v12.6"/><path d="M6.4 8.9 12 11.5l5.6-2.6"/></svg>`,
+        logistics: `<svg ${SJ_RAIL_SVG}><path d="M3 14.8V10.2h8.8"/><path d="M11.8 10.2h3l2.7 4.6"/><path d="M3 14.8h13.5"/><circle cx="7.2" cy="15.2" r="1.65"/><circle cx="16.8" cy="15.2" r="1.65"/></svg>`,
+        gallery: `<svg ${SJ_RAIL_SVG}><rect x="4.8" y="7" width="14.4" height="11.2" rx="2"/><circle cx="9.4" cy="11.2" r="1.15"/><path d="M4.8 15.8l3.6-2.8 2.6 2.3 3-3.6 5.4 5.7"/></svg>`,
+        sales: `<svg ${SJ_RAIL_SVG}><path d="M6.5 19V13.2"/><path d="M12 19V8.6"/><path d="M17.5 19v-4.8"/></svg>`,
+        'amazon-ad': '<svg class="sj-amazon-mark" viewBox="20 58 230 178" aria-hidden="true" fill="currentColor"><path d="M246,168v32a6,6,0,0,1-12,0V182.48l-5.66,5.66C225.6,191.15,188.86,230,128,230c-62,0-98.92-40.27-100.46-42a6,6,0,1,1,8.92-8c.34.37,35.09,38,91.54,38s91.2-37.64,91.55-38l.21-.22,5.76-5.76H208a6,6,0,0,1,0-12h32A6,6,0,0,1,246,168ZM162,99.56V84A38,38,0,0,0,90.14,66.73a6,6,0,1,1-10.68-5.46A50,50,0,0,1,174,84v92a6,6,0,0,1-12,0V164.44a50,50,0,1,1,0-64.88ZM162,132a38,38,0,1,0-38,38A38,38,0,0,0,162,132Z"/></svg>',
+        system: `<svg ${SJ_RAIL_SVG}><circle cx="12" cy="12" r="3.1"/><path d="M12 4.8v2"/><path d="M12 17.2v2"/><path d="M4.8 12h2"/><path d="M17.2 12h2"/><path d="M6.9 6.9l1.4 1.4"/><path d="M15.7 15.7l1.4 1.4"/><path d="M6.9 17.1l1.4-1.4"/><path d="M15.7 8.3l1.4-1.4"/></svg>`,
+        widgets: `<svg ${SJ_RAIL_SVG}><rect x="5.2" y="5.2" width="6.2" height="6.2" rx="1.6"/><rect x="12.6" y="5.2" width="6.2" height="6.2" rx="1.6"/><rect x="5.2" y="12.6" width="6.2" height="6.2" rx="1.6"/><rect x="12.6" y="12.6" width="6.2" height="6.2" rx="1.6"/></svg>`
     };
 
     const SITJOY_SIDEBAR_RAIL_SHORT = {
@@ -9901,9 +9903,9 @@
 
     function injectSitjoySidebarRailChrome(hostEl, meta){
         if(!hostEl || !meta) return;
-        if(hostEl.dataset.sitjoyRailEnhanced === '3') return;
+        if(hostEl.dataset.sitjoyRailEnhanced === '5') return;
         hostEl.querySelectorAll('.sitjoy-sidebar-icon, .sitjoy-sidebar-short').forEach(node => node.remove());
-        hostEl.dataset.sitjoyRailEnhanced = '3';
+        hostEl.dataset.sitjoyRailEnhanced = '5';
         hostEl.classList.add('sitjoy-sidebar-rail-item');
         const textEl = hostEl.querySelector('.sitjoy-sidebar-link-text');
         const icon = document.createElement('span');
