@@ -275,6 +275,20 @@ class LogisticsInTransitMixin:
                                     for item in (cur.fetchall() or [])
                                     if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
                                 ]
+                            cur.execute(
+                                """
+                                SELECT DISTINCT TRIM(COALESCE(fm.representative_color, '')) AS color_value
+                                FROM fabric_materials fm
+                                WHERE TRIM(COALESCE(fm.representative_color, '')) != ''
+                                ORDER BY color_value ASC
+                                LIMIT 500
+                                """
+                            )
+                            filter_colors = [
+                                str(row.get('color_value') or '').strip()
+                                for row in (cur.fetchall() or [])
+                                if str(row.get('color_value') or '').strip()
+                            ]
                     self._perf_mark(perf_ctx, 'get_options_payload')
                     return self.send_json({
                         'status': 'success',
@@ -283,7 +297,8 @@ class LogisticsInTransitMixin:
                         'destination_regions': destination_regions,
                         'warehouses': warehouses,
                         'order_products': order_products,
-                        'links': links
+                        'links': links,
+                        'filter_colors': filter_colors
                     }, start_response)
 
                 if action == 'export_details':
@@ -396,6 +411,14 @@ class LogisticsInTransitMixin:
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
                 color_keyword = (query_params.get('color', [''])[0] or '').strip()
+                color_tokens = []
+                for raw in query_params.get('colors', []):
+                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                        text = str(token or '').strip()
+                        if text and text not in color_tokens:
+                            color_tokens.append(text)
+                if color_keyword and color_keyword not in color_tokens:
+                    color_tokens.append(color_keyword)
                 forwarder_id = self._parse_int(query_params.get('forwarder_id', [''])[0])
                 page = self._parse_int(query_params.get('page', ['1'])[0]) or 1
                 page_size = self._parse_int(query_params.get('page_size', ['50'])[0]) or 50
@@ -500,7 +523,22 @@ class LogisticsInTransitMixin:
                                 """
                             )
                             params.append(like_sku)
-                        if color_keyword:
+                        if color_tokens:
+                            placeholders = ','.join(['%s'] * len(color_tokens))
+                            filters.append(
+                                f"""
+                                EXISTS (
+                                    SELECT 1
+                                    FROM logistics_in_transit_items li3
+                                    JOIN order_products op3 ON op3.id = li3.order_product_id
+                                    LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
+                                    WHERE li3.transit_id = t.id
+                                      AND TRIM(COALESCE(fm3.representative_color, '')) IN ({placeholders})
+                                )
+                                """
+                            )
+                            params.extend(color_tokens)
+                        elif color_keyword:
                             like_color = f"%{color_keyword}%"
                             filters.append(
                                 """

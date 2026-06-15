@@ -2537,6 +2537,37 @@
         }
     }
 
+    /** 表级声明不参与冻结的列（如子网格列宽独立维护的 SKU 明细列） */
+    function getPinExcludedColumnKeys(table){
+        const raw = String(table && table.dataset && table.dataset.pmPinExcludeKeys || '').trim();
+        if(!raw) return new Set();
+        return new Set(raw.split(',').map((k) => String(k || '').trim()).filter(Boolean));
+    }
+
+    /** 首次访问时按 data-pm-default-pinned-keys / data-pm-default-pinned-first 写入默认冻结列 */
+    function seedDefaultPinnedColumns(state, validKeys){
+        if(!state || !state.table || !Array.isArray(validKeys) || !validKeys.length) return;
+        const exclude = getPinExcludedColumnKeys(state.table);
+        let hasStoredPins = false;
+        try {
+            hasStoredPins = localStorage.getItem(makeStorageKey(state.table, 'pinned-columns')) != null;
+        } catch (_e) {
+        }
+        if(hasStoredPins) return;
+        const rawKeys = String(state.table.dataset.pmDefaultPinnedKeys || '').trim();
+        if(rawKeys){
+            rawKeys.split(',').map((k) => String(k || '').trim())
+                .filter((k) => k && validKeys.includes(k) && !exclude.has(k))
+                .forEach((k) => state.pinnedColumns.add(k));
+            persistPinnedColumns(state);
+            return;
+        }
+        if(String(state.table.dataset.pmDefaultPinnedFirst || '') === '1' && validKeys[0]){
+            state.pinnedColumns.add(validKeys[0]);
+            persistPinnedColumns(state);
+        }
+    }
+
     /** 仅锁定布局锚点列（复选框、汇总展开列等）参与冻结，忽略误存的其它列 */
     function resolvePinnedColumnsForTable(table, headerMeta, lockedColumns){
         const lockedSet = new Set(
@@ -2549,6 +2580,7 @@
         }
         const merged = new Set(lockedSet);
         readPersistedPinned(table, headerMeta).forEach(k => merged.add(String(k || '').trim()));
+        getPinExcludedColumnKeys(table).forEach(k => merged.delete(k));
         return merged;
     }
 
@@ -4072,6 +4104,7 @@
         const pinnedOrder = (state.columnOrder || []).filter(k => {
             const key = String(k || '').trim();
             if(!key || !pinnedAll.has(key) || !visible.has(key)) return false;
+            if(getPinExcludedColumnKeys(state.table).has(key)) return false;
             return !isManagedColumnSlotHidden(state, key, findManagedHeaderCellForKey(state, key));
         });
         return pinnedOrder.map(k => `${k}:${readManagedColumnLayoutWidthPx(state, k)}`).join('|');
@@ -4116,6 +4149,7 @@
         const pinnedOrder = (state.columnOrder || []).filter(k => {
             const key = String(k || '').trim();
             if(!key || !pinnedAll.has(key) || !visible.has(key)) return false;
+            if(getPinExcludedColumnKeys(state.table).has(key)) return false;
             return !isManagedColumnSlotHidden(state, key, findManagedHeaderCellForKey(state, key));
         });
 
@@ -6202,6 +6236,7 @@
             captureDomPaginationRows(state);
         }
         syncManagedTableBodyLayout(state);
+        applyPinnedColumns(state, { force: true });
         ensureRowSortOrigin(state);
         if(managedSortStackHasEntries(state) || state.sortApplied || tableBodyHasGroupedAggregateRows(state)){
             applySort(state);
@@ -7460,17 +7495,7 @@
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
             state.pinnedColumns = resolvePinnedColumnsForTable(state.table, headerMeta, state.lockedColumns);
             persistPinnedColumns(state);
-            if(String(state.table.dataset.pmDefaultPinnedFirst || '') === '1' && validKeys[0]){
-                let hasStoredPins = false;
-                try{
-                    hasStoredPins = localStorage.getItem(makeStorageKey(state.table, 'pinned-columns')) != null;
-                } catch(_e){
-                }
-                if(!hasStoredPins){
-                    state.pinnedColumns.add(validKeys[0]);
-                    persistPinnedColumns(state);
-                }
-            }
+            seedDefaultPinnedColumns(state, validKeys);
             if(!state.light){
                 state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
                 renderColumnPanel(state);
@@ -7521,6 +7546,7 @@
                 applyPinnedColumns(state);
             } else {
                 syncManagedTableBodyLayout(state);
+                applyPinnedColumns(state);
             }
         } else if(String(state.table.dataset.pmLightStickyLayout || '') === '1'){
             if(headerStructureChanged){
@@ -7530,6 +7556,7 @@
                 applyPinnedColumns(state);
             } else {
                 syncManagedTableBodyLayout(state);
+                applyPinnedColumns(state);
             }
         }
         ensureSortableHeaders(state);
