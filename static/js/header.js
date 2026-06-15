@@ -9067,7 +9067,9 @@
         });
         const hasFill = !!(scope.querySelector('.pm-managed-body-wrap, .board-body-wrap')
             || pageBody.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
-        pageBody.classList.toggle('sj-page-fill-scroll', hasFill);
+        const isAaAdjust = !!(scope.querySelector('.pm-layout--aa-adjust')
+            || pageBody.querySelector('.pm-layout--aa-adjust'));
+        pageBody.classList.toggle('sj-page-fill-scroll', hasFill && !isAaAdjust);
         if(!hasFill) return;
         pageBody.querySelectorAll('.pm-managed-body-wrap').forEach((wrap) => {
             const inLayout = wrap.closest('.pm-layout');

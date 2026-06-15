@@ -9,31 +9,59 @@
     <style>
         .aa-grid {
             display: grid;
-            grid-template-columns: auto minmax(250px, 280px) minmax(320px, 1fr);
+            grid-template-columns: max-content 260px minmax(260px, 1fr);
             gap: 1rem;
-            align-items: stretch;
+            align-items: start;
+            width: 100%;
+            min-width: 0;
+            justify-content: start;
         }
-        /* 覆盖 style.css 中 .pm-layout > * { min-width:0 }，避免左侧栏被压窄导致表格横向滚动 */
+        /* 广告调整页：container 保持可纵向滚动，不被 fill-scroll 裁切 */
+        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aa-adjust) > .container {
+            overflow: visible;
+            display: block;
+            flex: none;
+            min-height: auto;
+        }
+        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aa-adjust) {
+            overflow: auto;
+        }
+        /* 广告调整页：不参与 fill-scroll 的 overflow:hidden，允许整页纵向滚动 */
+        body.sitjoy-has-shell .sitjoy-page-body .pm-layout.pm-layout--aa-adjust,
+        body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout.pm-layout--aa-adjust {
+            display: block;
+            flex: none;
+            overflow: visible;
+            min-height: auto;
+        }
         .pm-layout.pm-layout--aa-adjust > .aa-grid {
             min-width: 0;
             width: 100%;
             max-width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
         }
         .pm-layout.pm-layout--aa-adjust .aa-left-col {
-            min-width: min-content;
-            width: auto;
-            max-width: none;
+            min-width: 0;
+            width: max-content;
+            max-width: 100%;
+            justify-self: start;
+        }
+        .pm-layout.pm-layout--aa-adjust .aa-right-col,
+        .pm-layout.pm-layout--aa-adjust .aa-period-col {
+            min-width: 0;
         }
         .aa-left-col {
-            display: flex;
-            flex-direction: column;
+            overflow-x: visible;
+            overflow-y: visible;
+        }
+        .aa-left-stack {
+            display: grid;
+            grid-template-columns: 1fr;
             gap: 0.75rem;
-            flex: 0 0 auto;
-            width: auto;
-            max-width: none;
-            min-width: min-content;
-            min-height: 100%;
-            align-self: start;
+            width: fit-content;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         .aa-search-card,
         .aa-ad-info-card {
@@ -44,8 +72,8 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
-            max-width: 300px;
-            min-height: 100%;
+            width: auto;
+            min-height: 0;
             padding: 0.75rem 0.85rem;
             overflow: visible;
         }
@@ -262,7 +290,7 @@
         }
         .aa-ad-info-card {
             padding: 0.75rem;
-            flex: 1 1 auto;
+            flex: 0 0 auto;
             min-height: 0;
             display: flex;
             flex-direction: column;
@@ -275,12 +303,11 @@
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
-            flex: 1 1 auto;
+            flex: 0 0 auto;
             min-height: 0;
             width: fit-content;
-            min-width: min-content;
-            max-width: none;
-            overflow-x: visible;
+            max-width: 100%;
+            overflow-x: auto;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
         }
@@ -412,9 +439,10 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            width: auto;
             min-height: 0;
             padding: 0.75rem 0.85rem;
-            max-height: calc(100vh - 140px);
+            overflow: hidden;
         }
         .aa-period-col h3 {
             margin: 0 0 0.5rem 0;
@@ -673,6 +701,7 @@
         <section class="pm-layout pm-layout--aa-adjust">
             <div class="aa-grid">
                 <div class="aa-left-col">
+                    <div class="aa-left-stack">
                     <div class="card pm-card aa-search-card">
                         <div class="aa-search-card-inner">
                             <div class="form-group pm-search aa-search-row">
@@ -699,6 +728,7 @@
                         <div class="aa-list-wrap" id="adList">
                             <div class="aa-list-empty">加载中...</div>
                         </div>
+                    </div>
                     </div>
                 </div>
 
@@ -3418,7 +3448,8 @@
             try { localStorage.setItem(AA_AD_COL_LS, JSON.stringify(widths)); } catch (e) {}
         }
 
-        function adListTableColWidthsSum(table) {
+        function adListTableContentWidth() {
+            const table = document.getElementById('adListTable');
             const w = loadAdTableColWidths();
             if (!table) {
                 return AA_AD_COL_KEYS.reduce((sum, key) => sum + Math.max(48, Number(w[key]) || 0), 0);
@@ -3438,73 +3469,57 @@
             return sum;
         }
 
-        function adListTableContentWidth() {
-            const table = document.getElementById('adListTable');
-            const fromCols = adListTableColWidthsSum(table);
-            if (!table) return fromCols;
-            let measured = 0;
-            const headerRow = table.tHead && table.tHead.rows[0];
-            if (headerRow) {
-                measured = Array.from(headerRow.cells).reduce(
-                    (sum, th) => sum + Math.ceil(th.getBoundingClientRect().width || 0),
-                    0
-                );
-            }
-            const scrollW = Math.ceil(table.scrollWidth || 0);
-            return Math.max(fromCols, measured, scrollW, fromCols);
-        }
-
-        function syncAaLeftColumnWidth() {
+        function syncAaLeftStackWidth() {
+            const stack = document.querySelector('.aa-left-stack');
             const leftCol = document.querySelector('.aa-left-col');
-            if (!leftCol) return;
-            const refCard = document.querySelector('.aa-ad-info-card') || document.querySelector('.aa-search-card');
-            const cs = refCard ? getComputedStyle(refCard) : null;
-            const padX = cs
-                ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
-                : 24;
+            const infoCard = document.querySelector('.aa-ad-info-card');
+            if (!stack) return;
+            const table = document.getElementById('adListTable');
+            if (!table) {
+                stack.style.width = '';
+                if (leftCol) {
+                    leftCol.style.width = '';
+                    leftCol.style.maxWidth = '';
+                }
+                return;
+            }
+            const cs = getComputedStyle(infoCard || stack);
+            const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
             const listWrap = document.getElementById('adList');
             const listBorderX = listWrap
                 ? (parseFloat(getComputedStyle(listWrap).borderLeftWidth) || 0)
                     + (parseFloat(getComputedStyle(listWrap).borderRightWidth) || 0)
                 : 2;
-            const table = document.getElementById('adListTable');
             const contentW = adListTableContentWidth();
-            let innerW = Math.ceil(contentW + listBorderX + 2);
-            const searchCard = document.querySelector('.aa-search-card');
-            if (searchCard) {
-                const searchInner = searchCard.querySelector('.aa-search-card-inner');
-                const searchNeed = Math.ceil((searchInner || searchCard).scrollWidth || 0);
-                if (searchNeed > innerW) innerW = searchNeed;
-            }
+            const innerW = Math.ceil(contentW + listBorderX);
             const outerW = Math.ceil(innerW + padX);
-            leftCol.style.width = `${outerW}px`;
-            leftCol.style.minWidth = `${outerW}px`;
-            leftCol.style.maxWidth = 'none';
-            if (listWrap) {
-                listWrap.style.width = `${innerW}px`;
-                listWrap.style.minWidth = `${innerW}px`;
-                listWrap.style.maxWidth = 'none';
+            const outerPx = `${outerW}px`;
+            const innerPx = `${innerW}px`;
+            const contentPx = `${contentW}px`;
+            stack.style.width = outerPx;
+            if (leftCol) {
+                leftCol.style.width = outerPx;
+                leftCol.style.maxWidth = outerPx;
             }
-            const infoCard = document.querySelector('.aa-ad-info-card');
-            [infoCard, searchCard].forEach((card) => {
-                if (!card) return;
-                card.style.width = `${outerW}px`;
-                card.style.minWidth = `${outerW}px`;
-                card.style.maxWidth = 'none';
-            });
-            if (table) {
-                table.style.width = `${contentW}px`;
-            }
+            if (listWrap) listWrap.style.width = innerPx;
+            table.style.width = contentPx;
         }
 
-        let _aaLeftColWidthTimer = null;
-        function scheduleSyncAaLeftColumnWidth() {
-            if (_aaLeftColWidthTimer) clearTimeout(_aaLeftColWidthTimer);
-            _aaLeftColWidthTimer = setTimeout(() => {
-                _aaLeftColWidthTimer = null;
-                syncAaLeftColumnWidth();
-                requestAnimationFrame(syncAaLeftColumnWidth);
-            }, 0);
+        function bindAdListTableResizeObserver() {
+            const wrap = document.getElementById('adList');
+            if (!wrap || wrap.dataset.roBound === '1' || typeof ResizeObserver === 'undefined') return;
+            wrap.dataset.roBound = '1';
+            const ro = new ResizeObserver(() => scheduleSyncAaLeftStackWidth());
+            ro.observe(wrap);
+        }
+
+        let _aaStackWidthRaf = null;
+        function scheduleSyncAaLeftStackWidth() {
+            if (_aaStackWidthRaf) return;
+            _aaStackWidthRaf = requestAnimationFrame(() => {
+                _aaStackWidthRaf = null;
+                syncAaLeftStackWidth();
+            });
         }
 
         function applyAdTableColWidths() {
@@ -3515,7 +3530,7 @@
                 const col = table.querySelector(`colgroup col[data-col="${key}"]`);
                 if (col) col.style.width = `${Math.max(48, w[key])}px`;
             });
-            scheduleSyncAaLeftColumnWidth();
+            scheduleSyncAaLeftStackWidth();
         }
 
         function initAdTableColResize() {
@@ -3538,7 +3553,7 @@
                     function onMove(ev) {
                         const next = Math.max(56, Math.round(startW + (ev.clientX - startX)));
                         if (col) col.style.width = `${next}px`;
-                        scheduleSyncAaLeftColumnWidth();
+                        syncAaLeftStackWidth();
                     }
                     function onUp(ev) {
                         document.removeEventListener('mousemove', onMove);
@@ -3550,7 +3565,7 @@
                         const colEl = table.querySelector(`colgroup col[data-col="${key}"]`);
                         widths[key] = colEl ? Math.max(56, Math.round(colEl.getBoundingClientRect().width)) : widths[key];
                         saveAdTableColWidths(widths);
-                        scheduleSyncAaLeftColumnWidth();
+                        scheduleSyncAaLeftStackWidth();
                     }
                     document.addEventListener('mousemove', onMove);
                     document.addEventListener('mouseup', onUp);
@@ -3593,7 +3608,7 @@
             if (!wrap) return;
             if (!adItems.length) {
                 wrap.innerHTML = '<div class="aa-list-empty">暂无广告信息</div>';
-                scheduleSyncAaLeftColumnWidth();
+                scheduleSyncAaLeftStackWidth();
                 return;
             }
             const widths = loadAdTableColWidths();
@@ -3629,7 +3644,7 @@
             `;
             initAdTableColResize();
             applyAdTableColWidths();
-            scheduleSyncAaLeftColumnWidth();
+            scheduleSyncAaLeftStackWidth();
         }
 
         function loadAdList(options = {}) {
@@ -4197,10 +4212,11 @@
             if (e.key === 'Enter') loadAdList();
         });
 
-        window.addEventListener('resize', () => scheduleSyncAaLeftColumnWidth());
+        window.addEventListener('resize', () => scheduleSyncAaLeftStackWidth());
         window.addEventListener('DOMContentLoaded', () => {
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
             bindAdListRowEvents();
+            bindAdListTableResizeObserver();
             initAdSearchPrefs();
             initAdjustmentMetricAutoCalc();
             initAttributionCheckedSegment();
