@@ -233,18 +233,20 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
 
 .sitjoy-sidebar-icon {
     flex-shrink: 0;
-    width: 1rem;
-    height: 1rem;
+    width: 1.12rem;
+    height: 1.12rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.92;
+    opacity: 0.94;
 }
 
 .sitjoy-sidebar-icon svg {
     width: 100%;
     height: 100%;
     display: block;
+    overflow: visible;
+    shape-rendering: geometricPrecision;
 }
 
 .sitjoy-sidebar-short {
@@ -415,22 +417,14 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-short {
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.78rem;
+    height: 1.78rem;
     opacity: 1;
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon svg {
-    width: 1.44rem;
-    height: 1.44rem;
-    display: block;
-    overflow: visible;
-}
-
-body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon svg,
-body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon .sj-amazon-mark {
-    width: 1.44rem;
-    height: 1.44rem;
+    width: 1.68rem;
+    height: 1.68rem;
     display: block;
     overflow: visible;
 }
