@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 try:
     from openpyxl import Workbook, load_workbook
@@ -31,6 +32,12 @@ class AmazonAdMixin:
     _AMAZON_AD_CHILD_IMPORT_BATCH_SIZE = 250
     _AMAZON_AD_ADJUSTMENT_IMPORT_MAX_ROWS = 10000
     _AMAZON_AD_ADJUSTMENT_IMPORT_BATCH_SIZE = 500
+    _AMAZON_US_PACIFIC_TZ = ZoneInfo('America/Los_Angeles')
+
+    def _amazon_us_pacific_now_naive(self):
+        """Amazon 美国站常用太平洋时间（含冬夏令时），返回 naive datetime 供 datetime-local 字段。"""
+        dt = datetime.now(self._AMAZON_US_PACIFIC_TZ).replace(second=0, microsecond=0)
+        return dt.replace(tzinfo=None)
 
     def _parse_subtype_operation_type_ids(self, data):
         raw = data.get('operation_type_ids') if isinstance(data, dict) else None
@@ -3877,7 +3884,7 @@ class AmazonAdMixin:
             start_time = last_adjust.replace(hour=0, minute=0, second=0, microsecond=0)
         else:
             start_time = now - timedelta(days=7)
-        end_time = now
+        end_time = self._amazon_us_pacific_now_naive()
         return {
             'adjust_date': now.strftime('%Y-%m-%d %H:%M:%S'),
             'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
