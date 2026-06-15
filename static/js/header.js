@@ -1437,6 +1437,8 @@
     const PAGE_PREFS_COLUMN_FILTERS_SUFFIX = 'column-filters';
     const PAGE_PREFS_CUSTOM_SUFFIX = 'page-filters';
     const PAGE_PREFS_SORT_STACK_SUFFIX = 'sort-stack';
+    const PAGE_PREFS_SPECIAL_SORT_SUFFIX = 'special-sort';
+    const managedTableSpecialSortProviders = new Map();
     const tableFilterProviders = new Map();
     const tablePagePrefsSaveTimers = new Map();
 
@@ -1524,6 +1526,45 @@
     function clearPersistedSortStack(table){
         if(!table) return;
         removeStorageKey(makeStorageKey(table, PAGE_PREFS_SORT_STACK_SUFFIX));
+    }
+
+    function resolveManagedTableSpecialSortProvider(table){
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return null;
+        return managedTableSpecialSortProviders.get(key) || null;
+    }
+
+    function managedTableSpecialSortIsActive(table){
+        const provider = resolveManagedTableSpecialSortProvider(table);
+        if(!provider || typeof provider.isActive !== 'function') return false;
+        try { return !!provider.isActive(); } catch (_) { return false; }
+    }
+
+    function restoreManagedTableSpecialSortFromStorage(table){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        const provider = resolveManagedTableSpecialSortProvider(table);
+        if(!provider || typeof provider.restore !== 'function') return;
+        if(typeof provider.isActive === 'function'){
+            try { if(provider.isActive()) return; } catch (_) {}
+        }
+        try { provider.restore({ source: 'storage' }); } catch (_) {}
+    }
+
+    function persistManagedTableSpecialSort(table){
+        if(!table || tableSkipsFilterPersist(table)) return;
+        const provider = resolveManagedTableSpecialSortProvider(table);
+        if(!provider || typeof provider.persist !== 'function') return;
+        try { provider.persist({ source: 'managed' }); } catch (_) {}
+    }
+
+    function clearManagedTableSpecialSort(table, options){
+        if(!table) return false;
+        const provider = resolveManagedTableSpecialSortProvider(table);
+        if(!provider) return false;
+        if(typeof provider.clear === 'function'){
+            try { provider.clear(Object.assign({ source: 'managed-clear' }, options || {})); } catch (_) {}
+        }
+        return true;
     }
 
     function syncLegacySortFieldsFromStack(state){
@@ -5784,13 +5825,29 @@
         return `${dot}<span class="pm-fabric-color-filter-label">${text}</span>`;
     }
 
+    function plainColumnFilterValueFromItem(item){
+        if(item === null || item === undefined) return null;
+        if(typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'){
+            const text = String(item).trim();
+            if(text === '') return { value: '', label: '[空]', count: 0 };
+            return { value: text, label: text, count: 0 };
+        }
+        const rawValue = (item.value ?? item.id ?? item.key);
+        const value = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
+        const label = String(item.label ?? item.text ?? item.name ?? item.title ?? (value === '' ? '[空]' : value)).trim() || (value === '' ? '[空]' : value);
+        const count = Number(item.count ?? item.total ?? 0) || 0;
+        const plain = { value, label, count };
+        if(item.labelHtml) plain.labelHtml = String(item.labelHtml);
+        return plain;
+    }
+
     function enrichFabricColorFilterOption(item, columnKey){
-        const base = normalizeColumnFilterValue(item, columnKey);
+        const base = plainColumnFilterValueFromItem(item);
         if(!base) return null;
-        const rep = String(item.representative_color || item.color || base.value || '').trim();
-        const code = String(item.fabric_code || '').trim();
-        const nameEn = String(item.fabric_name_en || '').trim();
-        const isFabricColor = !!(item.is_fabric_color || item.fabricColor)
+        const rep = String((item && item.representative_color) || (item && item.color) || base.value || '').trim();
+        const code = String(item && item.fabric_code || '').trim();
+        const nameEn = String(item && item.fabric_name_en || '').trim();
+        const isFabricColor = !!(item && (item.is_fabric_color || item.fabricColor))
             || isFabricColorFilterColumnKey(columnKey)
             || !!(rep || code || nameEn);
         if(!isFabricColor) return base;
@@ -5813,12 +5870,8 @@
             }
             return plain;
         }
-        const rawValue = (item.value ?? item.id ?? item.key);
-        const value = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
-        const label = String(item.label ?? item.text ?? item.name ?? item.title ?? (value === '' ? '[空]' : value)).trim() || (value === '' ? '[空]' : value);
-        const count = Number(item.count ?? item.total ?? 0) || 0;
-        const plain = { value, label, count };
-        if(item.labelHtml) plain.labelHtml = String(item.labelHtml);
+        const plain = plainColumnFilterValueFromItem(item);
+        if(!plain) return null;
         if(item.representative_color || item.fabric_code || item.fabric_name_en || isFabricColorFilterColumnKey(columnKey)){
             return enrichFabricColorFilterOption(Object.assign({}, item, plain), columnKey) || plain;
         }
@@ -5888,9 +5941,28 @@
         return popup;
     }
 
+    function syncColumnFilterOpenButtonState(filterState){
+        if(!filterState || !filterState.table) return;
+        const activeKey = filterState.activeColumn == null ? '' : String(filterState.activeColumn).trim();
+        const popupOpen = !!(filterState.popup && filterState.popup.classList.contains('open'));
+        const managed = managedTableState.get(filterState.table) || null;
+        const hosts = [filterState.table];
+        if(managed && managed.headerTable) hosts.push(managed.headerTable);
+        hosts.forEach(host => {
+            host.querySelectorAll('.pm-column-filter-btn[data-column-key]').forEach(btn => {
+                const key = String(btn.dataset.columnKey || '').trim();
+                btn.classList.toggle('is-active', popupOpen && !!activeKey && key === activeKey);
+            });
+        });
+    }
+
     function closeColumnFilterPopup(){
-        if(activeColumnFilterState && activeColumnFilterState.popup){
-            activeColumnFilterState.popup.classList.remove('open');
+        if(activeColumnFilterState){
+            activeColumnFilterState.activeColumn = null;
+            if(activeColumnFilterState.popup){
+                activeColumnFilterState.popup.classList.remove('open');
+            }
+            syncColumnFilterOpenButtonState(activeColumnFilterState);
         }
         activeColumnFilterState = null;
     }
@@ -6065,6 +6137,7 @@
             state.activeColumn = null;
             activeColumnFilterState = null;
             syncColumnFilterButtons(state);
+            syncColumnFilterOpenButtonState(state);
         }
 
         function syncSelectAllState(){
@@ -6091,6 +6164,7 @@
             state.activeColumn = null;
             activeColumnFilterState = null;
             syncColumnFilterButtons(state);
+            syncColumnFilterOpenButtonState(state);
         }
 
         function open(columnKey, button){
@@ -6106,6 +6180,7 @@
             popup.querySelector('[data-role="query"]').value = String(filterState.query || '');
             popup.querySelector('[data-role="exact"]').checked = !!filterState.exact;
             popup.classList.add('open');
+            syncColumnFilterOpenButtonState(state);
 
             const rect = button.getBoundingClientRect();
             const popupWidth = Math.max(220, popup.offsetWidth || 0);
@@ -6156,6 +6231,7 @@
                     btn.classList.toggle('has-filter', isColumnFilterActive(state.filters.get(String(btn.dataset.columnKey || '').trim())));
                 });
             });
+            syncColumnFilterOpenButtonState(state);
         }
 
         const popup = state.popup;
@@ -6224,7 +6300,9 @@
         });
 
         const clickHandler = (event) => {
-            if(Date.now() < suppressSortUntil) return;
+            const onFilterControl = !!(event.target && event.target.closest
+                && event.target.closest('.pm-column-filter-btn, .pm-column-filter-pop, .pm-column-filter-popup, .pm-column-filter-option, .pm-column-filter-selectall'));
+            if(Date.now() < suppressSortUntil && !onFilterControl) return;
             if(event.target && event.target.closest && event.target.closest('.pm-col-resizer')) return;
             const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-btn[data-column-key]') : null;
             const managed = managedTableState.get(table) || null;
@@ -6483,6 +6561,23 @@
             if(!t) return;
             const state = managedTableState.get(t);
             if(state) clearManagedTableSort(state);
+        },
+        registerSpecialSort(tableOrSelector, handlers){
+            const table = resolveTableForPagePrefs(tableOrSelector);
+            if(!table) return false;
+            const key = tableRegistryKeyForPagePrefs(table);
+            if(!key) return false;
+            managedTableSpecialSortProviders.set(key, Object.assign({ table }, handlers || {}));
+            restoreManagedTableSpecialSortFromStorage(table);
+            return true;
+        },
+        hasSpecialSort(tableOrSelector){
+            const table = resolveTableForPagePrefs(tableOrSelector);
+            return table ? managedTableSpecialSortIsActive(table) : false;
+        },
+        persistSpecialSort(tableOrSelector){
+            const table = resolveTableForPagePrefs(tableOrSelector);
+            if(table) persistManagedTableSpecialSort(table);
         },
         getState(tableOrSelector){
             const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
@@ -7425,6 +7520,7 @@
         state.sortStack = [];
         syncLegacySortFieldsFromStack(state);
         clearPersistedSortStack(state.table);
+        clearManagedTableSpecialSort(state.table, { reload: true });
         refreshSortHeaderUi(state);
         applySort(state);
         applyPagination(state);

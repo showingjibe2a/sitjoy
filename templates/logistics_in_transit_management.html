@@ -197,11 +197,20 @@
       position: absolute;
       top: 0;
       right: 0;
-      width: 12px;
+      width: 10px;
       height: 100%;
       cursor: col-resize;
-      z-index: 50;
+      z-index: 3;
       touch-action: none;
+    }
+    #mainTable thead th.transit-th-sku-group.pm-column-filter-th,
+    .pm-managed-head-table thead th.transit-th-sku-group.pm-column-filter-th {
+      padding-right: 1.85rem;
+    }
+    #mainTable thead th.transit-th-sku-group.pm-column-filter-th .pm-column-filter-btn,
+    .pm-managed-head-table thead th.transit-th-sku-group.pm-column-filter-th .pm-column-filter-btn {
+      right: 12px;
+      z-index: 55;
     }
     .transit-sub-col-resizer:hover,
     .transit-sub-col-resizer.is-active { background: rgba(42,36,32,.12); }
@@ -327,7 +336,7 @@
       </div>
     </div>
     <div>
-      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-light-no-column-filter="1" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-server-filter-columns="SKU详情-颜色,SKU详情-SKU">
+      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-light-no-column-filter="1" data-pm-special-sort="transit-sku-detail" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-server-filter-columns="SKU详情-颜色,SKU详情-SKU">
         <colgroup>
           <col style="width:54px" data-manage-col-key="__transit_chk__" data-pm-default-width="54">
           <col style="width:72px" data-manage-col-key="箱号" data-pm-default-width="72">
@@ -491,6 +500,54 @@ const transitExportFieldDefs = [
 ];
 let transitExportSelectedSnapshot = [];
 const transitDetailSortState = { field: '', dir: '' };
+const TRANSIT_DETAIL_SORT_LEGACY_KEY = 'sitjoy.transit.detail.sort.state';
+function transitDetailSortStorageKey(){
+  const table=document.querySelector('#mainTable');
+  if(window.SitjoyPagePrefs&&typeof SitjoyPagePrefs.makeKey==='function'&&table){
+    return SitjoyPagePrefs.makeKey(table,'special-sort:transit-sku-detail');
+  }
+  return TRANSIT_DETAIL_SORT_LEGACY_KEY;
+}
+function persistTransitDetailSortState(){
+  try{
+    const payload={field:String(transitDetailSortState.field||'').trim(),dir:String(transitDetailSortState.dir||'').trim()};
+    localStorage.setItem(transitDetailSortStorageKey(),JSON.stringify(payload));
+    if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.persistSpecialSort==='function')SitjoyManagedPmTable.persistSpecialSort('#mainTable');
+  }catch(_e){}
+}
+function restoreTransitDetailSortState(){
+  try{
+    const keys=[transitDetailSortStorageKey(),TRANSIT_DETAIL_SORT_LEGACY_KEY];
+    let raw='';
+    for(const k of keys){raw=localStorage.getItem(k)||'';if(raw)break;}
+    if(!raw)return;
+    const p=JSON.parse(raw);
+    if(!p||typeof p!=='object')return;
+    transitDetailSortState.field=String(p.field||'').trim();
+    transitDetailSortState.dir=String(p.dir||'').trim();
+    if(transitDetailSortState.field&&!transitDetailSortState.dir)transitDetailSortState.dir='asc';
+    if(!transitDetailSortState.field)transitDetailSortState.dir='';
+  }catch(_e){}
+}
+function clearTransitDetailSortState(options){
+  transitDetailSortState.field='';
+  transitDetailSortState.dir='';
+  try{
+    localStorage.removeItem(transitDetailSortStorageKey());
+    localStorage.removeItem(TRANSIT_DETAIL_SORT_LEGACY_KEY);
+  }catch(_e){}
+  refreshTransitDetailSortHeaderUi();
+  if(!options||options.reload!==false)loadList();
+}
+function registerTransitSpecialSort(){
+  if(!window.SitjoyManagedPmTable||typeof SitjoyManagedPmTable.registerSpecialSort!=='function')return;
+  SitjoyManagedPmTable.registerSpecialSort('#mainTable',{
+    isActive(){return !!(String(transitDetailSortState.field||'').trim()&&String(transitDetailSortState.dir||'').trim());},
+    persist(){persistTransitDetailSortState();},
+    restore(){restoreTransitDetailSortState();refreshTransitDetailSortHeaderUi();},
+    clear(options){clearTransitDetailSortState(options||{});}
+  });
+}
 const TRANSIT_SKU_DETAIL_COLS_KEY = 'sitjoy.transit.detail.skuDetailGridColsPx.v1';
 const TRANSIT_SKU_DETAIL_COL_KEYS = ['SKU详情-颜色', 'SKU详情-SKU', 'SKU详情-发货数量', 'SKU详情-上架数量'];
 const TRANSIT_SKU_DETAIL_DEFAULT = [48, 140, 66, 66];
@@ -628,6 +685,7 @@ function bindTransitSkuDetailColLayout(){
   table.dataset.transitSubcolLayoutBound = '1';
 
   document.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('.pm-column-filter-btn, .pm-column-filter-pop, .pm-column-filter-popup')) return;
     let th = e.target && e.target.closest
       ? e.target.closest('.pm-managed-head-table .transit-sub-sort-th[data-transit-sub-col], #mainTable .transit-sub-sort-th[data-transit-sub-col]')
       : null;
@@ -643,9 +701,10 @@ function bindTransitSkuDetailColLayout(){
   }, true);
 
   document.addEventListener('click', (e) => {
-    if(e.target.closest('.pm-column-filter-btn, .pm-column-filter-popup, .pm-column-filter-option, .pm-column-filter-selectall')) return;
+    if(e.target.closest('.pm-column-filter-btn, .pm-column-filter-pop, .pm-column-filter-popup, .pm-column-filter-option, .pm-column-filter-selectall')) return;
     const th = e.target.closest('.transit-sub-sort-th');
     if(!th) return;
+    if(e.target.closest('.pm-column-filter-btn')) return;
     const inHead = th.closest('.pm-managed-head-table') || th.closest('#mainTable');
     if(!inHead) return;
     if(e.target.closest('.transit-sub-col-resizer')) return;
@@ -1226,7 +1285,7 @@ function refreshTransitDetailSortHeaderUi(){
   document.querySelectorAll('#mainTable .transit-sub-sort-th, .pm-managed-head-table .transit-sub-sort-th').forEach(th=>{
     const field=String(th.getAttribute('data-sort-field')||'');
     const active=field&&field===activeField&&!!activeDir;
-    th.classList.remove('pm-sortable','pm-sort-asc','pm-sort-desc');
+    th.classList.remove('pm-sortable','pm-sort-asc','pm-sort-desc','transit-sub-sort-asc','transit-sub-sort-desc');
     th.classList.toggle('is-active',active);
     th.classList.toggle('transit-sub-sort-active',active);
     th.removeAttribute('data-sort-order');
@@ -1235,7 +1294,7 @@ function refreshTransitDetailSortHeaderUi(){
   });
 }
 function sortTransitDetailItems(rows){const arr=Array.isArray(rows)?rows.slice():[];const field=transitDetailSortState.field;const dir=transitDetailSortState.dir;if(!field||!dir)return arr;arr.sort((a,b)=>{if(field==='sku'){const av=String((a&&a.sku)||'');const bv=String((b&&b.sku)||'');const cmp=av.localeCompare(bv,'zh-CN',{sensitivity:'base'});return dir==='asc'?cmp:-cmp}if(field==='representative_color'){const av=String((a&&a.representative_color)||'').toLowerCase();const bv=String((b&&b.representative_color)||'').toLowerCase();const cmp=av.localeCompare(bv,'zh-CN',{sensitivity:'base'});if(cmp!==0)return dir==='asc'?cmp:-cmp;const asku=String((a&&a.sku)||'');const bsku=String((b&&b.sku)||'');const tie=asku.localeCompare(bsku,'zh-CN',{sensitivity:'base'});return dir==='asc'?tie:-tie}const av=Number((a&&a[field])||0);const bv=Number((b&&b[field])||0);if(av===bv){const asku=String((a&&a.sku)||'');const bsku=String((b&&b.sku)||'');const tie=asku.localeCompare(bsku,'zh-CN',{sensitivity:'base'});return dir==='asc'?tie:-tie}return dir==='asc'?(av-bv):(bv-av)});return arr}
-function toggleTransitDetailSort(field){const key=String(field||'').trim();if(!key)return;if(transitDetailSortState.field!==key){transitDetailSortState.field=key;transitDetailSortState.dir='asc'}else if(transitDetailSortState.dir==='asc'){transitDetailSortState.dir='desc'}else if(transitDetailSortState.dir==='desc'){transitDetailSortState.field='';transitDetailSortState.dir=''}else{transitDetailSortState.dir='asc'}refreshTransitDetailSortHeaderUi();loadList()}
+function toggleTransitDetailSort(field){const key=String(field||'').trim();if(!key)return;if(transitDetailSortState.field!==key){transitDetailSortState.field=key;transitDetailSortState.dir='asc'}else if(transitDetailSortState.dir==='asc'){transitDetailSortState.dir='desc'}else if(transitDetailSortState.dir==='desc'){transitDetailSortState.field='';transitDetailSortState.dir=''}else{transitDetailSortState.dir='asc'}persistTransitDetailSortState();refreshTransitDetailSortHeaderUi();loadList()}
 function buildTransitSkuStackedTds(items, isRegistered){
   const rows = sortTransitDetailItems(Array.isArray(items) ? items : []);
   if(!rows.length){
@@ -1340,7 +1399,8 @@ function cleanupTransitInvalidColumnPins(){
 function finishTransitTableBodyRefresh(){
   refreshTransitDetailSortHeaderUi();
   refreshTransitSkuDetailLayout();
-  installTransitColumnFilters();
+  const handle=getTransitColumnFilterHandle();
+  if(handle&&typeof handle.refreshButtons==='function')handle.refreshButtons();
   const mt=document.querySelector('#mainTable');
   const mgr=window.SitjoyManagedPmTable;
   if(mt&&mgr&&typeof mgr.endBodyUpdate==='function')mgr.endBodyUpdate(mt);
@@ -1399,7 +1459,8 @@ function registerTransitTablePageFilters(){
       return{
         q:($('#searchInput')?.value||'').trim(),
         columnFilters:transitColumnFilters||{},
-        forwarderId:activeForwarderFilterId?String(activeForwarderFilterId):''
+        forwarderId:activeForwarderFilterId?String(activeForwarderFilterId):'',
+        detailSort:{field:String(transitDetailSortState.field||'').trim(),dir:String(transitDetailSortState.dir||'').trim()}
       };
     },
     apply(prefs){
@@ -1409,6 +1470,14 @@ function registerTransitTablePageFilters(){
       const handle=getTransitColumnFilterHandle();
       if(handle&&typeof handle.setFilters==='function')handle.setFilters(transitColumnFilters);
       if(prefs.forwarderId!=null&&String(prefs.forwarderId).trim())activeForwarderFilterId=String(prefs.forwarderId).trim();
+      if(prefs.detailSort&&typeof prefs.detailSort==='object'){
+        transitDetailSortState.field=String(prefs.detailSort.field||'').trim();
+        transitDetailSortState.dir=String(prefs.detailSort.dir||'').trim();
+        if(transitDetailSortState.field&&!transitDetailSortState.dir)transitDetailSortState.dir='asc';
+        if(!transitDetailSortState.field)transitDetailSortState.dir='';
+        persistTransitDetailSortState();
+        refreshTransitDetailSortHeaderUi();
+      }
     },
     clear(){resetSearch();}
   });
@@ -1417,12 +1486,11 @@ $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()})
 window.setTimeout(function(){var b=window.bindPmModalBackdropClose;if(typeof b!=='function')return;var x=$('#pm-modal'),y=$('#qty-verify-modal'),z=$('#transit-export-modal'),d=$('#transit-doc-modal'),c=$('#confirm-modal'),f=$('#forwarder-modal');if(x)b(x,closeModal);if(y)b(y,closeQtyVerifyModal);if(z)b(z,closeTransitDetailExportModal);if(d)b(d,closeTransitDocModal);if(f)b(f,closeForwarderModal);if(c)b(c,function(){if(typeof transitActiveConfirmDone==='function'&&c.classList.contains('active'))transitActiveConfirmDone({ok:false,value:''});else{c.classList.remove('active');c.classList.remove('is-danger')}})},0);$('#transitDocUploadInput').addEventListener('change',function(){uploadTransitDocs(this.files);this.value=''});$('#transitTemplateUploadInput').addEventListener('change',function(){const f=(this.files||[])[0];if(f)uploadTransitTemplate(f);this.value=''});$('#transitSelectAll').addEventListener('change',function(){toggleTransitSelectAll(this.checked)});
 function resetSearch(){$('#searchInput').value='';transitColumnFilters={};const handle=getTransitColumnFilterHandle();if(handle&&typeof handle.setFilters==='function')handle.setFilters({});activeForwarderFilterId=null;renderForwarderManageBar();loadList()}
 function resetColumnWidthAndSort(){
-  // 重置排序状态
-  transitDetailSortState.field='';
-  transitDetailSortState.dir='';
-  
-  // 清除localStorage中保存的排序状态
-  try{ localStorage.removeItem('sitjoy.transit.detail.sort.state'); }catch(_e){}
+  if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.clearSort==='function'){
+    SitjoyManagedPmTable.clearSort('#mainTable');
+  }else{
+    clearTransitDetailSortState({reload:false});
+  }
 
   // 清除托管表格持久化：列宽 + 字段排序
   try {
@@ -1478,6 +1546,7 @@ window.addEventListener('load',function(){
 });
 window.addEventListener('focus',refreshDocCounts);
 window.addEventListener('load',registerTransitTablePageFilters);
+window.addEventListener('load',registerTransitSpecialSort);
 window.addEventListener('load',cleanupTransitInvalidColumnPins);
 window.addEventListener('load',initTransitSkuDetailColLayout);
 window.addEventListener('load',attachTransitColumnFilters);
