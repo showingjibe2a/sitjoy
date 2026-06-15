@@ -245,6 +245,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
     width: 100%;
     height: 100%;
     display: block;
+    margin: 0 auto;
     overflow: visible;
     shape-rendering: geometricPrecision;
 }
@@ -426,6 +427,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon svg {
     width: 1.68rem;
     height: 1.68rem;
     display: block;
+    margin: 0 auto;
     overflow: visible;
 }
 

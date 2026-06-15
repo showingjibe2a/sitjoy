@@ -9875,13 +9875,22 @@
         });
     }
 
-    /** 侧栏图标：1024 画布参考路径等比缩放至 24×24，实心填充统一风格 */
+    /** 侧栏图标：1024 画布参考路径等比缩放；stroke 统一细线图标视觉粗细 */
     const SJ_FILL = 'viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"';
 
-    function sjRailScaledIcon(paths, cx, cy, scale){
+    function sjRailScaledIcon(paths, cx, cy, scale, strokeW){
         const list = Array.isArray(paths) ? paths : [paths];
-        const body = list.map(d => `<path d="${d}"/>`).join('');
+        const sw = Number(strokeW) || 0;
+        const pathAttrs = sw > 0
+            ? ` fill="currentColor" stroke="currentColor" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"`
+            : '';
+        const body = list.map(d => `<path d="${d}"${pathAttrs}/>`).join('');
         return `<svg ${SJ_FILL}><g transform="translate(12 12) scale(${scale}) translate(${-cx} ${-cy})">${body}</g></svg>`;
+    }
+
+    function sjRailProductIcon(pathD, cx, cy, scale){
+        const xf = `translate(12 12) scale(${scale}) translate(${-cx} ${-cy})`;
+        return `<svg ${SJ_FILL}><g transform="${xf}"><path d="${pathD}" fill="currentColor"/></g></svg>`;
     }
 
     const SJ_HOME_PATH = 'M483.9 81.2l-446.4 382a21.3 21.3 0 0 0 13.8 37.5h77.9v410.2a42.6 42.6 0 0 0 42.6 42.6h201.1a42.7 42.7 0 0 0 42.7-42.6V753.6a96.3 96.3 0 0 1 96.3-96.3 96.3 96.3 0 0 1 96.3 96.3v157.3a42.6 42.6 0 0 0 42.6 42.6h202.7a42.7 42.7 0 0 0 42.7-42.6V500.7H972a21.3 21.3 0 0 0 13.9-37.5l-446.5-382a42.8 42.8 0 0 0-55.5 0z';
@@ -9895,14 +9904,14 @@
     const SJ_WIDGETS_PATH = 'M640 932H256c-90.44 0-164-73.56-164-164v-96a36 36 0 0 1 36-36h32c33.08 0 60-26.92 60-60s-26.92-60-60-60h-32a36 36 0 0 1-36-36V384c0-90.44 73.56-164 164-164h60.04c2.12-70.96 60.48-128 131.96-128s129.8 57.04 131.96 128H640c90.44 0 164 73.56 164 164v60.08c70.96 2.12 128 60.48 128 131.92s-57.04 129.84-128 131.92V768c0 90.44-73.56 164-164 164zM164 707.92V768c0 50.72 41.28 92 92 92h384c50.72 0 92-41.28 92-92v-96a36 36 0 0 1 36-36h32c33.08 0 60-26.92 60-60s-26.92-60-60-60h-32a36 36 0 0 1-36-36V384c0-50.72-41.28-92-92-92h-96a36 36 0 0 1-36-36v-32c0-33.08-26.92-60-60-60s-60 26.92-60 60v32a36 36 0 0 1-36 36H256c-50.72 0-92 41.28-92 92v60.08c70.96 2.12 128 60.48 128 131.92s-57.04 129.84-128 131.92z';
 
     const SITJOY_SIDEBAR_RAIL_ICONS = {
-        home: sjRailScaledIcon(SJ_HOME_PATH, 512, 520, 0.0195),
-        product: `<svg ${SJ_FILL}><g transform="translate(12 12) scale(0.029) translate(-506 -562)"><path d="${SJ_PRODUCT_BOX}"/></g></svg>`,
-        logistics: sjRailScaledIcon(SJ_LOGISTICS_PATH, 420, 470, 0.021),
-        gallery: sjRailScaledIcon(SJ_GALLERY_PATH, 512, 512, 0.0195),
-        sales: `<svg ${SJ_FILL}><rect x="5" y="13" width="3.6" height="7" rx="1.8"/><rect x="10.2" y="7.5" width="3.6" height="12.5" rx="1.8"/><rect x="15.4" y="10.5" width="3.6" height="9.5" rx="1.8"/></svg>`,
-        'amazon-ad': sjRailScaledIcon([SJ_AMAZON_A, SJ_AMAZON_SMILE], 512, 520, 0.0195),
-        system: sjRailScaledIcon([SJ_SYSTEM_FRAME, SJ_SYSTEM_SLASH], 512, 512, 0.0195),
-        widgets: sjRailScaledIcon(SJ_WIDGETS_PATH, 512, 512, 0.0195)
+        home: sjRailScaledIcon(SJ_HOME_PATH, 512, 518, 0.0192, 40),
+        product: sjRailProductIcon(SJ_PRODUCT_BOX, 506, 562, 0.0275),
+        logistics: sjRailScaledIcon(SJ_LOGISTICS_PATH, 492, 510, 0.0224, 34),
+        gallery: sjRailScaledIcon(SJ_GALLERY_PATH, 512, 512, 0.0202, 28),
+        sales: `<svg ${SJ_FILL}><rect x="4.8" y="13" width="4" height="7" rx="2"/><rect x="10" y="7.2" width="4" height="12.8" rx="2"/><rect x="15.2" y="10.2" width="4" height="9.8" rx="2"/></svg>`,
+        'amazon-ad': sjRailScaledIcon([SJ_AMAZON_A, SJ_AMAZON_SMILE], 512, 518, 0.0202, 36),
+        system: sjRailScaledIcon([SJ_SYSTEM_FRAME, SJ_SYSTEM_SLASH], 512, 512, 0.0202, 44),
+        widgets: sjRailScaledIcon(SJ_WIDGETS_PATH, 498, 508, 0.0202, 38)
     };
 
     const SITJOY_SIDEBAR_RAIL_SHORT = {
@@ -9920,9 +9929,9 @@
 
     function injectSitjoySidebarRailChrome(hostEl, meta){
         if(!hostEl || !meta) return;
-        if(hostEl.dataset.sitjoyRailEnhanced === '10') return;
+        if(hostEl.dataset.sitjoyRailEnhanced === '20') return;
         hostEl.querySelectorAll('.sitjoy-sidebar-icon, .sitjoy-sidebar-short').forEach(node => node.remove());
-        hostEl.dataset.sitjoyRailEnhanced = '10';
+        hostEl.dataset.sitjoyRailEnhanced = '20';
         hostEl.classList.add('sitjoy-sidebar-rail-item');
         const textEl = hostEl.querySelector('.sitjoy-sidebar-link-text');
         const icon = document.createElement('span');
