@@ -60,8 +60,8 @@ body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout {
     overflow: hidden;
 }
 
-body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card,
-body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card.pm-card {
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card:not(.sj-table-fill-host),
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card.pm-card:not(.sj-table-fill-host) {
     flex: 0 0 auto;
 }
 

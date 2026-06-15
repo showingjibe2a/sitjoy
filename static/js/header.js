@@ -2556,6 +2556,47 @@
         return !!(state && state.table && String(state.table.dataset.pmSkipClientPagination || '') === '1');
     }
 
+    /** 客户端分页：tbody 仅挂载当前页行，避免大数据量 display:none 仍占 DOM 导致卡顿 */
+    function shouldUseDomClientPagination(state){
+        if(!state || state.light || !state.tbody || !state.table) return false;
+        if(tableSkipsClientPagination(state)) return false;
+        if(tableBodyHasGroupedAggregateRows(state)) return false;
+        const mode = String(state.table.dataset.serverPaginationMode || '').toLowerCase();
+        if(mode === 'server' || state.table.dataset.serverPaginationMode === '1') return false;
+        if(String(state.table.dataset.pmDomPagination || '') === '0') return false;
+        return true;
+    }
+
+    function invalidateDomPaginationRows(state){
+        if(!state) return;
+        state.domPaginationAllRows = null;
+    }
+
+    function captureDomPaginationRows(state){
+        if(!state || !shouldUseDomClientPagination(state)) return;
+        const rows = Array.from(state.tbody.rows || []).filter(row => !isGroupedAggregateRow(row));
+        if(rows.length === 1 && isPlaceholderRow(rows[0], state.headerCount)){
+            state.domPaginationAllRows = [];
+            return;
+        }
+        state.domPaginationAllRows = rows;
+        rows.forEach((row, idx) => {
+            if((row.cells || []).length !== state.headerCount) return;
+            if(!row.dataset.sortOrigin) row.dataset.sortOrigin = String(idx);
+        });
+    }
+
+    function mountDomPaginationPage(state, pageRows){
+        const tbody = state.tbody;
+        if(!tbody) return;
+        while(tbody.firstChild){
+            tbody.removeChild(tbody.firstChild);
+        }
+        (pageRows || []).forEach((row) => {
+            if(row) tbody.appendChild(row);
+        });
+    }
+
     function persistPinnedColumns(state){
         try {
             localStorage.setItem(makeStorageKey(state.table, 'pinned-columns'), JSON.stringify(Array.from(state.pinnedColumns || []).slice()));
@@ -2737,6 +2778,9 @@
     }
 
     function getDataRows(state){
+        if(shouldUseDomClientPagination(state) && Array.isArray(state.domPaginationAllRows)){
+            return state.domPaginationAllRows.filter(row => !isGroupedAggregateRow(row));
+        }
         const rows = Array.from(state.tbody.rows || []);
         if(rows.length === 1 && isPlaceholderRow(rows[0], state.headerCount)) return [];
         return rows.filter(row => !isGroupedAggregateRow(row));
@@ -5127,12 +5171,19 @@
         const start = (state.currentPage - 1) * state.pageSize;
         const end = Math.min(start + state.pageSize, total);
 
-        allRows.forEach((row) => {
-            row.style.display = 'none';
-        });
-        rows.forEach((row, idx) => {
-            row.style.display = (idx >= start && idx < end) ? '' : 'none';
-        });
+        if(shouldUseDomClientPagination(state)){
+            if(!Array.isArray(state.domPaginationAllRows) || !state.domPaginationAllRows.length){
+                captureDomPaginationRows(state);
+            }
+            mountDomPaginationPage(state, rows.slice(start, end));
+        } else {
+            allRows.forEach((row) => {
+                row.style.display = 'none';
+            });
+            rows.forEach((row, idx) => {
+                row.style.display = (idx >= start && idx < end) ? '' : 'none';
+            });
+        }
 
         state.info.textContent = `显示 ${start + 1}-${end} / 共 ${total} 条`;
         state.pageCurrent.textContent = `${state.currentPage} / ${totalPages}`;
@@ -6147,6 +6198,9 @@
         if(state.table.tBodies && state.table.tBodies[0]){
             state.tbody = state.table.tBodies[0];
         }
+        if(shouldUseDomClientPagination(state)){
+            captureDomPaginationRows(state);
+        }
         syncManagedTableBodyLayout(state);
         ensureRowSortOrigin(state);
         if(managedSortStackHasEntries(state) || state.sortApplied || tableBodyHasGroupedAggregateRows(state)){
@@ -6155,6 +6209,9 @@
         refreshSortHeaderUi(state);
         applyPagination(state);
         syncManagedBatchBar(state);
+        if(state.wrap && state.wrap.classList && state.wrap.classList.contains('pm-managed-body-wrap')){
+            window.requestAnimationFrame(() => syncSitjoyPageFillScrollLayout(state.table));
+        }
     }
 
     function beginManagedTableBodyUpdate(table){
@@ -6168,6 +6225,7 @@
         }
         if(state.bodyUpdateDepth === 1){
             state.suppressManagedRefresh = true;
+            invalidateDomPaginationRows(state);
             invalidatePmRowCellKeyMapsInTbody(state.tbody);
             if(state.observer && state.tbody){
                 try { state.observer.disconnect(); } catch(_e){}
@@ -7148,19 +7206,30 @@
 
         if(!stack.length){
             if(!state.sortApplied) return;
+            const before = rows.slice();
             rows.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
-            const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
-            const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
-            if(!sameOrder) rows.forEach(row => state.tbody.appendChild(row));
+            const changed = before.some((row, idx) => row !== rows[idx]);
+            if(changed){
+                if(shouldUseDomClientPagination(state)){
+                    state.domPaginationAllRows = rows.slice();
+                } else {
+                    rows.forEach(row => state.tbody.appendChild(row));
+                }
+            }
             state.sortApplied = false;
             return;
         }
 
+        const before = rows.slice();
         rows.sort((a, b) => compareRowsForManagedSortStack(a, b, stack, state));
-
-        const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
-        const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
-        if(!sameOrder) rows.forEach(row => state.tbody.appendChild(row));
+        const changed = before.some((row, idx) => row !== rows[idx]);
+        if(changed){
+            if(shouldUseDomClientPagination(state)){
+                state.domPaginationAllRows = rows.slice();
+            } else {
+                rows.forEach(row => state.tbody.appendChild(row));
+            }
+        }
         state.sortApplied = true;
     }
 
