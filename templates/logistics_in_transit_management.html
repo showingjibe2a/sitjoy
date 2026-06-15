@@ -214,11 +214,6 @@
     #transit-doc-modal .transit-doc-toolbar { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; margin-top: .35rem; }
     #transit-doc-modal .transit-doc-meta { font-size: .84rem; color: var(--morandi-slate); margin: .2rem 0 0; }
     .transit-color-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(60,60,60,.24); flex: 0 0 auto; }
-    .pm-toolbar .transit-toolbar-color-picker { min-width: 9rem; max-width: 240px; margin: 0; align-self: center; }
-    .pm-toolbar .transit-toolbar-color-picker .feature-category-add { min-height: 24px; padding: 0.1rem 0.45rem; font-size: 0.75rem; line-height: 1.2; }
-    .pm-toolbar .transit-toolbar-color-picker .feature-category-chips { min-height: 0; }
-    .pm-toolbar .transit-toolbar-color-picker .feature-category-chip { font-size: 0.72rem; padding: 0.05rem 0.35rem; }
-    .transit-color-filter-option { display: inline-flex; align-items: center; gap: 0.4rem; }
     .pm-toolbar .pm-search input[type="text"],
     #pm-modal input[type="text"]:not(.readonly-cell):not(.readonly-dark),
     #pm-modal input[type="date"],
@@ -321,7 +316,7 @@
   <section class="hero" style="margin-bottom:1.5rem;"><h2>在途物流库存管理</h2><p>管理在途物流节点、提单信息与SKU到货上架数量</p></section>
   <section class="pm-layout">
     <div class="card pm-card">
-      <div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><span class="pm-search-title" style="margin-left:.4rem;">SKU</span><input id="skuFilterInput" type="text" placeholder="筛选SKU"><span class="pm-search-title" style="margin-left:.4rem;">颜色</span><div id="transitColorFilterPicker" class="feature-category-picker is-multi-check transit-toolbar-color-picker"><div class="feature-category-chips" id="transitColorFilterSelected"></div><div class="feature-category-dropdown" id="transitColorFilterDropdown"><button type="button" class="feature-category-add" id="transitColorFilterToggle"><span class="feature-category-add-icon">+</span><span class="feature-category-add-text">选择颜色</span></button><div class="feature-category-menu" id="transitColorFilterMenu"><input type="text" id="transitColorFilterSearch" class="universal-select-search" placeholder="搜索颜色"><div class="feature-category-list" id="transitColorFilterList"></div></div></div></div><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div>
+      <div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div>
       <div class="pm-card-rail" aria-label="货代筛选">
         <div class="pm-card-sub">
           <span class="pm-card-sub__title" title="货代管理">货代</span>
@@ -332,7 +327,7 @@
       </div>
     </div>
     <div>
-      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量">
+      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-light-no-column-filter="1" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-server-filter-columns="SKU详情-颜色,SKU详情-SKU">
         <colgroup>
           <col style="width:54px" data-manage-col-key="__transit_chk__" data-pm-default-width="54">
           <col style="width:72px" data-manage-col-key="箱号" data-pm-default-width="72">
@@ -472,8 +467,7 @@ let qtyVerifyTargetId = null;
 let qtyVerifyFactoryId = 0;
 let qtyVerifyExtraFactoryIds = [];
 let transitConsolidationFactorySelectedIds = [];
-let optionTransitFilterColors = [];
-let transitColorFilterSelected = [];
+let transitColumnFilters = {};
 const selectedTransitIds = new Set();
 const transitExportFieldStorageKey = 'sitjoy.transit.detail.export.fields.v1';
 const transitExportFieldDefs = [
@@ -744,44 +738,89 @@ function openForwarderManageModal(item){forwarderEditId=item&&item.id?item.id:nu
 function closeForwarderModal(){$('#forwarder-modal').classList.remove('active');forwarderEditId=null}
 function saveForwarder(){const forwarder_name=String($('#forwarderManageName').value||'').trim();if(!forwarder_name){showForwarderStatus('请填写货代名称',true);return}const payload=forwarderEditId?{id:forwarderEditId,forwarder_name}:{forwarder_name};const method=forwarderEditId?'PUT':'POST';fetch('/api/logistics-forwarder',{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).then(data=>{if(data.status!=='success'){showForwarderStatus(data.message||'保存失败',true);return}const targetId=forwarderEditId||data.id||'';loadForwarders().then(()=>{if(targetId){activeForwarderFilterId=String(targetId);renderForwarderManageBar();fillForwarderSelects(targetId)}closeForwarderModal();loadList()})}).catch(err=>showForwarderStatus('请求失败: '+err,true))}
 async function removeForwarder(){if(!forwarderEditId)return;const ok=window.showAppConfirmAsync?await window.showAppConfirmAsync({title:'删除确认',message:'确认删除该货代？',confirmText:'确认删除'}):false;if(!ok)return;fetch('/api/logistics-forwarder',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:forwarderEditId})}).then(r=>r.json()).then(data=>{if(data.status!=='success'){showForwarderStatus(data.message||'删除失败',true);return}if(String(activeForwarderFilterId||'')===String(forwarderEditId))activeForwarderFilterId=null;closeForwarderModal();loadForwarders().then(loadList)}).catch(err=>showForwarderStatus('删除失败: '+err,true))}
-function getTransitColorFilterValues(){return Array.from(new Set((transitColorFilterSelected||[]).map(v=>String(v||'').trim()).filter(Boolean)))}
-function setTransitColorFilterValues(values){transitColorFilterSelected=Array.from(new Set((values||[]).map(v=>String(v||'').trim()).filter(Boolean)));renderTransitColorFilterPicker()}
-function transitColorFilterLabel(value){const text=String(value||'').trim();if(!text)return '—';if(text.length>18)return text.slice(0,16)+'…';return text}
-function renderTransitColorFilterPicker(){
-  const chips=$('#transitColorFilterSelected');const list=$('#transitColorFilterList');if(!chips||!list)return;
-  const selected=new Set(getTransitColorFilterValues().map(v=>String(v)));
-  const q=String($('#transitColorFilterSearch')?.value||'').trim().toLowerCase();
-  chips.innerHTML='';
-  selected.forEach(color=>{
-    const chip=document.createElement('span');chip.className='feature-category-chip';
-    const dot=safeColorValue(color);
-    chip.innerHTML=dot?`<span class="transit-color-dot" style="background:${dot};"></span>`:'';
-    chip.appendChild(document.createTextNode(transitColorFilterLabel(color)));
-    const removeBtn=document.createElement('button');removeBtn.type='button';removeBtn.className='feature-category-remove';removeBtn.textContent='×';
-    removeBtn.addEventListener('click',()=>{setTransitColorFilterValues(getTransitColorFilterValues().filter(v=>String(v)!==String(color)))});
-    chip.appendChild(removeBtn);chips.appendChild(chip);
-  });
-  const options=(optionTransitFilterColors||[]).filter(color=>{
-    const c=String(color||'').trim();if(!c||selected.has(c))return false;
-    if(!q)return true;return c.toLowerCase().includes(q);
-  });
-  if(!options.length){list.innerHTML='<div class="feature-category-empty">暂无可选颜色</div>';return}
-  list.innerHTML=options.map(color=>{
-    const c=String(color||'').trim();const dot=safeColorValue(c);
-    const dotHtml=dot?`<span class="transit-color-dot" style="background:${dot};"></span>`:'';
-    return `<button type="button" class="feature-category-option transit-color-filter-option" data-transit-filter-color="${escapeHtml(c)}">${dotHtml}<span>${escapeHtml(transitColorFilterLabel(c))}</span></button>`;
-  }).join('');
+function loadOptions(force){if(optionsReadyPromise&&!force)return optionsReadyPromise;optionsReadyPromise=fetch('/api/logistics-in-transit?action=options&scope=with_order_products&order_product_limit=600').then(r=>r.json()).then(d=>{if(d.status!=='success')return;optionFactories=d.factories||[];optionForwarders=d.forwarders||[];optionDestinationRegions=d.destination_regions||[];optionWarehouses=d.warehouses||[];optionOrderProducts=d.order_products||[];optionLinks=d.links||[];rebuildTransitLinkMaps();fill('factoryId',optionFactories,'id','factory_name','请选择工厂');fillForwarderSelects();fill('destinationRegionId',optionDestinationRegions,'id','region_name','请选择目的区域');syncDestinationWarehouseOptions('');bindTransitConsolidationFactoryPickerOnce();renderTransitConsolidationFactoryOptions('');updateTransitConsolidationFactorySelected();renderForwarderManageBar();syncTransitItemSkuOptions()}).catch(()=>{});return optionsReadyPromise}
+function getTransitColumnFilterHandle(){return window.__transitColumnFilterHandle||null}
+function buildTransitServerFilterQueryParams(){
+  const filters=transitColumnFilters||{};
+  const query=new URLSearchParams();
+  const colorF=filters['SKU详情-颜色']||{};
+  const skuF=filters['SKU详情-SKU']||{};
+  const colorSelected=Array.isArray(colorF.selected)?colorF.selected.map(v=>String(v||'').trim()).filter(Boolean):[];
+  const colorQuery=String(colorF.query||'').trim();
+  if(colorSelected.length)query.set('colors',colorSelected.join(','));
+  else if(colorQuery)query.set('color',colorQuery);
+  const skuSelected=Array.isArray(skuF.selected)?skuF.selected.map(v=>String(v||'').trim()).filter(Boolean):[];
+  const skuQuery=String(skuF.query||'').trim();
+  if(skuSelected.length)query.set('sku_list',skuSelected.join(','));
+  else if(skuQuery)query.set('sku',skuQuery);
+  return query;
 }
-function bindTransitColorFilterPickerOnce(){
-  if(document.body.dataset.transitColorFilterPickerBound==='1')return;
-  document.body.dataset.transitColorFilterPickerBound='1';
-  const toggle=$('#transitColorFilterToggle');const search=$('#transitColorFilterSearch');const list=$('#transitColorFilterList');
-  if(toggle)toggle.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const dd=$('#transitColorFilterDropdown');if(!dd)return;dd.classList.toggle('open');dd.classList.toggle('expanded');if(dd.classList.contains('open')&&search)search.focus()});
-  if(search)search.addEventListener('input',()=>renderTransitColorFilterPicker());
-  if(list)list.addEventListener('click',e=>{const btn=e.target.closest('[data-transit-filter-color]');if(!btn)return;const color=String(btn.dataset.transitFilterColor||'').trim();if(!color)return;setTransitColorFilterValues(getTransitColorFilterValues().concat(color))});
-  document.addEventListener('click',e=>{const dd=$('#transitColorFilterDropdown');if(!dd||(!dd.classList.contains('open')&&!dd.classList.contains('expanded')))return;if(e.target.closest('#transitColorFilterPicker'))return;dd.classList.remove('open');dd.classList.remove('expanded')});
+function fetchTransitColumnFilterOptions(args){
+  const key=String(args.columnKey||'').trim();
+  if(key==='SKU详情-颜色'){
+    const params=new URLSearchParams({action:'filter_options',column:'color',q:args.query||'',exact:args.exact?'1':'0',limit:String(args.limit||120)});
+    return fetch(`/api/logistics-in-transit?${params}`).then(r=>r.json()).then(d=>{if(d.status!=='success')throw new Error(d.message||'加载颜色筛选项失败');return d.values||[]});
+  }
+  if(key==='SKU详情-SKU'){
+    const params=new URLSearchParams({action:'filter_options',column:'sku',q:args.query||'',exact:args.exact?'1':'0',limit:String(args.limit||120)});
+    return fetch(`/api/logistics-in-transit?${params}`).then(r=>r.json()).then(d=>{if(d.status!=='success')throw new Error(d.message||'加载SKU筛选项失败');return d.values||[]});
+  }
+  const mtState=window.SitjoyManagedPmTable&&window.SitjoyManagedPmTable.getState?window.SitjoyManagedPmTable.getState('#mainTable'):null;
+  if(mtState&&window.SitjoyColumnFilter&&typeof SitjoyColumnFilter.collectOptionsFromTableState==='function'){
+    return Promise.resolve(SitjoyColumnFilter.collectOptionsFromTableState(mtState,args.columnKey,args.query,args.exact,args.limit,args.filters));
+  }
+  return Promise.resolve([]);
 }
-function loadOptions(force){if(optionsReadyPromise&&!force)return optionsReadyPromise;optionsReadyPromise=fetch('/api/logistics-in-transit?action=options&scope=with_order_products&order_product_limit=600').then(r=>r.json()).then(d=>{if(d.status!=='success')return;optionFactories=d.factories||[];optionForwarders=d.forwarders||[];optionDestinationRegions=d.destination_regions||[];optionWarehouses=d.warehouses||[];optionOrderProducts=d.order_products||[];optionLinks=d.links||[];optionTransitFilterColors=Array.isArray(d.filter_colors)?d.filter_colors:[];rebuildTransitLinkMaps();fill('factoryId',optionFactories,'id','factory_name','请选择工厂');fillForwarderSelects();fill('destinationRegionId',optionDestinationRegions,'id','region_name','请选择目的区域');syncDestinationWarehouseOptions('');bindTransitConsolidationFactoryPickerOnce();bindTransitColorFilterPickerOnce();renderTransitConsolidationFactoryOptions('');updateTransitConsolidationFactorySelected();renderTransitColorFilterPicker();renderForwarderManageBar();syncTransitItemSkuOptions()}).catch(()=>{});return optionsReadyPromise}
+function applyTransitColumnFilters(filters){
+  transitColumnFilters=filters||{};
+  if(window.SitjoyPagePrefs&&typeof SitjoyPagePrefs.saveTablePageFilters==='function')SitjoyPagePrefs.saveTablePageFilters('#mainTable');
+  loadList();
+}
+function installTransitColumnFilters(){
+  if(!window.SitjoyColumnFilter)return;
+  const table=document.querySelector('#mainTable');
+  if(!table||!table.tHead||!table.tHead.rows||!table.tHead.rows.length)return;
+  const existing=window.__transitColumnFilterHandle||window.SitjoyColumnFilter.get(table);
+  if(existing){
+    if(typeof existing.setFilters==='function')existing.setFilters(transitColumnFilters||{});
+    if(typeof existing.refreshButtons==='function')existing.refreshButtons();
+    window.__transitColumnFilterHandle=existing;
+    const mtState=window.SitjoyManagedPmTable&&window.SitjoyManagedPmTable.getState?window.SitjoyManagedPmTable.getState(table):null;
+    if(mtState)mtState.columnFilterHandle=existing;
+    return;
+  }
+  const headerCells=Array.from(table.tHead.rows[0].cells||[]);
+  const columns=headerCells.map((cell,index)=>{
+    const label=(cell.textContent||'').replace(/\s+/g,' ').trim();
+    const key=String(cell.dataset.manageColKey||label||`字段${index+1}`).trim();
+    return {index,key,label:label||key};
+  }).filter(item=>{
+    if(!item.label)return false;
+    if(/操作|详情|动作/.test(item.label))return false;
+    const cell=headerCells[item.index];
+    if(cell&&cell.querySelector('input[type="checkbox"]'))return false;
+    return true;
+  });
+  const handle=window.SitjoyColumnFilter.attach(table,{
+    columns,
+    limit:120,
+    fetchOptions:fetchTransitColumnFilterOptions,
+    onApply:applyTransitColumnFilters,
+    onReset:applyTransitColumnFilters
+  });
+  window.__transitColumnFilterHandle=handle;
+  const mtState=window.SitjoyManagedPmTable&&window.SitjoyManagedPmTable.getState?window.SitjoyManagedPmTable.getState(table):null;
+  if(mtState)mtState.columnFilterHandle=handle;
+  if(handle&&typeof handle.setFilters==='function'&&transitColumnFilters&&Object.keys(transitColumnFilters).length)handle.setFilters(transitColumnFilters);
+  if(handle&&typeof handle.refreshButtons==='function')handle.refreshButtons();
+}
+function attachTransitColumnFilters(){
+  const table=document.querySelector('#mainTable');
+  if(!table)return;
+  const mtState=window.SitjoyManagedPmTable&&window.SitjoyManagedPmTable.getState?window.SitjoyManagedPmTable.getState(table):null;
+  if(!mtState)return window.setTimeout(attachTransitColumnFilters,120);
+  installTransitColumnFilters();
+}
 
 function syncListedQtyEditable(){document.querySelectorAll('.transit-item-listed').forEach(inp=>{inp.setAttribute('readonly','readonly');inp.classList.add('transit-item-listed-locked')})}
 function refreshDocCounts(){if(!editId){$('#declarationCount').textContent='0';$('#clearanceCount').textContent='0';return}fetch(`/api/logistics-in-transit-doc-files?action=counts&transit_id=${encodeURIComponent(editId)}`).then(r=>r.json()).then(d=>{if(d.status==='success'){$('#declarationCount').textContent=String(d.declaration_count||0);$('#clearanceCount').textContent=String(d.clearance_count||0)}})}
@@ -1209,9 +1248,13 @@ function buildTransitSkuStackedTds(items, isRegistered){
   const stack = (inner) => `<div class="transit-sku-stack">${inner}</div>`;
   const colorHtml = stack(rows.map((it) => {
     const color = safeColorValue(it.representative_color);
-    return line(color ? `<span class="transit-color-dot" style="background:${color};"></span>` : '—');
+    const filterVal = escapeHtml(String(it.representative_color || '').trim());
+    return line(color ? `<span class="transit-color-dot" style="background:${color};" data-filter-value="${filterVal}"></span>` : '—');
   }).join(''));
-  const skuHtml = stack(rows.map((it) => line(`<span class="transit-detail-sku-text">${escapeHtml(it.sku || '')}</span>`)).join(''));
+  const skuHtml = stack(rows.map((it) => {
+    const filterVal = escapeHtml(String(it.sku || '').trim());
+    return line(`<span class="transit-detail-sku-text" data-filter-value="${filterVal}">${escapeHtml(it.sku || '')}</span>`);
+  }).join(''));
   const shipHtml = stack(rows.map((it) => line(String(Number(it.shipped_qty || 0)))).join(''));
   const listedHtml = stack(rows.map((it) => {
     const shipped = Number(it.shipped_qty || 0);
@@ -1297,6 +1340,7 @@ function cleanupTransitInvalidColumnPins(){
 function finishTransitTableBodyRefresh(){
   refreshTransitDetailSortHeaderUi();
   refreshTransitSkuDetailLayout();
+  installTransitColumnFilters();
   const mt=document.querySelector('#mainTable');
   const mgr=window.SitjoyManagedPmTable;
   if(mt&&mgr&&typeof mgr.endBodyUpdate==='function')mgr.endBodyUpdate(mt);
@@ -1304,12 +1348,9 @@ function finishTransitTableBodyRefresh(){
 }
 function loadList(){
   const q=$('#searchInput').value.trim();
-  const sku=($('#skuFilterInput')?.value||'').trim();
-  const colors=getTransitColorFilterValues();
   const query=new URLSearchParams();
   if(q)query.set('q',q);
-  if(sku)query.set('sku',sku);
-  if(colors.length)query.set('colors',colors.join(','));
+  buildTransitServerFilterQueryParams().forEach((v,k)=>query.set(k,v));
   if(activeForwarderFilterId)query.set('forwarder_id',String(activeForwarderFilterId));
   if(window.SitjoyPagePrefs&&typeof SitjoyPagePrefs.saveTablePageFilters==='function')SitjoyPagePrefs.saveTablePageFilters('#mainTable');
   loadOptions().then(()=>{
@@ -1357,26 +1398,24 @@ function registerTransitTablePageFilters(){
     collect(){
       return{
         q:($('#searchInput')?.value||'').trim(),
-        sku:($('#skuFilterInput')?.value||'').trim(),
-        colors:getTransitColorFilterValues(),
+        columnFilters:transitColumnFilters||{},
         forwarderId:activeForwarderFilterId?String(activeForwarderFilterId):''
       };
     },
     apply(prefs){
       if(!prefs||typeof prefs!=='object')return;
       if($('#searchInput')&&prefs.q!=null)$('#searchInput').value=String(prefs.q);
-      if($('#skuFilterInput')&&prefs.sku!=null)$('#skuFilterInput').value=String(prefs.sku);
-      if(Array.isArray(prefs.colors))setTransitColorFilterValues(prefs.colors);
-      else if(prefs.color!=null&&String(prefs.color).trim())setTransitColorFilterValues([String(prefs.color).trim()]);
+      transitColumnFilters=(prefs.columnFilters&&typeof prefs.columnFilters==='object')?prefs.columnFilters:{};
+      const handle=getTransitColumnFilterHandle();
+      if(handle&&typeof handle.setFilters==='function')handle.setFilters(transitColumnFilters);
       if(prefs.forwarderId!=null&&String(prefs.forwarderId).trim())activeForwarderFilterId=String(prefs.forwarderId).trim();
     },
     clear(){resetSearch();}
   });
 }
 $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()});
-$('#skuFilterInput')&&$('#skuFilterInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()});
 window.setTimeout(function(){var b=window.bindPmModalBackdropClose;if(typeof b!=='function')return;var x=$('#pm-modal'),y=$('#qty-verify-modal'),z=$('#transit-export-modal'),d=$('#transit-doc-modal'),c=$('#confirm-modal'),f=$('#forwarder-modal');if(x)b(x,closeModal);if(y)b(y,closeQtyVerifyModal);if(z)b(z,closeTransitDetailExportModal);if(d)b(d,closeTransitDocModal);if(f)b(f,closeForwarderModal);if(c)b(c,function(){if(typeof transitActiveConfirmDone==='function'&&c.classList.contains('active'))transitActiveConfirmDone({ok:false,value:''});else{c.classList.remove('active');c.classList.remove('is-danger')}})},0);$('#transitDocUploadInput').addEventListener('change',function(){uploadTransitDocs(this.files);this.value=''});$('#transitTemplateUploadInput').addEventListener('change',function(){const f=(this.files||[])[0];if(f)uploadTransitTemplate(f);this.value=''});$('#transitSelectAll').addEventListener('change',function(){toggleTransitSelectAll(this.checked)});
-function resetSearch(){$('#searchInput').value='';const skuEl=$('#skuFilterInput');if(skuEl)skuEl.value='';setTransitColorFilterValues([]);activeForwarderFilterId=null;renderForwarderManageBar();loadList()}
+function resetSearch(){$('#searchInput').value='';transitColumnFilters={};const handle=getTransitColumnFilterHandle();if(handle&&typeof handle.setFilters==='function')handle.setFilters({});activeForwarderFilterId=null;renderForwarderManageBar();loadList()}
 function resetColumnWidthAndSort(){
   // 重置排序状态
   transitDetailSortState.field='';
@@ -1441,6 +1480,7 @@ window.addEventListener('focus',refreshDocCounts);
 window.addEventListener('load',registerTransitTablePageFilters);
 window.addEventListener('load',cleanupTransitInvalidColumnPins);
 window.addEventListener('load',initTransitSkuDetailColLayout);
+window.addEventListener('load',attachTransitColumnFilters);
 window.addEventListener('load',loadList);
 window.addEventListener('load',syncTransitPreviewSaveBar);
 </script>

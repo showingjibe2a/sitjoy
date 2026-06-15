@@ -3218,6 +3218,30 @@ body.has-active-modal {
     white-space: nowrap;
 }
 
+.pm-column-filter-option-text--rich {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.pm-fabric-color-filter-dot {
+    flex: 0 0 auto;
+}
+
+.pm-fabric-color-filter-dot--empty {
+    background: rgba(207, 199, 189, 0.55);
+}
+
+.pm-fabric-color-filter-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .pm-column-filter-only-btn {
     margin-left: auto;
     width: auto;

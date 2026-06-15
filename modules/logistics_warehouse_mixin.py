@@ -792,6 +792,40 @@ class LogisticsWarehouseMixin:
                     if not config:
                         return self.send_json({'status': 'error', 'message': '不支持的筛选列'}, start_response)
                     scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                    if column == 4:
+                        sql = f"""
+                            SELECT
+                                TRIM(COALESCE(fm.representative_color, '')) AS value,
+                                TRIM(COALESCE(fm.fabric_code, '')) AS fabric_code,
+                                TRIM(COALESCE(fm.fabric_name_en, '')) AS fabric_name_en,
+                                TRIM(COALESCE(fm.representative_color, '')) AS representative_color,
+                                COUNT(*) AS count
+                            FROM factory_wip_inventory fw
+                            JOIN order_products op ON op.id = fw.order_product_id
+                            JOIN logistics_factories f ON f.id = fw.factory_id
+                            LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                            WHERE TRIM(COALESCE(fm.representative_color, '')) != '' {scope_clause}
+                        """
+                        params = list(scope_params)
+                        if search:
+                            if exact:
+                                sql += " AND (fm.fabric_code = %s OR fm.fabric_name_en = %s OR fm.representative_color = %s)"
+                                params.extend([search, search, search])
+                            else:
+                                like = f"%{search}%"
+                                sql += " AND (fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s OR fm.representative_color LIKE %s)"
+                                params.extend([like, like, like])
+                        sql += """
+                            GROUP BY fm.id, fm.representative_color, fm.fabric_code, fm.fabric_name_en
+                            ORDER BY count DESC, fm.fabric_code ASC, fm.fabric_name_en ASC
+                            LIMIT %s
+                        """
+                        params.append(limit)
+                        with self._get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(sql, tuple(params))
+                                values = cur.fetchall() or []
+                        return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
                     base_sql = f"""
                         SELECT {config['value_expr']} AS value, {config['label_expr']} AS label
                         FROM factory_wip_inventory fw

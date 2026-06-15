@@ -233,6 +233,73 @@ class LogisticsInTransitMixin:
                 return None
 
             if method == 'GET':
+                if action == 'filter_options':
+                    column = (query_params.get('column', [''])[0] or '').strip().lower()
+                    search = (query_params.get('q', [''])[0] or '').strip()
+                    exact = str(query_params.get('exact', ['0'])[0]).strip().lower() in ('1', 'true', 'yes', 'on')
+                    limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            if column == 'color':
+                                sql = """
+                                    SELECT
+                                        TRIM(COALESCE(fm.representative_color, '')) AS value,
+                                        TRIM(COALESCE(fm.fabric_code, '')) AS fabric_code,
+                                        TRIM(COALESCE(fm.fabric_name_en, '')) AS fabric_name_en,
+                                        TRIM(COALESCE(fm.representative_color, '')) AS representative_color,
+                                        COUNT(DISTINCT li.id) AS count
+                                    FROM logistics_in_transit_items li
+                                    JOIN order_products op ON op.id = li.order_product_id
+                                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                                    WHERE TRIM(COALESCE(fm.representative_color, '')) != ''
+                                """
+                                params = []
+                                if search:
+                                    if exact:
+                                        sql += " AND (fm.fabric_code = %s OR fm.fabric_name_en = %s OR fm.representative_color = %s)"
+                                        params.extend([search, search, search])
+                                    else:
+                                        like = f"%{search}%"
+                                        sql += " AND (fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s OR fm.representative_color LIKE %s)"
+                                        params.extend([like, like, like])
+                                sql += """
+                                    GROUP BY fm.id, fm.representative_color, fm.fabric_code, fm.fabric_name_en
+                                    ORDER BY count DESC, fm.fabric_code ASC, fm.fabric_name_en ASC
+                                    LIMIT %s
+                                """
+                                params.append(limit)
+                                cur.execute(sql, tuple(params))
+                                values = cur.fetchall() or []
+                            elif column == 'sku':
+                                sql = """
+                                    SELECT
+                                        TRIM(COALESCE(op.sku, '')) AS value,
+                                        TRIM(COALESCE(op.sku, '')) AS label,
+                                        COUNT(DISTINCT li.id) AS count
+                                    FROM logistics_in_transit_items li
+                                    JOIN order_products op ON op.id = li.order_product_id
+                                    WHERE TRIM(COALESCE(op.sku, '')) != ''
+                                """
+                                params = []
+                                if search:
+                                    if exact:
+                                        sql += " AND op.sku = %s"
+                                        params.append(search)
+                                    else:
+                                        sql += " AND op.sku LIKE %s"
+                                        params.append(f"%{search}%")
+                                sql += """
+                                    GROUP BY op.sku
+                                    ORDER BY count DESC, op.sku ASC
+                                    LIMIT %s
+                                """
+                                params.append(limit)
+                                cur.execute(sql, tuple(params))
+                                values = cur.fetchall() or []
+                            else:
+                                return self.send_json({'status': 'error', 'message': '不支持的筛选列'}, start_response)
+                    return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
+
                 if action == 'options':
                     scope = (query_params.get('scope', ['all'])[0] or 'all').strip().lower()
                     option_limit = max(100, min(self._parse_int(query_params.get('order_product_limit', ['600'])[0]) or 600, 1200))
@@ -410,6 +477,12 @@ class LogisticsInTransitMixin:
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+                sku_list = []
+                for raw in query_params.get('sku_list', []):
+                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                        text = str(token or '').strip()
+                        if text and text not in sku_list:
+                            sku_list.append(text)
                 color_keyword = (query_params.get('color', [''])[0] or '').strip()
                 color_tokens = []
                 for raw in query_params.get('colors', []):
@@ -509,7 +582,21 @@ class LogisticsInTransitMixin:
                                 params.extend(matched_region_ids)
 
                             filters.append('(' + ' OR '.join(search_clauses) + ')')
-                        if sku_keyword:
+                        if sku_list:
+                            placeholders = ','.join(['%s'] * len(sku_list))
+                            filters.append(
+                                f"""
+                                EXISTS (
+                                    SELECT 1
+                                    FROM logistics_in_transit_items li2
+                                    JOIN order_products op2 ON op2.id = li2.order_product_id
+                                    WHERE li2.transit_id = t.id
+                                      AND op2.sku IN ({placeholders})
+                                )
+                                """
+                            )
+                            params.extend(sku_list)
+                        elif sku_keyword:
                             like_sku = f"%{sku_keyword}%"
                             filters.append(
                                 """

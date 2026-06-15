@@ -5440,24 +5440,17 @@
     function rowPassesManagedColumnFilters(row, filters, excludeColumnKey){
         if(!row || !filters || typeof filters !== 'object') return true;
         const skipKey = String(excludeColumnKey || '').trim();
+        const table = row.closest ? row.closest('table') : null;
+        const serverKeys = getServerSideColumnFilterKeys(table);
         for(const key of Object.keys(filters)){
             const colKey = String(key || '').trim();
-            if(!colKey || colKey === skipKey) continue;
+            if(!colKey || colKey === skipKey || serverKeys.has(colKey)) continue;
             const filter = filters[key] || {};
             const query = String(filter.query || '').trim();
-            const exact = !!filter.exact;
             const selected = Array.isArray(filter.selected) ? filter.selected.map(v => String(v)) : [];
             if(!query && !selected.length) continue;
             const cell = getRowCellByKey(row, colKey);
-            const value = String(readCellFilterText(cell) || '');
-            if(selected.length && !selected.includes(value)) return false;
-            if(query){
-                if(exact){
-                    if(value !== query) return false;
-                } else if(!value.toLowerCase().includes(query.toLowerCase())) {
-                    return false;
-                }
-            }
+            if(!cellValuesMatchColumnFilter(readCellFilterValues(cell), filter)) return false;
         }
         return true;
     }
@@ -5497,7 +5490,13 @@
             counts.set(text, (counts.get(text) || 0) + 1);
         });
         return Array.from(counts.entries())
-            .map(([value, count]) => ({ value, label: value === '' ? '[空]' : value, count }))
+            .map(([value, count]) => {
+                const item = { value, label: value === '' ? '[空]' : value, count };
+                if(isFabricColorFilterColumnKey(excludeKey)){
+                    return enrichFabricColorFilterOption(item, excludeKey) || item;
+                }
+                return item;
+            })
             .sort((a, b) => {
                 if((b.count || 0) !== (a.count || 0)) return (b.count || 0) - (a.count || 0);
                 return String(a.label || '').localeCompare(String(b.label || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
@@ -5750,18 +5749,116 @@
         return tableOrSelector;
     }
 
-    function normalizeColumnFilterValue(item){
+    function isFabricColorFilterColumnKey(columnKey){
+        const key = String(columnKey || '').trim();
+        if(!key) return false;
+        if(key === 'SKU详情-颜色' || key === 'representative_color') return true;
+        return /(?:^|[-_])(?:颜色|colour|color|fabric|面料|代表色)(?:$|[-_])|representative_color|fabric_code/i.test(key);
+    }
+
+    function safeFabricColorDotCss(value){
+        const text = String(value || '').trim();
+        if(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return text;
+        if(/^rgba?\(/i.test(text) || /^hsla?\(/i.test(text)) return text;
+        return '';
+    }
+
+    function formatFabricColorFilterPlainLabel(meta){
+        const code = String(meta && meta.fabric_code || '').trim();
+        const nameEn = String(meta && meta.fabric_name_en || '').trim();
+        const rep = String(meta && meta.representative_color || meta && meta.value || '').trim();
+        const head = code || rep || '—';
+        return nameEn ? `${head} (${nameEn})` : head;
+    }
+
+    function buildFabricColorFilterLabelHtml(meta){
+        const rep = String(meta && meta.representative_color || meta && meta.value || '').trim();
+        const css = safeFabricColorDotCss(rep);
+        const dot = css
+            ? `<span class="transit-color-dot pm-fabric-color-filter-dot" style="background:${css.replace(/"/g, '')};"></span>`
+            : `<span class="transit-color-dot pm-fabric-color-filter-dot pm-fabric-color-filter-dot--empty"></span>`;
+        const text = String(formatFabricColorFilterPlainLabel(meta))
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        return `${dot}<span class="pm-fabric-color-filter-label">${text}</span>`;
+    }
+
+    function enrichFabricColorFilterOption(item, columnKey){
+        const base = normalizeColumnFilterValue(item, columnKey);
+        if(!base) return null;
+        const rep = String(item.representative_color || item.color || base.value || '').trim();
+        const code = String(item.fabric_code || '').trim();
+        const nameEn = String(item.fabric_name_en || '').trim();
+        const isFabricColor = !!(item.is_fabric_color || item.fabricColor)
+            || isFabricColorFilterColumnKey(columnKey)
+            || !!(rep || code || nameEn);
+        if(!isFabricColor) return base;
+        base.representative_color = rep;
+        base.fabric_code = code;
+        base.fabric_name_en = nameEn;
+        base.label = formatFabricColorFilterPlainLabel(base);
+        base.labelHtml = buildFabricColorFilterLabelHtml(base);
+        return base;
+    }
+
+    function normalizeColumnFilterValue(item, columnKey){
         if(item === null || item === undefined) return null;
         if(typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'){
             const text = String(item).trim();
             if(text === '') return { value: '', label: '[空]', count: 0 };
-            return { value: text, label: text, count: 0 };
+            const plain = { value: text, label: text, count: 0 };
+            if(isFabricColorFilterColumnKey(columnKey)){
+                return enrichFabricColorFilterOption({ value: text, representative_color: text }, columnKey) || plain;
+            }
+            return plain;
         }
         const rawValue = (item.value ?? item.id ?? item.key);
         const value = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
         const label = String(item.label ?? item.text ?? item.name ?? item.title ?? (value === '' ? '[空]' : value)).trim() || (value === '' ? '[空]' : value);
         const count = Number(item.count ?? item.total ?? 0) || 0;
-        return { value, label, count };
+        const plain = { value, label, count };
+        if(item.labelHtml) plain.labelHtml = String(item.labelHtml);
+        if(item.representative_color || item.fabric_code || item.fabric_name_en || isFabricColorFilterColumnKey(columnKey)){
+            return enrichFabricColorFilterOption(Object.assign({}, item, plain), columnKey) || plain;
+        }
+        return plain;
+    }
+
+    function getServerSideColumnFilterKeys(table){
+        const raw = String(table && table.dataset && table.dataset.pmServerFilterColumns || '').trim();
+        if(!raw) return new Set();
+        return new Set(raw.split(',').map((k) => String(k || '').trim()).filter(Boolean));
+    }
+
+    function readCellFilterValues(cell){
+        if(!cell) return [''];
+        if(cell.querySelector && cell.querySelector('.transit-sku-stack-line')){
+            const lines = Array.from(cell.querySelectorAll('.transit-sku-stack-line'));
+            const vals = lines.map((line) => String(line.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+            if(vals.length) return vals;
+        }
+        const filterValues = cell.querySelectorAll('[data-filter-value]');
+        if(filterValues.length){
+            const vals = Array.from(filterValues).map((el) => String(el.getAttribute('data-filter-value') || '').trim()).filter(Boolean);
+            if(vals.length) return vals;
+        }
+        return [String(readCellFilterText(cell) || '')];
+    }
+
+    function cellValuesMatchColumnFilter(values, filter){
+        const query = String(filter.query || '').trim();
+        const exact = !!filter.exact;
+        const selected = Array.isArray(filter.selected) ? filter.selected.map((v) => String(v)) : [];
+        const list = (Array.isArray(values) ? values : [values]).map((v) => String(v === null || v === undefined ? '' : v).trim());
+        if(selected.length){
+            return list.some((v) => selected.includes(v));
+        }
+        if(!query) return true;
+        return list.some((v) => {
+            if(exact) return v === query;
+            return v.toLowerCase().includes(query.toLowerCase());
+        });
     }
 
     function createColumnFilterPopup(){
@@ -5837,7 +5934,7 @@
         const seen = new Set();
 
         (Array.isArray(items) ? items : []).forEach(item => {
-            const normalizedItem = normalizeColumnFilterValue(item);
+            const normalizedItem = normalizeColumnFilterValue(item, columnKey);
             if(!normalizedItem) return;
             if(seen.has(normalizedItem.value)) return;
             seen.add(normalizedItem.value);
@@ -5870,7 +5967,10 @@
             const checked = selectedSet.has(item.value) ? 'checked' : '';
             const countText = item.count > 0 ? ` <span style="color:var(--morandi-slate);">(${item.count})</span>` : '';
             const escapedValue = String(item.value).replace(/"/g, '&quot;');
-            return `<label class="pm-column-filter-option" data-option-value="${escapedValue}"><span class="pm-column-filter-option-main"><input type="checkbox" data-value="${escapedValue}" ${checked}><span class="pm-column-filter-option-text">${String(item.label || item.value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}${countText}</span></span><button type="button" class="pm-column-filter-only-btn" data-action="only" data-value="${escapedValue}">仅筛选此项</button></label>`;
+            const labelHtml = item.labelHtml
+                ? `${item.labelHtml}${countText}`
+                : `${String(item.label || item.value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}${countText}`;
+            return `<label class="pm-column-filter-option" data-option-value="${escapedValue}"><span class="pm-column-filter-option-main"><input type="checkbox" data-value="${escapedValue}" ${checked}><span class="pm-column-filter-option-text pm-column-filter-option-text--rich">${labelHtml}</span></span><button type="button" class="pm-column-filter-only-btn" data-action="only" data-value="${escapedValue}">仅筛选此项</button></label>`;
         }).join('') : '<div class="pm-column-filter-option" style="opacity:.7;">暂无可选项</div>';
 
         if(selectAllEl){
