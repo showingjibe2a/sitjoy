@@ -1662,6 +1662,75 @@
         }
     });
 
+    const liveRefreshHandlers = new Map();
+    let liveRefreshLastTriggerAt = 0;
+    const LIVE_REFRESH_GLOBAL_MIN_MS = 3000;
+
+    function stopLiveRefreshPoll(entry){
+        if(!entry || !entry.pollTimer) return;
+        try { window.clearInterval(entry.pollTimer); } catch (_e) {}
+        entry.pollTimer = null;
+    }
+
+    function startLiveRefreshPoll(key, entry){
+        stopLiveRefreshPoll(entry);
+        const pollMs = Number(entry && entry.pollMs);
+        if(!entry || !pollMs || pollMs < 5000) return;
+        entry.pollTimer = window.setInterval(() => {
+            if(document.hidden) return;
+            if(typeof entry.isBusy === 'function' && entry.isBusy()) return;
+            try { entry.handler({ source: 'poll', silent: true }); } catch (err) {
+                console.warn('SitjoyLiveRefresh poll failed', key, err);
+            }
+        }, pollMs);
+    }
+
+    function runLiveRefreshHandlers(source, options){
+        const opts = options || {};
+        const force = !!opts.force;
+        const now = Date.now();
+        if(!force && now - liveRefreshLastTriggerAt < LIVE_REFRESH_GLOBAL_MIN_MS) return;
+        liveRefreshLastTriggerAt = now;
+        liveRefreshHandlers.forEach((entry, key) => {
+            if(typeof entry.handler !== 'function') return;
+            if(typeof entry.isBusy === 'function' && entry.isBusy()) return;
+            try { entry.handler({ source: source || 'manual', silent: !!opts.silent }); } catch (err) {
+                console.warn('SitjoyLiveRefresh handler failed', key, err);
+            }
+        });
+    }
+
+    window.SitjoyLiveRefresh = Object.assign({}, window.SitjoyLiveRefresh || {}, {
+        register(key, handler, options){
+            const id = String(key || '').trim();
+            if(!id || typeof handler !== 'function') return false;
+            const prev = liveRefreshHandlers.get(id);
+            if(prev) stopLiveRefreshPoll(prev);
+            const entry = {
+                handler,
+                pollMs: Number((options || {}).pollMs) || 0,
+                isBusy: typeof (options || {}).isBusy === 'function' ? options.isBusy : null
+            };
+            liveRefreshHandlers.set(id, entry);
+            startLiveRefreshPoll(id, entry);
+            return true;
+        },
+        unregister(key){
+            const id = String(key || '').trim();
+            const entry = liveRefreshHandlers.get(id);
+            if(entry) stopLiveRefreshPoll(entry);
+            liveRefreshHandlers.delete(id);
+        },
+        clearAll(){
+            liveRefreshHandlers.forEach((entry) => stopLiveRefreshPoll(entry));
+            liveRefreshHandlers.clear();
+        },
+        trigger(source, options){
+            if(document.hidden && !(options && options.force)) return;
+            runLiveRefreshHandlers(source, options);
+        }
+    });
+
     function shouldManageTable(table){
         if(!table || table.tagName !== 'TABLE') return false;
         if(table.dataset.disableTableManage === '1') return false;
@@ -9592,6 +9661,9 @@
 
         closeColumnFilterPopup();
         teardownManagedTablesInScope(pageBody);
+        if(window.SitjoyLiveRefresh && typeof window.SitjoyLiveRefresh.clearAll === 'function'){
+            window.SitjoyLiveRefresh.clearAll();
+        }
 
         window.__sitjoyNavEpoch = (window.__sitjoyNavEpoch || 0) + 1;
         window.__sitjoyActivePath = normalizeNavPath(href);
@@ -10894,6 +10966,9 @@
         if(!document.hidden) {
             if(typeof window.refreshTransitDetailSortHeaderUi === 'function'){
                 window.refreshTransitDetailSortHeaderUi();
+            }
+            if(window.SitjoyLiveRefresh && typeof window.SitjoyLiveRefresh.trigger === 'function'){
+                window.SitjoyLiveRefresh.trigger('visibility');
             }
         }
     });

@@ -139,6 +139,37 @@ let factoryStockEditDraft = {};
 
 const $ = (s) => document.querySelector(s);
 
+function withFetchBust(url){
+  const sep = String(url || '').includes('?') ? '&' : '?';
+  return `${url}${sep}_=${Date.now()}`;
+}
+
+function factoryStockPageBusy(){
+  const modal = document.getElementById('pm-modal');
+  if(modal && modal.classList.contains('active')) return true;
+  return Object.keys(factoryStockEditDraft).length > 0;
+}
+
+function initFactoryStockLiveRefresh(){
+  if(!window.SitjoyLiveRefresh || typeof SitjoyLiveRefresh.register !== 'function') return;
+  SitjoyLiveRefresh.register('factory-stock', () => loadList(), {
+    isBusy: factoryStockPageBusy,
+    pollMs: 45000
+  });
+}
+
+function stockBeginManagedTableBodyUpdate(){
+  const api = window.SitjoyManagedPmTable;
+  const table = document.getElementById('mainTable');
+  if(api && table && typeof api.beginBodyUpdate === 'function') api.beginBodyUpdate(table);
+}
+
+function stockEndManagedTableBodyUpdate(){
+  const api = window.SitjoyManagedPmTable;
+  const table = document.getElementById('mainTable');
+  if(api && table && typeof api.endBodyUpdate === 'function') api.endBodyUpdate(table);
+}
+
 function showModalStatus(message, isError){
   const el = $('#modalStatus');
   el.style.display = 'block';
@@ -226,7 +257,7 @@ function safeColorValue(value){
 }
 
 function loadOptions(){
-  return fetch('/api/factory-stock?action=options')
+  return fetch(withFetchBust('/api/factory-stock?action=options'))
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success') throw new Error(d.message || '加载选项失败');
@@ -416,6 +447,7 @@ function renderFactoryStockTable(items){
   const tbody = document.querySelector('#mainTable tbody');
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
+  stockBeginManagedTableBodyUpdate();
   if(!rows.length){
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
     const emptyTable = document.getElementById('mainTable');
@@ -423,6 +455,7 @@ function renderFactoryStockTable(items){
       if(typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') window.SitjoyManagedPmTable.invalidateLayout(emptyTable);
       if(typeof window.SitjoyManagedPmTable.reapplyColumnFilters === 'function') window.SitjoyManagedPmTable.reapplyColumnFilters(emptyTable);
     }
+    stockEndManagedTableBodyUpdate();
     return;
   }
   tbody.innerHTML = rows.map(item => {
@@ -472,6 +505,7 @@ function renderFactoryStockTable(items){
   if(table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.reapplyColumnFilters === 'function'){
     window.SitjoyManagedPmTable.reapplyColumnFilters(table);
   }
+  stockEndManagedTableBodyUpdate();
 }
 
 function triggerImport(){
@@ -643,7 +677,7 @@ async function removeItem(id){
 function loadList(){
   const q = ($('#searchInput').value || '').trim();
   const url = q ? `/api/factory-stock?q=${encodeURIComponent(q)}` : '/api/factory-stock';
-  fetch(url)
+  fetch(withFetchBust(url))
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success'){
@@ -713,6 +747,7 @@ window.addEventListener('load', () => {
     });
   }
   loadOptions().finally(loadList);
+  initFactoryStockLiveRefresh();
 });
 
 </script>

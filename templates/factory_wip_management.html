@@ -269,6 +269,25 @@ const WIP_FILTER_COLUMNS = {
 
 const $ = (s) => document.querySelector(s);
 
+function withFetchBust(url){
+  const sep = String(url || '').includes('?') ? '&' : '?';
+  return `${url}${sep}_=${Date.now()}`;
+}
+
+function factoryWipPageBusy(){
+  const modal = document.getElementById('pm-modal');
+  if(modal && modal.classList.contains('active')) return true;
+  return Object.keys(factoryWipEditDraft).length > 0;
+}
+
+function initFactoryWipLiveRefresh(){
+  if(!window.SitjoyLiveRefresh || typeof SitjoyLiveRefresh.register !== 'function') return;
+  SitjoyLiveRefresh.register('factory-wip', () => loadList(), {
+    isBusy: factoryWipPageBusy,
+    pollMs: 45000
+  });
+}
+
 /** 与 /api/factory-wip?action=filter_options 的 value 字段一致，供列筛选勾选匹配 */
 function getWipFilterValue(item, colIndex){
   if(!item) return '';
@@ -586,7 +605,7 @@ function toggleActualDateGroup(){
 }
 
 function loadOptions(){
-  return fetch('/api/factory-wip?action=options')
+  return fetch(withFetchBust('/api/factory-wip?action=options'))
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success') throw new Error(d.message || '加载选项失败');
@@ -1198,7 +1217,7 @@ function handleFactoryWipBatchDelete(ids){
 function loadList(){
   const q = ($('#searchInput').value || '').trim();
   const url = q ? `/api/factory-wip?q=${encodeURIComponent(q)}` : '/api/factory-wip';
-  fetch(url)
+  fetch(withFetchBust(url))
     .then(r => r.json())
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
@@ -1609,6 +1628,7 @@ window.addEventListener('load', () => {
   bindWipAggregateSegment();
   initWipGroupedAggregateHelpers();
   loadOptions().finally(loadList);
+  initFactoryWipLiveRefresh();
   setTimeout(installWipColumnFilterButtons, 200);
 });
 </script>
