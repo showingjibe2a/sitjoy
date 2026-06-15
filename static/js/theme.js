@@ -395,7 +395,7 @@
                     <button type="button" class="sitjoy-notification-trigger" tabindex="-1" aria-hidden="true">
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
                     </button>
-                    <button type="button" class="modal-close sitjoy-tab-pin" tabindex="-1" aria-hidden="true">×</button>
+                    <button type="button" class="btn-capsule-sm sitjoy-tab-pin is-active" tabindex="-1" aria-hidden="true"><svg class="sj-pin-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><circle cx="8" cy="3.2" r="2" fill="currentColor"/><path fill="currentColor" d="M5.8 5.35h4.4l.55 1.65 1.35.98c.21.15.09.47-.16.47H4.26c-.25 0-.37-.32-.16-.47l1.35-.98.55-1.65z"/><path fill="currentColor" d="M7.25 8.55h1.5v5.1a.75.75 0 0 1-.75.75h0a.75.75 0 0 1-.75-.75v-5.1z"/></svg></button>
                 </div>`;
             case 'card':
                 return `<div class="card sitjoy-theme-preview-card" aria-hidden="true">

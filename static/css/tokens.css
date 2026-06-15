@@ -9,7 +9,7 @@
 html[data-theme="default"] {
     --sitjoy-page-min-width: 1300px;
     --sitjoy-sidebar-width: 152px;
-    --sitjoy-sidebar-width-collapsed: 42px;
+    --sitjoy-sidebar-width-collapsed: 58px;
     --sitjoy-topbar-height: 36px;
 
     --sj-radius-xs: 6px;

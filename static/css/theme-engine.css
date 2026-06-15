@@ -43,40 +43,26 @@ button.modal-close:hover {
     border-color: var(--sj-cmp-icon-tool-border);
 }
 
-button.modal-close.sitjoy-tab-pin,
-button.modal-close.sitjoy-sidebar-collapse-btn {
+button.btn-capsule-sm.sitjoy-tab-pin,
+button.btn-capsule-sm.sitjoy-tab-close,
+button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     border-color: var(--sj-cmp-icon-tool-border);
     color: var(--sj-cmp-icon-tool-color);
 }
 
-.sitjoy-tab.is-pinned .sitjoy-tab-pin {
-    border-color: var(--sj-cmp-icon-pin-active-border);
-    color: var(--sj-cmp-icon-pin-active-color);
+.sitjoy-tab.is-pinned .sitjoy-tab-pin.btn-capsule-sm.is-active {
+    background: var(--morandi-ink);
+    border-color: var(--morandi-ink);
+    color: #fff;
 }
 
-.sitjoy-tab:not(.is-pinned) .sitjoy-tab-pin {
+.sitjoy-tab:not(.is-pinned) .sitjoy-tab-pin.btn-capsule-sm {
     opacity: 0;
-    width: 0;
-    min-width: 0;
-    height: 0;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-    border-width: 0;
-    overflow: hidden;
     pointer-events: none;
 }
 
-.sitjoy-tab:not(.is-pinned):hover .sitjoy-tab-pin {
+.sitjoy-tab:not(.is-pinned):hover .sitjoy-tab-pin.btn-capsule-sm {
     opacity: 1;
-    width: 1.375rem;
-    min-width: 1.375rem;
-    height: 1.375rem;
-    min-height: 1.375rem;
-    margin: 0;
-    padding: 0;
-    border-width: 2px;
-    overflow: visible;
     pointer-events: auto;
 }
 
@@ -128,8 +114,9 @@ button.btn-secondary:hover {
     background: var(--sj-variant-btn-secondary-hover-bg);
 }
 
-button.modal-close.sitjoy-sidebar-collapse-btn {
-    font-size: 0.65rem;
+button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
+    font-size: 0.62rem;
+    line-height: 1;
 }
 
 .app-toast.error {

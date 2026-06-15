@@ -157,9 +157,31 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar {
     text-overflow: ellipsis;
 }
 
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar {
+    overflow: hidden;
+}
+
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
-    font-size: 0.56rem;
-    letter-spacing: 0.02em;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    pointer-events: none;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-brand {
+    justify-content: center;
+    padding: 0 0.12rem;
+    overflow: hidden;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
+    margin: 0 auto;
 }
 
 .sitjoy-sidebar-nav-wrap {
@@ -199,11 +221,34 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 
 /* 大模块：首页 + 分组标题 */
 .sitjoy-sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
     padding: 0.32rem 0.4rem 0.28rem 0.46rem;
     color: var(--sj-variant-sidebar-group-text);
     font-size: 0.88rem;
     font-weight: 700;
     letter-spacing: 0.02em;
+}
+
+.sitjoy-sidebar-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.92;
+}
+
+.sitjoy-sidebar-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.sitjoy-sidebar-short {
+    display: none;
 }
 
 .sitjoy-sidebar-link:hover {
@@ -277,6 +322,7 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 .sitjoy-sidebar-group-label {
     display: flex;
     align-items: center;
+    gap: 0.32rem;
     width: 100%;
     margin: 0;
     padding: 0.22rem 0.4rem 0.14rem 0.46rem;
@@ -337,7 +383,169 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-logo {
 }
 
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
+    display: block;
+    padding: 0.24rem 0.06rem 0.48rem;
+    overflow-x: hidden;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-link,
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-group-label {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.18rem;
+    padding: 0.44rem 0.04rem 0.36rem;
+    text-align: center;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-link-text {
     display: none;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-short {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    opacity: 1;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon svg {
+    width: 1.44rem;
+    height: 1.44rem;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon {
+    width: 1.58rem;
+    height: 1.58rem;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon svg,
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-icon--amazon .sj-amazon-mark {
+    width: 1.52rem;
+    height: 1.52rem;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-link.active,
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item.is-rail-active {
+    background: var(--sj-variant-sidebar-active-bg);
+    color: var(--sj-variant-sidebar-text-active);
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-link.active::before {
+    width: 3px;
+    height: 58%;
+    border-radius: 0 2px 2px 0;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-group {
+    margin-top: 0.06rem;
+    padding-top: 0;
+    border-top: none;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-group:first-of-type {
+    margin-top: 0.12rem;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-group-label::after {
+    display: none;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-details > .sitjoy-sidebar-sub {
+    display: none !important;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-group-label {
+    cursor: default;
+}
+
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item.is-rail-active,
+body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
+    background: var(--sj-variant-sidebar-hover);
+    color: var(--sj-variant-sidebar-text-active);
+}
+
+.sitjoy-sidebar-flyout {
+    position: fixed;
+    z-index: 12050;
+    min-width: 9.8rem;
+    max-width: 14.5rem;
+    padding: 0.32rem 0 0.28rem;
+    background: var(--sj-variant-sidebar-bg);
+    border: 1px solid var(--sj-variant-sidebar-border);
+    border-radius: var(--sj-radius-xs);
+    box-shadow: 4px 6px 20px rgba(0, 0, 0, 0.22);
+    pointer-events: auto;
+}
+
+.sitjoy-sidebar-flyout[hidden] {
+    display: none !important;
+}
+
+.sitjoy-sidebar-flyout-title {
+    padding: 0.15rem 0.62rem 0.32rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--sj-variant-sidebar-text-active);
+    border-bottom: 1px solid var(--sj-variant-sidebar-border);
+    margin-bottom: 0.12rem;
+}
+
+.sitjoy-sidebar-flyout-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
+}
+
+.sitjoy-sidebar-flyout-list a {
+    display: block;
+    position: relative;
+    padding: 0.28rem 0.62rem;
+    font-size: 0.67rem;
+    font-weight: 400;
+    color: var(--sj-variant-sidebar-sub-text);
+    text-decoration: none;
+    line-height: 1.35;
+}
+
+.sitjoy-sidebar-flyout-list a:hover {
+    background: var(--sj-variant-sidebar-hover);
+    color: var(--sj-variant-sidebar-text-active);
+}
+
+.sitjoy-sidebar-flyout-list a.active {
+    background: var(--sj-variant-sidebar-active-bg);
+    color: var(--sj-variant-sidebar-text-active);
+    font-weight: 500;
+}
+
+.sitjoy-sidebar-flyout-list a.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 46%;
+    background: var(--sj-variant-sidebar-accent);
+}
+
+.sitjoy-sidebar-collapse-btn {
+    font-size: 0.62rem;
+    line-height: 1;
 }
 
 .sitjoy-main {

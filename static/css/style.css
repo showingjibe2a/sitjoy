@@ -2412,59 +2412,20 @@ table th.pm-col-num .perf-th-head-metric {
     text-align: right;
 }
 
-.pm-table-columns-pin{
-    appearance: none;
-    border: 1px solid rgba(207, 199, 189, 0.75);
-    background: transparent;
-    border-radius: 7px;
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
-    margin: 0;
-    position: relative;
+.pm-table-columns-item .btn-capsule-sm.pm-table-columns-pin {
+    flex: 0 0 auto;
 }
-.pm-table-columns-pin::before{
-    content: '';
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    background: transparent;
-    border: 2px solid rgba(111, 100, 86, 0.78);
-    box-sizing: border-box;
+
+.btn-capsule-sm .sj-pin-icon,
+.sitjoy-tab-actions .btn-capsule-sm .sj-pin-icon {
     display: block;
+    flex-shrink: 0;
+    pointer-events: none;
 }
-.pm-table-columns-pin::after{
-    content: '';
-    position: absolute;
-    width: 2px;
-    height: 10px;
-    background: rgba(111, 100, 86, 0.78);
-    border-radius: 2px;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-.pm-table-columns-pin:hover{
-    background: rgba(236, 231, 223, 0.8);
-    border-color: rgba(207, 199, 189, 0.95);
-}
-.pm-table-columns-pin.is-active{
-    background: rgba(123, 154, 176, 0.16);
-    border-color: rgba(123, 154, 176, 0.65);
-}
-.pm-table-columns-pin.is-active::before,
-.pm-table-columns-pin.is-active::after{
-    border-color: rgba(41, 78, 105, 0.92);
-    background: rgba(41, 78, 105, 0.92);
-}
-.pm-table-columns-pin:disabled{
-    opacity: 0.55;
-    cursor: not-allowed;
+
+.sitjoy-tab-actions .btn-capsule-sm.sitjoy-tab-close {
+    font-size: 0.72rem;
+    line-height: 1;
 }
 
 /* Freeze-pane: pinned columns stay on the left while horizontal scrolling */
@@ -6187,7 +6148,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除图标微按钮、小号按钮、状态 pill 等） */
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot) {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -6248,11 +6209,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):active {
     transform: translateY(0);
 }
 

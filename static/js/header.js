@@ -28,6 +28,8 @@
     let activeBatchConfirmState = null;
     let suppressSortUntil = 0;
 
+    const SITJOY_PIN_ICON_SVG = '<svg class="sj-pin-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><circle cx="8" cy="3.2" r="2" fill="currentColor"/><path fill="currentColor" d="M5.8 5.35h4.4l.55 1.65 1.35.98c.21.15.09.47-.16.47H4.26c-.25 0-.37-.32-.16-.47l1.35-.98.55-1.65z"/><path fill="currentColor" d="M7.25 8.55h1.5v5.1a.75.75 0 0 1-.75.75h0a.75.75 0 0 1-.75-.75v-5.1z"/></svg>';
+
     function isElementVisibleForEnhance(el){
         if(!el) return false;
         const style = window.getComputedStyle(el);
@@ -5171,18 +5173,17 @@
             main.appendChild(checkbox);
             main.appendChild(text);
 
-            const pin = document.createElement('button');
-            pin.type = 'button';
-            pin.className = 'pm-table-columns-pin';
             const frozenLeadOnly = String(state.table.dataset.pmFrozenLeadOnly || '') === '1';
             const pinnedNow = !!(state.pinnedColumns && state.pinnedColumns.has(k0)) || isLocked;
-            pin.textContent = '';
+            const pin = document.createElement('button');
+            pin.type = 'button';
+            pin.className = 'btn-capsule-sm pm-table-columns-pin' + (pinnedNow ? ' is-active' : '');
+            pin.innerHTML = SITJOY_PIN_ICON_SVG;
             pin.setAttribute('aria-label', pinnedNow ? '取消冻结' : '冻结到左侧');
             pin.title = isLocked
                 ? (k0 === '__sj_agg__' ? '收起列默认冻结' : '复选列默认冻结')
                 : (frozenLeadOnly ? '该表仅冻结复选框与展开列' : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧'));
             pin.disabled = isLocked || frozenLeadOnly;
-            pin.classList.toggle('is-active', pinnedNow);
             pin.addEventListener('click', (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -9136,13 +9137,41 @@
         document.querySelectorAll('.sitjoy-sidebar-nav a[href]').forEach(a => {
             const href = normalizeNavPath(a.getAttribute('href'));
             if(!href) return;
+            const textEl = a.querySelector('.sitjoy-sidebar-link-text');
+            const label = textEl
+                ? String(textEl.textContent || '').trim()
+                : String(a.textContent || '').trim();
             map.set(href, {
                 href,
-                label: (a.textContent || '').trim() || href,
+                label: label || href,
                 pageKey: String(a.dataset.pageKey || '').trim()
             });
         });
         return map;
+    }
+
+    function syncSitjoyTabLabelsFromNav(state, navIndex){
+        const index = navIndex || buildNavLinkIndex();
+        state.tabs = (state.tabs || []).map(tab => {
+            const href = normalizeNavPath(tab.href);
+            if(!index.has(href)) return tab;
+            const navLabel = String(index.get(href).label || '').trim();
+            if(!navLabel || navLabel === tab.label) return tab;
+            return Object.assign({}, tab, { label: navLabel });
+        });
+        return state;
+    }
+
+    function resolveSitjoyPageLabelFromDoc(doc){
+        if(!doc) return '';
+        const h2 = doc.querySelector('.hero h2, section.hero h2, .home-container .hero h2, h2');
+        const h2Text = h2 ? String(h2.textContent || '').trim() : '';
+        if(h2Text) return h2Text;
+        const titleLabel = String(doc.title || '').replace(/\s*-\s*SITJOY\s*$/i, '').trim();
+        if(!titleLabel) return '';
+        const parts = titleLabel.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean);
+        if(parts.length > 1) return parts[parts.length - 1];
+        return titleLabel;
     }
 
     function resolvePageInfoFromPath(path, navIndex){
@@ -9159,11 +9188,15 @@
         });
         if(best) return best;
 
+        const heroH2 = document.querySelector('.hero h2, section.hero h2, .home-container .hero h2, h2');
+        const h2Text = heroH2 ? String(heroH2.textContent || '').trim() : '';
         const title = (document.title || '').replace(/\s*-\s*SITJOY\s*$/i, '').trim();
+        const titleParts = title ? title.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean) : [];
+        const titleLeaf = titleParts.length > 1 ? titleParts[titleParts.length - 1] : title;
         return {
             id: normalized,
             href: normalized,
-            label: title || normalized,
+            label: h2Text || titleLeaf || normalized,
             pageKey: ''
         };
     }
@@ -9215,12 +9248,15 @@
         const navIndex = buildNavLinkIndex();
         const normalizedPath = normalizeNavPath(path || location.pathname);
         const pageInfo = resolvePageInfoFromPath(normalizedPath, navIndex);
-        if(doc && doc.title){
-            const titleLabel = doc.title.replace(/\s*-\s*SITJOY\s*$/i, '').trim();
-            if(titleLabel) pageInfo.label = titleLabel;
+        if(navIndex.has(normalizedPath)){
+            pageInfo.label = navIndex.get(normalizedPath).label;
+        } else {
+            const docLabel = resolveSitjoyPageLabelFromDoc(doc);
+            if(docLabel) pageInfo.label = docLabel;
         }
         let state = ensureDefaultPinnedTabs(loadSitjoyTabsState());
         state = upsertCurrentTab(state, pageInfo);
+        state = syncSitjoyTabLabelsFromNav(state, navIndex);
         saveSitjoyTabsState(state);
         renderSitjoyTabs(state, normalizedPath);
     }
@@ -9632,12 +9668,10 @@
 
     let sitjoyTabsDragId = null;
 
-    const SITJOY_TAB_ICON_PIN = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
-    const SITJOY_TAB_ICON_PIN_ACTIVE = '<svg class="sitjoy-tab-pin-icon" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="3.75" r="2.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M8 5.85v5.15"/><path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" d="M6.25 11h3.5"/></svg>';
-
     function renderSitjoyTabs(state, activeHref){
         const host = document.getElementById('sitjoyTopTabs');
         if(!host) return;
+        state = syncSitjoyTabLabelsFromNav(state, buildNavLinkIndex());
         const current = normalizeNavPath(activeHref || location.pathname);
         host.innerHTML = '';
         (state.tabs || []).forEach(tab => {
@@ -9649,11 +9683,11 @@
             el.draggable = true;
             el.setAttribute('role', 'tab');
             el.setAttribute('aria-selected', href === current ? 'true' : 'false');
-            const pinIcon = tab.pinned ? SITJOY_TAB_ICON_PIN_ACTIVE : SITJOY_TAB_ICON_PIN;
+            const pinBtnClass = 'btn-capsule-sm sitjoy-tab-pin' + (tab.pinned ? ' is-active' : '');
             el.innerHTML = `<span class="sitjoy-tab-label">${escapeSitjoyTabHtml(tab.label || href)}</span>
                 <span class="sitjoy-tab-actions">
-                    <button type="button" class="modal-close sitjoy-tab-pin" title="${tab.pinned ? '取消固定' : '固定到顶栏'}" aria-label="${tab.pinned ? '取消固定' : '固定到顶栏'}">${pinIcon}</button>
-                    ${tab.pinned ? '' : `<button type="button" class="modal-close sitjoy-tab-close" title="关闭" aria-label="关闭">×</button>`}
+                    <button type="button" class="${pinBtnClass}" title="${tab.pinned ? '取消固定' : '固定到顶栏'}" aria-label="${tab.pinned ? '取消固定' : '固定到顶栏'}">${SITJOY_PIN_ICON_SVG}</button>
+                    ${tab.pinned ? '' : `<button type="button" class="btn-capsule-sm sitjoy-tab-close" title="关闭" aria-label="关闭">×</button>`}
                 </span>`;
             host.appendChild(el);
         });
@@ -9676,6 +9710,7 @@
         let state = ensureDefaultPinnedTabs(loadSitjoyTabsState());
         const pageInfo = resolvePageInfoFromPath(location.pathname, navIndex);
         state = upsertCurrentTab(state, pageInfo);
+        state = syncSitjoyTabLabelsFromNav(state, navIndex);
         saveSitjoyTabsState(state);
         renderSitjoyTabs(state);
         bindSitjoyPopstate();
@@ -9768,6 +9803,208 @@
         });
     }
 
+    const SITJOY_SIDEBAR_RAIL_ICONS = {
+        home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.8 3.5 9.8v10.4h6.2v-6.4h4.6v6.4h6.2V9.8L12 2.8z"/></svg>',
+        product: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.4 5.2 7.3v9.4L12 20.6l6.8-3.9V7.3L12 3.4zm0 2.5 4.6 2.6v5.2L12 16.3 7.4 13.7V8.5L12 5.9z"/><path fill="currentColor" opacity=".45" d="M12 3.4 7.4 6 12 8.6 16.6 6 12 3.4z"/></svg>',
+        logistics: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 16.8h1.6V10.2L5.6 7.2h8v5.4h1.4a2.6 2.6 0 1 1 0 1.2H3.6a2.6 2.6 0 1 1 0-1.2H2zm12.2 0h1.2a2.6 2.6 0 1 1 0 1.2h-1.2v-1.2zm-9 0a1.55 1.55 0 1 0 3.1 0 1.55 1.55 0 0 0-3.1 0zm10.2 0a1.55 1.55 0 1 0 3.1 0 1.55 1.55 0 0 0-3.1 0z"/><path fill="currentColor" d="M5.6 8.4h7.4v3.6H4.4l1.2-3.6z"/></svg>',
+        gallery: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M5.5 5.8h13a1.6 1.6 0 0 1 1.6 1.6v9.2a1.6 1.6 0 0 1-1.6 1.6h-13a1.6 1.6 0 0 1-1.6-1.6V7.4a1.6 1.6 0 0 1 1.6-1.6zm-.4 10.8V7.8h14.8v8.8l-3.8-5.1-2.6 2.3-4.1-5.5-2.1 2.8-.2-.3V16.6H5.1z"/><circle cx="9.4" cy="9.6" r="1.55" fill="currentColor" opacity=".32"/></svg>',
+        sales: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.5 18.8V11h3.8v7.8H4.5zm6.4-5.2V6.8h3.8v12H10.9zm6.4 3V4.2h3.8v14.6h-3.8z"/></svg>',
+        'amazon-ad': '<svg class="sj-amazon-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M14.35 5.4h-2.05v1.75c-.78-.9-1.82-1.38-3.05-1.38-2.48 0-4.42 1.88-4.42 4.18 0 2.25 1.88 4.08 4.35 4.08 1.18 0 2.18-.4 2.95-1.08V14.2h2.05V5.4zm-3.15 7.05c-1.48 0-2.52-1.08-2.52-2.42s1.04-2.42 2.52-2.42 2.52 1.08 2.52 2.42-1.04 2.42-2.52 2.42z"/><path fill="currentColor" d="M2.8 17.55c3.05 2.35 6.35 3.55 9.35 3.55 2.65 0 5.28-.75 7.45-2.15l-1.25-.98c-1.92 1.18-4.28 1.92-6.55 1.92-2.85 0-5.55-1.05-7.7-2.95l-1.35 1.61z"/></svg>',
+        system: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4zm6.85 3.95-.88-.22a4.2 4.2 0 0 0-.52-1.15l.55-.78-1.08-1.08-.78.55a4.2 4.2 0 0 0-1.15-.52l-.22-.88h-1.52l-.22.88a4.2 4.2 0 0 0-1.15.52l-.78-.55-1.08 1.08.55.78a4.2 4.2 0 0 0-.52 1.15l-.88.22v1.52l.88.22c.12.4.3.8.52 1.15l-.55.78 1.08 1.08.78-.55c.35.22.75.4 1.15.52l.22.88h1.52l.22-.88c.4-.12.8-.3 1.15-.52l.78.55 1.08-1.08-.55-.78c.22-.35.4-.75.52-1.15l.88-.22v-1.52z"/></svg>',
+        widgets: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.2 4.2h6.8v6.8H4.2V4.2zm9 0h6.8v6.8H13.2V4.2zM4.2 13h6.8v6.8H4.2V13zm9 2.4h6.8v4.4H13.2V15.4z"/><path fill="currentColor" opacity=".42" d="M15.8 13h4.2v4.2h-4.2V13z"/></svg>'
+    };
+
+    const SITJOY_SIDEBAR_RAIL_SHORT = {
+        home: '首页',
+        product: '产品',
+        logistics: '物流',
+        gallery: '图片',
+        sales: '销售',
+        'amazon-ad': '广告',
+        system: '系统',
+        widgets: '组件'
+    };
+
+    let sitjoySidebarFlyoutState = null;
+
+    function injectSitjoySidebarRailChrome(hostEl, meta){
+        if(!hostEl || !meta) return;
+        if(hostEl.dataset.sitjoyRailEnhanced === '3') return;
+        hostEl.querySelectorAll('.sitjoy-sidebar-icon, .sitjoy-sidebar-short').forEach(node => node.remove());
+        hostEl.dataset.sitjoyRailEnhanced = '3';
+        hostEl.classList.add('sitjoy-sidebar-rail-item');
+        const textEl = hostEl.querySelector('.sitjoy-sidebar-link-text');
+        const icon = document.createElement('span');
+        icon.className = 'sitjoy-sidebar-icon' + (meta.iconClass ? ` ${meta.iconClass}` : '');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = meta.icon || '';
+        const short = document.createElement('span');
+        short.className = 'sitjoy-sidebar-short';
+        short.textContent = meta.short || '';
+        if(textEl){
+            hostEl.insertBefore(icon, textEl);
+            hostEl.appendChild(short);
+        } else {
+            hostEl.prepend(icon);
+            hostEl.appendChild(short);
+        }
+    }
+
+    function enhanceSitjoySidebarRailNav(sidebar){
+        if(!sidebar) return;
+        const homeLink = sidebar.querySelector('.sitjoy-sidebar-link[data-page-key="home"]');
+        injectSitjoySidebarRailChrome(homeLink, {
+            icon: SITJOY_SIDEBAR_RAIL_ICONS.home,
+            short: SITJOY_SIDEBAR_RAIL_SHORT.home
+        });
+        sidebar.querySelectorAll('.sitjoy-sidebar-group[data-nav-group]').forEach(group => {
+            const key = String(group.dataset.navGroup || '').trim();
+            const summary = group.querySelector('.sitjoy-sidebar-group-label');
+            if(!key || !summary) return;
+            injectSitjoySidebarRailChrome(summary, {
+                icon: SITJOY_SIDEBAR_RAIL_ICONS[key] || SITJOY_SIDEBAR_RAIL_ICONS.widgets,
+                short: SITJOY_SIDEBAR_RAIL_SHORT[key] || String(summary.querySelector('.sitjoy-sidebar-link-text')?.textContent || '').slice(0, 2),
+                iconClass: key === 'amazon-ad' ? 'sitjoy-sidebar-icon--amazon' : ''
+            });
+        });
+    }
+
+    function ensureSitjoySidebarFlyout(){
+        let flyout = document.getElementById('sitjoySidebarFlyout');
+        if(flyout) return flyout;
+        flyout = document.createElement('div');
+        flyout.id = 'sitjoySidebarFlyout';
+        flyout.className = 'sitjoy-sidebar-flyout';
+        flyout.hidden = true;
+        flyout.innerHTML = '<div class="sitjoy-sidebar-flyout-title"></div><ul class="sitjoy-sidebar-flyout-list"></ul>';
+        document.body.appendChild(flyout);
+        return flyout;
+    }
+
+    function hideSitjoySidebarFlyout(){
+        const flyout = document.getElementById('sitjoySidebarFlyout');
+        if(!flyout) return;
+        flyout.hidden = true;
+        document.querySelectorAll('.sitjoy-sidebar-rail-item.is-rail-active').forEach(el => {
+            el.classList.remove('is-rail-active');
+        });
+        sitjoySidebarFlyoutState = null;
+    }
+
+    function positionSitjoySidebarFlyout(flyout, anchorEl){
+        if(!flyout || !anchorEl) return;
+        const sidebar = document.getElementById('sitjoySidebar');
+        const anchorRect = anchorEl.getBoundingClientRect();
+        const sidebarRect = sidebar ? sidebar.getBoundingClientRect() : anchorRect;
+        const margin = 6;
+        let top = anchorRect.top;
+        flyout.style.left = `${Math.round(sidebarRect.right + margin)}px`;
+        flyout.style.top = `${Math.round(top)}px`;
+        const flyoutRect = flyout.getBoundingClientRect();
+        const maxTop = Math.max(margin, (window.innerHeight || 0) - flyoutRect.height - margin);
+        if(top > maxTop) top = maxTop;
+        if(top < margin) top = margin;
+        flyout.style.top = `${Math.round(top)}px`;
+    }
+
+    function collectVisibleSidebarSubLinks(group){
+        if(!group) return [];
+        return Array.from(group.querySelectorAll(':scope .sitjoy-sidebar-sub > li')).flatMap(li => {
+            if(li.style.display === 'none') return [];
+            const a = li.querySelector('a[href]');
+            return a ? [a] : [];
+        });
+    }
+
+    function showSitjoySidebarFlyout(anchorEl, group){
+        if(!document.body.classList.contains('sitjoy-sidebar-collapsed')) return;
+        const links = collectVisibleSidebarSubLinks(group);
+        if(!links.length) return;
+        const flyout = ensureSitjoySidebarFlyout();
+        const titleEl = flyout.querySelector('.sitjoy-sidebar-flyout-title');
+        const listEl = flyout.querySelector('.sitjoy-sidebar-flyout-list');
+        const titleText = group.querySelector('.sitjoy-sidebar-link-text');
+        if(titleEl) titleEl.textContent = titleText ? String(titleText.textContent || '').trim() : '';
+        if(listEl){
+            listEl.innerHTML = '';
+            const path = normalizeNavPath(location.pathname);
+            links.forEach(a => {
+                const li = document.createElement('li');
+                const clone = a.cloneNode(true);
+                clone.classList.remove('active');
+                const href = normalizeNavPath(clone.getAttribute('href'));
+                const isActive = href === path || (href !== '/' && path.startsWith(href + '/'));
+                if(isActive) clone.classList.add('active');
+                li.appendChild(clone);
+                listEl.appendChild(li);
+            });
+        }
+        document.querySelectorAll('.sitjoy-sidebar-rail-item.is-rail-active').forEach(el => {
+            el.classList.remove('is-rail-active');
+        });
+        anchorEl.classList.add('is-rail-active');
+        flyout.hidden = false;
+        positionSitjoySidebarFlyout(flyout, anchorEl);
+        sitjoySidebarFlyoutState = { anchorEl, group };
+    }
+
+    function initSitjoySidebarCollapsedFlyout(sidebar){
+        if(!sidebar || sidebar.dataset.sitjoyFlyoutBound === '1') return;
+        sidebar.dataset.sitjoyFlyoutBound = '1';
+        const flyout = ensureSitjoySidebarFlyout();
+        let hideTimer = null;
+
+        const scheduleHide = () => {
+            if(hideTimer) window.clearTimeout(hideTimer);
+            hideTimer = window.setTimeout(() => hideSitjoySidebarFlyout(), 120);
+        };
+        const cancelHide = () => {
+            if(hideTimer){
+                window.clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        };
+
+        sidebar.querySelectorAll('.sitjoy-sidebar-group[data-nav-group]').forEach(group => {
+            const summary = group.querySelector('.sitjoy-sidebar-group-label');
+            if(!summary) return;
+            summary.addEventListener('mouseenter', () => {
+                if(!document.body.classList.contains('sitjoy-sidebar-collapsed')) return;
+                cancelHide();
+                showSitjoySidebarFlyout(summary, group);
+            });
+            summary.addEventListener('mouseleave', scheduleHide);
+        });
+
+        flyout.addEventListener('mouseenter', cancelHide);
+        flyout.addEventListener('mouseleave', scheduleHide);
+        flyout.addEventListener('click', (ev) => {
+            const link = ev.target.closest('a[href]');
+            if(!link) return;
+            hideSitjoySidebarFlyout();
+            if(shouldUseSitjoySoftNav(ev, link)){
+                ev.preventDefault();
+                sitjoyNavigateTo(link.getAttribute('href'));
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if(!sitjoySidebarFlyoutState || !sitjoySidebarFlyoutState.anchorEl) return;
+            const flyoutEl = document.getElementById('sitjoySidebarFlyout');
+            if(flyoutEl && !flyoutEl.hidden){
+                positionSitjoySidebarFlyout(flyoutEl, sitjoySidebarFlyoutState.anchorEl);
+            }
+        });
+
+        sidebar.querySelector('.sitjoy-sidebar-nav-wrap')?.addEventListener('scroll', () => {
+            if(!sitjoySidebarFlyoutState || !sitjoySidebarFlyoutState.anchorEl) return;
+            const flyoutEl = document.getElementById('sitjoySidebarFlyout');
+            if(flyoutEl && !flyoutEl.hidden){
+                positionSitjoySidebarFlyout(flyoutEl, sitjoySidebarFlyoutState.anchorEl);
+            }
+        }, { passive: true });
+    }
+
     function syncSidebarActiveState(){
         const path = normalizeNavPath(location.pathname);
         document.querySelectorAll('.sitjoy-sidebar-nav a[href]').forEach(a => {
@@ -9789,6 +10026,9 @@
         if(!sidebar || sidebar.dataset.sitjoySidebarBound === '1') return;
         sidebar.dataset.sitjoySidebarBound = '1';
 
+        enhanceSitjoySidebarRailNav(sidebar);
+        initSitjoySidebarCollapsedFlyout(sidebar);
+
         try {
             if(localStorage.getItem(SITJOY_SIDEBAR_COLLAPSED_KEY) === '1'){
                 document.body.classList.add('sitjoy-sidebar-collapsed');
@@ -9799,6 +10039,7 @@
             if(details.dataset.sitjoyDetailsBound === '1') return;
             details.dataset.sitjoyDetailsBound = '1';
             details.addEventListener('toggle', () => {
+                if(document.body.classList.contains('sitjoy-sidebar-collapsed')) return;
                 if(!details.open) return;
                 const group = details.closest('.sitjoy-sidebar-group');
                 if(!group) return;
@@ -9816,13 +10057,25 @@
                 try {
                     localStorage.setItem(SITJOY_SIDEBAR_COLLAPSED_KEY, document.body.classList.contains('sitjoy-sidebar-collapsed') ? '1' : '0');
                 } catch (e) { /* ignore */ }
+                hideSitjoySidebarFlyout();
+                document.querySelectorAll('.sitjoy-sidebar-details[open]').forEach(details => {
+                    details.open = false;
+                });
             });
         }
 
         sidebar.addEventListener('click', (ev) => {
+            if(document.body.classList.contains('sitjoy-sidebar-collapsed')){
+                const summary = ev.target.closest('.sitjoy-sidebar-group-label');
+                if(summary){
+                    ev.preventDefault();
+                    return;
+                }
+            }
             const link = ev.target.closest('.sitjoy-sidebar a[href]');
             if(!link || !shouldUseSitjoySoftNav(ev, link)) return;
             ev.preventDefault();
+            hideSitjoySidebarFlyout();
             sitjoyNavigateTo(link.getAttribute('href'));
         });
 
