@@ -597,6 +597,12 @@
             font-size: 0.76rem;
             min-height: 26px;
         }
+        .aa-period-editable input[type="datetime-local"].aa-period-edit-input--minute {
+            width: 10.5rem;
+            max-width: 100%;
+            min-width: 0;
+            padding: 0.22rem 0.35rem;
+        }
         .aa-period-field-v .aa-period-editable {
             padding: 0;
             background: transparent;
@@ -1027,6 +1033,7 @@
         const PERIOD_COMPUTED_FIELDS = ['acos', 'cpc', 'ctr', 'cvr'];
         const PERIOD_METRIC_SOURCE_FIELDS = new Set(['impressions', 'clicks', 'cost', 'orders', 'sales']);
         const PERIOD_DATETIME_FIELDS = new Set(['adjust_date', 'start_time', 'end_time']);
+        const PERIOD_INTERVAL_DATETIME_FIELDS = new Set(['start_time', 'end_time']);
 
         const AA_BID_STRATEGIES = [
             '动态竞价-仅降低',
@@ -1404,6 +1411,18 @@
             return d.toLocaleString('zh-CN');
         }
 
+        function formatDateTimeMinute(value) {
+            if (!value) return '';
+            const text = String(value).trim();
+            if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(text)) {
+                return text.replace('T', ' ').slice(0, 16);
+            }
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return text;
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
         function periodDayCount(startTime, endTime) {
             const s = new Date(startTime);
             const e = new Date(endTime);
@@ -1594,7 +1613,8 @@
                 return val === '1' ? '是' : '否';
             }
             if (PERIOD_DATETIME_FIELDS.has(field)) {
-                const shown = formatDateTime(val) || '-';
+                const fmt = PERIOD_INTERVAL_DATETIME_FIELDS.has(field) ? formatDateTimeMinute : formatDateTime;
+                const shown = fmt(val) || '-';
                 return escapeHtml(shown);
             }
             if (field === 'before_value' || field === 'after_value') {
@@ -1804,6 +1824,10 @@
                 input = document.createElement('input');
                 input.type = 'datetime-local';
                 input.className = 'inline-input preview-edit-input aa-period-edit-input';
+                if (PERIOD_INTERVAL_DATETIME_FIELDS.has(field)) {
+                    input.step = '60';
+                    input.classList.add('aa-period-edit-input--minute');
+                }
             } else if (inputType === 'textarea') {
                 input = document.createElement('textarea');
                 input.className = 'inline-input aa-period-edit-input';
