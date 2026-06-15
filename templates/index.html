@@ -2255,8 +2255,18 @@
         }
 
         function renderTodoTable(items) {
+            const table = document.getElementById('todoTable');
             const tbody = document.getElementById('todoTableBody');
             if (!tbody) return;
+            const pmTable = window.SitjoyManagedPmTable;
+            const beginBody = pmTable && typeof pmTable.beginBodyUpdate === 'function'
+                ? () => pmTable.beginBodyUpdate(table || '#todoTable')
+                : null;
+            const endBody = pmTable && typeof pmTable.endBodyUpdate === 'function'
+                ? () => pmTable.endBodyUpdate(table || '#todoTable')
+                : null;
+            if (beginBody) beginBody();
+            try {
             const list = Array.isArray(items) ? items.slice() : [];
             list.sort((a, b) => {
                 const ad = (Number(a.my_is_completed || 0) === 1) ? 1 : 0;
@@ -2320,6 +2330,9 @@
                     </tr>
                 `;
             }).join('');
+            } finally {
+                if (endBody) endBody();
+            }
         }
 
         function toDatetimeLocalValue(text) {
@@ -3072,7 +3085,9 @@
             const todoTable = document.getElementById('todoTable');
             if (todoTable) {
                 todoTable.addEventListener('click', e => {
-                    const actionEl = e.target.closest('[data-todo-action]');
+                    let node = e.target;
+                    while (node && node.nodeType !== 1) node = node.parentElement;
+                    const actionEl = node && node.closest ? node.closest('[data-todo-action]') : null;
                     if (!actionEl) return;
                     const action = actionEl.dataset.todoAction;
                     const id = parseInt(actionEl.dataset.id || '0', 10) || 0;

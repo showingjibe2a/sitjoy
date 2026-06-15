@@ -2659,14 +2659,36 @@
         });
     }
 
+    function rowsMatchDomOrder(currentRows, nextRows){
+        const cur = Array.isArray(currentRows) ? currentRows : [];
+        const next = Array.isArray(nextRows) ? nextRows : [];
+        if(cur.length !== next.length) return false;
+        for(let i = 0; i < cur.length; i += 1){
+            if(cur[i] !== next[i]) return false;
+        }
+        return true;
+    }
+
+    function invalidateStaleDomPaginationRows(state){
+        if(!state || !shouldUseDomClientPagination(state)) return;
+        const cached = state.domPaginationAllRows;
+        if(!Array.isArray(cached) || !cached.length) return;
+        if(cached.some(row => !row || !row.isConnected)){
+            invalidateDomPaginationRows(state);
+        }
+    }
+
     function mountDomPaginationPage(state, pageRows){
         const tbody = state.tbody;
         if(!tbody) return;
+        const nextRows = (pageRows || []).filter(Boolean);
+        const currentRows = Array.from(tbody.rows || []);
+        if(rowsMatchDomOrder(currentRows, nextRows)) return;
         while(tbody.firstChild){
             tbody.removeChild(tbody.firstChild);
         }
-        (pageRows || []).forEach((row) => {
-            if(row) tbody.appendChild(row);
+        nextRows.forEach((row) => {
+            if(row && row.parentNode !== tbody) tbody.appendChild(row);
         });
     }
 
@@ -2865,9 +2887,59 @@
         return `字段${Number(fallbackIndex) + 1}`;
     }
 
+    function resolvePointerEventElement(eventOrTarget){
+        let node = eventOrTarget && eventOrTarget.target != null ? eventOrTarget.target : eventOrTarget;
+        while(node && node.nodeType !== 1){
+            node = node.parentElement;
+        }
+        return node || null;
+    }
+
     function isEditableDomTarget(target){
-        if(!target || !target.closest) return false;
-        return !!target.closest('input, textarea, select, button, a, [contenteditable="true"], .universal-select-dropdown, .status-pill');
+        const el = resolvePointerEventElement(target);
+        if(!el || !el.closest) return false;
+        return !!el.closest('input, textarea, select, button, a, [contenteditable="true"], .universal-select-dropdown, .status-pill');
+    }
+
+    function shouldBypassManagedGridSelection(event){
+        const el = resolvePointerEventElement(event);
+        if(!el || !el.closest) return false;
+        return !!el.closest([
+            'button',
+            'a',
+            'input',
+            'select',
+            'textarea',
+            'label',
+            '.pm-actions',
+            '.sj-group-row-actions',
+            '.preview-doc-actions',
+            '.preview-status',
+            '.status-segment',
+            '.status-pill',
+            '.universal-select',
+            '.universal-select-dropdown',
+            '.pm-column-filter-btn',
+            '.pm-column-filter-pop',
+            '.pm-table-note-wrap',
+            '[data-todo-action]',
+            '[data-action]',
+            '[onclick]',
+            '[role="button"]',
+            '.btn-secondary',
+            '.btn-danger',
+            '.btn-primary',
+            '.btn-accent',
+            '.btn-small',
+            '.btn-ghost'
+        ].join(', '));
+    }
+
+    function managedGridSelectionCellFromEvent(state, event){
+        const pointerEl = resolvePointerEventElement(event);
+        const cell = pointerEl && pointerEl.closest ? pointerEl.closest('td') : null;
+        if(!cell || !state || !state.tbody || !state.tbody.contains(cell)) return null;
+        return cell;
     }
 
     function clearGridSelectionClasses(table){
@@ -3841,15 +3913,23 @@
         if(!state || !state.tbody || state.tbody.dataset.gridSelectBound === '1') return;
         state.tbody.dataset.gridSelectBound = '1';
 
+        state.tbody.addEventListener('selectstart', (event) => {
+            if(shouldBypassManagedGridSelection(event)) return;
+            if(!managedGridSelectionCellFromEvent(state, event)) return;
+            event.preventDefault();
+        });
+
         state.tbody.addEventListener('mousedown', (event) => {
             if(event.button !== 0) return;
-            const cell = event.target && event.target.closest ? event.target.closest('td') : null;
-            if(!cell || !state.tbody.contains(cell)) return;
+            if(shouldBypassManagedGridSelection(event)) return;
+            const pointerEl = resolvePointerEventElement(event);
+            const cell = managedGridSelectionCellFromEvent(state, event);
+            if(!cell) return;
             if(cell.classList.contains('pm-table-hide-col')) return;
             const manageColKey = String(cell.dataset.manageColKey || '').trim();
             if(manageColKey.endsWith('_chk__')) return;
-            if(event.target && event.target.closest && event.target.closest('input[type="checkbox"]')) return;
-            if(isEditableDomTarget(event.target) && event.target !== cell) return;
+            if(pointerEl && pointerEl.closest && pointerEl.closest('input[type="checkbox"]')) return;
+            if(isEditableDomTarget(event) && pointerEl !== cell) return;
 
             const activeEl = document.activeElement;
             if(
@@ -3868,7 +3948,6 @@
             const coord = getCellCoord(state, cell);
             if(!coord) return;
 
-            event.preventDefault();
             const selection = ensureGridSelectionState(state);
 
             const skuGridCoord = getTransitSkuGridCoord(state, event.target);
@@ -7442,7 +7521,7 @@
             if(changed){
                 if(shouldUseDomClientPagination(state)){
                     state.domPaginationAllRows = rows.slice();
-                } else {
+                } else if(!rowsMatchDomOrder(Array.from(state.tbody.rows || []), rows)) {
                     rows.forEach(row => state.tbody.appendChild(row));
                 }
             }
@@ -7456,7 +7535,7 @@
         if(changed){
             if(shouldUseDomClientPagination(state)){
                 state.domPaginationAllRows = rows.slice();
-            } else {
+            } else if(!rowsMatchDomOrder(Array.from(state.tbody.rows || []), rows)) {
                 rows.forEach(row => state.tbody.appendChild(row));
             }
         }
@@ -7618,11 +7697,20 @@
             return;
         }
         state.isRefreshing = true;
+        let observerWasConnected = false;
+        if(state.observer && state.tbody){
+            try {
+                state.observer.disconnect();
+                observerWasConnected = true;
+            } catch (_e) {}
+        }
+
+        try {
+        invalidateStaleDomPaginationRows(state);
 
         const headerMeta = getHeaderMeta(state.table);
         const headerCount = headerMeta.length;
         if(!headerCount) {
-            state.isRefreshing = false;
             return;
         }
 
@@ -7776,11 +7864,17 @@
         restoreManagedColumnFiltersFromStorageIfNeeded(state);
         reapplyManagedColumnFiltersFromHandle(state);
         applyNumericColumnLayoutForTable(state.table);
-
-        state.isRefreshing = false;
-        if(state.needRefresh){
-            state.needRefresh = false;
-            window.requestAnimationFrame(() => refreshManagedTable(state));
+        } finally {
+            state.isRefreshing = false;
+            if(observerWasConnected && state.observer && state.tbody){
+                try {
+                    state.observer.observe(state.tbody, { childList: true, subtree: false });
+                } catch (_e) {}
+            }
+            if(state.needRefresh){
+                state.needRefresh = false;
+                window.requestAnimationFrame(() => refreshManagedTable(state));
+            }
         }
     }
 
@@ -8229,11 +8323,12 @@
         }
 
         const scheduleRefresh = () => {
-            if(state.suppressManagedRefresh) return;
+            if(state.suppressManagedRefresh || state.isRefreshing) return;
             if(state.refreshScheduled) return;
             state.refreshScheduled = true;
             window.requestAnimationFrame(() => {
                 state.refreshScheduled = false;
+                if(state.suppressManagedRefresh || state.isRefreshing) return;
                 refreshManagedTable(state);
             });
         };
@@ -9350,30 +9445,53 @@
         } catch (e) { /* ignore */ }
     }
 
+    let sitjoyLayoutSyncDepth = 0;
+
     function syncSitjoyPageFillScrollLayout(root){
         const pageBody = document.getElementById('sitjoyPageBody');
         if(!pageBody || !document.body.classList.contains('sitjoy-has-shell')) return;
         const scope = (root && root.querySelector) ? root : pageBody;
-        pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
-            el.classList.remove('sj-table-fill-host');
-        });
+
         const hasFill = !!(scope.querySelector('.pm-managed-body-wrap, .board-body-wrap')
             || pageBody.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
         const isAaAdjust = !!(scope.querySelector('.pm-layout--aa-adjust')
             || pageBody.querySelector('.pm-layout--aa-adjust'));
-        pageBody.classList.toggle('sj-page-fill-scroll', hasFill && !isAaAdjust);
-        if(!hasFill) return;
-        pageBody.querySelectorAll('.pm-managed-body-wrap').forEach((wrap) => {
-            const inLayout = wrap.closest('.pm-layout');
-            if(!inLayout) return;
-            let host = wrap;
-            while(host && host.parentElement && host.parentElement !== inLayout){
-                host = host.parentElement;
+        const wantPageFill = hasFill && !isAaAdjust;
+
+        sitjoyLayoutSyncDepth += 1;
+        try {
+            if(pageBody.classList.contains('sj-page-fill-scroll') !== wantPageFill){
+                pageBody.classList.toggle('sj-page-fill-scroll', wantPageFill);
             }
-            if(host && host.parentElement === inLayout && host !== inLayout){
-                host.classList.add('sj-table-fill-host');
+            if(!hasFill){
+                pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
+                    if(el.classList.contains('sj-table-fill-host')) el.classList.remove('sj-table-fill-host');
+                });
+                return;
             }
-        });
+
+            const nextHosts = new Set();
+            pageBody.querySelectorAll('.pm-managed-body-wrap').forEach((wrap) => {
+                const inLayout = wrap.closest('.pm-layout');
+                if(!inLayout) return;
+                let host = wrap;
+                while(host && host.parentElement && host.parentElement !== inLayout){
+                    host = host.parentElement;
+                }
+                if(host && host.parentElement === inLayout && host !== inLayout){
+                    nextHosts.add(host);
+                }
+            });
+
+            pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
+                if(!nextHosts.has(el)) el.classList.remove('sj-table-fill-host');
+            });
+            nextHosts.forEach((host) => {
+                if(!host.classList.contains('sj-table-fill-host')) host.classList.add('sj-table-fill-host');
+            });
+        } finally {
+            sitjoyLayoutSyncDepth = Math.max(0, sitjoyLayoutSyncDepth - 1);
+        }
     }
 
     function enhanceSitjoyPageContent(root){
@@ -9392,9 +9510,52 @@
         syncModalScrollLock();
     }
 
+    function teardownManagedTablesInScope(root){
+        const scope = root && root.querySelectorAll ? root : null;
+        if(!scope) return;
+        scope.querySelectorAll('table.is-managed-table').forEach((table) => {
+            const state = managedTableState.get(table);
+            const handle = columnFilterRegistry.get(table) || (state && state.columnFilterHandle) || null;
+            if(handle && typeof handle.destroy === 'function'){
+                try { handle.destroy(); } catch (_) {}
+            }
+            managedTableState.delete(table);
+            columnFilterRegistry.delete(table);
+        });
+    }
+
+    function pruneDetachedManagedTableArtifacts(){
+        const staleTables = [];
+        managedTableState.forEach((_state, table) => {
+            if(!table || !table.isConnected) staleTables.push(table);
+        });
+        staleTables.forEach((table) => {
+            const state = managedTableState.get(table);
+            if(state && state.columnFilterHandle && typeof state.columnFilterHandle.destroy === 'function'){
+                try { state.columnFilterHandle.destroy(); } catch (_) {}
+            }
+            managedTableState.delete(table);
+        });
+        const staleFilterTables = [];
+        columnFilterRegistry.forEach((_handle, table) => {
+            if(!table || !table.isConnected) staleFilterTables.push(table);
+        });
+        staleFilterTables.forEach((table) => {
+            const handle = columnFilterRegistry.get(table);
+            if(handle && typeof handle.destroy === 'function'){
+                try { handle.destroy(); } catch (_) {}
+            } else {
+                columnFilterRegistry.delete(table);
+            }
+        });
+    }
+
     async function applySitjoyPageSwap(doc, href){
         const pageBody = document.getElementById('sitjoyPageBody');
         if(!pageBody) throw new Error('Missing #sitjoyPageBody');
+
+        closeColumnFilterPopup();
+        teardownManagedTablesInScope(pageBody);
 
         window.__sitjoyNavEpoch = (window.__sitjoyNavEpoch || 0) + 1;
         window.__sitjoyActivePath = normalizeNavPath(href);
@@ -9412,6 +9573,7 @@
 
         refreshSitjoyTabsForCurrentPath(href, doc);
         syncSidebarActiveState();
+        pruneDetachedManagedTableArtifacts();
         window.requestAnimationFrame(() => enhanceSitjoyPageContent(pageBody));
     }
 
@@ -10641,10 +10803,12 @@
 
         let bodyEnhanceScheduled = false;
         const bodyObserver = new MutationObserver(() => {
+            if(sitjoyLayoutSyncDepth > 0) return;
             if(bodyEnhanceScheduled) return;
             bodyEnhanceScheduled = true;
             window.requestAnimationFrame(() => {
                 bodyEnhanceScheduled = false;
+                if(sitjoyLayoutSyncDepth > 0) return;
                 enhanceManagedTables(document);
                 syncSitjoyPageFillScrollLayout(document);
                 bindFloatingHelpDots(document);
@@ -10660,9 +10824,7 @@
         });
         bodyObserver.observe(document.body, {
             childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
+            subtree: true
         });
     };
 
