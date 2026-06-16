@@ -2872,6 +2872,174 @@ class AmazonAdMixin:
         guide.column_dimensions['C'].width = 46
         return wb
 
+    def _amazon_ad_target_desc_duplicate_errors(self, cur, existing_by_id, patches):
+        """校验批量修改投放描述后，同一广告关联下描述是否唯一。"""
+        desc_patch_ids = [
+            item_id for item_id, patch in patches.items()
+            if item_id in existing_by_id and 'target_desc' in patch
+        ]
+        if not desc_patch_ids:
+            return []
+
+        ad_item_ids = sorted({
+            existing_by_id[item_id]['ad_item_id']
+            for item_id in desc_patch_ids
+        })
+        placeholders = ','.join(['%s'] * len(ad_item_ids))
+        cur.execute(
+            f"""
+            SELECT id, ad_item_id, target_desc
+            FROM amazon_ad_targets
+            WHERE ad_item_id IN ({placeholders})
+            """,
+            tuple(ad_item_ids),
+        )
+        rows_by_ad = {}
+        for row in cur.fetchall() or []:
+            rows_by_ad.setdefault(row['ad_item_id'], []).append(row)
+
+        errors = []
+        seen_error_ids = set()
+        for ad_item_id, rows in rows_by_ad.items():
+            desc_owner = {}
+            for row in rows:
+                item_id = self._parse_int(row.get('id'))
+                if not item_id:
+                    continue
+                patch = patches.get(item_id) or {}
+                if 'target_desc' in patch:
+                    desc = str(patch.get('target_desc') or '').strip()
+                else:
+                    desc = str(row.get('target_desc') or '').strip()
+                if not desc:
+                    if item_id in patches and 'target_desc' in patches[item_id]:
+                        msg = '投放描述不能为空'
+                        if item_id not in seen_error_ids:
+                            errors.append({'id': item_id, 'message': msg, 'error': msg})
+                            seen_error_ids.add(item_id)
+                    continue
+                if len(desc) > 255:
+                    msg = '投放描述长度不能超过 255'
+                    if item_id not in seen_error_ids:
+                        errors.append({'id': item_id, 'message': msg, 'error': msg})
+                        seen_error_ids.add(item_id)
+                    continue
+                prev_id = desc_owner.get(desc)
+                if prev_id is not None and prev_id != item_id:
+                    for conflict_id in (item_id, prev_id):
+                        if conflict_id in patches and 'target_desc' in patches[conflict_id]:
+                            if conflict_id not in seen_error_ids:
+                                msg = '该广告下已存在相同投放描述'
+                                errors.append({'id': conflict_id, 'message': msg, 'error': msg})
+                                seen_error_ids.add(conflict_id)
+                else:
+                    desc_owner[desc] = item_id
+        return errors
+
+    def _amazon_ad_target_batch_patch(self, cur, items, chunk_size=120):
+        """广告投放预览批量保存：按列 CASE WHEN 合并 UPDATE，减少数据库往返。"""
+        errors = []
+        patches = {}
+        for raw in items:
+            if not isinstance(raw, dict):
+                errors.append({'message': '无效数据项', 'error': '无效数据项'})
+                continue
+            item_id = self._parse_int(raw.get('id'))
+            if not item_id:
+                errors.append({'id': raw.get('id'), 'message': '无效 id', 'error': '无效 id'})
+                continue
+            patch = patches.get(item_id) or {}
+            if 'bid_value' in raw:
+                bid_value = str(raw.get('bid_value') or '').strip()
+                if not bid_value:
+                    errors.append({'id': item_id, 'message': '竞价不能为空', 'error': '竞价不能为空'})
+                    continue
+                patch['bid_value'] = bid_value
+            if 'target_desc' in raw or 'delivery_desc' in raw:
+                target_desc = str(raw.get('target_desc') or raw.get('delivery_desc') or '').strip()
+                if not target_desc:
+                    errors.append({'id': item_id, 'message': '投放描述不能为空', 'error': '投放描述不能为空'})
+                    continue
+                if len(target_desc) > 255:
+                    errors.append({'id': item_id, 'message': '投放描述长度不能超过 255', 'error': '投放描述长度不能超过 255'})
+                    continue
+                patch['target_desc'] = target_desc
+            if not patch:
+                errors.append({'id': item_id, 'message': '无可更新字段', 'error': '无可更新字段'})
+                continue
+            patches[item_id] = patch
+
+        if not patches:
+            return 0, errors
+
+        id_list = sorted(patches.keys())
+        placeholders = ','.join(['%s'] * len(id_list))
+        cur.execute(
+            f"""
+            SELECT id, ad_item_id, target_desc, bid_value
+            FROM amazon_ad_targets
+            WHERE id IN ({placeholders})
+            """,
+            tuple(id_list),
+        )
+        existing_by_id = {
+            self._parse_int(row.get('id')): row
+            for row in (cur.fetchall() or [])
+            if self._parse_int(row.get('id'))
+        }
+
+        valid_patches = {}
+        for item_id, patch in patches.items():
+            if item_id not in existing_by_id:
+                msg = '记录不存在'
+                errors.append({'id': item_id, 'message': msg, 'error': msg})
+                continue
+            valid_patches[item_id] = patch
+
+        if not valid_patches:
+            return 0, errors
+
+        dup_errors = self._amazon_ad_target_desc_duplicate_errors(cur, existing_by_id, valid_patches)
+        if dup_errors:
+            errors.extend(dup_errors)
+            blocked_ids = {self._parse_int(err.get('id')) for err in dup_errors if self._parse_int(err.get('id'))}
+            valid_patches = {
+                item_id: patch
+                for item_id, patch in valid_patches.items()
+                if item_id not in blocked_ids
+            }
+            if not valid_patches:
+                return 0, errors
+
+        updated = 0
+        all_ids = list(valid_patches.keys())
+        size = max(1, int(chunk_size or 120))
+        for offset in range(0, len(all_ids), size):
+            chunk_ids = all_ids[offset:offset + size]
+            all_columns = set()
+            for rid in chunk_ids:
+                all_columns.update(valid_patches[rid].keys())
+            set_parts = []
+            params = []
+            for col in sorted(all_columns):
+                when_parts = []
+                for rid in chunk_ids:
+                    patch_fields = valid_patches[rid]
+                    if col not in patch_fields:
+                        continue
+                    when_parts.append('WHEN %s THEN %s')
+                    params.extend([rid, patch_fields[col]])
+                if when_parts:
+                    set_parts.append(f'{col} = CASE id {" ".join(when_parts)} ELSE {col} END')
+            if not set_parts:
+                continue
+            in_ph = ','.join(['%s'] * len(chunk_ids))
+            sql = f'UPDATE amazon_ad_targets SET {", ".join(set_parts)} WHERE id IN ({in_ph})'
+            cur.execute(sql, tuple(params + chunk_ids))
+            updated += int(cur.rowcount or 0)
+
+        return updated, errors
+
     def handle_amazon_ad_target_api(self, environ, method, start_response):
         """Amazon 广告投放（target）API（CRUD）"""
         try:
@@ -2896,30 +3064,9 @@ class AmazonAdMixin:
             if method == 'PATCH':
                 batch_items = data.get('items')
                 if isinstance(batch_items, list) and batch_items:
-                    updated = 0
-                    errors = []
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
-                            for raw in batch_items:
-                                item_id = self._parse_int((raw or {}).get('id'))
-                                bid_value = str((raw or {}).get('bid_value') or '').strip()
-                                if not item_id:
-                                    errors.append({'id': 0, 'error': 'Missing id'})
-                                    continue
-                                if not bid_value:
-                                    errors.append({'id': item_id, 'error': '竞价不能为空'})
-                                    continue
-                                try:
-                                    cur.execute(
-                                        'UPDATE amazon_ad_targets SET bid_value=%s WHERE id=%s',
-                                        (bid_value, item_id),
-                                    )
-                                    if cur.rowcount <= 0:
-                                        errors.append({'id': item_id, 'error': '记录不存在'})
-                                    else:
-                                        updated += 1
-                                except Exception as ex:
-                                    errors.append({'id': item_id, 'error': str(ex)})
+                            updated, errors = self._amazon_ad_target_batch_patch(cur, batch_items)
                     return self.send_json({
                         'status': 'success',
                         'updated': updated,

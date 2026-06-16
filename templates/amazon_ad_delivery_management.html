@@ -29,6 +29,16 @@
         .preview-savebar.active {
             display: inline-flex;
         }
+        .preview-edit-input {
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .preview-edit-cell {
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
     </style>
 </head>
 <body>
@@ -124,10 +134,10 @@
         </div>
     </div>
 
-    <div id="deliveryBidSaveBar" class="preview-savebar" aria-live="polite">
-        <span id="deliveryBidSaveText">已修改 0 条竞价</span>
-        <button type="button" class="btn-secondary" onclick="cancelDeliveryBidEdits()">取消修改</button>
-        <button type="button" class="btn-primary" onclick="saveDeliveryBidEdits()">统一保存</button>
+    <div id="deliveryPreviewSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="deliveryPreviewSaveText">已修改 0 条</span>
+        <button type="button" class="btn-secondary" onclick="cancelDeliveryPreviewEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveDeliveryPreviewEdits()">统一保存</button>
     </div>
 
     <footer>
@@ -141,7 +151,8 @@
         let adOptions = [];
         let rowsCache = [];
         let lastSelectedAdItemId = '';
-        let deliveryBidDraft = {};
+        /** @type {Record<string, {bid_value?: string, target_desc?: string}>} */
+        let deliveryPreviewDraft = {};
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -152,74 +163,127 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function escapeAttr(value) {
+            return escapeHtml(value).replace(/`/g, '&#96;');
+        }
+
         function normalizeDeliveryBidValue(rawValue) {
             return String(rawValue == null ? '' : rawValue).trim();
         }
 
-        function getDeliveryBidEffectiveValue(item) {
-            const id = String(item.id);
-            if (deliveryBidDraft[id] !== undefined) {
-                return deliveryBidDraft[id];
+        function normalizeDeliveryDescValue(rawValue) {
+            return String(rawValue == null ? '' : rawValue).trim();
+        }
+
+        function getDeliveryFieldOriginal(item, field) {
+            if (field === 'bid_value') return normalizeDeliveryBidValue(item.bid_value);
+            if (field === 'target_desc') {
+                return normalizeDeliveryDescValue(item.target_desc || item.delivery_desc || '');
             }
-            return item.bid_value || '';
+            return '';
         }
 
-        function countDeliveryBidEditedRows() {
-            return Object.keys(deliveryBidDraft).length;
+        function getDeliveryFieldEffectiveValue(item, field) {
+            const id = String(item.id);
+            const draft = deliveryPreviewDraft[id];
+            if (draft && draft[field] !== undefined) {
+                return field === 'bid_value'
+                    ? normalizeDeliveryBidValue(draft[field])
+                    : normalizeDeliveryDescValue(draft[field]);
+            }
+            return getDeliveryFieldOriginal(item, field);
         }
 
-        function syncDeliveryBidSaveBar() {
-            const bar = document.getElementById('deliveryBidSaveBar');
-            const text = document.getElementById('deliveryBidSaveText');
+        function countDeliveryPreviewEditedRows() {
+            return Object.keys(deliveryPreviewDraft).length;
+        }
+
+        function syncDeliveryPreviewDraftEntry(itemId) {
+            const id = String(itemId);
+            const item = rowsCache.find(x => String(x.id) === id);
+            if (!item) {
+                delete deliveryPreviewDraft[id];
+                return;
+            }
+            const draft = deliveryPreviewDraft[id];
+            if (!draft) return;
+            if (draft.bid_value !== undefined
+                && normalizeDeliveryBidValue(draft.bid_value) === getDeliveryFieldOriginal(item, 'bid_value')) {
+                delete draft.bid_value;
+            }
+            if (draft.target_desc !== undefined
+                && normalizeDeliveryDescValue(draft.target_desc) === getDeliveryFieldOriginal(item, 'target_desc')) {
+                delete draft.target_desc;
+            }
+            if (!Object.keys(draft).length) {
+                delete deliveryPreviewDraft[id];
+            }
+        }
+
+        function syncDeliveryPreviewSaveBar() {
+            const bar = document.getElementById('deliveryPreviewSaveBar');
+            const text = document.getElementById('deliveryPreviewSaveText');
             if (!bar || !text) return;
-            const count = countDeliveryBidEditedRows();
-            text.textContent = `已修改 ${count} 条竞价`;
+            const count = countDeliveryPreviewEditedRows();
+            text.textContent = `已修改 ${count} 条`;
             bar.classList.toggle('active', count > 0);
             if (window.syncModalScrollLock) window.syncModalScrollLock();
         }
 
-        function updateDeliveryBidDraft(itemId, rawValue) {
+        function updateDeliveryPreviewDraft(itemId, field, rawValue) {
             const item = rowsCache.find(x => String(x.id) === String(itemId));
             if (!item) return;
             const id = String(itemId);
-            const normalized = normalizeDeliveryBidValue(rawValue);
-            const original = normalizeDeliveryBidValue(item.bid_value);
+            const normalized = field === 'bid_value'
+                ? normalizeDeliveryBidValue(rawValue)
+                : normalizeDeliveryDescValue(rawValue);
+            const original = getDeliveryFieldOriginal(item, field);
+            const draft = deliveryPreviewDraft[id] || {};
             if (normalized === original) {
-                delete deliveryBidDraft[id];
+                delete draft[field];
             } else {
-                deliveryBidDraft[id] = normalized;
+                draft[field] = normalized;
             }
-            syncDeliveryBidSaveBar();
+            if (Object.keys(draft).length) {
+                deliveryPreviewDraft[id] = draft;
+            } else {
+                delete deliveryPreviewDraft[id];
+            }
+            syncDeliveryPreviewSaveBar();
         }
 
-        function bindDeliveryBidEvents() {
-            document.querySelectorAll('#deliveryTable .delivery-bid-input').forEach(el => {
-                if (el.dataset._deliveryBidBound === '1') return;
-                el.dataset._deliveryBidBound = '1';
+        function bindDeliveryPreviewEvents() {
+            document.querySelectorAll('#deliveryTable .delivery-preview-input').forEach(el => {
+                if (el.dataset._deliveryPreviewBound === '1') return;
+                el.dataset._deliveryPreviewBound = '1';
+                const field = el.getAttribute('data-field') || '';
                 const handler = function() {
-                    updateDeliveryBidDraft(this.getAttribute('data-id'), this.value);
+                    updateDeliveryPreviewDraft(this.getAttribute('data-id'), field, this.value);
                 };
                 el.addEventListener('input', handler);
                 el.addEventListener('change', handler);
             });
         }
 
-        function cancelDeliveryBidEdits() {
-            deliveryBidDraft = {};
+        function cancelDeliveryPreviewEdits() {
+            deliveryPreviewDraft = {};
             renderTable(rowsCache);
-            syncDeliveryBidSaveBar();
+            syncDeliveryPreviewSaveBar();
         }
 
-        function saveDeliveryBidEdits() {
-            const ids = Object.keys(deliveryBidDraft);
+        function saveDeliveryPreviewEdits() {
+            const ids = Object.keys(deliveryPreviewDraft);
             if (!ids.length) {
-                syncDeliveryBidSaveBar();
+                syncDeliveryPreviewSaveBar();
                 return;
             }
-            const items = ids.map(id => ({
-                id: Number(id),
-                bid_value: normalizeDeliveryBidValue(deliveryBidDraft[id]),
-            }));
+            const items = ids.map(id => {
+                const patch = deliveryPreviewDraft[id] || {};
+                const payload = { id: Number(id) };
+                if (patch.bid_value !== undefined) payload.bid_value = patch.bid_value;
+                if (patch.target_desc !== undefined) payload.target_desc = patch.target_desc;
+                return payload;
+            });
             fetch(DELIVERY_API, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -239,15 +303,21 @@
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
                     items.forEach(up => {
                         const row = rowsCache.find(x => String(x.id) === String(up.id));
-                        if (row) row.bid_value = up.bid_value;
-                        delete deliveryBidDraft[String(up.id)];
+                        if (!row) return;
+                        if (up.bid_value !== undefined) row.bid_value = up.bid_value;
+                        if (up.target_desc !== undefined) {
+                            row.target_desc = up.target_desc;
+                            row.delivery_desc = up.target_desc;
+                        }
+                        delete deliveryPreviewDraft[String(up.id)];
                     });
+                    Object.keys(deliveryPreviewDraft).forEach(id => syncDeliveryPreviewDraftEntry(id));
                     renderTable(rowsCache);
-                    syncDeliveryBidSaveBar();
+                    syncDeliveryPreviewSaveBar();
                     window.showAppSaveResult({
                         action: 'save',
                         isError: errCount > 0,
-                        message: `已保存 ${data.updated || 0} 条竞价${errCount ? `，失败 ${errCount} 条` : ''}`,
+                        message: `已保存 ${data.updated || 0} 条${errCount ? `，失败 ${errCount} 条` : ''}`,
                         errors: data.errors,
                     });
                 })
@@ -361,12 +431,12 @@
         function renderTable(items) {
             const tbody = document.querySelector('#deliveryTable tbody');
             const availableIds = new Set((items || []).map(x => String(x.id)));
-            Object.keys(deliveryBidDraft).forEach(id => {
-                if (!availableIds.has(String(id))) delete deliveryBidDraft[id];
+            Object.keys(deliveryPreviewDraft).forEach(id => {
+                if (!availableIds.has(String(id))) delete deliveryPreviewDraft[id];
             });
             if (!items.length) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
-                syncDeliveryBidSaveBar();
+                syncDeliveryPreviewSaveBar();
                 return;
             }
             tbody.innerHTML = items.map(item => `
@@ -379,9 +449,11 @@
                         </div>
                     </td>
                     <td>${escapeHtml(adRelationText(item))}</td>
-                    <td>${escapeHtml(item.target_desc || item.delivery_desc || '')}</td>
-                    <td data-manage-col-key="竞价">
-                        <input type="text" class="inline-input delivery-bid-input" data-id="${item.id}" value="${escapeHtml(getDeliveryBidEffectiveValue(item))}" placeholder="0.3 / 15%">
+                    <td class="preview-edit-cell">
+                        <input type="text" class="inline-input preview-edit-input delivery-preview-input" data-id="${item.id}" data-field="target_desc" value="${escapeAttr(getDeliveryFieldEffectiveValue(item, 'target_desc'))}" placeholder="投放描述">
+                    </td>
+                    <td class="preview-edit-cell" data-manage-col-key="竞价">
+                        <input type="text" class="inline-input preview-edit-input delivery-preview-input" data-id="${item.id}" data-field="bid_value" value="${escapeAttr(getDeliveryFieldEffectiveValue(item, 'bid_value'))}" placeholder="0.3 / 15%">
                     </td>
                     <td>${escapeHtml(formatDateTime(item.updated_at))}</td>
                     <td>${escapeHtml(formatDateTime(item.next_observe_at))}</td>
@@ -393,8 +465,8 @@
                     </td>
                 </tr>
             `).join('');
-            bindDeliveryBidEvents();
-            syncDeliveryBidSaveBar();
+            bindDeliveryPreviewEvents();
+            syncDeliveryPreviewSaveBar();
         }
 
         function quickStatus(id, status) {
