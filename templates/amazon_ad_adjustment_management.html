@@ -2260,6 +2260,12 @@
                 if (beforeErr) errors.push(beforeErr);
                 if (afterErr) errors.push(afterErr);
             }
+            if (isArchiveOp(op)) {
+                const beforeErr = validateTargetObjectValueField('beforeValue', op);
+                const afterErr = validateTargetObjectValueField('afterValue', op);
+                if (beforeErr) errors.push(beforeErr);
+                if (afterErr) errors.push(afterErr);
+            }
             const opForSku = getSelectedOperationType();
             if (isModifyProductOp(opForSku)) {
                 const sku = document.getElementById('targetObject')?.value.trim() || '';
@@ -3106,6 +3112,19 @@
                     if (isValidStartPauseStatus(beforeVal) && val === beforeVal) {
                         return '修改后须与修改前不同（启动↔暂停）';
                     }
+                }
+                return null;
+            }
+
+            if (isArchiveOp(op)) {
+                if (fieldId === 'beforeValue') {
+                    if (!isValidTargetStatus(val)) {
+                        return `${label}须为广告当前状态（启动/暂停/存档）`;
+                    }
+                    return null;
+                }
+                if (val !== '存档') {
+                    return '存档操作的修改后须为「存档」';
                 }
                 return null;
             }
@@ -4150,6 +4169,22 @@
             syncTargetObjectNextBtn();
         }
 
+        function applyLocalAdStatusAfterSubmit(newStatus) {
+            const status = String(newStatus || '').trim();
+            if (!status || !selectedAdId) return;
+            if (selectedAdDetail) selectedAdDetail.status = status;
+            if (selectedAd) selectedAd.status = status;
+            adItemsRaw = (adItemsRaw || []).map(item => (
+                String(item.id) === String(selectedAdId) ? Object.assign({}, item, { status }) : item
+            ));
+            applyAdListFiltersAndRender();
+            highlightSelectedAdRow();
+            const op = getSelectedOperationType();
+            if (isArchiveOp(op) || isStartPauseToggleOp(op)) {
+                syncOperationTypeFields();
+            }
+        }
+
         function postRecord(isQuickSubmit, onSuccess) {
             const payload = buildPayload(isQuickSubmit);
             const btn = isQuickSubmit ? document.getElementById('quickSubmitBtn') : document.getElementById('submitBtn');
@@ -4169,6 +4204,10 @@
                     action: 'create',
                     message: isQuickSubmit ? '快速提交成功' : '提交并记录成功',
                 });
+                const opAfterSubmit = getSelectedOperationType();
+                if (isArchiveOp(opAfterSubmit) || isStartPauseToggleOp(opAfterSubmit)) {
+                    applyLocalAdStatusAfterSubmit(document.getElementById('afterValue')?.value || '');
+                }
                 if (typeof onSuccess === 'function') onSuccess();
                 updateRecordsLink();
                 loadAdjustmentPeriodList();

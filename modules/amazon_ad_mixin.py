@@ -4656,8 +4656,49 @@ class AmazonAdMixin:
     def _is_archive_operation(self, op_name):
         return self._normalize_adjustment_operation_type_name(op_name) == '存档'
 
+    def _is_start_pause_toggle_operation(self, op_name):
+        raw = str(op_name or '').strip()
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        if raw in ('【启动·暂停】', '启动·暂停'):
+            return True
+        if n in ('启动·暂停', '启动暂停'):
+            return True
+        return '启动' in n and '暂停' in n and '修改' not in n
+
+    def _is_ad_status_adjustment_operation(self, op_name):
+        return self._is_archive_operation(op_name) or self._is_start_pause_toggle_operation(op_name)
+
+    def _validate_ad_status_adjustment_values(
+        self, operation_name, target_object, before_value, after_value,
+    ):
+        if not self._is_ad_status_adjustment_operation(operation_name):
+            return None
+        target_object = (target_object or '').strip()
+        if target_object != '-':
+            return '操作对象须为 -'
+        after_value = (after_value or '').strip()
+        if not after_value:
+            return '修改后不能为空'
+        status, err = self._normalize_ad_record_status(after_value)
+        if err:
+            return err
+        if self._is_archive_operation(operation_name):
+            if status != '存档':
+                return '存档操作的修改后须为「存档」'
+        elif self._is_start_pause_toggle_operation(operation_name):
+            if status not in ('启动', '暂停'):
+                return '启动·暂停操作的修改后须为「启动」或「暂停」'
+            before_value = (before_value or '').strip()
+            if before_value:
+                before_status, before_err = self._normalize_ad_record_status(before_value)
+                if before_err:
+                    return f'修改前{before_err}'
+                if before_status in ('启动', '暂停') and status == before_status:
+                    return '修改后须与修改前不同（启动↔暂停）'
+        return None
+
     def _apply_adjustment_to_ad_item(self, cur, ad_item_id, operation_name, target_object, after_value):
-        if not self._is_archive_operation(operation_name):
+        if not self._is_ad_status_adjustment_operation(operation_name):
             return None
         target_object = (target_object or '').strip()
         if target_object != '-':
@@ -4668,6 +4709,10 @@ class AmazonAdMixin:
         status, err = self._normalize_ad_record_status(after_value)
         if err:
             return err
+        if self._is_archive_operation(operation_name) and status != '存档':
+            return '存档操作的修改后须为「存档」'
+        if self._is_start_pause_toggle_operation(operation_name) and status not in ('启动', '暂停'):
+            return '启动·暂停操作的修改后须为「启动」或「暂停」'
         cur.execute(
             "UPDATE amazon_ad_items SET status=%s, updated_at=NOW() WHERE id=%s",
             (status, ad_item_id),
@@ -5074,6 +5119,12 @@ class AmazonAdMixin:
                         op_row = cur.fetchone() or {}
                         op_name = op_row.get('name') or ''
                         after_value = (data.get('after_value') or '').strip()
+                        before_value = (data.get('before_value') or '').strip()
+                        val_err = self._validate_ad_status_adjustment_values(
+                            op_name, target_object, before_value, after_value,
+                        )
+                        if val_err:
+                            return self.send_json({'status': 'error', 'message': val_err}, start_response)
                         sync_err = self._apply_adjustment_sync(
                             cur, ad_item_id, op_name, target_object, after_value,
                         )
@@ -5685,6 +5736,22 @@ class AmazonAdMixin:
                             if missing:
                                 msg = f'完整提交须填写：{", ".join(missing)}'
                                 if not self._append_child_import_error(errors, row_idx, msg):
+                                    break
+                                continue
+
+                        val_err = self._validate_ad_status_adjustment_values(
+                            operation_name, target_object, before_value, after_value,
+                        )
+                        if val_err:
+                            if not self._append_child_import_error(errors, row_idx, val_err):
+                                break
+                            continue
+                        if self._is_ad_status_adjustment_operation(operation_name):
+                            sync_err = self._apply_adjustment_to_ad_item(
+                                cur, ad_item_id, operation_name, target_object, after_value,
+                            )
+                            if sync_err:
+                                if not self._append_child_import_error(errors, row_idx, sync_err):
                                     break
                                 continue
 
