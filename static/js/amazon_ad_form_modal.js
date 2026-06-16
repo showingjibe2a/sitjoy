@@ -226,12 +226,11 @@
     }
 
     function showAdStatus(message, isError) {
-        const el = $('adModalStatus');
-        if (!el) return;
-        el.style.display = 'block';
-        el.style.background = isError ? '#ffecec' : '#f0fff0';
-        el.style.color = isError ? '#a33' : '#2f6f2f';
-        el.innerText = message;
+        const text = String(message || '').trim();
+        if (!text) return;
+        resetAdStatus();
+        if (global.showPageStatus) global.showPageStatus(text, !!isError);
+        else if (global.showAppToast) global.showAppToast(text, !!isError);
     }
 
     function resetAdStatus() {

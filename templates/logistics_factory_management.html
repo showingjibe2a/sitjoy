@@ -195,11 +195,7 @@
                 });
         }
         function showStatus(msg, err){
-            const el = document.getElementById('modalStatus');
-            el.style.display = 'block';
-            el.style.background = err ? '#ffecec' : '#f0fff0';
-            el.style.color = err ? '#a33' : '#2f6f2f';
-            el.innerText = msg;
+            if (window.showPageStatus) window.showPageStatus(msg, err);
         }
         function resetStatus(){ const el = document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }

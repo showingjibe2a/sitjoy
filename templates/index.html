@@ -899,12 +899,12 @@
         }
 
         function showModalHint(elementId, text, isError) {
-            const el = document.getElementById(elementId);
-            if (!el) return;
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.textContent = text;
+            const msg = String(text || '').trim();
+            if (!msg) {
+                resetModalHint(elementId);
+                return;
+            }
+            if (window.showPageStatus) window.showPageStatus(msg, !!isError);
         }
 
         function resetModalHint(elementId) {

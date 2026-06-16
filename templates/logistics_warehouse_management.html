@@ -323,11 +323,11 @@
                 btn.addEventListener('click', function(){ setSegmentValue(seg, this.dataset.value || '0'); });
             });
         }
-        function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function showStatus(msg, err){ if (window.showPageStatus) window.showPageStatus(msg, err); }
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
-        function showSupplierStatus(msg, err){ const el=document.getElementById('supplierStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function showSupplierStatus(msg, err){ if (window.showPageStatus) window.showPageStatus(msg, err); }
         function resetSupplierStatus(){ const el=document.getElementById('supplierStatus'); el.style.display='none'; el.innerText=''; }
-        function showRegionStatus(msg, err){ const el=document.getElementById('regionStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function showRegionStatus(msg, err){ if (window.showPageStatus) window.showPageStatus(msg, err); }
         function resetRegionStatus(){ const el=document.getElementById('regionStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('warehouseImportStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }

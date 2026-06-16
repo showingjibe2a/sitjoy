@@ -410,11 +410,9 @@ function installWipColumnFilterButtons(){
 }
 
 function showModalStatus(message, isError){
-  const el = $('#modalStatus');
-  el.style.display = 'block';
-  el.style.background = isError ? '#ffecec' : '#f0fff0';
-  el.style.color = isError ? '#a33' : '#2f6f2f';
-  el.textContent = message;
+  const text = String(message || '').trim();
+  if (!text) return;
+  if (window.showPageStatus) window.showPageStatus(text, isError);
 }
 
 function fillSelect(id, items, valueKey, textKey, placeholder){

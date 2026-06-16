@@ -179,11 +179,9 @@
         }
 
         function showEditorStatus(msg, isError){
-            const el = document.getElementById('layoutStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#eaf6ef';
-            el.style.color = isError ? '#a33' : '#1f5132';
-            el.textContent = msg || '';
+            const text = String(msg || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function fillSelect(selectEl, items, idKey, nameKey, includeAll){
@@ -519,11 +517,7 @@
             const platform_type_id = Number(document.getElementById('newPlatformSelect').value||0);
             const sku_family_id = Number(document.getElementById('newSkuFamilySelect').value||0);
             if (!name || !platform_type_id || !sku_family_id){
-                const el = document.getElementById('createStatus');
-                el.style.display = 'block';
-                el.style.background = '#ffecec';
-                el.style.color = '#a33';
-                el.textContent = '请填写版本名称、平台、货号';
+                toast('请填写版本名称、平台、货号', true);
                 return;
             }
             fetch('/api/aplus-version', {
@@ -536,11 +530,7 @@
                 loadVersions();
                 toast('已创建版本', false);
             }).catch(err => {
-                const el = document.getElementById('createStatus');
-                el.style.display = 'block';
-                el.style.background = '#ffecec';
-                el.style.color = '#a33';
-                el.textContent = '创建失败：' + err;
+                toast('创建失败：' + err, true);
             });
         }
 

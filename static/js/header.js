@@ -460,6 +460,21 @@
         window.setTimeout(removeToast, Math.max(800, finalTimeout));
     }
 
+    /** 页面级成功/失败提示：统一走右下角 app-toast 红绿样式 */
+    function showPageStatus(message, isError, duration){
+        const text = String(message || '').trim();
+        if(!text) return;
+        let isErr;
+        if(isError === true) isErr = true;
+        else if(isError === false) isErr = false;
+        else isErr = /失败|错误|异常|超时|不支持|error|exception|traceback|codec|encode|decode|denied|invalid|failed/i.test(text)
+            && !/已复制|已成功|成功/.test(text);
+        let dur = duration;
+        if(dur === undefined) dur = isErr ? 0 : undefined;
+        else dur = Number(dur);
+        showAppToast(text, isErr, Number.isFinite(dur) ? dur : (isErr ? 0 : undefined));
+    }
+
     function parseDownloadFilename(contentDisposition, fallbackName){
         const fallback = String(fallbackName || '导入模板.xlsx');
         const header = String(contentDisposition || '');
@@ -11150,6 +11165,7 @@
         window.showAppToast = function(message, isError, duration){
             showAppToast(message, !!isError, duration);
         };
+        window.showPageStatus = showPageStatus;
         window.showAppSaveResult = showAppSaveResult;
         window.downloadTemplateWithIds = function(endpoint, ids, fallbackName){
             downloadTemplateWithIds(endpoint, ids, fallbackName).catch(err => {

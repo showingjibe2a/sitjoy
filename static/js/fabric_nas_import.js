@@ -60,12 +60,32 @@
   }
 
   function showStatus(msg, isError) {
+    const text = String(msg || '').trim();
     const el = $('fabricNasStatus');
-    if (!el) return;
-    el.textContent = msg || '';
-    el.style.display = msg ? 'block' : 'none';
-    el.classList.toggle('error', !!msg && !!isError);
-    el.classList.toggle('success', !!msg && !isError);
+    if (!text) {
+      if (el) {
+        el.textContent = '';
+        el.style.display = 'none';
+        el.classList.remove('error', 'success');
+      }
+      return;
+    }
+    const isProgress = !isError && /^(正在|加载中|处理中)/.test(text);
+    if (isProgress) {
+      if (el) {
+        el.textContent = text;
+        el.style.display = 'block';
+        el.classList.remove('error', 'success');
+      }
+      return;
+    }
+    if (global.showPageStatus) global.showPageStatus(text, !!isError);
+    else if (global.showAppToast) global.showAppToast(text, !!isError);
+    if (el) {
+      el.textContent = '';
+      el.style.display = 'none';
+      el.classList.remove('error', 'success');
+    }
   }
 
   function persistLocation() {

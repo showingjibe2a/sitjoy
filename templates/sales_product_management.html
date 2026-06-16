@@ -212,23 +212,6 @@
             vertical-align: top;
         }
         .dialog-detail-table th { background: #f7f4ef; position: sticky; top: 0; z-index: 1; }
-        .toast-notice {
-            position: fixed;
-            right: 18px;
-            bottom: 18px;
-            min-width: 280px;
-            max-width: 420px;
-            padding: 0.7rem 0.85rem;
-            border: 1px solid var(--morandi-sand);
-            border-radius: 10px;
-            background: #fff;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-            color: var(--morandi-ink);
-            font-size: 0.9rem;
-            line-height: 1.5;
-            z-index: 70;
-            display: none;
-        }
         .pm-grid-3 {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -895,8 +878,6 @@
         <button type="button" class="btn-secondary" onclick="cancelSalesPreviewEdits()">取消修改</button>
         <button type="button" class="btn-primary" onclick="saveSalesPreviewEdits()">统一保存</button>
     </div>
-
-    <div id="timeoutToast" class="toast-notice"></div>
 
     <script>
         let editId = null;
@@ -1585,39 +1566,17 @@
             modal.classList.add('active');
         }
 
-        function showTimeoutToast(message) {
-            if (window.showAppToast) {
-                window.showAppToast(message || '', false, 2600);
-                return;
-            }
-            let toast = document.getElementById('timeoutToast');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.id = 'timeoutToast';
-                toast.className = 'toast-notice';
-                document.body.appendChild(toast);
-            }
-            toast.textContent = message || '';
-            toast.style.display = 'block';
-            try {
-                if (window.__globalTimeoutToastTimer) clearTimeout(window.__globalTimeoutToastTimer);
-            } catch (e) {}
-            window.__globalTimeoutToastTimer = setTimeout(() => {
-                toast.style.display = 'none';
-            }, 6000);
+        function showTimeoutToast(message, isError) {
+            if (window.showPageStatus) window.showPageStatus(message, isError, isError === true ? 0 : 2600);
+            else if (window.showAppToast) window.showAppToast(message || '', !!isError, isError === true ? 0 : 2600);
         }
 
         function showModalStatus(message, isError) {
-            const el = document.getElementById('modalStatus');
-            el.style.display = 'block';
-            const msg = String(message || '');
-            const autoDetectError = (isError === undefined || isError === null)
-                ? /失败|错误|异常|error|exception|traceback|codec|encode|decode/i.test(msg)
-                : false;
-            const finalIsError = (isError === true) || autoDetectError;
-            el.style.background = finalIsError ? '#ffecec' : '#f0fff0';
-            el.style.color = finalIsError ? '#a33' : '#2f6f2f';
-            el.innerText = msg;
+            const msg = String(message || '').trim();
+            if (!msg) return;
+            const isProgress = (isError === false) && /^(正在|处理中|加载中)/.test(msg);
+            if (isProgress) return;
+            if (window.showPageStatus) window.showPageStatus(msg, isError);
         }
 
         function resetModalStatus() {
@@ -1832,16 +1791,16 @@
         }
 
         function showSpParentEditStatus(message, isError) {
+            const text = String(message || '').trim();
             const el = document.getElementById('spParentEditStatus');
-            if (!el) return;
-            el.style.display = message ? 'block' : 'none';
-            if (!message) {
-                el.textContent = '';
+            if (!text) {
+                if (el) {
+                    el.style.display = 'none';
+                    el.textContent = '';
+                }
                 return;
             }
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.textContent = message;
+            if (window.showPageStatus) window.showPageStatus(text, !!isError);
         }
 
         function renderSpParentEditShopOptions() {
@@ -3396,15 +3355,9 @@
 
         function saveSalesImageTypeFromModal() {
             const input = document.getElementById('salesImageTypeName');
-            const status = document.getElementById('salesImageTypeStatus');
             const name = String(input?.value || '').trim();
             if (!name) {
-                if (status) {
-                    status.style.display = 'block';
-                    status.style.background = '#ffecec';
-                    status.style.color = '#a33';
-                    status.textContent = '请输入类型名称';
-                }
+                showModalStatus('请输入类型名称', true);
                 return;
             }
             fetch('/api/sales-image-type', {
@@ -3418,12 +3371,7 @@
                 })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    if (status) {
-                        status.style.display = 'block';
-                        status.style.background = '#ffecec';
-                        status.style.color = '#a33';
-                        status.textContent = data.message || '保存失败';
-                    }
+                    showModalStatus(data.message || '保存失败', true);
                     return;
                 }
                 selectedMainImageType = normalizeMainImageTypeName(name);
@@ -3434,12 +3382,7 @@
                     }
                 });
             }).catch(err => {
-                if (status) {
-                    status.style.display = 'block';
-                    status.style.background = '#ffecec';
-                    status.style.color = '#a33';
-                    status.textContent = '保存失败: ' + err;
-                }
+                showModalStatus('保存失败: ' + err, true);
             });
         }
 

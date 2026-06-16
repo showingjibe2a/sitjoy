@@ -206,11 +206,9 @@
         const parentOptionsCache = new Map();
 
         function showModalStatus(message, isError) {
-            const el = document.getElementById('modalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetModalStatus() {
@@ -485,11 +483,9 @@
         }
 
         function showTypeModalStatus(message, isError) {
-            const el = document.getElementById('typeModalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetTypeModalStatus() {

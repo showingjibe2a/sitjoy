@@ -492,11 +492,9 @@
         }
 
         function showSubtypeStatus(message, isError) {
-            const el = document.getElementById('subtypeModalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetSubtypeStatus() {
@@ -506,11 +504,9 @@
         }
 
         function showOpTypeStatus(message, isError) {
-            const el = document.getElementById('optypeModalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetOpTypeStatus() {

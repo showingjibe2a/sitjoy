@@ -140,11 +140,9 @@
         let activeBrandId = null;
 
         function showModalStatus(message, isError) {
-            const el = document.getElementById('modalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetModalStatus() {
@@ -458,11 +456,9 @@
         }
 
         function showPlatformTypeModalStatus(message, isError) {
-            const el = document.getElementById('platformModalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetPlatformTypeModalStatus() {
@@ -531,11 +527,9 @@
         }
 
         function showBrandModalStatus(message, isError) {
-            const el = document.getElementById('brandModalStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showPageStatus) window.showPageStatus(text, isError);
         }
 
         function resetBrandModalStatus() {

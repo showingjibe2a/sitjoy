@@ -64,7 +64,7 @@
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script>
         let editId = null;
-        function showModalStatus(message, isError) { const el = document.getElementById('modalStatus'); el.style.display = 'block'; el.style.background = isError ? '#ffecec' : '#f0fff0'; el.style.color = isError ? '#a33' : '#2f6f2f'; el.innerText = message; }
+        function showModalStatus(message, isError) { if (window.showPageStatus) window.showPageStatus(message, isError); }
         function resetModalStatus() { const el = document.getElementById('modalStatus'); el.style.display = 'none'; el.innerText = ''; }
         function resetSearch() { document.getElementById('searchInput').value = ''; loadCertificationList(); }
         function openCreateModal() { editId = null; document.getElementById('pm-modal-title').innerText = '新增认证'; document.getElementById('modalCertificationName').value = ''; document.getElementById('modalSaveBtn').innerText = '保存'; resetModalStatus(); document.getElementById('pm-modal').classList.add('active'); document.getElementById('modalCertificationName').focus(); }
