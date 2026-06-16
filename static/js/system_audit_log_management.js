@@ -150,13 +150,33 @@
         }
     }
 
+    function setSegmentValue(seg, value) {
+        if (!seg) return;
+        const v = value === 'operation' ? 'operation' : 'access';
+        seg.dataset.value = v;
+        seg.querySelectorAll('.status-pill[data-value]').forEach(btn => {
+            const active = String(btn.dataset.value || '') === v;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    }
+
     function setAuditLogTab(type) {
         auditLogType = type === 'operation' ? 'operation' : 'access';
-        document.querySelectorAll('.audit-log-tab').forEach(btn => {
-            btn.classList.toggle('is-active', btn.dataset.auditType === auditLogType);
-        });
+        setSegmentValue(document.getElementById('auditLogTypeSegment'), auditLogType);
         auditLogPage = 1;
         loadAuditLogs(1);
+    }
+
+    function bindAuditLogTypeSegment() {
+        const seg = document.getElementById('auditLogTypeSegment');
+        if (!seg || seg.dataset.bound === '1') return;
+        seg.dataset.bound = '1';
+        seg.addEventListener('click', (e) => {
+            const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+            if (!btn) return;
+            setAuditLogTab(String(btn.dataset.value || 'access'));
+        });
     }
 
     async function cleanupAuditLogs() {
@@ -193,9 +213,7 @@
     }
 
     function bindAuditLogEvents() {
-        document.querySelectorAll('.audit-log-tab').forEach(btn => {
-            btn.addEventListener('click', () => setAuditLogTab(btn.dataset.auditType));
-        });
+        bindAuditLogTypeSegment();
         const searchBtn = document.getElementById('auditSearchBtn');
         if (searchBtn) searchBtn.addEventListener('click', () => loadAuditLogs(1));
         const prevBtn = document.getElementById('auditPrevBtn');

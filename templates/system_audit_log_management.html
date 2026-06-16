@@ -7,14 +7,11 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .audit-log-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-        .audit-log-tab {
-            border: 1px solid #e5dccf; background: #fff; color: #5a534c;
-            border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+        .audit-log-hint {
+            margin: 0.45rem 0 0;
+            font-size: 0.78rem;
+            color: var(--morandi-slate);
         }
-        .audit-log-tab.is-active { background: #d4a574; border-color: #c49563; color: #fff; }
-        .audit-log-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
-        .audit-log-filters .form-group { margin: 0; min-width: 140px; }
         .audit-log-summary-cell {
             min-width: 280px;
             max-width: 520px;
@@ -45,6 +42,14 @@
             color: #5a534c;
             white-space: nowrap;
         }
+        .audit-log-pager-card {
+            padding-top: 0.55rem;
+            padding-bottom: 0.55rem;
+        }
+        .audit-log-pager-card .pm-table-toolbar {
+            margin: 0;
+            padding: 0.45rem 0.65rem;
+        }
     </style>
 </head>
 <body>
@@ -56,40 +61,54 @@
             <p>记录员工页面访问与数据库写操作；支持结构化字段变更摘要（按需接入）。</p>
         </section>
 
-        <section class="card pm-card" id="auditLogSection" aria-label="系统审计日志">
-            <div class="audit-log-tabs" role="tablist">
-                <button type="button" class="audit-log-tab is-active" data-audit-type="access" id="auditTabAccess">页面访问</button>
-                <button type="button" class="audit-log-tab" data-audit-type="operation" id="auditTabOperation">操作记录</button>
+        <section class="pm-layout" id="auditLogLayout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <span class="pm-search-title">日志类型</span>
+                        <div class="status-segment status-segment--inline" id="auditLogTypeSegment" data-value="access" role="tablist" aria-label="日志类型">
+                            <button type="button" class="status-pill is-active" data-value="access" id="auditTabAccess" role="tab" aria-selected="true">页面访问</button>
+                            <button type="button" class="status-pill" data-value="operation" id="auditTabOperation" role="tab" aria-selected="false">操作记录</button>
+                        </div>
+                        <span class="pm-divider"></span>
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">关键词</span>
+                            <input type="text" id="auditSearchQ" placeholder="账号、路径、摘要…">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="auditDateFrom" class="pm-search-title">开始日期</label>
+                            <input type="date" id="auditDateFrom">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="auditDateTo" class="pm-search-title">结束日期</label>
+                            <input type="date" id="auditDateTo">
+                        </div>
+                        <button type="button" class="btn-secondary" id="auditSearchBtn">搜索</button>
+                        <button type="button" class="btn-accent" id="auditCleanupBtn">清理旧日志</button>
+                    </div>
+                </div>
+                <p id="auditLogHint" class="audit-log-hint"></p>
             </div>
-            <div class="audit-log-filters">
-                <div class="form-group">
-                    <label for="auditSearchQ">关键词</label>
-                    <input type="text" id="auditSearchQ" placeholder="账号、路径、摘要…">
-                </div>
-                <div class="form-group">
-                    <label for="auditDateFrom">开始日期</label>
-                    <input type="date" id="auditDateFrom">
-                </div>
-                <div class="form-group">
-                    <label for="auditDateTo">结束日期</label>
-                    <input type="date" id="auditDateTo">
-                </div>
-                <button type="button" class="btn-secondary" id="auditSearchBtn">搜索</button>
-                <button type="button" class="btn-accent" id="auditCleanupBtn">清理旧日志</button>
-            </div>
-            <p id="auditLogHint" style="margin:0 0 10px;font-size:12px;color:#6b5e4d;"></p>
-            <div style="overflow-x:auto;">
-                <table class="pm-table" id="auditLogTable">
+
+            <div class="sj-table-fill-host" id="auditLogTableHost">
+                <table class="pm-table" id="auditLogTable" data-disable-table-manage="1">
                     <thead id="auditLogTableHead"></thead>
                     <tbody>
-                        <tr><td colspan="7" style="text-align:center;">加载中…</td></tr>
+                        <tr><td colspan="8" style="text-align:center;">加载中…</td></tr>
                     </tbody>
                 </table>
             </div>
-            <div class="pm-toolbar" style="margin-top:12px;justify-content:space-between;">
-                <button type="button" class="btn-secondary" id="auditPrevBtn" disabled>上一页</button>
-                <span id="auditPageInfo" style="font-size:13px;color:#666;">第 1 页</span>
-                <button type="button" class="btn-secondary" id="auditNextBtn" disabled>下一页</button>
+
+            <div class="card pm-card audit-log-pager-card">
+                <div class="pm-table-toolbar">
+                    <div class="pm-table-toolbar-left">
+                        <span class="pm-table-info" id="auditPageInfo">第 1 页</span>
+                    </div>
+                    <div class="pm-table-toolbar-right">
+                        <button type="button" class="btn-secondary btn-small" id="auditPrevBtn" disabled>上一页</button>
+                        <button type="button" class="btn-secondary btn-small" id="auditNextBtn" disabled>下一页</button>
+                    </div>
+                </div>
             </div>
         </section>
     </div>

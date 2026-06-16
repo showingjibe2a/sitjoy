@@ -9552,23 +9552,37 @@
 
     let sitjoyLayoutSyncDepth = 0;
 
+    function resolvePmLayoutFillHost(pmLayout, wrap){
+        if(!pmLayout || !wrap || !pmLayout.contains(wrap)) return null;
+        let host = wrap;
+        while(host && host.parentElement && host.parentElement !== pmLayout){
+            host = host.parentElement;
+        }
+        if(host && host.parentElement === pmLayout && host !== pmLayout){
+            return host;
+        }
+        return null;
+    }
+
     function syncSitjoyPageFillScrollLayout(root){
         const pageBody = document.getElementById('sitjoyPageBody');
         if(!pageBody || !document.body.classList.contains('sitjoy-has-shell')) return;
         const scope = (root && root.querySelector) ? root : pageBody;
+        const pmLayout = scope.querySelector('.pm-layout') || pageBody.querySelector('.pm-layout');
 
-        const hasFill = !!(scope.querySelector('.pm-managed-body-wrap, .board-body-wrap')
-            || pageBody.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
+        const hasManagedInLayout = !!(pmLayout && pmLayout.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
+        const hasStaticFillHost = !!(pmLayout && pmLayout.querySelector(':scope > .sj-table-fill-host'));
+        const hasLayoutFill = !!(pmLayout && (hasManagedInLayout || hasStaticFillHost));
         const isAaAdjust = !!(scope.querySelector('.pm-layout--aa-adjust')
             || pageBody.querySelector('.pm-layout--aa-adjust'));
-        const wantPageFill = hasFill && !isAaAdjust;
+        const wantPageFill = hasLayoutFill && !isAaAdjust;
 
         sitjoyLayoutSyncDepth += 1;
         try {
             if(pageBody.classList.contains('sj-page-fill-scroll') !== wantPageFill){
                 pageBody.classList.toggle('sj-page-fill-scroll', wantPageFill);
             }
-            if(!hasFill){
+            if(!hasLayoutFill){
                 pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
                     if(el.classList.contains('sj-table-fill-host')) el.classList.remove('sj-table-fill-host');
                 });
@@ -9576,17 +9590,15 @@
             }
 
             const nextHosts = new Set();
-            pageBody.querySelectorAll('.pm-managed-body-wrap').forEach((wrap) => {
-                const inLayout = wrap.closest('.pm-layout');
-                if(!inLayout) return;
-                let host = wrap;
-                while(host && host.parentElement && host.parentElement !== inLayout){
-                    host = host.parentElement;
-                }
-                if(host && host.parentElement === inLayout && host !== inLayout){
+            if(pmLayout){
+                pmLayout.querySelectorAll(':scope > .sj-table-fill-host').forEach((host) => {
                     nextHosts.add(host);
-                }
-            });
+                });
+                pmLayout.querySelectorAll('.pm-managed-body-wrap, .board-body-wrap').forEach((wrap) => {
+                    const host = resolvePmLayoutFillHost(pmLayout, wrap);
+                    if(host) nextHosts.add(host);
+                });
+            }
 
             pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
                 if(!nextHosts.has(el)) el.classList.remove('sj-table-fill-host');

@@ -34,8 +34,9 @@ body.sitjoy-has-shell .sitjoy-page-body footer {
 }
 
 /**
- * 大表格页：滚动限制在表格区域（.pm-managed-body-wrap / .board-body-wrap），
+ * 大表格页：滚动限制在 pm-layout 内的表格区域（.pm-managed-body-wrap / .board-body-wrap / .sj-table-fill-host），
  * 避免分组展开后撑出 .sitjoy-page-body 外层滚动。由 header.js 打上 .sj-page-fill-scroll。
+ * 不在 pm-layout 内的托管表（如首页待办）仍使用 .sitjoy-page-body 整页滚动。
  */
 body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll {
     display: flex;
@@ -65,7 +66,7 @@ body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > .card.p
     flex: 0 0 auto;
 }
 
-body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > div:not(.card):not(.board-body-wrap):not(.pm-managed-body-wrap) {
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout > div:not(.card):not(.board-body-wrap):not(.pm-managed-body-wrap):not(.sj-table-fill-host):not(.sj-wip-table-host):not(.sj-sales-table-host):not(.sj-board-table-host) {
     overflow: hidden;
     min-height: 0;
 }
@@ -109,6 +110,18 @@ body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .board-body-wrap {
     max-height: none;
     height: auto;
     overflow: auto;
+}
+
+/* pm-layout 内声明的静态表格区（未托管 pm-table）自行滚动 */
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-table-fill-host:not(:has(.pm-managed-body-wrap)) {
+    overflow: auto;
+}
+
+body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-table-fill-host:not(:has(.pm-managed-body-wrap)) .pm-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(236, 231, 223, 0.96);
 }
 
 #site-header {
