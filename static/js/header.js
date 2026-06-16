@@ -9231,16 +9231,25 @@
         return state;
     }
 
+    const SITJOY_PAGE_CATEGORY_PREFIX_RE = /^(?:Amazon广告管理|物流仓储管理|销售管理|产品管理|图片管理|店铺管理|系统管理)\s*[-–—]\s*/;
+
+    function stripSitjoyPageCategoryPrefix(text){
+        const raw = String(text || '').trim();
+        if(!raw) return '';
+        const stripped = raw.replace(SITJOY_PAGE_CATEGORY_PREFIX_RE, '').trim();
+        return stripped || raw;
+    }
+
     function resolveSitjoyPageLabelFromDoc(doc){
         if(!doc) return '';
         const h2 = doc.querySelector('.hero h2, section.hero h2, .home-container .hero h2, h2');
-        const h2Text = h2 ? String(h2.textContent || '').trim() : '';
+        const h2Text = h2 ? stripSitjoyPageCategoryPrefix(String(h2.textContent || '').trim()) : '';
         if(h2Text) return h2Text;
-        const titleLabel = String(doc.title || '').replace(/\s*-\s*SITJOY\s*$/i, '').trim();
+        const titleLabel = String(doc.title || '').replace(/\s*[-–—]\s*SITJOY\s*$/i, '').trim();
         if(!titleLabel) return '';
-        const parts = titleLabel.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean);
+        const parts = titleLabel.split(/\s*[-–—]\s*/).map(s => s.trim()).filter(Boolean);
         if(parts.length > 1) return parts[parts.length - 1];
-        return titleLabel;
+        return stripSitjoyPageCategoryPrefix(titleLabel);
     }
 
     function resolvePageInfoFromPath(path, navIndex){
@@ -9258,10 +9267,10 @@
         if(best) return best;
 
         const heroH2 = document.querySelector('.hero h2, section.hero h2, .home-container .hero h2, h2');
-        const h2Text = heroH2 ? String(heroH2.textContent || '').trim() : '';
-        const title = (document.title || '').replace(/\s*-\s*SITJOY\s*$/i, '').trim();
-        const titleParts = title ? title.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean) : [];
-        const titleLeaf = titleParts.length > 1 ? titleParts[titleParts.length - 1] : title;
+        const h2Text = heroH2 ? stripSitjoyPageCategoryPrefix(String(heroH2.textContent || '').trim()) : '';
+        const title = (document.title || '').replace(/\s*[-–—]\s*SITJOY\s*$/i, '').trim();
+        const titleParts = title ? title.split(/\s*[-–—]\s*/).map(s => s.trim()).filter(Boolean) : [];
+        const titleLeaf = titleParts.length > 1 ? titleParts[titleParts.length - 1] : stripSitjoyPageCategoryPrefix(title);
         return {
             id: normalized,
             href: normalized,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amazon广告管理 - 广告调整</title>
+    <title>广告调整</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
@@ -700,7 +700,7 @@
 
     <div class="container">
         <section class="hero" style="margin-bottom: 1.2rem;">
-            <h2>Amazon广告管理 - 广告调整</h2>
+            <h2>广告调整</h2>
             <p>按广告信息执行调整并记录效果区间数据，支持提交并记录与快速提交</p>
         </section>
 
@@ -1041,6 +1041,7 @@
             '固定竞价',
         ];
         const AA_TARGET_STATUSES = ['启动', '暂停', '存档'];
+        const AA_START_PAUSE_STATUSES = ['启动', '暂停'];
 
         const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
@@ -2253,6 +2254,12 @@
                 if (beforeErr) errors.push(beforeErr);
                 if (afterErr) errors.push(afterErr);
             }
+            if (isStartPauseToggleOp(op)) {
+                const beforeErr = validateTargetObjectValueField('beforeValue', op);
+                const afterErr = validateTargetObjectValueField('afterValue', op);
+                if (beforeErr) errors.push(beforeErr);
+                if (afterErr) errors.push(afterErr);
+            }
             const opForSku = getSelectedOperationType();
             if (isModifyProductOp(opForSku)) {
                 const sku = document.getElementById('targetObject')?.value.trim() || '';
@@ -2719,6 +2726,26 @@
             return normalizeOperationTypeName(op && op.name) === '存档';
         }
 
+        function isStartPauseToggleOp(op) {
+            const raw = String(op && op.name || '').trim();
+            if (raw === '【启动·暂停】' || raw === '启动·暂停') return true;
+            const n = normalizeOperationTypeName(op && op.name);
+            if (n === '启动·暂停' || n === '启动暂停') return true;
+            return n.includes('启动') && n.includes('暂停') && !n.includes('修改');
+        }
+
+        function isValidStartPauseStatus(text) {
+            const s = String(text || '').trim();
+            return AA_START_PAUSE_STATUSES.includes(s);
+        }
+
+        function oppositeStartPauseStatus(status) {
+            const s = String(status || '').trim();
+            if (s === '启动') return '暂停';
+            if (s === '暂停') return '启动';
+            return '启动';
+        }
+
         function selectedAdCurrentStatus() {
             const fromDetail = String(selectedAdDetail?.status || '').trim();
             if (fromDetail) return fromDetail;
@@ -2728,7 +2755,8 @@
         }
 
         function isFixedTargetObjectDashOp(op) {
-            return isModifyBudgetOp(op) || isModifyBidStrategyOp(op) || isModifyNameOp(op) || isArchiveOp(op);
+            return isModifyBudgetOp(op) || isModifyBidStrategyOp(op) || isModifyNameOp(op)
+                || isArchiveOp(op) || isStartPauseToggleOp(op);
         }
 
         function needsTargetObjectSuggest(op) {
@@ -2793,6 +2821,14 @@
             } else if (isArchiveOp(op)) {
                 if (beforeInput) beforeInput.value = selectedAdCurrentStatus();
                 if (afterInput) afterInput.value = '存档';
+            } else if (isStartPauseToggleOp(op)) {
+                const status = selectedAdCurrentStatus();
+                if (beforeInput) beforeInput.value = status;
+                if (afterInput) {
+                    afterInput.value = isValidStartPauseStatus(status)
+                        ? oppositeStartPauseStatus(status)
+                        : '启动';
+                }
             }
             syncValueQuickMenus();
             syncPlacementFieldHints();
@@ -2881,8 +2917,23 @@
             return val === targetObjectCurrentStatus(target);
         }
 
+        function syncAfterValueForStartPauseToggle() {
+            const op = getSelectedOperationType();
+            if (!isStartPauseToggleOp(op)) return;
+            const beforeInput = document.getElementById('beforeValue');
+            const afterInput = document.getElementById('afterValue');
+            if (!beforeInput || !afterInput) return;
+            const beforeVal = String(beforeInput.value || '').trim();
+            if (!isValidStartPauseStatus(beforeVal)) return;
+            afterInput.value = oppositeStartPauseStatus(beforeVal);
+        }
+
         function syncAfterValueWhenBeforeIsCurrentStatus() {
             const op = getSelectedOperationType();
+            if (isStartPauseToggleOp(op)) {
+                syncAfterValueForStartPauseToggle();
+                return;
+            }
             if (!isModifyProductOp(op) && !isModifyDeliveryTargetOp(op) && !isModifyPlacementOp(op)) return;
             const target = getMatchedTargetFromObject();
             if (!target) return;
@@ -3042,6 +3093,22 @@
                 }
                 return null;
             }
+
+            if (isStartPauseToggleOp(op)) {
+                if (!isValidStartPauseStatus(val) && val !== '存档') {
+                    return `${label}须为广告当前状态（启动/暂停/存档）`;
+                }
+                if (fieldId === 'afterValue') {
+                    if (!isValidStartPauseStatus(val)) {
+                        return `${label}须为启动或暂停`;
+                    }
+                    const beforeVal = String(document.getElementById('beforeValue')?.value || '').trim();
+                    if (isValidStartPauseStatus(beforeVal) && val === beforeVal) {
+                        return '修改后须与修改前不同（启动↔暂停）';
+                    }
+                }
+                return null;
+            }
             return null;
         }
 
@@ -3065,6 +3132,31 @@
                             fillOppositeAfter: false,
                         });
                     });
+                }
+                return options;
+            }
+            if (isStartPauseToggleOp(op)) {
+                if (fieldId === 'beforeValue') {
+                    const status = selectedAdCurrentStatus();
+                    if (status && status !== currentValue && (isValidStartPauseStatus(status) || status === '存档')) {
+                        options.push({
+                            value: status,
+                            html: renderTargetStatusPill(status),
+                            fillOppositeAfter: false,
+                        });
+                    }
+                } else if (fieldId === 'afterValue') {
+                    const beforeVal = String(document.getElementById('beforeValue')?.value || '').trim();
+                    const opposite = isValidStartPauseStatus(beforeVal)
+                        ? oppositeStartPauseStatus(beforeVal)
+                        : '启动';
+                    if (opposite && opposite !== currentValue) {
+                        options.push({
+                            value: opposite,
+                            html: renderTargetStatusPill(opposite),
+                            fillOppositeAfter: false,
+                        });
+                    }
                 }
                 return options;
             }

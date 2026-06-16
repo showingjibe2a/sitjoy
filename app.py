@@ -109,7 +109,7 @@ class WSGIApp(
             'amazon_ad_product_management': '广告商品管理',
             'amazon_ad_adjustment_management': '广告调整',
             'amazon_ad_adjustment_records_management': '广告调整记录',
-            'amazon_ad_keyword_management': 'Amazon关键词管理',
+            'amazon_ad_keyword_management': '关键词管理',
             'logistics_factory_management': '工厂管理',
             'logistics_warehouse_management': '海外仓仓库管理',
             'logistics_warehouse_inventory_management': '海外仓库存管理',
