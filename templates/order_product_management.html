@@ -2043,7 +2043,9 @@
                 wrap.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
                 return;
             }
-            const list = Array.isArray(orderMainImageItems) ? orderMainImageItems : [];
+            const list = (window.SjMediaImageCard && window.SjMediaImageCard.sortItemsByEnabled)
+                ? window.SjMediaImageCard.sortItemsByEnabled(orderMainImageItems, window.SjMediaImageCard.defaultImageListCompare)
+                : (Array.isArray(orderMainImageItems) ? orderMainImageItems.slice() : []);
             if (!list.length) {
                 wrap.innerHTML = '<div class="sj-media-image-empty">当前配件图子文件夹暂无图片，可点击“上传主图”新增</div>';
                 return;
@@ -2057,8 +2059,11 @@
                 const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
                     ? window.SjMediaImageCard.buildInfoHtml(Object.assign({}, item, { image_b64: b64 }), { fabricCandidates: orderMainImageFabricCandidates() })
                     : '';
+                const cardClass = (window.SjMediaImageCard && window.SjMediaImageCard.buildCardClassName)
+                    ? window.SjMediaImageCard.buildCardClassName(item)
+                    : 'sj-media-image-card sj-media-image-card--drag';
                 return `
-                    <div class="sj-media-image-card" data-image-name-enc="${encodedName}">
+                    <div class="${cardClass}" data-image-name-enc="${encodedName}">
                         <div class="sj-media-image-remove-badge" onclick="deleteOrderMainImage('${encodedName}'); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
                         <div class="sj-media-image-preview-wrap">
                             ${b64
@@ -2078,6 +2083,7 @@
             });
             if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
                 window.SjMediaImageCard.bindStatusSegments(wrap, {
+                    rerender: () => renderOrderMainImageList(),
                     onEnabledChange: async ({ pathB64, enabled }) => {
                         const resp = await fetch('/api/gallery-image-meta', {
                             method: 'PUT',
@@ -2090,6 +2096,7 @@
                         }
                         (orderMainImageItems || []).forEach(it => {
                             if (String(it.image_b64 || '').trim() === pathB64) {
+                                it.is_enabled = enabled ? 1 : 0;
                                 it.is_deprecated = enabled ? 0 : 1;
                             }
                         });

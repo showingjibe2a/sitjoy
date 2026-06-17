@@ -3000,6 +3000,14 @@
             return [...new Set(out.filter(Boolean))];
         }
 
+        function sortMainImageViewList(items) {
+            const Card = window.SjMediaImageCard;
+            if (Card && typeof Card.sortItemsByEnabled === 'function') {
+                return Card.sortItemsByEnabled(items, Card.defaultImageListCompare);
+            }
+            return (items || []).slice();
+        }
+
         function renderMainImageGrid() {
             const grid = document.getElementById('mainImagesGrid');
             const tip = document.getElementById('mainImageFolderTip');
@@ -3018,17 +3026,8 @@
             }
 
             const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
-            const list = (mainImageItems || []).slice()
-                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
-                .sort((a, b) => {
-                    const ta = String(a.image_type_name || '').trim();
-                    const tb = String(b.image_type_name || '').trim();
-                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                    const sa = Number(a.sort_order || 0);
-                    const sb = Number(b.sort_order || 0);
-                    if (sa !== sb) return sa - sb;
-                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                });
+            const list = sortMainImageViewList((mainImageItems || []).slice()
+                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
 
             grid.innerHTML = '';
 
@@ -3045,7 +3044,9 @@
                 const encRowKey = encodeURIComponent(rowKey);
                 const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const card = document.createElement('div');
-                card.className = 'sj-media-image-card';
+                card.className = (window.SjMediaImageCard && window.SjMediaImageCard.buildCardClassName)
+                    ? window.SjMediaImageCard.buildCardClassName(item)
+                    : 'sj-media-image-card sj-media-image-card--drag';
                 card.style.cursor = 'move';
                 card.setAttribute('draggable', 'true');
                 card.dataset.imageName = rawName;
@@ -3108,6 +3109,7 @@
 
             if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
                 window.SjMediaImageCard.bindStatusSegments(grid, {
+                    rerender: () => renderMainImageGrid(),
                     onEnabledChange: async ({ pathB64, enabled }) => {
                         const resp = await fetch('/api/gallery-image-meta', {
                             method: 'PUT',
@@ -3120,6 +3122,7 @@
                         }
                         (mainImageItems || []).forEach(it => {
                             if (String(it.image_b64 || '').trim() === pathB64) {
+                                it.is_enabled = enabled ? 1 : 0;
                                 it.is_deprecated = enabled ? 0 : 1;
                             }
                         });
@@ -3196,17 +3199,8 @@
             if (placeholder) placeholder.style.display = 'none';
 
             const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
-            const viewList = (mainImageItems || []).slice()
-                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
-                .sort((a, b) => {
-                    const ta = String(a.image_type_name || '').trim();
-                    const tb = String(b.image_type_name || '').trim();
-                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                    const sa = Number(a.sort_order || 0);
-                    const sb = Number(b.sort_order || 0);
-                    if (sa !== sb) return sa - sb;
-                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                });
+            const viewList = sortMainImageViewList((mainImageItems || []).slice()
+                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
 
             if (mainImageDraggedIndex === null || mainImageDraggedIndex === undefined) return;
             if (mainImageDraggedIndex < 0 || mainImageDraggedIndex >= viewList.length) return;

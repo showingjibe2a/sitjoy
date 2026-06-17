@@ -89,6 +89,14 @@
     cursor: move;
 }
 
+.sj-media-image-card--enabled {
+    border-color: var(--sj-variant-toast-success-from, #2f8a42);
+}
+
+.sj-media-image-card--deprecated {
+    border-color: var(--sj-variant-toast-error-from, #d74b4b);
+}
+
 .sj-media-image-card--static {
     cursor: default;
 }

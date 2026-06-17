@@ -54,6 +54,70 @@
     return display || '-';
   }
 
+  function defaultImageListCompare(a, b) {
+    const ta = String(a.image_type_name || '').trim();
+    const tb = String(b.image_type_name || '').trim();
+    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+    const sa = Number(a.sort_order || 0);
+    const sb = Number(b.sort_order || 0);
+    if (sa !== sb) return sa - sb;
+    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+  }
+
+  function sortItemsByEnabled(items, compareFn) {
+    const cmp = typeof compareFn === 'function' ? compareFn : defaultImageListCompare;
+    return (items || []).slice().sort((a, b) => {
+      const ea = imageIsEnabled(a) ? 0 : 1;
+      const eb = imageIsEnabled(b) ? 0 : 1;
+      if (ea !== eb) return ea - eb;
+      return cmp(a, b);
+    });
+  }
+
+  function buildCardClassName(item, extraClasses) {
+    const parts = ['sj-media-image-card'];
+    const extras = extraClasses == null
+      ? ['sj-media-image-card--drag']
+      : (Array.isArray(extraClasses) ? extraClasses : String(extraClasses).split(/\s+/));
+    extras.forEach((c) => {
+      const t = String(c || '').trim();
+      if (t) parts.push(t);
+    });
+    parts.push(imageIsEnabled(item) ? 'sj-media-image-card--enabled' : 'sj-media-image-card--deprecated');
+    return parts.join(' ');
+  }
+
+  function applyCardStatusClasses(card, item) {
+    if (!card) return;
+    const enabled = imageIsEnabled(item);
+    card.classList.toggle('sj-media-image-card--enabled', enabled);
+    card.classList.toggle('sj-media-image-card--deprecated', !enabled);
+  }
+
+  function reorderStatusCardsInGrid(grid) {
+    if (!grid) return;
+    const children = Array.from(grid.children).filter((n) => n.classList && n.classList.contains('sj-media-image-card'));
+    const placeholder = children.find((c) => c.classList.contains('placeholder'));
+    const statusCards = children.filter((c) =>
+      !c.classList.contains('placeholder')
+      && !c.classList.contains('sj-media-image-card--static')
+      && (c.classList.contains('sj-media-image-card--enabled') || c.classList.contains('sj-media-image-card--deprecated'))
+    );
+    if (!statusCards.length) return;
+    const insertBeforeEl = children.find((c) =>
+      c.classList.contains('sj-media-image-card--static')
+      || (c.getAttribute('draggable') === 'false'
+        && !c.classList.contains('placeholder')
+        && !statusCards.includes(c))
+    ) || placeholder || null;
+    const enabledCards = statusCards.filter((c) => c.classList.contains('sj-media-image-card--enabled'));
+    const deprecatedCards = statusCards.filter((c) => c.classList.contains('sj-media-image-card--deprecated'));
+    [...enabledCards, ...deprecatedCards].forEach((card) => {
+      if (insertBeforeEl) grid.insertBefore(card, insertBeforeEl);
+      else grid.appendChild(card);
+    });
+  }
+
   function buildInfoHtml(item, opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     const readonly = !!(options.readonly || options.readOnly);
@@ -127,6 +191,13 @@
             global.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
           }
         }
+        const card = seg.closest('.sj-media-image-card');
+        if (card) applyCardStatusClasses(card, { is_enabled: enabled ? 1 : 0 });
+        if (typeof options.rerender === 'function') {
+          options.rerender();
+        } else {
+          reorderStatusCardsInGrid(container);
+        }
       } catch (err) {
         setSegmentVisual(seg, prevVal);
         const msg = (err && err.message) ? err.message : String(err);
@@ -138,6 +209,11 @@
   global.SjMediaImageCard = {
     escapeHtml,
     imageIsEnabled,
+    defaultImageListCompare,
+    sortItemsByEnabled,
+    buildCardClassName,
+    applyCardStatusClasses,
+    reorderStatusCardsInGrid,
     resolveOriginalDisplayName,
     buildInfoHtml,
     bindStatusSegments,
