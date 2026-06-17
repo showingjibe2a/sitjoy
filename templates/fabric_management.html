@@ -1062,7 +1062,7 @@
                             }
                         });
                         // 继续保存
-                        doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor);
+                        doFinalSave();
                     } else {
                         showModalStatus(data.message || '上传失败', true);
                     }
@@ -1070,12 +1070,15 @@
                 .catch(err => showModalStatus('上传失败: ' + err, true));
             } else {
                 // 没有新上传，直接保存
-                doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor);
+                doFinalSave();
             }
         }
         
-        function doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor) {
-            // 使用新格式：images 数组包含 remark
+        function buildFabricSavePayload() {
+            const fabricCode = document.getElementById('modalFabricCode').value.trim();
+            const fabricNameEn = document.getElementById('modalFabricNameEn').value.trim();
+            const fabricMaterialId = document.getElementById('modalFabricMaterial').value;
+            const representativeColor = (document.getElementById('modalRepresentativeColor').value || '').trim();
             const payload = {
                 fabric_code: fabricCode,
                 fabric_name_en: fabricNameEn,
@@ -1090,12 +1093,17 @@
                 })),
                 sku_family_ids: selectedSkuFamilyIds
             };
-            
-            let method = 'POST';
-            if (editId) {
-                payload.id = editId;
-                method = 'PUT';
-            }
+            if (editId) payload.id = editId;
+            return {
+                payload,
+                valid: !!(fabricCode && fabricNameEn && fabricMaterialId),
+            };
+        }
+
+        function doFinalSave() {
+            const built = buildFabricSavePayload();
+            const payload = built.payload;
+            let method = editId ? 'PUT' : 'POST';
 
             fetch('/api/fabric', {
                 method: method,
@@ -1296,8 +1304,6 @@
                     const idx = selectedImageObjects.indexOf(item);
                     if (idx >= 0) openFabricImageEditModal(idx);
                 },
-                onDragStart: () => showModalStatus('拖动图片，放手即可调整顺序', false),
-                onDragEnd: () => resetModalStatus(),
                 onReorder: () => autosaveImageOrder(),
                 updateItemEnabled: (pathB64, enabled) => {
                     selectedImageObjects.forEach(it => {
@@ -1383,33 +1389,36 @@
         }
 
         function autosaveImageOrder() {
-            // only auto-save when editing an existing fabric (editId present)
             if (!editId) return;
-            showModalStatus('正在保存图片顺序...', false);
-            const payload = {
-                id: editId,
-                images: selectedImageObjects.map((img, idx) => ({
-                    image_name: img.image_name,
-                    remark: img.remark || '',
-                    description: String(img.description != null ? img.description : '').trim(),
-                    sort_order: idx
-                }))
-            };
+            const built = buildFabricSavePayload();
+            if (!built.valid) {
+                if (window.showAppSaveResult) {
+                    window.showAppSaveResult({
+                        action: 'update',
+                        isError: true,
+                        message: '请先填写面料编号、英文名称并选择面料类型',
+                    });
+                }
+                return;
+            }
             fetch('/api/fabric', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(built.payload)
             })
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
-                    showModalStatus('图片顺序已保存', false);
-                    setTimeout(resetModalStatus, 900);
-                } else {
-                    showModalStatus(data.message || '保存失败', true);
+                    if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update' });
+                } else if (window.showAppSaveResult) {
+                    window.showAppSaveResult({ action: 'update', isError: true, message: data.message || '排序保存失败' });
                 }
             })
-            .catch(err => showModalStatus('保存失败: ' + err, true));
+            .catch(err => {
+                if (window.showAppSaveResult) {
+                    window.showAppSaveResult({ action: 'update', isError: true, message: String(err) });
+                }
+            });
         }
         
         async function syncFabricImageFromGalleryMeta(index) {

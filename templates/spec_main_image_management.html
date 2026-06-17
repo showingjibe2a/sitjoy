@@ -1508,7 +1508,13 @@
         if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
       }));
     });
-    p.catch((err) => showToast(String(err.message || err), true));
+    p.then(() => {
+      if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update' });
+    }).catch(err => {
+      if (window.showAppSaveResult) {
+        window.showAppSaveResult({ action: 'update', isError: true, message: String(err.message || err) });
+      }
+    });
   }
 
   async function specmiDeleteImage(imageName) {

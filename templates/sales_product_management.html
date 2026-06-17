@@ -2998,14 +2998,6 @@
             return [...new Set(out.filter(Boolean))];
         }
 
-        function sortMainImageViewList(items) {
-            const C = window.SjMediaImageCard;
-            if (C && typeof C.sortItemsByEnabled === 'function') {
-                return C.sortItemsByEnabled(items, C.defaultImageListCompare);
-            }
-            return (items || []).slice();
-        }
-
         let salesMainImageGrid = null;
 
         function ensureSalesMainImageGrid() {
@@ -3080,7 +3072,16 @@
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
-                }).then(r => r.json()).then(_ => {}).catch(_ => {}));
+                }).then(r => r.json()).then(d => {
+                    if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
+                }));
+            });
+            p.then(() => {
+                if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update' });
+            }).catch(err => {
+                if (window.showAppSaveResult) {
+                    window.showAppSaveResult({ action: 'update', isError: true, message: String(err.message || err) });
+                }
             });
         }
 
