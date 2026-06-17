@@ -1390,21 +1390,18 @@
 
         function autosaveImageOrder() {
             if (!editId) return;
-            const built = buildFabricSavePayload();
-            if (!built.valid) {
-                if (window.showAppSaveResult) {
-                    window.showAppSaveResult({
-                        action: 'update',
-                        isError: true,
-                        message: '请先填写面料编号、英文名称并选择面料类型',
-                    });
-                }
-                return;
-            }
-            fetch('/api/fabric', {
+            const items = selectedImageObjects
+                .filter(img => !img._isNewUpload && (img.image_name || img.image_asset_id))
+                .map((img, idx) => ({
+                    sort_order: idx,
+                    image_name: img.image_name || undefined,
+                    image_asset_id: Number(img.image_asset_id) > 0 ? Number(img.image_asset_id) : undefined,
+                }));
+            if (!items.length) return;
+            fetch('/api/fabric?action=reorder', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(built.payload)
+                body: JSON.stringify({ id: editId, items }),
             })
             .then(r => r.json())
             .then(data => {

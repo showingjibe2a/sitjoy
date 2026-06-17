@@ -1496,21 +1496,28 @@
     if (!specmiEditingVid) return;
     const viewList = specmiBuildViewList();
     if (!viewList.length) return;
-    let p = Promise.resolve();
-    viewList.forEach((it, idx) => {
-      const name = String(it.image_name || '').trim();
-      if (!name) return;
-      p = p.then(() => fetch('/api/sales-product-main-images', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variant_id: specmiEditingVid, image_name: name, sort_order: idx + 1 }),
-      }).then(r => r.json()).then(d => {
-        if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
-      }));
-    });
-    p.then(() => {
+    const items = viewList.map((it, idx) => {
+      const mid = Number(it.mapping_id) || 0;
+      const aid = Number(it.image_asset_id) || 0;
+      return {
+        sort_order: idx + 1,
+        image_name: String(it.image_name || '').trim() || undefined,
+        mapping_id: mid > 0 ? mid : undefined,
+        image_asset_id: aid > 0 ? aid : undefined,
+      };
+    }).filter(it => it.mapping_id || it.image_asset_id || it.image_name);
+    if (!items.length) return;
+    fetch('/api/sales-product-main-images?action=reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variant_id: specmiEditingVid, items }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
       if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update' });
-    }).catch(err => {
+    })
+    .catch(err => {
       if (window.showAppSaveResult) {
         window.showAppSaveResult({ action: 'update', isError: true, message: String(err.message || err) });
       }

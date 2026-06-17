@@ -960,6 +960,19 @@ class FabricManagementMixin:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'reorder':
+                    item_id = self._parse_int(data.get('id'))
+                    items = data.get('items')
+                    if not item_id or not isinstance(items, list) or not items:
+                        return self.send_json({'status': 'error', 'message': 'Missing id 或 items'}, start_response)
+                    with self._get_db_connection() as conn:
+                        try:
+                            self._batch_update_fabric_image_sort_orders(conn, item_id, items)
+                        except ValueError as ex:
+                            return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+                    return self.send_json({'status': 'success'}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 fabric_code = (data.get('fabric_code') or '').strip()
                 fabric_name_en = (data.get('fabric_name_en') or '').strip()
@@ -1015,6 +1028,44 @@ class FabricManagementMixin:
                 return self.send_json({'status': 'error', 'message': '面料编号已存在'}, start_response)
             print("Fabric API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _batch_update_fabric_image_sort_orders(self, conn, fabric_id, items):
+        """Update sort_order only — no file I/O or full mapping replace."""
+        fid = int(fabric_id or 0)
+        if not fid:
+            raise ValueError('Missing fabric id')
+        updates_by_asset = []
+        updates_by_name = []
+        for idx, item in enumerate(items or []):
+            if not isinstance(item, dict):
+                continue
+            sort_order = self._parse_int(item.get('sort_order'))
+            if sort_order is None:
+                sort_order = idx
+            aid = self._parse_int(item.get('image_asset_id')) or 0
+            image_name = str(item.get('image_name') or '').strip()
+            if aid > 0:
+                updates_by_asset.append((int(sort_order), aid))
+            elif image_name:
+                updates_by_name.append((int(sort_order), image_name))
+        if not updates_by_asset and not updates_by_name:
+            return
+        with conn.cursor() as cur:
+            if updates_by_asset:
+                cur.executemany(
+                    "UPDATE fabric_image_mappings SET sort_order=%s WHERE fabric_id=%s AND image_asset_id=%s",
+                    [(sort_order, fid, aid) for sort_order, aid in updates_by_asset],
+                )
+            for sort_order, image_name in updates_by_name:
+                cur.execute(
+                    """
+                    UPDATE fabric_image_mappings fim
+                    INNER JOIN image_assets ia ON ia.id = fim.image_asset_id
+                    SET fim.sort_order=%s
+                    WHERE fim.fabric_id=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
+                    """,
+                    (sort_order, fid, image_name, f'%/{image_name}'),
+                )
 
     def _replace_fabric_image_mappings(self, conn, fabric_id, images):
         """

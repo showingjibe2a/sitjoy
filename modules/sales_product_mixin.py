@@ -6633,10 +6633,50 @@ class SalesProductMixin:
                 'folder_path': folder_path,
             }
 
+    def _batch_reorder_sales_variant_image_mappings(self, conn, where_key, where_val, items):
+        """Batch-update sort_order for sales variant images in one transaction."""
+        updates = []
+        with conn.cursor() as cur:
+            for idx, item in enumerate(items or []):
+                if not isinstance(item, dict):
+                    continue
+                sort_order = self._parse_int(item.get('sort_order'))
+                if sort_order is None:
+                    sort_order = idx + 1
+                pick = {
+                    'mapping_id': self._parse_int(item.get('mapping_id')) or 0,
+                    'image_asset_id': self._parse_int(item.get('image_asset_id')) or 0,
+                    'sha256': str(item.get('sha256') or '').strip(),
+                    'image_b64': str(item.get('image_b64') or item.get('image_path_b64') or '').strip(),
+                    'image_name': str(item.get('image_name') or '').strip(),
+                }
+                if not any([
+                    pick['mapping_id'],
+                    pick['image_asset_id'],
+                    pick['sha256'],
+                    pick['image_b64'],
+                    pick['image_name'],
+                ]):
+                    continue
+                mapping, map_err = self._select_sales_variant_mapping_for_api(
+                    conn, cur, where_key, where_val, pick
+                )
+                if map_err:
+                    raise ValueError(map_err)
+                if not mapping or not mapping.get('id'):
+                    raise ValueError('图片不存在')
+                updates.append((max(1, int(sort_order)), int(mapping.get('id'))))
+            if not updates:
+                return
+            cur.executemany(
+                f"UPDATE sales_variant_image_mappings SET sort_order=%s WHERE id=%s AND {where_key}=%s",
+                [(sort_order, mapping_id, where_val) for sort_order, mapping_id in updates],
+            )
+
     def handle_sales_product_main_images_api(self, environ, method, start_response):
         try:
+            query_params = parse_qs(environ.get('QUERY_STRING', '') or '')
             if method == 'GET':
-                query_params = parse_qs(environ.get('QUERY_STRING', ''))
                 sales_product_id = self._parse_int(query_params.get('sales_product_id', [''])[0] or query_params.get('id', [''])[0])
                 variant_id_param = self._parse_int(query_params.get('variant_id', [''])[0])
                 list_thumb = self._parse_bool_flag(query_params.get('list_thumb', ['0'])[0] or '0', default=False)
@@ -6766,6 +6806,55 @@ class SalesProductMixin:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'reorder':
+                    sales_product_id = self._parse_int(data.get('sales_product_id'))
+                    variant_id_direct = self._parse_int(data.get('variant_id'))
+                    items = data.get('items')
+                    if not isinstance(items, list) or not items:
+                        return self.send_json({'status': 'error', 'message': '缺少 items 排序列表'}, start_response)
+                    if not sales_product_id and not variant_id_direct:
+                        return self.send_json(
+                            {'status': 'error', 'message': 'Missing sales_product_id 或 variant_id'},
+                            start_response,
+                        )
+                    with self._get_db_connection() as conn:
+                        variant_id = 0
+                        if sales_product_id:
+                            try:
+                                with conn.cursor() as cur:
+                                    cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                                    row = cur.fetchone() or {}
+                                    variant_id = self._parse_int(row.get('variant_id')) or 0
+                            except Exception:
+                                variant_id = 0
+                        elif variant_id_direct:
+                            variant_id = int(variant_id_direct)
+                        with conn.cursor() as cur:
+                            has_sim_vid = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                            has_sim_spid = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
+                            if not has_sim_vid and not has_sim_spid:
+                                return self.send_json(
+                                    {'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'},
+                                    start_response,
+                                )
+                            if has_sim_vid and variant_id:
+                                where_key = 'variant_id'
+                                where_val = variant_id
+                            elif has_sim_spid and sales_product_id:
+                                where_key = 'sales_product_id'
+                                where_val = sales_product_id
+                            else:
+                                return self.send_json(
+                                    {'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'},
+                                    start_response,
+                                )
+                        try:
+                            self._batch_reorder_sales_variant_image_mappings(conn, where_key, where_val, items)
+                        except ValueError as ex:
+                            return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+                    return self.send_json({'status': 'success'}, start_response)
+
                 sales_product_id = self._parse_int(data.get('sales_product_id'))
                 variant_id_direct = self._parse_int(data.get('variant_id'))
                 image_name = str(data.get('image_name') or '').strip()

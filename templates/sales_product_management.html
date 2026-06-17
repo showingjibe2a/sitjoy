@@ -3051,7 +3051,7 @@
                 .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
                 .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
             if (!viewList.length) return;
-            let p = Promise.resolve();
+            const items = [];
             viewList.forEach((it, idx) => {
                 const name = String(it.image_name || '').trim();
                 const mid = Number(it.mapping_id) || 0;
@@ -3059,26 +3059,27 @@
                 const h = String(it.sha256 || '').trim();
                 const b64 = String(it.image_b64 || '').trim();
                 if (!name && !mid && !aid && !h && !b64) return;
-                const body = {
-                    sales_product_id: editId,
+                items.push({
                     sort_order: idx + 1,
                     image_name: name || undefined,
                     mapping_id: mid > 0 ? mid : undefined,
                     image_asset_id: aid > 0 ? aid : undefined,
                     sha256: h || undefined,
-                    image_b64: b64 || undefined
-                };
-                p = p.then(() => fetch('/api/sales-product-main-images', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                }).then(r => r.json()).then(d => {
-                    if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
-                }));
+                    image_b64: b64 || undefined,
+                });
             });
-            p.then(() => {
+            if (!items.length) return;
+            fetch('/api/sales-product-main-images?action=reorder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sales_product_id: editId, items }),
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
                 if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update' });
-            }).catch(err => {
+            })
+            .catch(err => {
                 if (window.showAppSaveResult) {
                     window.showAppSaveResult({ action: 'update', isError: true, message: String(err.message || err) });
                 }
