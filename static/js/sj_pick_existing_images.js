@@ -121,6 +121,7 @@
     if (pr.variantId) p.set('variant_id', String(pr.variantId));
     if (pr.salesProductId) p.set('sales_product_id', String(pr.salesProductId));
     if (pr.orderProductId) p.set('order_product_id', String(pr.orderProductId));
+    if (pr.memberPathB64) p.set('member_path_b64', String(pr.memberPathB64));
     return p.toString();
   }
 
@@ -494,6 +495,7 @@
       variantId: opts?.variantId || opts?.variant_id || opts?.salesProductId || null,
       salesProductId: opts?.salesProductId || opts?.sales_product_id || null,
       orderProductId: opts?.orderProductId || opts?.order_product_id || null,
+      memberPathB64: opts?.memberPathB64 || opts?.member_path_b64 || '',
     };
     state.getImageTypeOptions = opts?.getImageTypeOptions || null;
     state.getImportImageType = opts?.getImportImageType || null;

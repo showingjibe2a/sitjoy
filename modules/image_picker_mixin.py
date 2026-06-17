@@ -87,7 +87,7 @@ class ImagePickerMixin:
         row = cur.fetchone()
         return self._parse_int(row.get('id')) if row else None
 
-    def _image_picker_roots_for_context(self, context, fabric_id=None, variant_id=None, order_product_id=None):
+    def _image_picker_roots_for_context(self, context, fabric_id=None, variant_id=None, order_product_id=None, member_path_b64=''):
         ctx = (context or '').strip().lower()
         roots = []
         if ctx == 'fabric':
@@ -136,6 +136,37 @@ class ImagePickerMixin:
                     rel_c = self._storage_path_from_abs(self._safe_fsdecode(common_abs))
                     if rel_c:
                         roots.append({'label': f'{sku}/配件图/通用', 'path': rel_c, 'path_b64': self._b64_rel_path(rel_c)})
+            return roots
+
+        if ctx == 'channel':
+            member_path_b64 = (member_path_b64 or '').strip()
+            member_rel = ''
+            if member_path_b64:
+                try:
+                    member_rel = os.fsdecode(self._rel_from_b64(member_path_b64))
+                except Exception:
+                    member_rel = ''
+                member_rel = (member_rel or '').strip().replace('\\', '/').strip('/')
+            sku = self._parse_sku_family_from_storage_path(member_rel) if member_rel else ''
+            if sku:
+                ch_abs = self._ensure_listing_sales_channel_folder(sku)
+                if ch_abs:
+                    rel = self._storage_path_from_abs(self._safe_fsdecode(ch_abs))
+                    if rel:
+                        roots.append({
+                            'label': f'{sku}/主图/通道',
+                            'path': rel,
+                            'path_b64': self._b64_rel_path(rel),
+                        })
+            global_common = self._ensure_listing_sales_global_common_folder()
+            if global_common:
+                rel_g = self._storage_path_from_abs(self._safe_fsdecode(global_common))
+                if rel_g:
+                    roots.append({
+                        'label': '『通用图片』/主图',
+                        'path': rel_g,
+                        'path_b64': self._b64_rel_path(rel_g),
+                    })
             return roots
 
         return roots
@@ -239,14 +270,19 @@ class ImagePickerMixin:
             variant_id = self._parse_int((query_params.get('variant_id', [''])[0] or '').strip())
             order_product_id = self._parse_int((query_params.get('order_product_id', [''])[0] or '').strip())
             sales_product_id = self._parse_int((query_params.get('sales_product_id', [''])[0] or '').strip())
+            member_path_b64 = (query_params.get('member_path_b64', [''])[0] or '').strip()
             if not variant_id and sales_product_id:
                 variant_id = sales_product_id
 
-            if context not in ('fabric', 'sales_variant', 'sales', 'spec', 'order_product'):
+            if context not in ('fabric', 'sales_variant', 'sales', 'spec', 'order_product', 'channel'):
                 return self.send_json({'status': 'error', 'message': '无效 context'}, start_response)
 
             roots = self._image_picker_roots_for_context(
-                context, fabric_id=fabric_id, variant_id=variant_id, order_product_id=order_product_id
+                context,
+                fabric_id=fabric_id,
+                variant_id=variant_id,
+                order_product_id=order_product_id,
+                member_path_b64=member_path_b64,
             )
             if not roots:
                 return self.send_json({
@@ -271,12 +307,15 @@ class ImagePickerMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    bound_ids = self._image_picker_bound_asset_ids(
-                        conn, context,
-                        fabric_id=fabric_id,
-                        variant_id=variant_id,
-                        order_product_id=order_product_id,
-                    )
+                    if context == 'channel':
+                        bound_ids = set()
+                    else:
+                        bound_ids = self._image_picker_bound_asset_ids(
+                            conn, context,
+                            fabric_id=fabric_id,
+                            variant_id=variant_id,
+                            order_product_id=order_product_id,
+                        )
                     folders, items = self._image_picker_scan_folder(conn, cur, rel_str, bound_ids, keyword=keyword)
 
             return self.send_json({

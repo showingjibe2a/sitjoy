@@ -4982,6 +4982,88 @@ a.nas-main-image-crumb:hover {
     border-radius: 999px !important;
 }
 
+/* 编辑图片信息：主预览 + 通道图侧栏 */
+.pm-image-edit-preview-row {
+    display: flex;
+    gap: 0.85rem;
+    align-items: stretch;
+    margin: 0.75rem 0 0.95rem;
+}
+.pm-image-edit-preview-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+.pm-image-edit-channel-aside {
+    flex: 0 0 148px;
+    width: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+.pm-image-edit-channel-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--morandi-ink);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.pm-image-edit-channel-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(236,231,223,0.55);
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    cursor: pointer;
+}
+.pm-image-edit-channel-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: rgba(255,255,255,0.55);
+}
+.pm-image-edit-channel-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    color: var(--morandi-slate);
+    text-align: center;
+    padding: 0.35rem;
+}
+.pm-image-edit-channel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.pm-image-edit-channel-actions .btn-small {
+    flex: 1 1 calc(50% - 0.2rem);
+    min-width: 0;
+    padding: 0.28rem 0.35rem;
+    font-size: 0.78rem;
+}
+.pm-image-edit-channel-clear {
+    width: 100%;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.78rem;
+}
+@media (max-width: 720px) {
+    .pm-image-edit-preview-row {
+        flex-direction: column;
+    }
+    .pm-image-edit-channel-aside {
+        flex: none;
+        width: 100%;
+        max-width: 200px;
+    }
+}
+
 @media (max-width: 768px) {
     .hero h2 {
         font-size: 1.32rem;

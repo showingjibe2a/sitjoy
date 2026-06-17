@@ -1957,6 +1957,357 @@ class SalesProductMixin:
             os.makedirs(common_folder, exist_ok=True)
         return common_folder
 
+    def _ensure_listing_sales_channel_folder(self, sku_family):
+        """Ensure 货号/主图/通道 exists. Return absolute folder path (bytes)."""
+        sku_name = (sku_family or '').strip()
+        if not sku_name:
+            return None
+        self._ensure_listing_sku_folder(sku_name)
+        base_folder = self._ensure_listing_folder()
+        sku_folder = os.path.join(base_folder, self._safe_fsencode(sku_name))
+        main_folder = os.path.join(sku_folder, self._safe_fsencode('主图'))
+        if not os.path.exists(main_folder):
+            os.makedirs(main_folder, exist_ok=True)
+        channel_folder = os.path.join(main_folder, self._safe_fsencode('通道'))
+        if not os.path.exists(channel_folder):
+            os.makedirs(channel_folder, exist_ok=True)
+        return channel_folder
+
+    def _parse_sku_family_from_storage_path(self, storage_path):
+        rel = (storage_path or '').strip().replace('\\', '/').strip('/')
+        if not rel:
+            return ''
+        parts = [p for p in rel.split('/') if p]
+        skip_roots = {'『通用图片』', '『面料』', '『认证』', '『销售产品图片』'}
+        for i, p in enumerate(parts):
+            if p in skip_roots:
+                continue
+            if p in ('主图', '配件图') and i > 0:
+                prev = parts[i - 1]
+                if prev not in skip_roots:
+                    return prev
+        return ''
+
+    def _channel_links_table_ready(self, conn):
+        return self._has_required_tables(['image_asset_channel_links'])
+
+    def _ensure_image_asset_from_rel_path(self, conn, cur, rel_text, user_id=0):
+        """Resolve image_assets row for rel path; create from disk if missing."""
+        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        has_desc = self._table_has_column(conn, 'image_assets', 'description')
+        join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+        row = self._find_image_asset_row_by_rel_path(
+            cur, rel_text, join_type, has_tid, has_dep, has_desc
+        )
+        aid = self._parse_int(row.get('id')) or 0
+        if aid:
+            return aid, row
+        abs_path, canonical_rel = self._resolve_gallery_abs_path(rel_text)
+        if not abs_path or not os.path.isfile(abs_path):
+            return 0, {}
+        try:
+            with open(abs_path, 'rb') as f:
+                content = f.read() or b''
+        except Exception:
+            content = b''
+        if not content:
+            return 0, {}
+        sha256 = self._sha256_hex(content)
+        existing = self._find_image_asset_by_sha256(conn, sha256)
+        if existing and self._parse_int(existing.get('id')):
+            return int(existing.get('id')), existing
+        rec = {
+            'sha256': sha256,
+            'storage_path': canonical_rel or rel_text,
+            'description': '',
+            'is_deprecated': 0,
+            'created_by': int(user_id) if user_id else None,
+        }
+        aid = int(self._insert_image_asset_dynamic(conn, cur, rec) or 0)
+        if not aid:
+            return 0, {}
+        row = self._find_image_asset_row_by_rel_path(
+            cur, canonical_rel or rel_text, join_type, has_tid, has_dep, has_desc
+        )
+        return aid, row
+
+    def _channel_asset_payload(self, row):
+        if not row or not row.get('id'):
+            return None
+        storage_path = (row.get('storage_path') or '').strip()
+        rel_bytes = self._safe_fsencode(storage_path) if storage_path else b''
+        path_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
+        return {
+            'image_asset_id': self._parse_int(row.get('id')) or 0,
+            'storage_path': storage_path,
+            'path_b64': path_b64,
+            'image_type_name': (row.get('image_type_name') or '').strip(),
+        }
+
+    def _get_channel_link_for_member_asset(self, conn, member_asset_id):
+        if not self._channel_links_table_ready(conn):
+            return None
+        mid = int(member_asset_id or 0)
+        if mid <= 0:
+            return None
+        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+        type_sel = 'it.name AS image_type_name' if has_tid else "'' AS image_type_name"
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT ia.id, ia.storage_path, {type_sel}
+                FROM image_asset_channel_links l
+                INNER JOIN image_assets ia ON ia.id = l.channel_asset_id
+                {join_type}
+                WHERE l.member_asset_id=%s
+                LIMIT 1
+                """,
+                (mid,),
+            )
+            row = cur.fetchone() or {}
+        if not row.get('id'):
+            return None
+        return self._channel_asset_payload(row)
+
+    def _set_channel_link_for_member_asset(self, conn, member_asset_id, channel_asset_id, user_id=0):
+        if not self._channel_links_table_ready(conn):
+            raise RuntimeError('缺少 image_asset_channel_links 表，请先执行 scripts/sql/20260616_01_image_asset_channel_links.sql')
+        mid = int(member_asset_id or 0)
+        cid = int(channel_asset_id or 0)
+        if mid <= 0:
+            raise ValueError('无效的图片')
+        if mid == cid:
+            raise ValueError('通道图不能与当前图片相同')
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM image_asset_channel_links WHERE member_asset_id=%s", (mid,))
+            if cid > 0:
+                cur.execute(
+                    "INSERT INTO image_asset_channel_links (member_asset_id, channel_asset_id) VALUES (%s, %s)",
+                    (mid, cid),
+                )
+                if self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                    tid = self._get_image_type_id_by_name(conn, '通道图')
+                    if tid:
+                        cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), cid))
+
+    def handle_gallery_image_channel_api(self, environ, method, start_response):
+        """GET/PUT 当前图片（member）与通道图（channel）的关联。"""
+        try:
+            if method not in ('GET', 'PUT'):
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            user_id = self._parse_int(self._get_session_user(environ)) or 0
+            data = self._read_json_body(environ) if method == 'PUT' else {}
+            query_params = parse_qs(environ.get('QUERY_STRING', '') or '')
+            path_b64 = str(query_params.get('id', [''])[0] or '').strip()
+            if method == 'PUT':
+                path_b64 = str((data or {}).get('member_path_b64') or (data or {}).get('id') or path_b64).strip()
+            if not path_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+            try:
+                raw = base64.b64decode(path_b64)
+            except Exception:
+                return self.send_json({'status': 'error', 'message': 'Invalid id'}, start_response)
+            rel_text = ''
+            try:
+                rel_text = os.fsdecode(raw)
+            except Exception:
+                try:
+                    rel_text = raw.decode('utf-8', errors='surrogateescape')
+                except Exception:
+                    rel_text = ''
+            rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
+            if not rel_text or '..' in rel_text:
+                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
+
+            with self._get_db_connection() as conn:
+                if not self._channel_links_table_ready(conn):
+                    return self.send_json({
+                        'status': 'error',
+                        'message': '缺少 image_asset_channel_links 表，请先执行 scripts/sql/20260616_01_image_asset_channel_links.sql',
+                    }, start_response)
+                with conn.cursor() as cur:
+                    member_id, _member_row = self._ensure_image_asset_from_rel_path(conn, cur, rel_text, user_id=user_id)
+                    if not member_id:
+                        return self.send_json({'status': 'error', 'message': '图片未入库且源文件不存在'}, start_response)
+
+                    if method == 'GET':
+                        channel = self._get_channel_link_for_member_asset(conn, member_id)
+                        return self.send_json({
+                            'status': 'success',
+                            'linked': bool(channel),
+                            'member_asset_id': member_id,
+                            'channel': channel,
+                        }, start_response)
+
+                    channel_path_b64 = (data or {}).get('channel_path_b64')
+                    if channel_path_b64 is None:
+                        channel_path_b64 = (data or {}).get('channel_id')
+                    clear_link = channel_path_b64 is None or str(channel_path_b64).strip() == ''
+                    if clear_link:
+                        self._set_channel_link_for_member_asset(conn, member_id, 0, user_id=user_id)
+                        return self.send_json({
+                            'status': 'success',
+                            'linked': False,
+                            'member_asset_id': member_id,
+                            'channel': None,
+                        }, start_response)
+
+                    try:
+                        ch_raw = base64.b64decode(str(channel_path_b64).strip())
+                    except Exception:
+                        return self.send_json({'status': 'error', 'message': 'Invalid channel path'}, start_response)
+                    try:
+                        ch_rel = os.fsdecode(ch_raw)
+                    except Exception:
+                        ch_rel = ch_raw.decode('utf-8', errors='surrogateescape')
+                    ch_rel = (ch_rel or '').strip().replace('\\', '/').lstrip('/')
+                    if not ch_rel or '..' in ch_rel:
+                        return self.send_json({'status': 'error', 'message': 'Invalid channel path'}, start_response)
+
+                    channel_id, ch_row = self._ensure_image_asset_from_rel_path(conn, cur, ch_rel, user_id=user_id)
+                    if not channel_id:
+                        return self.send_json({'status': 'error', 'message': '通道图未入库且源文件不存在'}, start_response)
+                    self._set_channel_link_for_member_asset(conn, member_id, channel_id, user_id=user_id)
+                    channel = self._channel_asset_payload(ch_row)
+                    return self.send_json({
+                        'status': 'success',
+                        'linked': True,
+                        'member_asset_id': member_id,
+                        'channel': channel,
+                    }, start_response)
+        except ValueError as ex:
+            return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_gallery_channel_image_upload_api(self, environ, start_response):
+        """上传通道图到 货号/主图/通道 并关联到当前 member 图。"""
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            user_id = self._parse_int(self._get_session_user(environ)) or 0
+            if not user_id:
+                return self.send_json({'status': 'error', 'message': '必须登录才能上传'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+
+            member_path_b64 = str(form.getfirst('member_path_b64', '') or form.getfirst('id', '') or '').strip()
+            if not member_path_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing member_path_b64'}, start_response)
+
+            try:
+                member_rel = os.fsdecode(base64.b64decode(member_path_b64))
+            except Exception:
+                return self.send_json({'status': 'error', 'message': 'Invalid member path'}, start_response)
+            member_rel = (member_rel or '').strip().replace('\\', '/').lstrip('/')
+            sku_family = self._parse_sku_family_from_storage_path(member_rel)
+            if not sku_family:
+                return self.send_json({'status': 'error', 'message': '无法从当前图片路径解析货号，请使用 NAS 选择已有通道图'}, start_response)
+
+            uploads = []
+            for p in getattr(form, 'list', []) or []:
+                if getattr(p, 'filename', None):
+                    try:
+                        content = p.file.read() or b''
+                    except Exception:
+                        content = b''
+                    uploads.append({'filename': p.filename, 'content': content})
+            if not uploads:
+                file_part = form['file'] if 'file' in form else None
+                if file_part and getattr(file_part, 'filename', None):
+                    try:
+                        content = file_part.file.read() or b''
+                    except Exception:
+                        content = b''
+                    uploads.append({'filename': file_part.filename, 'content': content})
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': 'No valid images uploaded'}, start_response)
+
+            item = uploads[0]
+            content = item.get('content') or b''
+            if not content:
+                return self.send_json({'status': 'error', 'message': '空文件'}, start_response)
+
+            folder = self._ensure_listing_sales_channel_folder(sku_family)
+            if not folder:
+                return self.send_json({'status': 'error', 'message': '无法创建通道图目录'}, start_response)
+
+            orig_filename = os.path.basename(str(item.get('filename') or 'channel.jpg'))
+            ext = os.path.splitext(orig_filename)[1].lower()
+            if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff'):
+                ext = self._guess_image_ext(orig_filename, content)
+            code = self._sanitize_filename_component(sku_family, 32) or 'CH'
+            seq = int(time.time() * 1000) % 1000000
+            final_name = f'{code}-通道-{seq:06d}{ext}'
+            target_abs = os.path.join(folder, self._safe_fsencode(final_name))
+            with open(target_abs, 'wb') as f:
+                f.write(content)
+
+            storage_path = self._storage_path_from_abs(target_abs)
+            sha256 = self._sha256_hex(content)
+
+            with self._get_db_connection() as conn:
+                if not self._channel_links_table_ready(conn):
+                    return self.send_json({
+                        'status': 'error',
+                        'message': '缺少 image_asset_channel_links 表，请先执行 scripts/sql/20260616_01_image_asset_channel_links.sql',
+                    }, start_response)
+                with conn.cursor() as cur:
+                    member_id, _ = self._ensure_image_asset_from_rel_path(conn, cur, member_rel, user_id=user_id)
+                    if not member_id:
+                        return self.send_json({'status': 'error', 'message': '当前图片未入库'}, start_response)
+
+                    existing = self._find_image_asset_by_sha256(conn, sha256)
+                    if existing and self._parse_int(existing.get('id')):
+                        channel_id = int(existing.get('id'))
+                        if self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                            tid = self._get_image_type_id_by_name(conn, '通道图')
+                            if tid:
+                                cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), channel_id))
+                    else:
+                        rec = {
+                            'sha256': sha256,
+                            'storage_path': storage_path,
+                            'description': '',
+                            'is_deprecated': 0,
+                            'created_by': user_id,
+                        }
+                        if self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                            tid = self._get_image_type_id_by_name(conn, '通道图')
+                            if tid:
+                                rec['image_type_id'] = int(tid)
+                        channel_id = int(self._insert_image_asset_dynamic(conn, cur, rec) or 0)
+
+                    if not channel_id:
+                        return self.send_json({'status': 'error', 'message': '通道图入库失败'}, start_response)
+
+                    self._set_channel_link_for_member_asset(conn, member_id, channel_id, user_id=user_id)
+                    has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                    join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+                    ch_row = self._find_image_asset_row_by_rel_path(
+                        cur, storage_path, join_type, has_tid, False, False
+                    )
+
+            channel = self._channel_asset_payload(ch_row)
+            return self.send_json({
+                'status': 'success',
+                'linked': True,
+                'member_asset_id': member_id,
+                'channel': channel,
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def _ensure_listing_sales_global_common_folder(self):
         """Ensure 『通用图片』/主图 exists (与各货号文件夹同层). Return absolute folder path (bytes)."""
         base_folder = self._ensure_listing_folder()

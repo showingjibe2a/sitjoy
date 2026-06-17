@@ -60,6 +60,9 @@
 
   async function ensureInjectedOnce() {
     if (!document.body) return false;
+    if ($('pmImageEditModal') && !$('pmImageEditChannelThumb')) {
+      $('pmImageEditModal').remove();
+    }
     if (!$('pmImageEditModal')) {
       try {
         const resp = await fetch('/static/html/pm_image_edit_modal.html', { cache: 'no-store' });
@@ -233,6 +236,134 @@
 
   /** 打开弹窗并预填后的绑定快照，用于判断「是否移除全部绑定」 */
   let initialBindingsSnapshot = { vids: [], fids: [], opids: [] };
+
+  /** 当前关联的通道图 { path_b64, storage_path, image_asset_id } 或 null */
+  let channelLink = null;
+
+  function renderChannelThumb() {
+    const img = $('pmImageEditChannelImg');
+    const empty = $('pmImageEditChannelEmpty');
+    const clearBtn = $('pmImageEditChannelClearBtn');
+    const pathB64 = channelLink && channelLink.path_b64 ? String(channelLink.path_b64) : '';
+    if (img) {
+      if (pathB64) {
+        img.src = `/api/image-preview?id=${encodeURIComponent(pathB64)}&mode=thumb&w=320&q=80`;
+        img.style.display = 'block';
+      } else {
+        img.removeAttribute('src');
+        img.style.display = 'none';
+      }
+    }
+    if (empty) empty.style.display = pathB64 ? 'none' : 'flex';
+    if (clearBtn) clearBtn.style.display = pathB64 ? '' : 'none';
+  }
+
+  async function loadChannelLinkFromDb() {
+    channelLink = null;
+    renderChannelThumb();
+    if (!current || !current.pathB64) return;
+    try {
+      const resp = await fetch('/api/gallery-image-channel?id=' + encodeURIComponent(current.pathB64), { credentials: 'include' });
+      const data = await resp.json();
+      if (data && data.status === 'success' && data.linked && data.channel) {
+        channelLink = data.channel;
+      } else {
+        channelLink = null;
+      }
+    } catch (e) {
+      channelLink = null;
+    }
+    renderChannelThumb();
+  }
+
+  async function saveChannelLink(channelPathB64) {
+    if (!current || !current.pathB64) return false;
+    const resp = await fetch('/api/gallery-image-channel', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        member_path_b64: current.pathB64,
+        channel_path_b64: channelPathB64 || '',
+      }),
+    });
+    const data = await resp.json();
+    if (!data || data.status !== 'success') {
+      throw new Error((data && data.message) ? data.message : '通道图关联失败');
+    }
+    channelLink = data.linked && data.channel ? data.channel : null;
+    renderChannelThumb();
+    return true;
+  }
+
+  async function uploadChannelImage(file) {
+    if (!current || !current.pathB64 || !file) return;
+    const statusDiv = $('pmImageEditStatus');
+    showStatus(statusDiv, '正在上传通道图…', 'info');
+    const fd = new FormData();
+    fd.append('member_path_b64', current.pathB64);
+    fd.append('file', file);
+    try {
+      const resp = await fetch('/api/gallery-channel-image-upload', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      });
+      const data = await resp.json();
+      if (!data || data.status !== 'success') {
+        throw new Error((data && data.message) ? data.message : '上传失败');
+      }
+      channelLink = data.channel || null;
+      renderChannelThumb();
+      showStatus(statusDiv, '', '');
+      if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update', message: '通道图已关联' });
+      else if (window.showAppToast) window.showAppToast('通道图已关联', false, 2800);
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      showStatus(statusDiv, msg, 'error');
+      if (window.showAppToast) window.showAppToast(msg, true, 8000);
+    }
+  }
+
+  function openChannelNasPicker() {
+    if (!current || !current.pathB64) return;
+    if (!window.SjPickExistingImages || typeof window.SjPickExistingImages.open !== 'function') {
+      window.showAppToast && window.showAppToast('选择已有图片组件未加载，请刷新页面', true, 8000);
+      return;
+    }
+    window.SjPickExistingImages.open({
+      context: 'channel',
+      memberPathB64: current.pathB64,
+      title: '选择通道图',
+      onConfirm: async (picked) => {
+        const item = (picked || [])[0];
+        const pb = item && (item.path_b64 || item.b64);
+        if (!pb) {
+          window.showAppToast && window.showAppToast('请选择一张图片', true, 4000);
+          return;
+        }
+        try {
+          await saveChannelLink(pb);
+          if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update', message: '通道图已关联' });
+          else if (window.showAppToast) window.showAppToast('通道图已关联', false, 2800);
+        } catch (e) {
+          const msg = e && e.message ? e.message : String(e);
+          if (window.showAppToast) window.showAppToast(msg, true, 8000);
+        }
+      },
+    });
+  }
+
+  async function clearChannelLink() {
+    try {
+      await saveChannelLink('');
+      if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update', message: '已解除通道图关联' });
+      else if (window.showAppToast) window.showAppToast('已解除通道图关联', false, 2800);
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      if (window.showAppToast) window.showAppToast(msg, true, 8000);
+    }
+  }
 
   function isRecommendNameEnabled() {
     return getSegmentValue($('pmImageEditRecommendNameSegment'), '1') === '1';
@@ -1261,6 +1392,7 @@
     if (m) m.classList.remove('active');
     showStatus($('pmImageEditStatus'), '', '');
     current = null;
+    channelLink = null;
   }
 
   async function confirmSubmit() {
@@ -1454,6 +1586,7 @@
     await tryPrefillVariantLinksFromDbIfEnabled();
     await applyOrderProductMgmtBindingDefaultsFromHook();
     await tryPrefillMetaFromDb();
+    await loadChannelLinkFromDb();
     applyRecommendedNameIfNeeded(true);
     initialBindingsSnapshot = {
       vids: Array.from(selectedVariantIds || []).map(v => Number(v)).filter(v => v > 0),
@@ -1528,6 +1661,24 @@
     $('pmImageEditPickVariantBtn')?.addEventListener('click', openVariantPicker);
     $('pmImageEditPickFabricBtn')?.addEventListener('click', openFabricPicker);
     $('pmImageEditPickOrderProductBtn')?.addEventListener('click', openOrderProductPicker);
+
+    $('pmImageEditChannelUploadBtn')?.addEventListener('click', () => {
+      const inp = $('pmImageEditChannelUploadInput');
+      if (!inp) return;
+      inp.value = '';
+      inp.click();
+    });
+    $('pmImageEditChannelUploadInput')?.addEventListener('change', (e) => {
+      const f = e.target && e.target.files && e.target.files[0] ? e.target.files[0] : null;
+      if (f) uploadChannelImage(f);
+      e.target.value = '';
+    });
+    $('pmImageEditChannelNasBtn')?.addEventListener('click', openChannelNasPicker);
+    $('pmImageEditChannelClearBtn')?.addEventListener('click', clearChannelLink);
+    $('pmImageEditChannelThumb')?.addEventListener('click', () => {
+      const pb = channelLink && channelLink.path_b64 ? String(channelLink.path_b64) : '';
+      if (pb) window.open(`/api/image-preview?id=${encodeURIComponent(pb)}`, '_blank');
+    });
   }
 
   // Public API

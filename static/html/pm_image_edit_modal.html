@@ -4,11 +4,29 @@
     <div class="pm-modal-scroll">
       <h3 style="margin-top:0;" id="pmImageEditTitle">编辑图片信息</h3>
 
-      <div class="gallery-rename-preview">
-        <img id="pmImageEditPreviewImg" src="" alt="预览">
-        <button class="btn-secondary gallery-preview-zoom" type="button" id="pmImageEditZoomBtn" title="放大查看" style="font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">🔍</button>
-        <button class="btn-secondary gallery-preview-zoom" type="button" id="pmImageEditReplaceBtn" title="选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。" style="right:54px; font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">替换</button>
-        <input type="file" id="pmImageEditReplaceInput" accept="image/*" class="optional-field" style="display:none;">
+      <div class="pm-image-edit-preview-row">
+        <div class="gallery-rename-preview pm-image-edit-preview-main">
+          <img id="pmImageEditPreviewImg" src="" alt="预览">
+          <button class="btn-secondary gallery-preview-zoom" type="button" id="pmImageEditZoomBtn" title="放大查看" style="font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">🔍</button>
+          <button class="btn-secondary gallery-preview-zoom" type="button" id="pmImageEditReplaceBtn" title="选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。" style="right:54px; font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">替换</button>
+          <input type="file" id="pmImageEditReplaceInput" accept="image/*" class="optional-field" style="display:none;">
+        </div>
+        <div class="pm-image-edit-channel-aside">
+          <div class="pm-image-edit-channel-label label-help">
+            通道图
+            <span class="help-dot" data-tip="与当前图片关联的通道母图；同一通道图可被多张 listing 图引用。文件默认保存在「货号/主图/通道」。"></span>
+          </div>
+          <div class="pm-image-edit-channel-thumb" id="pmImageEditChannelThumb">
+            <div class="pm-image-edit-channel-empty" id="pmImageEditChannelEmpty">未关联</div>
+            <img id="pmImageEditChannelImg" src="" alt="通道图" style="display:none;">
+          </div>
+          <div class="pm-image-edit-channel-actions">
+            <button type="button" class="btn-small" id="pmImageEditChannelUploadBtn">本地上传</button>
+            <button type="button" class="btn-small" id="pmImageEditChannelNasBtn">NAS选择</button>
+          </div>
+          <button type="button" class="btn-secondary btn-small pm-image-edit-channel-clear" id="pmImageEditChannelClearBtn" style="display:none;">解除关联</button>
+          <input type="file" id="pmImageEditChannelUploadInput" accept="image/*" class="optional-field" style="display:none;">
+        </div>
       </div>
 
       <div class="pm-section" style="margin-top: 1rem;">

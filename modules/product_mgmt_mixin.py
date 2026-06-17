@@ -624,6 +624,8 @@ class ProductManagementMixin:
         for parent_sub in ('配件图', '主图'):
             parent_path = os.path.join(target, enc(parent_sub))
             os.makedirs(os.path.join(parent_path, enc('通用')), exist_ok=True)
+            if parent_sub == '主图':
+                os.makedirs(os.path.join(parent_path, enc('通道')), exist_ok=True)
 
         protected = '#该系统文件夹禁止手动修改任何内容'
         for parent_sub in ('配件图', '主图', 'A+', '视频'):
