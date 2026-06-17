@@ -97,6 +97,15 @@
     border-color: var(--sj-variant-toast-error-from, #d74b4b);
 }
 
+/* 启用/弃用边框优先于面料 remark 分类色 */
+.sj-media-image-card.sj-media-image-card--enabled {
+    border-color: var(--sj-variant-toast-success-from, #2f8a42);
+}
+
+.sj-media-image-card.sj-media-image-card--deprecated {
+    border-color: var(--sj-variant-toast-error-from, #d74b4b);
+}
+
 .sj-media-image-card--static {
     cursor: default;
 }

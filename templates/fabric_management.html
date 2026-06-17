@@ -61,12 +61,13 @@
         .pm-form-full {
             grid-column: 1 / -1;
         }
-        .pm-modal-content {
-            max-height: 88vh;
+        .pm-modal-content.pm-modal-content--wide {
+            max-width: min(1100px, calc(100vw - 40px));
+            max-height: calc(100vh - 64px);
             display: flex;
             flex-direction: column;
         }
-        .pm-modal-body {
+        .pm-modal-content.pm-modal-content--wide .pm-modal-body {
             overflow-y: auto;
             min-height: 0;
             padding-right: 0.25rem;
@@ -138,7 +139,7 @@
     </div>
 
     <div class="pm-modal" id="pm-modal">
-        <div class="pm-modal-content">
+        <div class="pm-modal-content pm-modal-content--wide">
             <h3 id="pm-modal-title" style="margin-top:0;">新增面料</h3>
             <div class="pm-modal-body">
                 <div class="pm-form">
@@ -331,8 +332,6 @@
         let excludeUsedImages = false;
         let selectedImageObjects = []; // [{image_name, remark(类型), description(备注), sort_order}]
         let selectedSkuFamilyIds = [];
-        let draggedIndex = null;
-        let draggedInsertIndex = null;
         let currentEditingImageIndex = null;
         let fabricImageTypeOptions = [];
         let selectedFabricImageType = '';
@@ -424,7 +423,9 @@
                     preview_b64: String(meta.preview_b64 || '').trim(),
                     remark: typeName,
                     description: '',
-                    sort_order: selectedImageObjects.length
+                    sort_order: selectedImageObjects.length,
+                    is_enabled: 1,
+                    is_deprecated: 0,
                 });
             });
             renderSelectedImagesGrid();
@@ -719,7 +720,9 @@
                     image_asset_id: img.image_asset_id || 0,
                     remark: normalizeImageRemark(img.remark),
                     description: String(img.description != null ? img.description : '').trim(),
-                    sort_order: img.sort_order || 0
+                    sort_order: img.sort_order || 0,
+                    is_deprecated: Number(img.is_deprecated || 0),
+                    is_enabled: Number(img.is_deprecated || 0) ? 0 : 1,
                 }));
             } else {
                 // 向后兼容：如果只有 image_names，创建简单对象
@@ -727,7 +730,9 @@
                     image_name: name,
                     remark: '原图',
                     description: '',
-                    sort_order: idx
+                    sort_order: idx,
+                    is_enabled: 1,
+                    is_deprecated: 0,
                 }));
             }
             selectedFabricImageFilterType = '全部';
@@ -1224,90 +1229,96 @@
                 });
         }
 
-        function renderSelectedImagesGrid() {
-            const grid = document.getElementById('selectedImagesGrid');
-            const visibleItems = filterFabricImagesForDisplay(selectedImageObjects);
+        let fabricMainImageGrid = null;
 
-            if (!selectedImageObjects.length) {
-                grid.innerHTML = '<div class="sj-media-image-empty">未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定</div>';
-                return;
+        function fabricImagePathB64(img) {
+            return resolveFabricImagePathB64(img) || String(img.preview_b64 || '').trim();
+        }
+
+        function fabricImageToCardItem(img) {
+            const normalizedRemark = normalizeImageRemark(img.remark);
+            img.remark = normalizedRemark;
+            if (img.description == null) img.description = '';
+            const dep = Number(img.is_deprecated || 0);
+            return {
+                image_name: img.image_name,
+                image_type_name: normalizeFabricImageTypeName(normalizedRemark),
+                description: String(img.description || '').trim(),
+                image_b64: fabricImagePathB64(img),
+                is_deprecated: dep,
+                is_enabled: typeof img.is_enabled !== 'undefined' ? Number(img.is_enabled) : (dep ? 0 : 1),
+            };
+        }
+
+        function getFabricVisibleImages() {
+            let visible = filterFabricImagesForDisplay(selectedImageObjects);
+            if (!fabricImageShowFabric) {
+                visible = visible.filter(img => normalizeImageRemark(img.remark) !== '原图');
             }
-            if (!visibleItems.length) {
-                grid.innerHTML = '<div class="sj-media-image-empty">当前类型筛选下暂无图片，请切换类型或新增图片</div>';
-                return;
+            const C = window.SjMediaImageCard;
+            const cmp = (a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0);
+            if (C && typeof C.sortItemsByEnabled === 'function') {
+                return C.sortItemsByEnabled(visible, cmp);
             }
+            return visible.slice().sort(cmp);
+        }
 
-            grid.innerHTML = '';
-
-            const placeholder = document.createElement('div');
-            placeholder.className = 'sj-media-image-card placeholder';
-            placeholder.style.display = 'none';
-
-            selectedImageObjects.forEach((img, index) => {
-                if (!visibleItems.includes(img)) return;
-                if (!fabricImageShowFabric && normalizeImageRemark(img.remark) === '原图') return;
-                const card = document.createElement('div');
-                const normalizedRemark = normalizeImageRemark(img.remark);
-                img.remark = normalizedRemark;
-                if (img.description == null) img.description = '';
-                const categoryClass = getRemarkCategoryClass(normalizedRemark);
-                const typeLabel = normalizeFabricImageTypeName(normalizedRemark);
-                const descText = String(img.description || '').trim();
-                card.className = `sj-media-image-card sj-media-image-card--fabric sj-media-image-card--drag ${categoryClass}`;
-                card.setAttribute('draggable', 'true');
-                card.dataset.index = index;
-
-                const cardItem = {
-                    image_name: img.image_name,
-                    image_type_name: typeLabel,
-                    description: descText,
-                    image_b64: String(img.image_name || ''),
-                };
-                const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-                    ? window.SjMediaImageCard.buildInfoHtml(cardItem, { readonly: true })
-                    : '';
-                card.innerHTML = `
-                    <div class="sj-media-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
-                    <div class="sj-media-image-preview-wrap">
-                        <img src="${getSelectedImagePreviewSrc(img, 520, 72)}" alt="${escapeHtml(img.image_name)}" class="sj-media-image-preview" loading="lazy">
-                    </div>
-                    ${infoHtml}
-                `;
-
-                // bind events
-                card.addEventListener('dragstart', handleDragStartImage);
-                card.addEventListener('dragenter', handleDragEnterImage);
-                card.addEventListener('dragover', handleDragOverImage);
-                card.addEventListener('dragleave', handleDragLeaveImage);
-                card.addEventListener('drop', handleDropImage);
-                card.addEventListener('dragend', handleDragEndImage);
-
-                // allow dragging when starting on inner image or text
-                try {
-                    const inners = card.querySelectorAll('img, .sj-media-image-original, .sj-media-image-desc');
-                    inners.forEach(n => {
-                        n.setAttribute('draggable', 'true');
-                        n.addEventListener('dragstart', handleDragStartImage);
-                        n.addEventListener('dragenter', handleDragEnterImage);
-                        n.addEventListener('dragover', handleDragOverImage);
-                        n.addEventListener('dragleave', handleDragLeaveImage);
-                        n.addEventListener('drop', handleDropImage);
-                        n.addEventListener('dragend', handleDragEndImage);
+        function ensureFabricMainImageGrid() {
+            if (fabricMainImageGrid) return fabricMainImageGrid;
+            if (!window.SitjoyMainImageGrid) return null;
+            fabricMainImageGrid = window.SitjoyMainImageGrid.create({
+                gridId: 'selectedImagesGrid',
+                dragReorder: true,
+                reorderMode: 'sourceArray',
+                skipEntityCheck: true,
+                getEntityId: () => true,
+                getItems: () => selectedImageObjects,
+                getTotalCount: () => selectedImageObjects.length,
+                getViewList: getFabricVisibleImages,
+                bindInnerDragTargets: true,
+                dragPlaceholderVerticalFallback: true,
+                cardClassExtra: (img) => {
+                    fabricImageToCardItem(img);
+                    const categoryClass = getRemarkCategoryClass(normalizeImageRemark(img.remark));
+                    return `sj-media-image-card--fabric ${categoryClass}`.trim();
+                },
+                mapInfoItem: fabricImageToCardItem,
+                previewUrl: (img) => getSelectedImagePreviewSrc(img, 520, 72),
+                messages: {
+                    empty: '未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定',
+                    filteredEmpty: '当前类型筛选下暂无图片，请切换类型或新增图片',
+                },
+                onDelete: (item) => {
+                    const idx = selectedImageObjects.indexOf(item);
+                    if (idx >= 0) removeImageCard(idx);
+                },
+                onEdit: (item) => {
+                    const idx = selectedImageObjects.indexOf(item);
+                    if (idx >= 0) openFabricImageEditModal(idx);
+                },
+                onDragStart: () => showModalStatus('拖动图片，放手即可调整顺序', false),
+                onDragEnd: () => resetModalStatus(),
+                onReorder: () => autosaveImageOrder(),
+                updateItemEnabled: (pathB64, enabled) => {
+                    selectedImageObjects.forEach(it => {
+                        const b64 = fabricImagePathB64(it);
+                        if (b64 === pathB64) {
+                            it.is_enabled = enabled ? 1 : 0;
+                            it.is_deprecated = enabled ? 0 : 1;
+                        }
                     });
-                } catch (e) {}
-
-                card.addEventListener('dblclick', () => { openFabricImageEditModal(index); });
-
-                grid.appendChild(card);
+                },
+                onEnabledSuccess: (enabled) => {
+                    if (window.showPageStatus) window.showPageStatus(enabled ? '已启用' : '已弃用', false);
+                    else if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+                },
             });
+            return fabricMainImageGrid;
+        }
 
-            // append placeholder at end (hidden by default)
-            grid.appendChild(placeholder);
-
-            // grid-level handlers: allow dropping in gaps/last position
-            grid.ondragover = handleDragOverGrid;
-            grid.ondrop = handleDropImage;
-            grid.ondragleave = handleDragLeaveGrid;
+        function renderSelectedImagesGrid() {
+            const grid = ensureFabricMainImageGrid();
+            if (grid) grid.render();
         }
 
         function removeImageCard(index) {
@@ -1369,137 +1380,6 @@
                 });
             }
             return Promise.resolve(false);
-        }
-
-        function handleDragStartImage(e) {
-            const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
-            if (!card) return;
-            draggedIndex = parseInt(card.dataset.index);
-            draggedInsertIndex = draggedIndex;
-            if (e.dataTransfer) {
-                e.dataTransfer.effectAllowed = 'move';
-                try { e.dataTransfer.setData('text/plain', String(draggedIndex)); } catch (_) {}
-            }
-            card.classList.add('dragging');
-            // show hint
-            showModalStatus('拖动图片，放手即可调整顺序', false);
-        }
-
-        function handleDragEnterImage(e) {
-            e.preventDefault();
-            const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
-            if (!card) return;
-            card.classList.add('drag-over');
-        }
-
-        function handleDragOverImage(e) {
-            e.preventDefault();
-            updateDragPlaceholder(e.clientX, e.clientY);
-        }
-
-        function handleDragOverGrid(e) {
-            e.preventDefault();
-            updateDragPlaceholder(e.clientX, e.clientY);
-        }
-
-        function handleDragLeaveImage(e) {
-            const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
-            if (card) card.classList.remove('drag-over');
-        }
-
-        function handleDropImage(e) {
-            e.preventDefault();
-            const grid = document.getElementById('selectedImagesGrid');
-            if (!grid) return;
-            const children = Array.from(grid.children).filter(n => !(n.classList.contains('sj-media-image-card') && n.classList.contains('placeholder')));
-            let insertIndex = (draggedInsertIndex === null || draggedInsertIndex === undefined) ? children.length : draggedInsertIndex;
-            if (insertIndex < 0) insertIndex = 0;
-            if (insertIndex > children.length) insertIndex = children.length;
-
-            // if draggedIndex valid, move item
-            if (draggedIndex !== null && draggedIndex >= 0 && draggedIndex < selectedImageObjects.length) {
-                const item = selectedImageObjects.splice(draggedIndex, 1)[0];
-                // adjust insertIndex if source was before destination
-                if (insertIndex > draggedIndex) insertIndex = insertIndex - 1;
-                selectedImageObjects.splice(insertIndex, 0, item);
-
-                // reindex
-                selectedImageObjects.forEach((img, idx) => img.sort_order = idx);
-                renderSelectedImagesGrid();
-
-                // try autosave order if editing existing fabric
-                autosaveImageOrder();
-            }
-            // clear
-            draggedIndex = null;
-            draggedInsertIndex = null;
-            resetModalStatus();
-        }
-
-        function handleDragLeaveGrid(e) {
-            const grid = document.getElementById('selectedImagesGrid');
-            if (!grid) return;
-            if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
-            const placeholder = grid.querySelector('.sj-media-image-card.placeholder');
-            if (placeholder) placeholder.style.display = 'none';
-        }
-
-        function updateDragPlaceholder(clientX, clientY) {
-            const grid = document.getElementById('selectedImagesGrid');
-            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
-            if (!grid || !placeholder) return;
-
-            const children = Array.from(grid.children).filter(n => !(n.classList.contains('sj-media-image-card') && n.classList.contains('placeholder')));
-            if (!children.length) {
-                draggedInsertIndex = 0;
-                placeholder.style.display = '';
-                grid.appendChild(placeholder);
-                return;
-            }
-
-            let insertIndex = children.length;
-            const pointed = document.elementFromPoint(clientX, clientY);
-            const pointedCard = pointed && pointed.closest ? pointed.closest('.sj-media-image-card') : null;
-            if (pointedCard && !pointedCard.classList.contains('placeholder') && grid.contains(pointedCard)) {
-                const targetIndex = parseInt(pointedCard.dataset.index);
-                const rect = pointedCard.getBoundingClientRect();
-                const before = clientY < (rect.top + rect.height / 2);
-                insertIndex = before ? targetIndex : targetIndex + 1;
-            } else {
-                // fallback by vertical center; supports dropping into blank space as last position
-                for (let i = 0; i < children.length; i++) {
-                    const r = children[i].getBoundingClientRect();
-                    const mid = r.top + r.height / 2;
-                    if (clientY < mid) {
-                        insertIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            if (insertIndex < 0) insertIndex = 0;
-            if (insertIndex > children.length) insertIndex = children.length;
-            draggedInsertIndex = insertIndex;
-
-            placeholder.style.display = '';
-            if (insertIndex >= children.length) {
-                grid.appendChild(placeholder);
-            } else {
-                grid.insertBefore(placeholder, children[insertIndex]);
-            }
-        }
-
-        function handleDragEndImage(e) {
-            document.querySelectorAll('.sj-media-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
-            draggedIndex = null;
-            draggedInsertIndex = null;
-            const grid = document.getElementById('selectedImagesGrid');
-            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
-            if (placeholder) placeholder.style.display = 'none';
-            resetModalStatus();
         }
 
         function autosaveImageOrder() {
@@ -1691,6 +1571,8 @@
                     remark: defaultType,
                     description: '',
                     sort_order: selectedImageObjects.length,
+                    is_enabled: 1,
+                    is_deprecated: 0,
                     _isNewUpload: true,
                     _fileObject: file
                 });
@@ -1711,6 +1593,7 @@
     <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>
+    <script src="/static/js/sitjoy_main_image_grid.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 </body>
 </html>

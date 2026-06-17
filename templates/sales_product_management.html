@@ -947,8 +947,6 @@
         let salesImageTypeOptions = [];
         let selectedMainImageType = '文字卖点图';
         let selectedMainImageFilterType = '全部';
-        let mainImageDraggedIndex = null;
-        let mainImageDraggedInsertIndex = null;
         let nasMainImagePathB64 = '';
         let nasMainImageNavStack = [];
         const NAS_MAIN_IMAGE_LAST_PATH_KEY = 'sj.nasMainImage.lastPathB64.v1';
@@ -3001,234 +2999,59 @@
         }
 
         function sortMainImageViewList(items) {
-            const Card = window.SjMediaImageCard;
-            if (Card && typeof Card.sortItemsByEnabled === 'function') {
-                return Card.sortItemsByEnabled(items, Card.defaultImageListCompare);
+            const C = window.SjMediaImageCard;
+            if (C && typeof C.sortItemsByEnabled === 'function') {
+                return C.sortItemsByEnabled(items, C.defaultImageListCompare);
             }
             return (items || []).slice();
         }
 
-        function renderMainImageGrid() {
-            const grid = document.getElementById('mainImagesGrid');
-            const tip = document.getElementById('mainImageFolderTip');
-            if (!grid || !tip) return;
+        let salesMainImageGrid = null;
 
-            if (!editId) {
-                tip.textContent = '保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。';
-                grid.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
-                return;
-            }
-
-            const hasFabricCards = Array.isArray(fabricImageItems) && fabricImageItems.length;
-            if (!mainImageItems.length && !hasFabricCards) {
-                grid.innerHTML = '<div class="sj-media-image-empty">当前主图子文件夹暂无图片，可点击“新增主图”上传</div>';
-                return;
-            }
-
-            const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
-            const list = sortMainImageViewList((mainImageItems || []).slice()
-                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
-
-            grid.innerHTML = '';
-
-            const placeholder = document.createElement('div');
-            placeholder.className = 'sj-media-image-card placeholder';
-            placeholder.style.minHeight = '80px';
-            placeholder.style.borderStyle = 'dashed';
-            placeholder.style.opacity = '0.6';
-            placeholder.style.display = 'none';
-
-            list.forEach((item, index) => {
-                const rawName = String(item.image_name || '');
-                const rowKey = mainImageRowKey(item);
-                const encRowKey = encodeURIComponent(rowKey);
-                const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const card = document.createElement('div');
-                card.className = (window.SjMediaImageCard && window.SjMediaImageCard.buildCardClassName)
-                    ? window.SjMediaImageCard.buildCardClassName(item)
-                    : 'sj-media-image-card sj-media-image-card--drag';
-                card.style.cursor = 'move';
-                card.setAttribute('draggable', 'true');
-                card.dataset.imageName = rawName;
-                card.dataset.rowKey = rowKey;
-                card.dataset.index = String(index);
-                card.innerHTML = `
-                    <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encRowKey}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
-                    <div class="sj-media-image-preview-wrap">
-                        <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
-                    </div>
-                    ${(window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-                        ? window.SjMediaImageCard.buildInfoHtml(item, { fabricCandidates: mainImageFabricNameCandidates() })
-                        : ''}
-                `;
-                card.addEventListener('dblclick', () => openMainImageDescModal(rowKey));
-                card.addEventListener('dragstart', handleMainImageDragStart);
-                card.addEventListener('dragenter', handleMainImageDragEnter);
-                card.addEventListener('dragover', handleMainImageDragOver);
-                card.addEventListener('dragleave', handleMainImageDragLeave);
-                card.addEventListener('drop', handleMainImageDrop);
-                card.addEventListener('dragend', handleMainImageDragEnd);
-                grid.appendChild(card);
-            });
-
-            // Append fabric-linked images into the same grid (readonly, no delete)
-            if (mainImageShowFabric && Array.isArray(fabricImageItems) && fabricImageItems.length) {
-                const badgeStyle = 'display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .45rem;border-radius:999px;background:rgba(73,110,92,0.12);color:#3d6a52;font-weight:700;font-size:.72rem;';
-                const fabricList = (fabricImageItems || []).slice()
-                    .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
-                    .sort((a, b) => {
-                    const ta = String(a.image_type_name || '').trim();
-                    const tb = String(b.image_type_name || '').trim();
-                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                    const sa = Number(a.sort_order || 0);
-                    const sb = Number(b.sort_order || 0);
-                    if (sa !== sb) return sa - sb;
-                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-                });
-                fabricList.forEach(item => {
-                    const rawName = String(item.image_name || '');
-                    const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    const card = document.createElement('div');
-                    card.className = 'sj-media-image-card';
-                    card.style.cursor = 'default';
-                    card.setAttribute('draggable', 'false');
-                    const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-                        ? window.SjMediaImageCard.buildInfoHtml(item, { readonly: true, fabricCandidates: mainImageFabricNameCandidates() })
-                        : '';
-                    card.innerHTML = `
-                        <div style="position:absolute;left:8px;top:8px;z-index:11;"><span style="${badgeStyle}">面料</span></div>
-                        <div class="sj-media-image-preview-wrap">
-                            <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
-                        </div>
-                        ${infoHtml}
-                    `;
-                    grid.appendChild(card);
-                });
-            }
-            grid.appendChild(placeholder);
-
-            if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
-                window.SjMediaImageCard.bindStatusSegments(grid, {
-                    rerender: () => renderMainImageGrid(),
-                    onEnabledChange: async ({ pathB64, enabled }) => {
-                        const resp = await fetch('/api/gallery-image-meta', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: pathB64, is_enabled: enabled ? 1 : 0 }),
-                        });
-                        const data = await resp.json();
-                        if (!data || data.status !== 'success') {
-                            throw new Error((data && data.message) ? data.message : '保存失败');
+        function ensureSalesMainImageGrid() {
+            if (salesMainImageGrid) return salesMainImageGrid;
+            if (!window.SitjoyMainImageGrid) return null;
+            salesMainImageGrid = window.SitjoyMainImageGrid.create({
+                gridId: 'mainImagesGrid',
+                tipId: 'mainImageFolderTip',
+                dragReorder: true,
+                getEntityId: () => editId,
+                getItems: () => mainImageItems,
+                getFilterType: () => selectedMainImageFilterType,
+                fabricOverlay: {
+                    getItems: () => fabricImageItems,
+                    isVisible: () => mainImageShowFabric,
+                },
+                fabricCandidates: mainImageFabricNameCandidates,
+                itemKey: mainImageRowKey,
+                messages: {
+                    noEntityTip: '保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。',
+                    noEntityEmpty: '新增状态下暂无主图，保存后即可上传和管理',
+                    empty: '当前主图子文件夹暂无图片，可点击“新增主图”上传',
+                },
+                onDelete: (_item, rowKey) => deleteMainImage(encodeURIComponent(rowKey)),
+                onEdit: (_item, rowKey) => openMainImageDescModal(rowKey),
+                onReorder: () => autosaveMainImageOrder(),
+                updateItemEnabled: (pathB64, enabled) => {
+                    (mainImageItems || []).forEach(it => {
+                        if (String(it.image_b64 || '').trim() === pathB64) {
+                            it.is_enabled = enabled ? 1 : 0;
+                            it.is_deprecated = enabled ? 0 : 1;
                         }
-                        (mainImageItems || []).forEach(it => {
-                            if (String(it.image_b64 || '').trim() === pathB64) {
-                                it.is_enabled = enabled ? 1 : 0;
-                                it.is_deprecated = enabled ? 0 : 1;
-                            }
-                        });
-                        window.showAppSaveResult({ action: 'update', message: enabled ? '已启用' : '已弃用' });
-                    },
-                });
-            }
-
-            grid.ondragover = handleMainImageDragOverGrid;
-            grid.ondrop = handleMainImageDrop;
-            grid.ondragleave = handleMainImageDragLeaveGrid;
-        }
-
-        function handleMainImageDragStart(e) {
-            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
-            if (!card) return;
-            mainImageDraggedIndex = parseInt(card.dataset.index || '0', 10);
-            mainImageDraggedInsertIndex = mainImageDraggedIndex;
-            if (e.dataTransfer) {
-                e.dataTransfer.effectAllowed = 'move';
-                try { e.dataTransfer.setData('text/plain', String(mainImageDraggedIndex)); } catch (_) {}
-            }
-            card.classList.add('dragging');
-        }
-        function handleMainImageDragEnter(e) {
-            e.preventDefault();
-            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
-            if (!card || card.classList.contains('placeholder')) return;
-            card.classList.add('drag-over');
-        }
-        function handleMainImageDragOver(e) { e.preventDefault(); updateMainImageDragPlaceholder(e.clientX, e.clientY); }
-        function handleMainImageDragOverGrid(e) { e.preventDefault(); updateMainImageDragPlaceholder(e.clientX, e.clientY); }
-        function handleMainImageDragLeave(e) {
-            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
-            if (card) card.classList.remove('drag-over');
-        }
-        function handleMainImageDragLeaveGrid(e) {
-            const grid = document.getElementById('mainImagesGrid');
-            if (!grid) return;
-            if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
-            const placeholder = grid.querySelector('.sj-media-image-card.placeholder');
-            if (placeholder) placeholder.style.display = 'none';
-        }
-        function updateMainImageDragPlaceholder(clientX, clientY) {
-            const grid = document.getElementById('mainImagesGrid');
-            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
-            if (!grid || !placeholder) return;
-            const cards = Array.from(grid.children).filter(n => n.classList && n.classList.contains('sj-media-image-card') && !n.classList.contains('placeholder'));
-            if (!cards.length) {
-                mainImageDraggedInsertIndex = 0;
-                placeholder.style.display = '';
-                grid.appendChild(placeholder);
-                return;
-            }
-            let insertIndex = cards.length;
-            const pointed = document.elementFromPoint(clientX, clientY);
-            const pointedCard = pointed && pointed.closest ? pointed.closest('.sj-media-image-card') : null;
-            if (pointedCard && !pointedCard.classList.contains('placeholder') && grid.contains(pointedCard)) {
-                const targetIndex = parseInt(pointedCard.dataset.index || '0', 10);
-                const rect = pointedCard.getBoundingClientRect();
-                const before = clientY < (rect.top + rect.height / 2);
-                insertIndex = before ? targetIndex : targetIndex + 1;
-            }
-            insertIndex = Math.max(0, Math.min(cards.length, insertIndex));
-            mainImageDraggedInsertIndex = insertIndex;
-            placeholder.style.display = '';
-            if (insertIndex >= cards.length) grid.appendChild(placeholder);
-            else grid.insertBefore(placeholder, cards[insertIndex]);
-        }
-        function handleMainImageDrop(e) {
-            e.preventDefault();
-            const grid = document.getElementById('mainImagesGrid');
-            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
-            if (placeholder) placeholder.style.display = 'none';
-
-            const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
-            const viewList = sortMainImageViewList((mainImageItems || []).slice()
-                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
-
-            if (mainImageDraggedIndex === null || mainImageDraggedIndex === undefined) return;
-            if (mainImageDraggedIndex < 0 || mainImageDraggedIndex >= viewList.length) return;
-            let insertIndex = (mainImageDraggedInsertIndex === null || mainImageDraggedInsertIndex === undefined) ? viewList.length : mainImageDraggedInsertIndex;
-            insertIndex = Math.max(0, Math.min(viewList.length, insertIndex));
-            const moved = viewList.splice(mainImageDraggedIndex, 1)[0];
-            if (insertIndex > mainImageDraggedIndex) insertIndex = insertIndex - 1;
-            viewList.splice(insertIndex, 0, moved);
-
-            const nameToIdx = new Map();
-            (mainImageItems || []).forEach((it, idx) => nameToIdx.set(String(it.image_name || ''), idx));
-            viewList.forEach((it, idx) => {
-                const origIdx = nameToIdx.get(String(it.image_name || ''));
-                if (origIdx !== undefined) mainImageItems[origIdx].sort_order = idx + 1;
+                    });
+                },
+                onEnabledSuccess: (enabled) => {
+                    window.showAppSaveResult({ action: 'update', message: enabled ? '已启用' : '已弃用' });
+                },
             });
-            renderMainImageGrid();
-            autosaveMainImageOrder();
-            mainImageDraggedIndex = null;
-            mainImageDraggedInsertIndex = null;
+            return salesMainImageGrid;
         }
-        function handleMainImageDragEnd(e) {
-            document.querySelectorAll('#mainImagesGrid .sj-media-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
-            mainImageDraggedIndex = null;
-            mainImageDraggedInsertIndex = null;
-            const grid = document.getElementById('mainImagesGrid');
-            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
-            if (placeholder) placeholder.style.display = 'none';
+
+        function renderMainImageGrid() {
+            const grid = ensureSalesMainImageGrid();
+            if (grid) grid.render();
         }
+
         function autosaveMainImageOrder() {
             if (!editId) return;
             const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
@@ -6019,6 +5842,7 @@
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>
+    <script src="/static/js/sitjoy_main_image_grid.js"></script>
 </body>
 </html>
 

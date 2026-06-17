@@ -2034,76 +2034,44 @@
             }
         }
 
-        function renderOrderMainImageList() {
-            const wrap = document.getElementById('orderMainImageList');
-            const tip = document.getElementById('orderMainImageFolderTip');
-            if (!wrap) return;
-            if (!editId) {
-                if (tip) tip.textContent = '保存后自动绑定到货号/配件图/规格与数量简称 子文件夹；同图复用会自动归入配件图/通用。';
-                wrap.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
-                return;
-            }
-            const list = (window.SjMediaImageCard && window.SjMediaImageCard.sortItemsByEnabled)
-                ? window.SjMediaImageCard.sortItemsByEnabled(orderMainImageItems, window.SjMediaImageCard.defaultImageListCompare)
-                : (Array.isArray(orderMainImageItems) ? orderMainImageItems.slice() : []);
-            if (!list.length) {
-                wrap.innerHTML = '<div class="sj-media-image-empty">当前配件图子文件夹暂无图片，可点击“上传主图”新增</div>';
-                return;
-            }
-            wrap.innerHTML = list.map(item => {
-                const imageName = String(item.image_name || '').trim();
-                const b64 = String(item.image_b64 || '').trim();
-                const imageTypeName = String(item.image_type_name || '').trim();
-                const encodedName = encodeURIComponent(imageName);
-                const safeName = imageName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-                    ? window.SjMediaImageCard.buildInfoHtml(Object.assign({}, item, { image_b64: b64 }), { fabricCandidates: orderMainImageFabricCandidates() })
-                    : '';
-                const cardClass = (window.SjMediaImageCard && window.SjMediaImageCard.buildCardClassName)
-                    ? window.SjMediaImageCard.buildCardClassName(item)
-                    : 'sj-media-image-card sj-media-image-card--drag';
-                return `
-                    <div class="${cardClass}" data-image-name-enc="${encodedName}">
-                        <div class="sj-media-image-remove-badge" onclick="deleteOrderMainImage('${encodedName}'); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
-                        <div class="sj-media-image-preview-wrap">
-                            ${b64
-                                ? `<img src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">`
-                                : `<div style="width:100%;height:100%;border:1px dashed var(--morandi-sand);border-radius:12px;background:rgba(0,0,0,0.02);"></div>`
-                            }
-                        </div>
-                        ${infoHtml}
-                    </div>
-                `;
-            }).join('');
-            wrap.querySelectorAll('.sj-media-image-card').forEach(card => {
-                card.addEventListener('dblclick', () => {
-                    const encodedName = String(card.getAttribute('data-image-name-enc') || '').trim();
-                    if (encodedName) openOrderMainImageEditModal(encodedName);
-                });
-            });
-            if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
-                window.SjMediaImageCard.bindStatusSegments(wrap, {
-                    rerender: () => renderOrderMainImageList(),
-                    onEnabledChange: async ({ pathB64, enabled }) => {
-                        const resp = await fetch('/api/gallery-image-meta', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: pathB64, is_enabled: enabled ? 1 : 0 }),
-                        });
-                        const data = await resp.json();
-                        if (!data || data.status !== 'success') {
-                            throw new Error((data && data.message) ? data.message : '保存失败');
+        let orderMainImageGrid = null;
+
+        function ensureOrderMainImageGrid() {
+            if (orderMainImageGrid) return orderMainImageGrid;
+            if (!window.SitjoyMainImageGrid) return null;
+            orderMainImageGrid = window.SitjoyMainImageGrid.create({
+                gridId: 'orderMainImageList',
+                tipId: 'orderMainImageFolderTip',
+                dragReorder: false,
+                getEntityId: () => editId,
+                getItems: () => orderMainImageItems,
+                getFilterType: () => '全部',
+                fabricCandidates: orderMainImageFabricCandidates,
+                messages: {
+                    noEntityTip: '保存后自动绑定到货号/配件图/规格与数量简称 子文件夹；同图复用会自动归入配件图/通用。',
+                    noEntityEmpty: '新增状态下暂无主图，保存后即可上传和管理',
+                    empty: '当前配件图子文件夹暂无图片，可点击“上传主图”新增',
+                },
+                onDelete: (item) => deleteOrderMainImage(encodeURIComponent(String(item.image_name || '').trim())),
+                onEdit: (item) => openOrderMainImageEditModal(encodeURIComponent(String(item.image_name || '').trim())),
+                updateItemEnabled: (pathB64, enabled) => {
+                    (orderMainImageItems || []).forEach(it => {
+                        if (String(it.image_b64 || '').trim() === pathB64) {
+                            it.is_enabled = enabled ? 1 : 0;
+                            it.is_deprecated = enabled ? 0 : 1;
                         }
-                        (orderMainImageItems || []).forEach(it => {
-                            if (String(it.image_b64 || '').trim() === pathB64) {
-                                it.is_enabled = enabled ? 1 : 0;
-                                it.is_deprecated = enabled ? 0 : 1;
-                            }
-                        });
-                        if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
-                    },
-                });
-            }
+                    });
+                },
+                onEnabledSuccess: (enabled) => {
+                    if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+                },
+            });
+            return orderMainImageGrid;
+        }
+
+        function renderOrderMainImageList() {
+            const grid = ensureOrderMainImageGrid();
+            if (grid) grid.render();
         }
 
         function orderMainImageFabricCandidates() {
@@ -6092,5 +6060,6 @@
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>
+    <script src="/static/js/sitjoy_main_image_grid.js"></script>
 </html>
 

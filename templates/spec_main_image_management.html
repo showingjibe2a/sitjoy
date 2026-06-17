@@ -412,6 +412,7 @@
 <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
 <script src="/static/js/sj_media_image_card.js"></script>
+<script src="/static/js/sitjoy_main_image_grid.js"></script>
 <script>
 (function () {
   const $ = (s) => document.querySelector(s);
@@ -447,8 +448,6 @@
   let specmiNasPathB64 = '';
   let specmiNasNavStack = [];
   let specmiNasSelected = new Set();
-  let specmiDragIdx = null;
-  let specmiDragInsert = null;
   const specmiRowSelected = new Set();
   /** 列表缩略图：进入视口才请求，避免首屏对全部规格并发拉主图 */
   let specmiThumbObs = null;
@@ -1432,154 +1431,65 @@
     return [...new Set(out.filter(Boolean))];
   }
 
-  function specmiSortMainImageViewList(items) {
+  let specmiMainImageGrid = null;
+
+  function specmiGetVisibleMainItems() {
+    const filterType = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
+    const filtered = (specmiMainItems || []).slice()
+      .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType);
     const Card = window.SjMediaImageCard;
     if (Card && typeof Card.sortItemsByEnabled === 'function') {
-      return Card.sortItemsByEnabled(items, Card.defaultImageListCompare);
+      return Card.sortItemsByEnabled(filtered, Card.defaultImageListCompare);
     }
-    return (items || []).slice();
+    return filtered;
+  }
+
+  function ensureSpecmiMainImageGrid() {
+    if (specmiMainImageGrid) return specmiMainImageGrid;
+    if (!window.SitjoyMainImageGrid) return null;
+    specmiMainImageGrid = window.SitjoyMainImageGrid.create({
+      gridId: 'specmiMainImagesGrid',
+      tipId: 'specmiMainImageFolderTip',
+      dragReorder: true,
+      skipEntityCheck: true,
+      getEntityId: () => specmiEditingVid,
+      getItems: () => specmiMainItems,
+      getViewList: specmiGetVisibleMainItems,
+      getFilterType: () => specmiSelectedMainImageFilterType,
+      fabricOverlay: {
+        getItems: () => specmiFabricItems,
+        isVisible: () => specmiShowFabric,
+      },
+      fabricCandidates: specmiFabricNameCandidates,
+      previewUrl: (item) => specmiPreviewThumbUrl(item.image_b64 || '', 540, 72),
+      messages: {
+        empty: '当前规格暂无主图，可上传或从 NAS 导入',
+      },
+      onDelete: (item) => specmiDeleteImage(String(item.image_name || '')),
+      onEdit: (item) => specmiOpenPmModal(String(item.image_name || '')),
+      onReorder: () => specmiAutosaveOrder(),
+      updateItemEnabled: (pathB64, enabled) => {
+        (specmiMainItems || []).forEach(it => {
+          if (String(it.image_b64 || '').trim() === pathB64) {
+            it.is_enabled = enabled ? 1 : 0;
+            it.is_deprecated = enabled ? 0 : 1;
+          }
+        });
+      },
+      onEnabledSuccess: (enabled) => {
+        if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+      },
+    });
+    return specmiMainImageGrid;
   }
 
   function specmiRenderMainGrid() {
-    const grid = $('#specmiMainImagesGrid');
-    if (!grid) return;
-    const filterType = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
-    const list = specmiSortMainImageViewList((specmiMainItems || []).slice()
-      .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
-
-    const hasFab = specmiShowFabric && Array.isArray(specmiFabricItems) && specmiFabricItems.length;
-    if (!list.length && !hasFab) {
-      grid.innerHTML = '<div class="sj-media-image-empty">当前规格暂无主图，可上传或从 NAS 导入</div>';
-      return;
-    }
-    grid.innerHTML = '';
-    const placeholder = document.createElement('div');
-    placeholder.className = 'sj-media-image-card placeholder pm-u-hidden';
-
-    list.forEach((item, index) => {
-      const rawName = String(item.image_name || '');
-      const enc = encodeURIComponent(rawName);
-      const safeName = rawName.replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-        ? window.SjMediaImageCard.buildInfoHtml(item, { fabricCandidates: specmiFabricNameCandidates() })
-        : '';
-      const card = document.createElement('div');
-      card.className = (window.SjMediaImageCard && window.SjMediaImageCard.buildCardClassName)
-        ? window.SjMediaImageCard.buildCardClassName(item)
-        : 'sj-media-image-card sj-media-image-card--drag';
-      card.setAttribute('draggable', 'true');
-      card.dataset.imageName = rawName;
-      card.dataset.index = String(index);
-      card.innerHTML = `
-        <div class="sj-media-image-remove-badge" data-del="${enc}"><span class="sj-media-image-remove-icon">×</span></div>
-        <div class="sj-media-image-preview-wrap">
-          <img src="${specmiPreviewThumbUrl(item.image_b64 || '', 540, 72)}" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
-        </div>
-        ${infoHtml}`;
-      card.querySelector('[data-del]')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        specmiDeleteImage(decodeURIComponent(card.querySelector('[data-del]').getAttribute('data-del')));
-      });
-      card.addEventListener('dblclick', () => specmiOpenPmModal(rawName));
-      card.addEventListener('dragstart', specmiDragStart);
-      card.addEventListener('dragover', specmiDragOver);
-      card.addEventListener('drop', specmiDrop);
-      card.addEventListener('dragend', specmiDragEnd);
-      grid.appendChild(card);
-    });
-
-    if (hasFab) {
-      (specmiFabricItems || []).slice()
-        .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
-        .forEach(item => {
-          const rawName = String(item.image_name || '');
-          const card = document.createElement('div');
-          card.className = 'sj-media-image-card sj-media-image-card--static';
-          card.setAttribute('draggable', 'false');
-          const fabInfo = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
-            ? window.SjMediaImageCard.buildInfoHtml(item, { readonly: true, fabricCandidates: specmiFabricNameCandidates() })
-            : '';
-          card.innerHTML = `
-            <div class="sj-fabric-badge-anchor"><span class="sj-fabric-badge">面料</span></div>
-            <div class="sj-media-image-preview-wrap">
-              <img src="${specmiPreviewThumbUrl(item.image_b64 || '', 540, 72)}" alt="" class="sj-media-image-preview" loading="lazy">
-            </div>
-            ${fabInfo}`;
-          grid.appendChild(card);
-        });
-    }
-    grid.appendChild(placeholder);
-    if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
-      window.SjMediaImageCard.bindStatusSegments(grid, {
-        rerender: () => specmiRenderMainGrid(),
-        onEnabledChange: async ({ pathB64, enabled }) => {
-          const resp = await fetch('/api/gallery-image-meta', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pathB64, is_enabled: enabled ? 1 : 0 }),
-          });
-          const data = await resp.json();
-          if (!data || data.status !== 'success') {
-            throw new Error((data && data.message) ? data.message : '保存失败');
-          }
-          (specmiMainItems || []).forEach(it => {
-            if (String(it.image_b64 || '').trim() === pathB64) {
-              it.is_enabled = enabled ? 1 : 0;
-              it.is_deprecated = enabled ? 0 : 1;
-            }
-          });
-          if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
-        },
-      });
-    }
-    grid.ondragover = (e) => { e.preventDefault(); };
+    const grid = ensureSpecmiMainImageGrid();
+    if (grid) grid.render();
   }
 
-  function specmiDragStart(e) {
-    const card = e.target.closest('.sj-media-image-card');
-    if (!card || card.classList.contains('placeholder')) return;
-    specmiDragIdx = parseInt(card.dataset.index || '0', 10);
-    specmiDragInsert = specmiDragIdx;
-    card.classList.add('dragging');
-    try { e.dataTransfer.setData('text/plain', String(specmiDragIdx)); } catch (_) {}
-  }
-  function specmiDragOver(e) { e.preventDefault(); }
   function specmiBuildViewList() {
-    const filterType = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
-    return specmiSortMainImageViewList((specmiMainItems || []).slice()
-      .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType));
-  }
-  function specmiDrop(e) {
-    e.preventDefault();
-    const target = e.target.closest('.sj-media-image-card');
-    if (!target || target.classList.contains('placeholder')) return;
-    if (!target.dataset.imageName) return;
-    let insertIndex = parseInt(target.dataset.index || '', 10);
-    if (Number.isNaN(insertIndex)) return;
-    const from = specmiDragIdx;
-    if (from === null || from === undefined || Number.isNaN(from)) return;
-    const viewList = specmiBuildViewList();
-    if (from < 0 || from >= viewList.length) return;
-    if (insertIndex < 0 || insertIndex > viewList.length) insertIndex = viewList.length;
-    const moved = viewList.splice(from, 1)[0];
-    if (insertIndex > from) insertIndex -= 1;
-    insertIndex = Math.max(0, Math.min(viewList.length, insertIndex));
-    viewList.splice(insertIndex, 0, moved);
-    const nameToIdx = new Map();
-    (specmiMainItems || []).forEach((it, idx) => nameToIdx.set(String(it.image_name || ''), idx));
-    viewList.forEach((it, idx) => {
-      const origIdx = nameToIdx.get(String(it.image_name || ''));
-      if (origIdx !== undefined) specmiMainItems[origIdx].sort_order = idx + 1;
-    });
-    specmiRenderMainGrid();
-    specmiAutosaveOrder();
-    specmiDragIdx = null;
-    specmiDragInsert = null;
-  }
-  function specmiDragEnd(e) {
-    const c = e.target.closest('.sj-media-image-card');
-    if (c) c.classList.remove('dragging');
-    specmiDragIdx = null;
+    return specmiGetVisibleMainItems();
   }
 
   function specmiAutosaveOrder() {
