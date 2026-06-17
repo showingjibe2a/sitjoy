@@ -1,25 +1,30 @@
 {# REFERENCE ONLY: 同上，不经 Jinja 渲染时请把下方 DOM 内联到 spec_main_image_management.html #}
       <div class="main-images-manager main-images-manager--mt-md">
         <div class="pm-section-body pm-form" style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; justify-content:space-between;">
-          <div class="status-segment status-segment--inline">
-            <button type="button" class="status-pill status-pill--no" id="specmiDupOff">重复提示：关</button>
-            <button type="button" class="status-pill status-pill--yes is-active" id="specmiDupOn">重复提示：开</button>
-          </div>
-          <div class="status-segment status-segment--inline">
-            <button type="button" class="status-pill status-pill--no" id="specmiFabOff">面料图：关</button>
-            <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">面料图：开</button>
+          <div class="nas-header-control">
+            <span class="nas-header-control-label">显示面料图</span>
+            <div class="status-segment status-segment--inline">
+              <button type="button" class="status-pill status-pill--no" id="specmiFabOff">否</button>
+              <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">是</button>
+            </div>
           </div>
           <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
-            <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">新增主图</button>
-            <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">从NAS选择并移动</button>
+            <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">本地上传</button>
+            <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">云端关联</button>
           </div>
         </div>
         <input type="file" id="specmiFileUpload" accept="image/*" multiple style="display:none;">
         <div class="main-images-toolbar main-images-toolbar--mt-sm">
           <div class="image-type-bar" id="specmiMainImageTypeBar"></div>
         </div>
-        <div id="specmiMainImageFolderTip" class="main-images-folder-tip">加载中…</div>
+        <div class="main-images-folder-row">
+          <div id="specmiMainImageFolderTip" class="main-images-folder-tip">加载中…</div>
+          <div class="main-images-folder-row-actions">
+            <button type="button" class="btn-secondary btn-small" onclick="specmiOpenPickExistingImages()">选择已有图片</button>
+          </div>
+        </div>
         <div id="specmiMainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
           <div class="sj-media-image-empty">暂无主图</div>
         </div>
       </div>
+{# 重复提示：specmiDupOff/On 放在 specmi-nas-import-modal 顶部 nas-header-control #}

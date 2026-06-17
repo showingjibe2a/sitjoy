@@ -24,6 +24,30 @@
     font-size: 0.86rem;
 }
 
+.main-images-folder-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.main-images-folder-row .main-images-folder-tip {
+    flex: 1 1 auto;
+    min-width: min(100%, 220px);
+}
+
+.main-images-folder-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.mim-toolbar-actions .nas-header-control {
+    margin-right: 0.15rem;
+}
+
 /* 替代原模板内联 margin */
 .main-images-manager--mt-sm {
     margin-top: 0.55rem;

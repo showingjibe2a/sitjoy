@@ -4,12 +4,12 @@
   dup_off_id, dup_on_id, fab_off_id, fab_on_id,
   dup_off_onclick, dup_on_onclick, fab_off_onclick, fab_on_onclick,
   nas_onclick,
+  pick_existing_onclick,
   type_bar_id,
   tip_id,
   tip_text,
   grid_id,
   grid_empty_html,
-  dup_wrap_id='',
   fab_wrap_id='',
   upload_onclick='',
   upload_button_id='',
@@ -19,18 +19,17 @@
                             <div class="mim-toolbar-row">
                                 <label class="mim-toolbar-label">{{ toolbar_label }}</label>
                                 <div class="mim-toolbar-actions">
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced"{% if dup_wrap_id %} id="{{ dup_wrap_id }}"{% endif %}>
-                                        <button id="{{ dup_off_id }}" type="button" class="status-pill status-pill--no" onclick="{{ dup_off_onclick }}">重复提示：关</button>
-                                        <button id="{{ dup_on_id }}" type="button" class="status-pill status-pill--yes" onclick="{{ dup_on_onclick }}">重复提示：开</button>
-                                    </div>
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced"{% if fab_wrap_id %} id="{{ fab_wrap_id }}"{% endif %}>
-                                        <button id="{{ fab_off_id }}" type="button" class="status-pill status-pill--no" onclick="{{ fab_off_onclick }}">面料图：关</button>
-                                        <button id="{{ fab_on_id }}" type="button" class="status-pill status-pill--yes" onclick="{{ fab_on_onclick }}">面料图：开</button>
+                                    <div class="nas-header-control">
+                                        <span class="nas-header-control-label">显示面料图</span>
+                                        <div class="status-segment status-segment--inline"{% if fab_wrap_id %} id="{{ fab_wrap_id }}"{% endif %}>
+                                            <button id="{{ fab_off_id }}" type="button" class="status-pill status-pill--no" onclick="{{ fab_off_onclick }}">否</button>
+                                            <button id="{{ fab_on_id }}" type="button" class="status-pill status-pill--yes" onclick="{{ fab_on_onclick }}">是</button>
+                                        </div>
                                     </div>
                                     <button type="button" class="btn-accent"
                                       {%- if upload_button_id %} id="{{ upload_button_id }}"{% endif %}
-                                      {%- if upload_onclick %} onclick="{{ upload_onclick }}"{% endif %}>新增主图</button>
-                                    <button type="button" class="btn-secondary" onclick="{{ nas_onclick }}">从NAS选择并移动</button>
+                                      {%- if upload_onclick %} onclick="{{ upload_onclick }}"{% endif %}>本地上传</button>
+                                    <button type="button" class="btn-secondary" onclick="{{ nas_onclick }}">云端关联</button>
                                 </div>
                             </div>
                             {{ extra_between_toolbar_and_manager|safe }}
@@ -38,10 +37,24 @@
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="{{ type_bar_id }}"></div>
                                 </div>
-                                <div id="{{ tip_id }}" class="main-images-folder-tip">{{ tip_text }}</div>
+                                <div class="main-images-folder-row">
+                                    <div id="{{ tip_id }}" class="main-images-folder-tip">{{ tip_text }}</div>
+                                    <div class="main-images-folder-row-actions">
+                                        <button type="button" class="btn-secondary btn-small" onclick="{{ pick_existing_onclick }}">选择已有图片</button>
+                                    </div>
+                                </div>
                                 <div id="{{ grid_id }}" class="sj-media-image-grid sj-media-image-grid--tight">
                                     {{ grid_empty_html|safe }}
                                 </div>
                             </div>
                         </div>
+{# 重复提示开关放在 NAS 弹窗 nas-main-image-header-actions 内，示例：
+   <div class="nas-header-control">
+     <span class="nas-header-control-label">重复提示</span>
+     <div class="status-segment status-segment--inline">
+       <button id="{{ dup_off_id }}" ... onclick="{{ dup_off_onclick }}">否</button>
+       <button id="{{ dup_on_id }}" ... onclick="{{ dup_on_onclick }}">是</button>
+     </div>
+   </div>
+#}
 {% endmacro %}

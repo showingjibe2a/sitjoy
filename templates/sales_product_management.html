@@ -617,24 +617,27 @@
                             <div class="mim-toolbar-row">
                                 <label class="mim-toolbar-label">规格-面料主图</label>
                                 <div class="mim-toolbar-actions">
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                                        <button id="mainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setMainImagePromptDuplicate(false)">重复提示：关</button>
-                                        <button id="mainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setMainImagePromptDuplicate(true)">重复提示：开</button>
+                                    <div class="nas-header-control">
+                                        <span class="nas-header-control-label">显示面料图</span>
+                                        <div class="status-segment status-segment--inline" id="mainImageShowFabricSegment">
+                                            <button id="mainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setMainImageShowFabric(false)">否</button>
+                                            <button id="mainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setMainImageShowFabric(true)">是</button>
+                                        </div>
                                     </div>
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                                        <button id="mainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setMainImageShowFabric(false)">面料图：关</button>
-                                        <button id="mainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setMainImageShowFabric(true)">面料图：开</button>
-                                    </div>
-                                    <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
-                                    <button type="button" class="btn-secondary" onclick="openSalesPickExistingImages()">选择已有图片</button>
-                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
+                                    <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">本地上传</button>
+                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">云端关联</button>
                                 </div>
                             </div>
                             <div class="main-images-manager main-images-manager--mt-sm">
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="modalMainImageTypeBar"></div>
                                 </div>
-                                <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。</div>
+                                <div class="main-images-folder-row">
+                                    <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。</div>
+                                    <div class="main-images-folder-row-actions">
+                                        <button type="button" class="btn-secondary btn-small" onclick="openSalesPickExistingImages()">选择已有图片</button>
+                                    </div>
+                                </div>
                                 <div id="mainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
                                     <div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>
                                 </div>
@@ -796,10 +799,17 @@
             <div class="pm-modal-scroll">
             <div class="nas-main-image-header">
                 <div class="nas-main-image-title">
-                    <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
+                    <h3 style="margin:0;">云端关联</h3>
                     <span class="help-dot" data-tip="提示：这是“服务器侧NAS浏览”，可真正移动/删除 NAS 上的源文件；浏览器本地“选择文件夹上传”只能复制文件，无法删除原文件（浏览器安全限制）。文件夹请双击进入，避免单击误入子目录后第二次点击误触图片。"></span>
                 </div>
                 <div class="nas-main-image-header-actions">
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">重复提示</span>
+                        <div class="status-segment status-segment--inline" id="mainImagePromptDupSegment">
+                            <button id="mainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setMainImagePromptDuplicate(false)">否</button>
+                            <button id="mainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setMainImagePromptDuplicate(true)">是</button>
+                        </div>
+                    </div>
                     <div class="nas-header-control">
                         <span class="nas-header-control-label">新增方式</span>
                         <div class="status-segment status-segment--inline" id="nasActionModeSegment" data-value="multi">
@@ -3027,7 +3037,7 @@
                 messages: {
                     noEntityTip: '保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。',
                     noEntityEmpty: '新增状态下暂无主图，保存后即可上传和管理',
-                    empty: '当前主图子文件夹暂无图片，可点击“新增主图”上传',
+                    empty: '当前主图子文件夹暂无图片，可点击“本地上传”上传',
                 },
                 onDelete: (_item, rowKey) => deleteMainImage(encodeURIComponent(rowKey)),
                 onEdit: (_item, rowKey) => openMainImageDescModal(rowKey),

@@ -258,24 +258,27 @@
               <div class="mim-toolbar-row">
                 <label class="mim-toolbar-label">规格-面料主图</label>
                 <div class="mim-toolbar-actions">
-                  <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                    <button type="button" class="status-pill status-pill--no" id="specmiDupOff">重复提示：关</button>
-                    <button type="button" class="status-pill status-pill--yes is-active" id="specmiDupOn">重复提示：开</button>
+                  <div class="nas-header-control">
+                    <span class="nas-header-control-label">显示面料图</span>
+                    <div class="status-segment status-segment--inline" id="specmiShowFabricSegment">
+                      <button type="button" class="status-pill status-pill--no" id="specmiFabOff">否</button>
+                      <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">是</button>
+                    </div>
                   </div>
-                  <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                    <button type="button" class="status-pill status-pill--no" id="specmiFabOff">面料图：关</button>
-                    <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">面料图：开</button>
-                  </div>
-                  <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">新增主图</button>
-                  <button type="button" class="btn-secondary" onclick="specmiOpenPickExistingImages()">选择已有图片</button>
-                  <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">从NAS选择并移动</button>
+                  <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">本地上传</button>
+                  <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">云端关联</button>
                 </div>
               </div>
               <div class="main-images-manager main-images-manager--mt-sm">
                 <div class="main-images-toolbar">
                   <div class="image-type-bar" id="specmiMainImageTypeBar"></div>
                 </div>
-                <div id="specmiMainImageFolderTip" class="main-images-folder-tip">加载中…</div>
+                <div class="main-images-folder-row">
+                  <div id="specmiMainImageFolderTip" class="main-images-folder-tip">加载中…</div>
+                  <div class="main-images-folder-row-actions">
+                    <button type="button" class="btn-secondary btn-small" onclick="specmiOpenPickExistingImages()">选择已有图片</button>
+                  </div>
+                </div>
                 <div id="specmiMainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
                   <div class="sj-media-image-empty">暂无主图</div>
                 </div>
@@ -339,9 +342,16 @@
     <div class="pm-modal-scroll">
       <div class="nas-main-image-header">
         <div class="nas-main-image-title">
-          <h3>从NAS选择主图（移动绑定）</h3>
+          <h3>云端关联</h3>
         </div>
         <div class="nas-main-image-header-actions">
+          <div class="nas-header-control">
+            <span class="nas-header-control-label">重复提示</span>
+            <div class="status-segment status-segment--inline" id="specmiPromptDupSegment">
+              <button type="button" class="status-pill status-pill--no" id="specmiDupOff">否</button>
+              <button type="button" class="status-pill status-pill--yes is-active" id="specmiDupOn">是</button>
+            </div>
+          </div>
           <div class="nas-header-control">
             <span class="nas-header-control-label">新增方式</span>
             <div class="status-segment status-segment--inline" id="specmiNasActionMode" data-value="multi">

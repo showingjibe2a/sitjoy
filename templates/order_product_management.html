@@ -673,17 +673,15 @@
                             <div class="mim-toolbar-row">
                                 <label class="mim-toolbar-label">规格-面料主图</label>
                                 <div class="mim-toolbar-actions">
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced" id="orderMainImagePromptDupSegment">
-                                        <button id="orderMainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImagePromptDuplicate(false)">重复提示：关</button>
-                                        <button id="orderMainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImagePromptDuplicate(true)">重复提示：开</button>
+                                    <div class="nas-header-control">
+                                        <span class="nas-header-control-label">显示面料图</span>
+                                        <div class="status-segment status-segment--inline" id="orderMainImageShowFabricSegment">
+                                            <button id="orderMainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImageShowFabric(false)">否</button>
+                                            <button id="orderMainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImageShowFabric(true)">是</button>
+                                        </div>
                                     </div>
-                                    <div class="status-segment status-segment--inline mim-status-segment-spaced" id="orderMainImageShowFabricSegment">
-                                        <button id="orderMainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImageShowFabric(false)">面料图：关</button>
-                                        <button id="orderMainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImageShowFabric(true)">面料图：开</button>
-                                    </div>
-                                    <button type="button" class="btn-accent" id="orderMainImageUploadBtn">新增主图</button>
-                                    <button type="button" class="btn-secondary" onclick="openOrderPickExistingImages()">选择已有图片</button>
-                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
+                                    <button type="button" class="btn-accent" id="orderMainImageUploadBtn">本地上传</button>
+                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">云端关联</button>
                                 </div>
                             </div>
                             <input type="hidden" id="orderMainImageTypeSelect" value="">
@@ -691,7 +689,12 @@
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="orderMainImageTypeBar"></div>
                                 </div>
-                                <div id="orderMainImageFolderTip" class="main-images-folder-tip">保存后图片落在「货号/配件图/」下：若已在销售产品中把本 SKU 绑定到某规格，则子文件夹名与该规格在主图侧一致（规格-面料英文名，与销售主图相同规则）；未绑定时按本单的规格简称与面料英文名（或面料编码）推断，无法推断则为「通用」。同图复用可能归入配件图/通用。</div>
+                                <div class="main-images-folder-row">
+                                    <div id="orderMainImageFolderTip" class="main-images-folder-tip">保存后图片落在「货号/配件图/」下：若已在销售产品中把本 SKU 绑定到某规格，则子文件夹名与该规格在主图侧一致（规格-面料英文名，与销售主图相同规则）；未绑定时按本单的规格简称与面料英文名（或面料编码）推断，无法推断则为「通用」。同图复用可能归入配件图/通用。</div>
+                                    <div class="main-images-folder-row-actions">
+                                        <button type="button" class="btn-secondary btn-small" onclick="openOrderPickExistingImages()">选择已有图片</button>
+                                    </div>
+                                </div>
                                 <div id="orderMainImageList" class="sj-media-image-grid sj-media-image-grid--tight"></div>
                             </div>
                         </div>
@@ -862,10 +865,17 @@
             <div class="pm-modal-scroll">
             <div class="nas-main-image-header">
                 <div class="nas-main-image-title">
-                    <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
+                    <h3 style="margin:0;">云端关联</h3>
                     <span class="help-dot" data-tip="提示：这是服务器侧NAS浏览，可真正移动源文件并绑定。文件夹请双击进入，避免单击误入子目录后第二次点击误触图片。"></span>
                 </div>
                 <div class="nas-main-image-header-actions">
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">重复提示</span>
+                        <div class="status-segment status-segment--inline" id="orderMainImagePromptDupSegment">
+                            <button id="orderMainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImagePromptDuplicate(false)">否</button>
+                            <button id="orderMainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImagePromptDuplicate(true)">是</button>
+                        </div>
+                    </div>
                     <div class="nas-header-control">
                         <span class="nas-header-control-label">新增方式</span>
                         <div class="status-segment status-segment--inline" id="nasActionModeSegment" data-value="multi">
@@ -1450,7 +1460,7 @@
             return getOrderProductAllowedImageTypeNames().includes(name);
         }
         function toastOrderProductMainImageTypeRequiredForUpload() {
-            const msg = '请先在「新增主图」按钮下方的图片类型栏中选择具体类型后再尝试添加图片（不要选择「全部」）。';
+            const msg = '请先在「本地上传」按钮下方的图片类型栏中选择具体类型后再尝试添加图片（不要选择「全部」）。';
             if (window.showAppToast) {
                 window.showAppToast(msg, true, 9000);
                 return;
@@ -2050,7 +2060,7 @@
                 messages: {
                     noEntityTip: '保存后自动绑定到货号/配件图/规格与数量简称 子文件夹；同图复用会自动归入配件图/通用。',
                     noEntityEmpty: '新增状态下暂无主图，保存后即可上传和管理',
-                    empty: '当前配件图子文件夹暂无图片，可点击“上传主图”新增',
+                    empty: '当前配件图子文件夹暂无图片，可点击“本地上传”上传',
                 },
                 onDelete: (item) => deleteOrderMainImage(encodeURIComponent(String(item.image_name || '').trim())),
                 onEdit: (item) => openOrderMainImageEditModal(encodeURIComponent(String(item.image_name || '').trim())),
