@@ -327,29 +327,20 @@
 
   function openChannelNasPicker() {
     if (!current || !current.pathB64) return;
-    if (!window.SjPickExistingImages || typeof window.SjPickExistingImages.open !== 'function') {
-      window.showAppToast && window.showAppToast('选择已有图片组件未加载，请刷新页面', true, 8000);
+    const M = window.SitjoyNasBrowseModal || window.NasChannelLinkPicker;
+    if (!M || typeof M.open !== 'function') {
+      window.showAppToast && window.showAppToast('云端关联组件未加载，请刷新页面', true, 8000);
       return;
     }
-    window.SjPickExistingImages.open({
-      context: 'channel',
-      memberPathB64: current.pathB64,
+    M.open({
+      profile: 'link',
+      dataSource: 'browse',
       title: '选择通道图',
-      onConfirm: async (picked) => {
-        const item = (picked || [])[0];
-        const pb = item && (item.path_b64 || item.b64);
-        if (!pb) {
-          window.showAppToast && window.showAppToast('请选择一张图片', true, 4000);
-          return;
-        }
-        try {
-          await saveChannelLink(pb);
-          if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update', message: '通道图已关联' });
-          else if (window.showAppToast) window.showAppToast('通道图已关联', false, 2800);
-        } catch (e) {
-          const msg = e && e.message ? e.message : String(e);
-          if (window.showAppToast) window.showAppToast(msg, true, 8000);
-        }
+      helpTip: '从『上架资源』浏览 NAS 文件；双击图片即可关联为通道图。',
+      onPick: async (pathB64) => {
+        await saveChannelLink(pathB64);
+        if (window.showAppSaveResult) window.showAppSaveResult({ action: 'update', message: '通道图已关联' });
+        else if (window.showAppToast) window.showAppToast('通道图已关联', false, 2800);
       },
     });
   }

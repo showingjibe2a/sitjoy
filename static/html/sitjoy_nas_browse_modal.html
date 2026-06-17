@@ -1,0 +1,73 @@
+<!-- 统一 NAS 浏览弹窗：云端关联 / 选择已有图片 / 通道关联 共用 -->
+<div class="pm-modal nas-main-image-import-modal" id="sitjoyNasBrowseModal">
+  <div class="pm-modal-content pm-modal-content--wide">
+    <div class="pm-modal-scroll">
+      <div class="nas-main-image-header">
+        <div class="nas-main-image-title">
+          <h3 style="margin:0;" id="sjNasBrowseTitle">云端关联</h3>
+          <span class="help-dot" id="sjNasBrowseHelpDot" data-tip="文件夹请双击进入。"></span>
+        </div>
+        <div class="nas-main-image-header-actions" id="sjNasBrowseHeaderActions">
+          <div class="nas-header-control" id="sjNasBrowseActionModeWrap" style="display:none;">
+            <span class="nas-header-control-label">操作方式</span>
+            <div class="status-segment status-segment--inline" id="sjNasBrowseActionModeSegment" data-value="multi">
+              <button type="button" class="status-pill" data-value="double" title="双击图片立即操作">双击</button>
+              <button type="button" class="status-pill is-active" data-value="multi" title="多选后确认">多选</button>
+            </div>
+          </div>
+          <div class="nas-header-control">
+            <span class="nas-header-control-label">图标尺寸</span>
+            <div class="status-segment status-segment--inline nas-thumb-segment" id="sjNasBrowseThumbSizeSegment" data-value="lg">
+              <button type="button" class="status-pill status-pill--shipped" data-value="lg" title="大图标">大</button>
+              <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pm-form">
+        <div class="form-group pm-form-full" id="sjNasBrowseImageTypeWrap" style="display:none;">
+          <label>图片类型 <span style="color:#9b2226;">*</span></label>
+          <div class="pm-inline-panel">
+            <div id="sjNasBrowseImageTypeBar" class="status-segment status-segment--inline"></div>
+          </div>
+        </div>
+        <div class="form-group pm-form-full" id="sjNasBrowseRootsWrap" style="display:none;">
+          <label>浏览位置</label>
+          <div class="pm-inline-panel">
+            <div class="status-segment status-segment--inline" id="sjNasBrowseRootsBar"></div>
+          </div>
+        </div>
+        <div class="form-group pm-form-full">
+          <label>当前位置</label>
+          <div class="pm-inline-panel">
+            <nav id="sjNasBrowseBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
+          </div>
+        </div>
+        <div class="form-group pm-form-full" id="sjNasBrowseSearchWrap" style="display:none;">
+          <label>搜索文件名</label>
+          <div class="pm-inline-panel sj-nas-browse-search-row">
+            <input type="text" id="sjNasBrowseSearch" placeholder="输入关键字后搜索">
+            <button type="button" class="btn-secondary btn-small" id="sjNasBrowseSearchBtn">搜索</button>
+          </div>
+        </div>
+        <div class="form-group pm-form-full">
+          <div class="nas-main-image-grid-meta" id="sjNasBrowseGridMeta">
+            <label class="nas-grid-select-all" id="sjNasBrowseSelectAllLabel" style="display:none;">
+              <input type="checkbox" id="sjNasBrowseSelectAllBox">
+              <span>全选本页</span>
+            </label>
+            <div class="nas-grid-count" id="sjNasBrowseCountText">共 0 张图片</div>
+          </div>
+        </div>
+        <div class="form-group pm-form-full">
+          <div id="sjNasBrowseList" class="browser-grid nas-main-image-browser-grid"></div>
+        </div>
+      </div>
+      <div id="sjNasBrowseStatus" class="nas-main-image-status status-message" style="display:none; margin-top:0.75rem;" role="status"></div>
+    </div>
+    <div class="pm-modal-actions nas-main-image-modal-actions">
+      <button type="button" class="btn-small" id="sjNasBrowseCloseBtn">关闭</button>
+      <button type="button" class="btn-accent" id="sjNasBrowseConfirmBtn" style="display:none;">确认选择</button>
+    </div>
+  </div>
+</div>

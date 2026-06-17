@@ -48,6 +48,23 @@
     margin-right: 0.15rem;
 }
 
+.sj-nas-browse-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.sj-nas-browse-search-row input[type="text"] {
+    flex: 1 1 200px;
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--morandi-sand);
+    font-size: 0.92rem;
+    box-sizing: border-box;
+}
+
 /* 替代原模板内联 margin */
 .main-images-manager--mt-sm {
     margin-top: 0.55rem;
