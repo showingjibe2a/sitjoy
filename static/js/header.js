@@ -9588,6 +9588,23 @@
         return null;
     }
 
+    /** 复合布局（多 card / 看板+表格）应使用 .sitjoy-page-body 整页滚动，而非 fill-scroll 裁切 */
+    function pmLayoutPrefersPageScroll(pmLayout){
+        if(!pmLayout) return false;
+        if(pmLayout.classList.contains('pm-layout--aa-adjust')) return true;
+        if(pmLayout.classList.contains('pm-layout--page-scroll')) return true;
+        return pmLayout.querySelectorAll(':scope > .card').length >= 2;
+    }
+
+    function clearAutoManagedFillHosts(pageBody){
+        if(!pageBody) return;
+        pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
+            if(el.querySelector('.pm-managed-body-wrap, .board-body-wrap')){
+                el.classList.remove('sj-table-fill-host');
+            }
+        });
+    }
+
     function syncSitjoyPageFillScrollLayout(root){
         const pageBody = document.getElementById('sitjoyPageBody');
         if(!pageBody || !document.body.classList.contains('sitjoy-has-shell')) return;
@@ -9597,9 +9614,8 @@
         const hasManagedInLayout = !!(pmLayout && pmLayout.querySelector('.pm-managed-body-wrap, .board-body-wrap'));
         const hasStaticFillHost = !!(pmLayout && pmLayout.querySelector(':scope > .sj-table-fill-host'));
         const hasLayoutFill = !!(pmLayout && (hasManagedInLayout || hasStaticFillHost));
-        const isAaAdjust = !!(scope.querySelector('.pm-layout--aa-adjust')
-            || pageBody.querySelector('.pm-layout--aa-adjust'));
-        const wantPageFill = hasLayoutFill && !isAaAdjust;
+        const preferPageScroll = pmLayoutPrefersPageScroll(pmLayout);
+        const wantPageFill = hasLayoutFill && !preferPageScroll;
 
         sitjoyLayoutSyncDepth += 1;
         try {
@@ -9610,6 +9626,10 @@
                 pageBody.querySelectorAll('.sj-table-fill-host').forEach((el) => {
                     if(el.classList.contains('sj-table-fill-host')) el.classList.remove('sj-table-fill-host');
                 });
+                return;
+            }
+            if(!wantPageFill){
+                clearAutoManagedFillHosts(pageBody);
                 return;
             }
 

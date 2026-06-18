@@ -3922,8 +3922,9 @@
 
         function bindEvents() {
             if (!pageDomReady()) return;
-            if (window.__salesPerfBindEpoch === window.__sitjoyNavEpoch) return;
-            window.__salesPerfBindEpoch = window.__sitjoyNavEpoch;
+            const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';
+            if (window.__salesPerfBindEpoch === navEpoch) return;
+            window.__salesPerfBindEpoch = navEpoch;
 
             document.addEventListener('click', e => {
                 if (!e.target.closest('.check-select')) {
@@ -4014,12 +4015,12 @@
 
         async function initPage() {
             if (!pageDomReady()) return;
-            const navEpoch = window.__sitjoyNavEpoch;
+            const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';
             setTodayRange();
             bindChartInteractions();
             bindEvents();
             await Promise.all([loadFilters(), loadSalesProductSkuPool()]);
-            if (window.__sitjoyNavEpoch !== navEpoch || !pageDomReady()) return;
+            if ((window.__sitjoyNavEpoch ?? '__initial__') !== navEpoch || !pageDomReady()) return;
             state.performancePageSize = loadPerfPageSizeFromStorage();
             state.chartGranularity = loadChartGranularityFromStorage();
             const granSel = document.getElementById('chartGranularity');

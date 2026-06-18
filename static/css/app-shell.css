@@ -37,6 +37,7 @@ body.sitjoy-has-shell .sitjoy-page-body footer {
  * 大表格页：滚动限制在 pm-layout 内的表格区域（.pm-managed-body-wrap / .board-body-wrap / .sj-table-fill-host），
  * 避免分组展开后撑出 .sitjoy-page-body 外层滚动。由 header.js 打上 .sj-page-fill-scroll。
  * 不在 pm-layout 内的托管表（如首页待办）仍使用 .sitjoy-page-body 整页滚动。
+ * pm-layout 含 2 个及以上顶层 .card（如产品表现看板、广告关键词）或带 .pm-layout--page-scroll 时保持整页滚动。
  */
 body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll {
     display: flex;
