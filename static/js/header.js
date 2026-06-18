@@ -5714,12 +5714,32 @@
         return Object.keys(snapshot).some(key => isColumnFilterActive(snapshot[key]));
     }
 
+    function tableUsesServerColumnFilters(state){
+        if(!state || !state.table) return false;
+        if(resolveServerColumnFilterConfig(state.table)) return true;
+        const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
+            || state.table.dataset.serverPaginationMode === '1';
+        if(!isServerManaged) return false;
+        return !!(String(state.table.dataset.pmServerFilterColumns || '').trim());
+    }
+
+    function clearManagedTableClientColumnFilterFlags(state){
+        if(!state || !state.table) return;
+        getDataRows(state).forEach(row => { row.dataset.pmFilterHidden = '0'; });
+    }
+
     function reapplyManagedColumnFiltersFromHandle(state){
         if(!state || !state.table) return;
-        if(String(state.table.dataset.pmLightNoColumnFilter || '') === '1') return;
+        const hasCustomColumnFilter = !!(state.columnFilterHandle || columnFilterRegistry.get(state.table));
+        if(String(state.table.dataset.pmLightNoColumnFilter || '') === '1' && !hasCustomColumnFilter) return;
         const handle = state.columnFilterHandle
             || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
         if(!handle || typeof handle.getFilters !== 'function') return;
+        if(tableUsesServerColumnFilters(state)){
+            clearManagedTableClientColumnFilterFlags(state);
+            if(typeof handle.refreshButtons === 'function') handle.refreshButtons();
+            return;
+        }
         const snapshot = handle.getFilters();
         if(!snapshotHasActiveColumnFilters(snapshot)) return;
         applyManagedColumnFilters(state, snapshot);
@@ -5740,19 +5760,36 @@
 
     function applyManagedColumnFilters(state, snapshot){
         const filters = snapshot || {};
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(tableUsesServerColumnFilters(state)){
+            clearManagedTableClientColumnFilterFlags(state);
+            if(handle && handle.optionCache && typeof handle.optionCache.clear === 'function'){
+                handle.optionCache.clear();
+            }
+            if(state.table && !tableSkipsFilterPersist(state.table)){
+                persistManagedColumnFilters(state.table, filters);
+            }
+            if(handle && typeof handle.refreshButtons === 'function'){
+                handle.refreshButtons();
+            }
+            return;
+        }
         const rows = getDataRows(state);
         rows.forEach(row => {
             invalidatePmRowCellKeyMap(row);
             const pass = rowPassesManagedColumnFilters(row, filters, null);
             row.dataset.pmFilterHidden = pass ? '0' : '1';
         });
-        const handle = state.columnFilterHandle
-            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
         if(handle && handle.optionCache && typeof handle.optionCache.clear === 'function'){
             handle.optionCache.clear();
         }
         pruneInvalidColumnFilterSelections(state);
-        state.currentPage = 1;
+        const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
+            || state.table.dataset.serverPaginationMode === '1';
+        if(!isServerManaged){
+            state.currentPage = 1;
+        }
         applyPagination(state);
         syncGroupedAggregateRowsAfterFilter(state);
         syncManagedBatchBar(state);
@@ -5795,7 +5832,10 @@
         }
         state.table.dispatchEvent(new CustomEvent('pm-clear-page-filters', {
             bubbles: true,
-            detail: { table: state.table }
+            detail: {
+                table: state.table,
+                hadProviderClear: !!(provider && typeof provider.clear === 'function')
+            }
         }));
         if(typeof showAppToast === 'function'){
             showAppToast('筛选已清除', false, 1200);
@@ -6352,17 +6392,7 @@
             popup.style.top = `${Math.max(10, rect.bottom + 6)}px`;
             popup.style.left = `${Math.max(10, left)}px`;
 
-            // Show current selected values immediately so reopening always reflects checked state.
-            const selectedPreview = Array.isArray(filterState.selected)
-                ? filterState.selected.map(v => {
-                    const raw = (v === null || v === undefined) ? '' : String(v);
-                    const text = String(raw).trim();
-                    return { value: text, label: text === '' ? '[空]' : text, count: 0 };
-                })
-                : [];
-            renderColumnFilterOptions(state, columnKey, selectedPreview);
-
-            loadOptions(columnKey, false);
+            loadOptions(columnKey, true);
         }
 
         function refreshButtons(){
@@ -6537,6 +6567,228 @@
         columnFilterRegistry.set(table, handle);
         refreshButtons();
         return handle;
+    }
+
+    const serverColumnFilterRegistry = new Map();
+
+    function resolveServerColumnFilterConfig(table){
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return null;
+        return serverColumnFilterRegistry.get(key) || null;
+    }
+
+    function columnFilterYesNoToDbToken(values){
+        const dbVals = [];
+        (Array.isArray(values) ? values : []).forEach(v => {
+            const text = String(v || '').trim();
+            if(text === '是' || text === '1') dbVals.push('1');
+            else if(text === '否' || text === '0') dbVals.push('0');
+        });
+        const uniq = Array.from(new Set(dbVals));
+        return uniq.length === 1 ? uniq[0] : null;
+    }
+
+    function appendServerColumnFilterFieldToParams(params, filterState, fieldSpec){
+        if(!params || !fieldSpec) return;
+        const selected = Array.isArray(filterState && filterState.selected)
+            ? filterState.selected.map(v => String(v || '').trim()).filter(v => v !== '')
+            : [];
+        const queryText = String(filterState && filterState.query ? filterState.query : '').trim();
+        if(fieldSpec.boolParam || fieldSpec.boolField){
+            const paramName = String(fieldSpec.boolParam || `bf_${fieldSpec.boolField}` || '').trim();
+            const token = columnFilterYesNoToDbToken(selected);
+            if(paramName && token != null) params.set(paramName, token);
+            return;
+        }
+        const selectedParam = String(fieldSpec.selectedParam || '').trim();
+        const queryParam = String(fieldSpec.queryParam || '').trim();
+        if(selected.length && selectedParam) params.set(selectedParam, selected.join(','));
+        else if(queryText && queryParam) params.set(queryParam, queryText);
+    }
+
+    function buildServerColumnFilterScopeParams(config, filters, excludeColumnKey, context){
+        const params = new URLSearchParams();
+        if(!config) return params;
+        const snap = (filters && typeof filters === 'object') ? filters : {};
+        const exclude = String(excludeColumnKey || '').trim();
+        if(typeof config.appendPageScope === 'function'){
+            try { config.appendPageScope(params, snap, exclude, context || { mode: 'options' }); } catch (_) {}
+        }
+        const columnParams = config.columnParams || {};
+        Object.keys(columnParams).forEach(colKey => {
+            if(exclude && String(colKey).trim() === exclude) return;
+            appendServerColumnFilterFieldToParams(params, snap[colKey] || {}, columnParams[colKey] || {});
+        });
+        return params;
+    }
+
+    function buildServerColumnFilterListParams(tableOrSelector, filters){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        const config = table ? resolveServerColumnFilterConfig(table) : null;
+        if(!config) return new URLSearchParams();
+        return buildServerColumnFilterScopeParams(config, filters, null, { mode: 'list' });
+    }
+
+    function fetchServerColumnFilterOptions(table, args){
+        const config = resolveServerColumnFilterConfig(table);
+        if(!config || !config.apiUrl) return Promise.resolve([]);
+        const columnKey = String(args.columnKey || '').trim();
+        const fieldSpec = (config.columnParams || {})[columnKey] || null;
+        const params = new URLSearchParams({
+            action: 'filter_options',
+            limit: String(args.limit || 120)
+        });
+        buildServerColumnFilterScopeParams(config, args.filters || {}, columnKey, { mode: 'options' }).forEach((value, key) => {
+            params.set(key, value);
+        });
+        const apiColumn = fieldSpec && fieldSpec.apiColumn
+            ? String(fieldSpec.apiColumn).trim()
+            : (typeof config.resolveOptionsColumn === 'function' ? String(config.resolveOptionsColumn(columnKey) || '').trim() : '');
+        if(apiColumn){
+            params.set('column', apiColumn);
+            if(fieldSpec && (fieldSpec.queryParam || fieldSpec.selectedParam)){
+                params.set('q', String(args.query || ''));
+                params.set('exact', args.exact ? '1' : '0');
+            }
+            return fetch(`${config.apiUrl}?${params.toString()}`).then(r => r.json()).then(d => {
+                if(d.status !== 'success') throw new Error(d.message || '加载筛选项失败');
+                return d.values || [];
+            });
+        }
+        const state = managedTableState.get(table) || null;
+        if(state){
+            return Promise.resolve(collectManagedColumnFilterOptions(
+                state,
+                columnKey,
+                args.query,
+                args.exact,
+                args.limit,
+                args.filters
+            ));
+        }
+        return Promise.resolve([]);
+    }
+
+    function applyServerColumnFilterChange(table, filters){
+        const config = resolveServerColumnFilterConfig(table);
+        if(!config) return;
+        const snapshot = filters || {};
+        if(typeof config.setFilters === 'function'){
+            try { config.setFilters(snapshot); } catch (_) {}
+        }
+        const handle = columnFilterRegistry.get(table) || null;
+        if(handle && typeof handle.setFilters === 'function') handle.setFilters(snapshot);
+        if(table && !tableSkipsFilterPersist(table) && window.SitjoyPagePrefs && typeof SitjoyPagePrefs.saveTablePageFilters === 'function'){
+            SitjoyPagePrefs.saveTablePageFilters(table);
+        }
+        if(typeof config.reload === 'function'){
+            try { config.reload(1, { filters: snapshot }); } catch (_) {}
+        }
+    }
+
+    function clearServerColumnFilterTable(tableOrSelector, options){
+        const opts = options || {};
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return;
+        const config = resolveServerColumnFilterConfig(table);
+        const handle = columnFilterRegistry.get(table) || null;
+        if(handle && typeof handle.setFilters === 'function') handle.setFilters({});
+        if(config && typeof config.setFilters === 'function'){
+            try { config.setFilters({}); } catch (_) {}
+        }
+        if(opts.clearPagePrefs !== false && window.SitjoyPagePrefs){
+            if(typeof SitjoyPagePrefs.clear === 'function') SitjoyPagePrefs.clear(table);
+        }
+        if(typeof opts.onClear === 'function'){
+            try { opts.onClear(); } catch (_) {}
+        } else if(config && typeof config.onClear === 'function'){
+            try { config.onClear(); } catch (_) {}
+        }
+        if(typeof opts.reload === 'function'){
+            try { opts.reload(1); } catch (_) {}
+        } else if(config && typeof config.reload === 'function'){
+            try { config.reload(1, { filters: {}, source: 'clear' }); } catch (_) {}
+        }
+    }
+
+    function buildServerColumnFilterColumnsFromTable(table){
+        if(!table || !table.tHead || !table.tHead.rows || !table.tHead.rows.length) return [];
+        const headerCells = Array.from(table.tHead.rows[0].cells || []);
+        return headerCells.map((cell, index) => {
+            const label = extractHeaderLabelText(cell);
+            const key = String(cell.dataset.manageColKey || label || `字段${index + 1}`).trim();
+            return { index, key, label: label || key };
+        }).filter(item => {
+            const label = String(item.label || '').trim();
+            if(!label) return false;
+            if(/操作|详情|动作/.test(label)) return false;
+            const cell = headerCells[item.index];
+            if(isManagedTableNoSortNoFilterHeaderCell(cell)) return false;
+            if(cell && cell.querySelector('input[type="checkbox"]')) return false;
+            return true;
+        });
+    }
+
+    function installServerColumnFilterTable(tableOrSelector){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table || !resolveServerColumnFilterConfig(table)) return null;
+        const config = resolveServerColumnFilterConfig(table);
+        const existing = columnFilterRegistry.get(table) || null;
+        if(existing){
+            if(config && typeof config.getFilters === 'function' && typeof existing.setFilters === 'function'){
+                try { existing.setFilters(config.getFilters() || {}); } catch (_) {}
+            }
+            if(typeof existing.refreshButtons === 'function') existing.refreshButtons();
+            const state = managedTableState.get(table) || null;
+            if(state) state.columnFilterHandle = existing;
+            return existing;
+        }
+        const columns = buildServerColumnFilterColumnsFromTable(table);
+        if(!columns.length) return null;
+        const handle = attachColumnFilter(table, {
+            columns,
+            limit: Number(config.limit || 120) || 120,
+            fetchOptions: (args) => fetchServerColumnFilterOptions(table, args),
+            onApply: (filters) => applyServerColumnFilterChange(table, filters),
+            onReset: (filters) => applyServerColumnFilterChange(table, filters)
+        });
+        const state = managedTableState.get(table) || null;
+        if(state) state.columnFilterHandle = handle;
+        if(handle && typeof handle.setFilters === 'function' && config && typeof config.getFilters === 'function'){
+            const saved = config.getFilters() || {};
+            if(snapshotHasActiveColumnFilters(saved)) handle.setFilters(saved);
+        }
+        if(handle && typeof handle.refreshButtons === 'function') handle.refreshButtons();
+        return handle;
+    }
+
+    function registerServerColumnFilterTable(tableOrSelector, handlers){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return false;
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return false;
+        serverColumnFilterRegistry.set(key, Object.assign({ table }, handlers || {}));
+        if(!String(table.dataset.pmServerFilterColumns || '').trim() && handlers && handlers.columnParams){
+            table.dataset.pmServerFilterColumns = Object.keys(handlers.columnParams).join(',');
+        }
+        if(!String(table.dataset.serverPaginationMode || '').trim()){
+            table.dataset.serverPaginationMode = 'server';
+        }
+        return true;
+    }
+
+    function bindGlobalServerColumnFilterEvents(){
+        if(document.body && document.body.dataset.pmServerColumnFilterBound === '1') return;
+        if(document.body) document.body.dataset.pmServerColumnFilterBound = '1';
+        document.addEventListener('pm-clear-page-filters', (event) => {
+            const detail = event && event.detail ? event.detail : {};
+            if(detail.hadProviderClear) return;
+            const table = detail.table || null;
+            if(!table) return;
+            const config = resolveServerColumnFilterConfig(table);
+            if(!config || typeof config.reload !== 'function') return;
+            try { config.reload(1, { filters: {}, source: 'clear-toolbar' }); } catch (_) {}
+        });
     }
 
     function resolveBodyTableFromHeaderTh(th){
@@ -6834,6 +7086,11 @@
         rowPassesFilters: rowPassesManagedColumnFilters,
         columnFilterScopeSignature,
         collectOptionsFromTableState: collectManagedColumnFilterOptions,
+        registerServerTable: registerServerColumnFilterTable,
+        installServerTable: installServerColumnFilterTable,
+        buildListQueryParams: buildServerColumnFilterListParams,
+        applyServerChange: applyServerColumnFilterChange,
+        clearServerTable: clearServerColumnFilterTable,
         refresh(tableOrSelector){
             const table = resolveColumnFilterTable(tableOrSelector);
             if(!table) return null;
@@ -6852,6 +7109,8 @@
             return table ? (columnFilterRegistry.get(table) || null) : null;
         }
     };
+
+    bindGlobalServerColumnFilterEvents();
 
     function resolveCheckboxSelectionId(checkbox, idx){
         if(!checkbox) return '';

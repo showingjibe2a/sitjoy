@@ -167,6 +167,177 @@ class LogisticsInTransitMixin:
             else:
                 row['factory_names_all'] = ''
 
+    def _transit_bool_filter_columns(self):
+        return {
+            'confirmed_boxed_qty',
+            'declaration_docs_provided',
+            'clearance_docs_provided',
+            'inventory_registered',
+            'qty_verified',
+            'qty_consistent',
+            'financial_verified',
+        }
+
+    def _parse_transit_sku_color_filter_inputs(self, query_params):
+        sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+        sku_list = []
+        for raw in query_params.get('sku_list', []):
+            for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                text = str(token or '').strip()
+                if text and text not in sku_list:
+                    sku_list.append(text)
+        color_keyword = (query_params.get('color', [''])[0] or '').strip()
+        color_tokens = []
+        for raw in query_params.get('colors', []):
+            for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                text = str(token or '').strip()
+                if text and text not in color_tokens:
+                    color_tokens.append(text)
+        if color_keyword and color_keyword not in color_tokens:
+            color_tokens.append(color_keyword)
+        return sku_keyword, sku_list, color_keyword, color_tokens
+
+    def _parse_transit_bool_filter_values(self, query_params):
+        out = {}
+        for col in self._transit_bool_filter_columns():
+            raw_vals = query_params.get(f'bf_{col}', [''])[0] or ''
+            tokens = [tok.strip() for tok in str(raw_vals).split(',') if tok.strip() in ('0', '1')]
+            if len(tokens) == 1:
+                out[col] = int(tokens[0])
+        return out
+
+    def _append_transit_scope_filters(
+        self,
+        filters,
+        params,
+        *,
+        keyword,
+        sku_keyword,
+        sku_list,
+        color_keyword,
+        color_tokens,
+        forwarder_id,
+        bool_filters,
+        factory_name_map,
+        forwarder_name_map,
+        destination_region_name_map,
+        exclude_sku=False,
+        exclude_color=False,
+        exclude_bool_col=None,
+        item_id=None,
+    ):
+        if item_id:
+            filters.append('t.id=%s')
+            params.append(item_id)
+        if keyword:
+            like = f"%{keyword}%"
+            search_clauses = [
+                't.logistics_box_no LIKE %s',
+                't.bill_of_lading_no LIKE %s',
+            ]
+            params.extend([like, like])
+
+            keyword_lower = keyword.lower()
+            matched_factory_ids = [int(fid) for fid, name in factory_name_map.items() if keyword_lower in str(name or '').lower()]
+            matched_forwarder_ids = [int(fid) for fid, name in forwarder_name_map.items() if keyword_lower in str(name or '').lower()]
+            matched_region_ids = [int(rid) for rid, name in destination_region_name_map.items() if keyword_lower in str(name or '').lower()]
+
+            if matched_factory_ids:
+                placeholders = ','.join(['%s'] * len(matched_factory_ids))
+                search_clauses.append(f"t.factory_id IN ({placeholders})")
+                params.extend(matched_factory_ids)
+                search_clauses.append(
+                    f"""
+                    EXISTS (
+                        SELECT 1
+                        FROM logistics_in_transit_consolidation_factories cf
+                        WHERE cf.transit_id = t.id
+                          AND cf.factory_id IN ({placeholders})
+                    )
+                    """
+                )
+                params.extend(matched_factory_ids)
+            if matched_forwarder_ids:
+                placeholders = ','.join(['%s'] * len(matched_forwarder_ids))
+                search_clauses.append(f"t.forwarder_id IN ({placeholders})")
+                params.extend(matched_forwarder_ids)
+            if matched_region_ids:
+                placeholders = ','.join(['%s'] * len(matched_region_ids))
+                search_clauses.append(f"t.destination_region_id IN ({placeholders})")
+                params.extend(matched_region_ids)
+
+            filters.append('(' + ' OR '.join(search_clauses) + ')')
+        if not exclude_sku:
+            if sku_list:
+                placeholders = ','.join(['%s'] * len(sku_list))
+                filters.append(
+                    f"""
+                    EXISTS (
+                        SELECT 1
+                        FROM logistics_in_transit_items li2
+                        JOIN order_products op2 ON op2.id = li2.order_product_id
+                        WHERE li2.transit_id = t.id
+                          AND op2.sku IN ({placeholders})
+                    )
+                    """
+                )
+                params.extend(sku_list)
+            elif sku_keyword:
+                like_sku = f"%{sku_keyword}%"
+                filters.append(
+                    """
+                    EXISTS (
+                        SELECT 1
+                        FROM logistics_in_transit_items li2
+                        JOIN order_products op2 ON op2.id = li2.order_product_id
+                        WHERE li2.transit_id = t.id
+                          AND op2.sku LIKE %s
+                    )
+                    """
+                )
+                params.append(like_sku)
+        if not exclude_color:
+            if color_tokens:
+                placeholders = ','.join(['%s'] * len(color_tokens))
+                filters.append(
+                    f"""
+                    EXISTS (
+                        SELECT 1
+                        FROM logistics_in_transit_items li3
+                        JOIN order_products op3 ON op3.id = li3.order_product_id
+                        LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
+                        WHERE li3.transit_id = t.id
+                          AND TRIM(COALESCE(fm3.representative_color, '')) IN ({placeholders})
+                    )
+                    """
+                )
+                params.extend(color_tokens)
+            elif color_keyword:
+                like_color = f"%{color_keyword}%"
+                filters.append(
+                    """
+                    EXISTS (
+                        SELECT 1
+                        FROM logistics_in_transit_items li3
+                        JOIN order_products op3 ON op3.id = li3.order_product_id
+                        LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
+                        WHERE li3.transit_id = t.id
+                          AND COALESCE(fm3.representative_color, '') LIKE %s
+                    )
+                    """
+                )
+                params.append(like_color)
+        if forwarder_id:
+            filters.append('t.forwarder_id=%s')
+            params.append(forwarder_id)
+        exclude_bool = str(exclude_bool_col or '').strip()
+        for col, val in (bool_filters or {}).items():
+            if exclude_bool and col == exclude_bool:
+                continue
+            filters.append(f't.{col}=%s')
+            params.append(int(val))
+        return filters, params
+
     def _save_consolidation_factories(self, cur, transit_id, factory_ids):
         transit_id = self._parse_int(transit_id)
         if not transit_id:
@@ -238,8 +409,47 @@ class LogisticsInTransitMixin:
                     search = (query_params.get('q', [''])[0] or '').strip()
                     exact = str(query_params.get('exact', ['0'])[0]).strip().lower() in ('1', 'true', 'yes', 'on')
                     limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
+                    scope_keyword = (query_params.get('scope_q', [''])[0] or '').strip()
+                    sku_keyword, sku_list, color_keyword, color_tokens = self._parse_transit_sku_color_filter_inputs(query_params)
+                    forwarder_id = self._parse_int(query_params.get('forwarder_id', [''])[0])
+                    bool_filters = self._parse_transit_bool_filter_values(query_params)
+                    bool_filter_columns = self._transit_bool_filter_columns()
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
+                            cur.execute("SELECT id, factory_name FROM logistics_factories")
+                            factories = cur.fetchall() or []
+                            cur.execute("SELECT id, forwarder_name FROM logistics_forwarders")
+                            forwarders = cur.fetchall() or []
+                            cur.execute("SELECT id, region_name FROM logistics_destination_regions")
+                            destination_regions = cur.fetchall() or []
+                            factory_name_map = {int(r.get('id')): str(r.get('factory_name') or '') for r in factories if r.get('id')}
+                            forwarder_name_map = {int(r.get('id')): str(r.get('forwarder_name') or '') for r in forwarders if r.get('id')}
+                            destination_region_name_map = {int(r.get('id')): str(r.get('region_name') or '') for r in destination_regions if r.get('id')}
+
+                            scope_filters = []
+                            scope_params = []
+                            exclude_sku = column == 'sku'
+                            exclude_color = column == 'color'
+                            exclude_bool_col = column if column in bool_filter_columns else None
+                            self._append_transit_scope_filters(
+                                scope_filters,
+                                scope_params,
+                                keyword=scope_keyword,
+                                sku_keyword=sku_keyword,
+                                sku_list=sku_list,
+                                color_keyword=color_keyword,
+                                color_tokens=color_tokens,
+                                forwarder_id=forwarder_id,
+                                bool_filters=bool_filters,
+                                factory_name_map=factory_name_map,
+                                forwarder_name_map=forwarder_name_map,
+                                destination_region_name_map=destination_region_name_map,
+                                exclude_sku=exclude_sku,
+                                exclude_color=exclude_color,
+                                exclude_bool_col=exclude_bool_col,
+                            )
+                            scope_where = (' WHERE ' + ' AND '.join(scope_filters)) if scope_filters else ''
+
                             if column == 'color':
                                 sql = """
                                     SELECT
@@ -249,11 +459,14 @@ class LogisticsInTransitMixin:
                                         TRIM(COALESCE(fm.representative_color, '')) AS representative_color,
                                         COUNT(DISTINCT li.id) AS count
                                     FROM logistics_in_transit_items li
+                                    JOIN logistics_in_transit t ON t.id = li.transit_id
                                     JOIN order_products op ON op.id = li.order_product_id
                                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
-                                    WHERE TRIM(COALESCE(fm.representative_color, '')) != ''
                                 """
-                                params = []
+                                params = list(scope_params)
+                                where_parts = list(scope_filters)
+                                where_parts.append("TRIM(COALESCE(fm.representative_color, '')) != ''")
+                                sql += ' WHERE ' + ' AND '.join(where_parts)
                                 if search:
                                     if exact:
                                         sql += " AND (fm.fabric_code = %s OR fm.fabric_name_en = %s OR fm.representative_color = %s)"
@@ -277,10 +490,13 @@ class LogisticsInTransitMixin:
                                         TRIM(COALESCE(op.sku, '')) AS label,
                                         COUNT(DISTINCT li.id) AS count
                                     FROM logistics_in_transit_items li
+                                    JOIN logistics_in_transit t ON t.id = li.transit_id
                                     JOIN order_products op ON op.id = li.order_product_id
-                                    WHERE TRIM(COALESCE(op.sku, '')) != ''
                                 """
-                                params = []
+                                params = list(scope_params)
+                                where_parts = list(scope_filters)
+                                where_parts.append("TRIM(COALESCE(op.sku, '')) != ''")
+                                sql += ' WHERE ' + ' AND '.join(where_parts)
                                 if search:
                                     if exact:
                                         sql += " AND op.sku = %s"
@@ -296,6 +512,25 @@ class LogisticsInTransitMixin:
                                 params.append(limit)
                                 cur.execute(sql, tuple(params))
                                 values = cur.fetchall() or []
+                            elif column in bool_filter_columns:
+                                sql = f"""
+                                    SELECT t.{column} AS db_val, COUNT(*) AS count
+                                    FROM logistics_in_transit t
+                                    {scope_where}
+                                    GROUP BY t.{column}
+                                    ORDER BY t.{column} DESC
+                                """
+                                cur.execute(sql, tuple(scope_params))
+                                rows = cur.fetchall() or []
+                                values = []
+                                for row in rows:
+                                    db_val = int(row.get('db_val') or 0)
+                                    count = int(row.get('count') or 0)
+                                    values.append({
+                                        'value': '是' if db_val else '否',
+                                        'label': '是' if db_val else '否',
+                                        'count': count,
+                                    })
                             else:
                                 return self.send_json({'status': 'error', 'message': '不支持的筛选列'}, start_response)
                     return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
@@ -476,23 +711,9 @@ class LogisticsInTransitMixin:
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
-                sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
-                sku_list = []
-                for raw in query_params.get('sku_list', []):
-                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
-                        text = str(token or '').strip()
-                        if text and text not in sku_list:
-                            sku_list.append(text)
-                color_keyword = (query_params.get('color', [''])[0] or '').strip()
-                color_tokens = []
-                for raw in query_params.get('colors', []):
-                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
-                        text = str(token or '').strip()
-                        if text and text not in color_tokens:
-                            color_tokens.append(text)
-                if color_keyword and color_keyword not in color_tokens:
-                    color_tokens.append(color_keyword)
+                sku_keyword, sku_list, color_keyword, color_tokens = self._parse_transit_sku_color_filter_inputs(query_params)
                 forwarder_id = self._parse_int(query_params.get('forwarder_id', [''])[0])
+                bool_filters = self._parse_transit_bool_filter_values(query_params)
                 page = self._parse_int(query_params.get('page', ['1'])[0]) or 1
                 page_size = self._parse_int(query_params.get('page_size', ['50'])[0]) or 50
                 page = max(1, page)
@@ -541,108 +762,21 @@ class LogisticsInTransitMixin:
                         """
                         params = []
                         filters = []
-                        if item_id:
-                            filters.append('t.id=%s')
-                            params.append(item_id)
-                        if keyword:
-                            like = f"%{keyword}%"
-                            search_clauses = [
-                                't.logistics_box_no LIKE %s',
-                                't.bill_of_lading_no LIKE %s',
-                            ]
-                            params.extend([like, like])
-
-                            keyword_lower = keyword.lower()
-                            matched_factory_ids = [int(fid) for fid, name in factory_name_map.items() if keyword_lower in str(name or '').lower()]
-                            matched_forwarder_ids = [int(fid) for fid, name in forwarder_name_map.items() if keyword_lower in str(name or '').lower()]
-                            matched_region_ids = [int(rid) for rid, name in destination_region_name_map.items() if keyword_lower in str(name or '').lower()]
-
-                            if matched_factory_ids:
-                                placeholders = ','.join(['%s'] * len(matched_factory_ids))
-                                search_clauses.append(f"t.factory_id IN ({placeholders})")
-                                params.extend(matched_factory_ids)
-                                search_clauses.append(
-                                    f"""
-                                    EXISTS (
-                                        SELECT 1
-                                        FROM logistics_in_transit_consolidation_factories cf
-                                        WHERE cf.transit_id = t.id
-                                          AND cf.factory_id IN ({placeholders})
-                                    )
-                                    """
-                                )
-                                params.extend(matched_factory_ids)
-                            if matched_forwarder_ids:
-                                placeholders = ','.join(['%s'] * len(matched_forwarder_ids))
-                                search_clauses.append(f"t.forwarder_id IN ({placeholders})")
-                                params.extend(matched_forwarder_ids)
-                            if matched_region_ids:
-                                placeholders = ','.join(['%s'] * len(matched_region_ids))
-                                search_clauses.append(f"t.destination_region_id IN ({placeholders})")
-                                params.extend(matched_region_ids)
-
-                            filters.append('(' + ' OR '.join(search_clauses) + ')')
-                        if sku_list:
-                            placeholders = ','.join(['%s'] * len(sku_list))
-                            filters.append(
-                                f"""
-                                EXISTS (
-                                    SELECT 1
-                                    FROM logistics_in_transit_items li2
-                                    JOIN order_products op2 ON op2.id = li2.order_product_id
-                                    WHERE li2.transit_id = t.id
-                                      AND op2.sku IN ({placeholders})
-                                )
-                                """
-                            )
-                            params.extend(sku_list)
-                        elif sku_keyword:
-                            like_sku = f"%{sku_keyword}%"
-                            filters.append(
-                                """
-                                EXISTS (
-                                    SELECT 1
-                                    FROM logistics_in_transit_items li2
-                                    JOIN order_products op2 ON op2.id = li2.order_product_id
-                                    WHERE li2.transit_id = t.id
-                                      AND op2.sku LIKE %s
-                                )
-                                """
-                            )
-                            params.append(like_sku)
-                        if color_tokens:
-                            placeholders = ','.join(['%s'] * len(color_tokens))
-                            filters.append(
-                                f"""
-                                EXISTS (
-                                    SELECT 1
-                                    FROM logistics_in_transit_items li3
-                                    JOIN order_products op3 ON op3.id = li3.order_product_id
-                                    LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
-                                    WHERE li3.transit_id = t.id
-                                      AND TRIM(COALESCE(fm3.representative_color, '')) IN ({placeholders})
-                                )
-                                """
-                            )
-                            params.extend(color_tokens)
-                        elif color_keyword:
-                            like_color = f"%{color_keyword}%"
-                            filters.append(
-                                """
-                                EXISTS (
-                                    SELECT 1
-                                    FROM logistics_in_transit_items li3
-                                    JOIN order_products op3 ON op3.id = li3.order_product_id
-                                    LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
-                                    WHERE li3.transit_id = t.id
-                                      AND COALESCE(fm3.representative_color, '') LIKE %s
-                                )
-                                """
-                            )
-                            params.append(like_color)
-                        if forwarder_id:
-                            filters.append('t.forwarder_id=%s')
-                            params.append(forwarder_id)
+                        self._append_transit_scope_filters(
+                            filters,
+                            params,
+                            keyword=keyword,
+                            sku_keyword=sku_keyword,
+                            sku_list=sku_list,
+                            color_keyword=color_keyword,
+                            color_tokens=color_tokens,
+                            forwarder_id=forwarder_id,
+                            bool_filters=bool_filters,
+                            factory_name_map=factory_name_map,
+                            forwarder_name_map=forwarder_name_map,
+                            destination_region_name_map=destination_region_name_map,
+                            item_id=item_id,
+                        )
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
 
                         total = None
