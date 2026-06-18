@@ -1087,7 +1087,7 @@
                         <button class="btn-accent" id="btnPerfCreate" type="button">新增记录</button>
                     </div>
                     <div class="perf-table-wrap">
-                        <table class="perf-table" id="salesProductPerformanceTable" data-batch-delete-handler="handleSalesProductPerformanceBatchDelete">
+                        <table class="perf-table" id="salesProductPerformanceTable" data-server-pagination-mode="server" data-batch-delete-handler="handleSalesProductPerformanceBatchDelete">
                             <thead>
                                 <tr>
                                     <th style="width:54px; text-align:center;" data-manage-col-key="__perf_chk__" data-disable-sort="1"><input type="checkbox" id="perfSelectAll" aria-label="全选当前页"></th>
@@ -3466,114 +3466,35 @@
             }
         }
 
-        function getManagedToolbarForTable(table) {
-            const wrap = table ? table.closest('.pm-table-wrap') : null;
-            if (!wrap) return null;
-            let prev = wrap.previousElementSibling;
-            while (prev) {
-                if (prev.classList && prev.classList.contains('pm-table-toolbar')) {
-                    return prev;
+        function initPerfManagedTable() {
+            const M = window.SitjoyManagedPmTable;
+            if (!M || typeof M.registerServerList !== 'function') return;
+            M.registerServerList('#salesProductPerformanceTable', {
+                pageSizeMin: 10,
+                pageSizeMax: 200,
+                getPager() {
+                    return {
+                        page: state.performancePage,
+                        pageSize: state.performancePageSize,
+                        total: state.performanceTotal,
+                        totalPages: state.performanceTotalPages
+                    };
+                },
+                loadPage(page, options) {
+                    loadSalesProductPerformanceList(page, options);
+                },
+                onPageSizeChange(size) {
+                    state.performancePageSize = size;
+                    savePerfPageSizeToStorage(size);
                 }
-                prev = prev.previousElementSibling;
-            }
-            return null;
+            });
         }
 
-        function bindAndSyncManagedTablePager() {
-            const table = document.getElementById('salesProductPerformanceTable');
-            if (!table) return;
-            const toolbar = getManagedToolbarForTable(table);
-            if (!toolbar) return;
-
-            const pageSizeSelect = toolbar.querySelector('.pm-table-page-size');
-            const info = toolbar.querySelector('.pm-table-info');
-            const prevRaw = toolbar.querySelector('.pm-table-prev');
-            const nextRaw = toolbar.querySelector('.pm-table-next');
-            const current = toolbar.querySelector('.pm-table-pager-current');
-            if (!pageSizeSelect || !info || !prevRaw || !nextRaw || !current) return;
-
-            if (toolbar.dataset.serverPagerBound !== '1') {
-                toolbar.dataset.serverPagerBound = '1';
-                pageSizeSelect.dataset.disableSearchable = '1';
-                const selectDropdown = pageSizeSelect.nextElementSibling;
-                if (selectDropdown && selectDropdown.classList && selectDropdown.classList.contains('universal-select-dropdown')) {
-                    selectDropdown.remove();
-                }
-                pageSizeSelect.classList.remove('universal-select-native');
-                delete pageSizeSelect.dataset.searchableEnhanced;
-                pageSizeSelect.style.display = '';
-                const handlePageSizeChange = function(value) {
-                    const selectedSize = normalizePerfPageSize(value, state.performancePageSize || 50);
-                    state.performancePageSize = selectedSize;
-                    savePerfPageSizeToStorage(selectedSize);
-                    loadSalesProductPerformanceList(1, { pageSize: selectedSize });
-                };
-                pageSizeSelect.addEventListener('change', function() {
-                    handlePageSizeChange(this.value);
-                });
-                pageSizeSelect.addEventListener('input', function() {
-                    handlePageSizeChange(this.value);
-                });
-                toolbar.addEventListener('change', function(e) {
-                    const target = e.target && e.target.closest ? e.target.closest('.pm-table-page-size') : null;
-                    if (!target) return;
-                    handlePageSizeChange(target.value);
-                });
-                toolbar.addEventListener('click', function(e) {
-                    const optionBtn = e.target.closest('.feature-category-option.universal-select-option');
-                    if (!optionBtn) return;
-                    window.setTimeout(() => {
-                        const sizeFromSelect = normalizePerfPageSize(pageSizeSelect.value, state.performancePageSize || 50);
-                        if (sizeFromSelect !== Number(state.performancePageSize || 50)) {
-                            state.performancePageSize = sizeFromSelect;
-                            savePerfPageSizeToStorage(sizeFromSelect);
-                            loadSalesProductPerformanceList(1, { pageSize: sizeFromSelect });
-                        }
-                    }, 0);
-                });
-                prevRaw.addEventListener('click', function() {
-                    if (state.performancePage <= 1) return;
-                    loadSalesProductPerformanceList(state.performancePage - 1);
-                });
-                nextRaw.addEventListener('click', function() {
-                    if (state.performancePage >= state.performanceTotalPages) return;
-                    loadSalesProductPerformanceList(state.performancePage + 1);
-                });
+        function syncPerfManagedTablePager() {
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.syncServerPager === 'function') {
+                M.syncServerPager('#salesProductPerformanceTable');
             }
-
-            const pageSizeSelect2 = toolbar.querySelector('.pm-table-page-size');
-            const prev2 = toolbar.querySelector('.pm-table-prev');
-            const next2 = toolbar.querySelector('.pm-table-next');
-            if (!pageSizeSelect2 || !prev2 || !next2) return;
-
-            pageSizeSelect2.dataset.disableSearchable = '1';
-            const selectDropdown2 = pageSizeSelect2.nextElementSibling;
-            if (selectDropdown2 && selectDropdown2.classList && selectDropdown2.classList.contains('universal-select-dropdown')) {
-                selectDropdown2.remove();
-            }
-            pageSizeSelect2.classList.remove('universal-select-native');
-            delete pageSizeSelect2.dataset.searchableEnhanced;
-            pageSizeSelect2.style.display = '';
-
-            if (!state.performancePageSize || Number(state.performancePageSize) <= 0) {
-                state.performancePageSize = normalizePerfPageSize(pageSizeSelect2.value, 50);
-            }
-            pageSizeSelect2.value = String(normalizePerfPageSize(state.performancePageSize, 50));
-            const total = Number(state.performanceTotal || 0);
-            const page = Number(state.performancePage || 1);
-            const totalPages = Math.max(1, Number(state.performanceTotalPages || 1));
-            const start = total > 0 ? ((page - 1) * state.performancePageSize + 1) : 0;
-            const end = total > 0 ? Math.min(page * state.performancePageSize, total) : 0;
-
-            const applyUi = () => {
-                info.textContent = `显示 ${start}-${end} / 共 ${total} 条`;
-                current.textContent = `${page} / ${totalPages}`;
-                prev2.disabled = page <= 1;
-                next2.disabled = page >= totalPages;
-            };
-            applyUi();
-            window.requestAnimationFrame(applyUi);
-            window.setTimeout(applyUi, 80);
         }
 
         async function loadSalesProductSkuPool() {
@@ -3586,27 +3507,30 @@
         }
 
         function loadSalesProductPerformanceList(page, options) {
+            initPerfManagedTable();
+            const M = window.SitjoyManagedPmTable;
+            const normPageSize = (v, fb) => (M && typeof M.normalizePageSize === 'function')
+                ? M.normalizePageSize(v, fb, 10, 200)
+                : normalizePerfPageSize(v, fb);
             const nextPage = Math.max(1, Number(page || state.performancePage || 1));
             state.performancePage = nextPage;
             const table = document.getElementById('salesProductPerformanceTable');
-            const toolbar = getManagedToolbarForTable(table);
+            const toolbar = M && typeof M.getToolbar === 'function' ? M.getToolbar(table) : null;
             const toolbarSelect = toolbar ? toolbar.querySelector('.pm-table-page-size') : null;
             const forcedPageSize = options && Number(options.pageSize) > 0
                 ? Math.max(10, Number(options.pageSize))
                 : null;
             if (forcedPageSize) {
-                state.performancePageSize = normalizePerfPageSize(forcedPageSize, state.performancePageSize || 50);
+                state.performancePageSize = normPageSize(forcedPageSize, state.performancePageSize || 50);
             } else {
-                let effective = normalizePerfPageSize(state.performancePageSize || 50, 50);
+                let effective = normPageSize(state.performancePageSize || 50, 50);
                 if (toolbarSelect) {
-                    effective = normalizePerfPageSize(toolbarSelect.value, effective);
+                    effective = normPageSize(toolbarSelect.value, effective);
                 }
                 state.performancePageSize = effective;
             }
-            if (table) {
-                table.dataset.serverPaginationMode = 'server';
-                table.dataset.serverCurrentPage = String(nextPage);
-                table.dataset.serverPageSize = String(state.performancePageSize);
+            if (table && M && typeof M.updateServerPagerDataset === 'function') {
+                M.updateServerPagerDataset(table, { page: nextPage, pageSize: state.performancePageSize });
             }
             const q = (document.getElementById('performanceSearchInput').value || '').trim();
             const shopIds = getRecordManageShopIds();
@@ -3622,7 +3546,7 @@
                     tbody.innerHTML = `<tr><td colspan="${PERF_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     state.performanceTotal = 0;
                     state.performanceTotalPages = 1;
-                    bindAndSyncManagedTablePager();
+                    syncPerfManagedTablePager();
                     return;
                 }
                 state.performanceItems = data.items || [];
@@ -3637,7 +3561,7 @@
                     table.dataset.serverTotalRows = String(state.performanceTotal || 0);
                 }
                 renderSalesProductPerformanceTable(state.performanceItems);
-                bindAndSyncManagedTablePager();
+                syncPerfManagedTablePager();
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductPerformanceTable tbody');
                 tbody.innerHTML = `<tr><td colspan="${PERF_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
@@ -3649,7 +3573,7 @@
                     table.dataset.serverPageSize = String(state.performancePageSize || 50);
                     table.dataset.serverTotalRows = '0';
                 }
-                bindAndSyncManagedTablePager();
+                syncPerfManagedTablePager();
             });
         }
 

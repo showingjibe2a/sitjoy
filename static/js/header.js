@@ -6569,12 +6569,221 @@
         return handle;
     }
 
-    const serverColumnFilterRegistry = new Map();
+    const serverTableRegistry = new Map();
 
-    function resolveServerColumnFilterConfig(table){
+    function resolveServerTableConfig(table){
         const key = tableRegistryKeyForPagePrefs(table);
         if(!key) return null;
-        return serverColumnFilterRegistry.get(key) || null;
+        return serverTableRegistry.get(key) || null;
+    }
+
+    function resolveServerColumnFilterConfig(table){
+        const cfg = resolveServerTableConfig(table);
+        if(!cfg) return null;
+        if(cfg.apiUrl || cfg.columnParams) return cfg;
+        return null;
+    }
+
+    function getManagedToolbarForTable(table){
+        const wrap = table ? table.closest('.pm-table-wrap') : null;
+        if(!wrap) return null;
+        let prev = wrap.previousElementSibling;
+        while(prev){
+            if(prev.classList && prev.classList.contains('pm-table-toolbar')) return prev;
+            prev = prev.previousElementSibling;
+        }
+        return null;
+    }
+
+    function normalizeServerPageSize(value, fallback, min, max){
+        const lo = Math.max(1, Number(min || 20));
+        const hi = Math.max(lo, Number(max || 200));
+        const n = Math.max(lo, Math.min(hi, Number(value || fallback || 50)));
+        return Number.isFinite(n) ? n : (Number(fallback) || 50);
+    }
+
+    function readServerPagerMeta(table, config){
+        if(config && typeof config.getPager === 'function'){
+            try {
+                const meta = config.getPager();
+                if(meta && typeof meta === 'object') return meta;
+            } catch (_) {}
+        }
+        const page = Number(table.dataset.serverCurrentPage || 1);
+        const pageSize = Number(table.dataset.serverPageSize || 50);
+        const total = Number(table.dataset.serverTotalRows || 0);
+        const totalPages = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)));
+        return { page, pageSize, total, totalPages };
+    }
+
+    function updateServerPagerDataset(table, meta){
+        if(!table || !meta) return;
+        table.dataset.serverPaginationMode = 'server';
+        if(meta.page != null) table.dataset.serverCurrentPage = String(meta.page);
+        if(meta.pageSize != null) table.dataset.serverPageSize = String(meta.pageSize);
+        if(meta.total != null) table.dataset.serverTotalRows = String(meta.total);
+    }
+
+    function prepareNativePageSizeSelect(pageSizeSelect){
+        if(!pageSizeSelect) return;
+        pageSizeSelect.dataset.disableSearchable = '1';
+        const selectDropdown = pageSizeSelect.nextElementSibling;
+        if(selectDropdown && selectDropdown.classList && selectDropdown.classList.contains('universal-select-dropdown')){
+            selectDropdown.remove();
+        }
+        pageSizeSelect.classList.remove('universal-select-native');
+        delete pageSizeSelect.dataset.searchableEnhanced;
+        pageSizeSelect.style.display = '';
+    }
+
+    function bindServerPager(tableOrSelector){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return;
+        const config = resolveServerTableConfig(table);
+        if(!config || typeof config.loadPage !== 'function') return;
+        const toolbar = getManagedToolbarForTable(table);
+        if(!toolbar) return;
+        const pageSizeSelect = toolbar.querySelector('.pm-table-page-size');
+        const info = toolbar.querySelector('.pm-table-info');
+        const prevRaw = toolbar.querySelector('.pm-table-prev');
+        const nextRaw = toolbar.querySelector('.pm-table-next');
+        const current = toolbar.querySelector('.pm-table-pager-current');
+        if(!pageSizeSelect || !info || !prevRaw || !nextRaw || !current) return;
+        if(toolbar.dataset.serverPagerBound === '1') return;
+        toolbar.dataset.serverPagerBound = '1';
+
+        const minSize = Number(config.pageSizeMin || 20);
+        const maxSize = Number(config.pageSizeMax || 200);
+        const norm = (val, fb) => normalizeServerPageSize(val, fb, minSize, maxSize);
+
+        prepareNativePageSizeSelect(pageSizeSelect);
+
+        const handlePageSizeChange = function(value){
+            const selectedSize = norm(value, readServerPagerMeta(table, config).pageSize);
+            if(typeof config.onPageSizeChange === 'function'){
+                try { config.onPageSizeChange(selectedSize); } catch (_) {}
+            }
+            config.loadPage(1, { pageSize: selectedSize });
+        };
+
+        pageSizeSelect.addEventListener('change', function(){ handlePageSizeChange(this.value); });
+        pageSizeSelect.addEventListener('input', function(){ handlePageSizeChange(this.value); });
+        toolbar.addEventListener('change', function(e){
+            const target = e.target && e.target.closest ? e.target.closest('.pm-table-page-size') : null;
+            if(!target) return;
+            handlePageSizeChange(target.value);
+        });
+        toolbar.addEventListener('click', function(e){
+            const optionBtn = e.target && e.target.closest ? e.target.closest('.feature-category-option.universal-select-option') : null;
+            if(!optionBtn) return;
+            window.setTimeout(() => {
+                const meta = readServerPagerMeta(table, config);
+                const sizeFromSelect = norm(pageSizeSelect.value, meta.pageSize);
+                if(sizeFromSelect !== Number(meta.pageSize || 50)){
+                    handlePageSizeChange(sizeFromSelect);
+                }
+            }, 0);
+        });
+        prevRaw.addEventListener('click', function(){
+            const meta = readServerPagerMeta(table, config);
+            if(meta.page <= 1) return;
+            config.loadPage(meta.page - 1);
+        });
+        nextRaw.addEventListener('click', function(){
+            const meta = readServerPagerMeta(table, config);
+            if(meta.page >= meta.totalPages) return;
+            config.loadPage(meta.page + 1);
+        });
+    }
+
+    function syncServerPager(tableOrSelector, meta){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return;
+        const config = resolveServerTableConfig(table);
+        const toolbar = getManagedToolbarForTable(table);
+        if(!toolbar) return;
+        const pageSizeSelect = toolbar.querySelector('.pm-table-page-size');
+        const info = toolbar.querySelector('.pm-table-info');
+        const prevRaw = toolbar.querySelector('.pm-table-prev');
+        const nextRaw = toolbar.querySelector('.pm-table-next');
+        const current = toolbar.querySelector('.pm-table-pager-current');
+        if(!pageSizeSelect || !info || !prevRaw || !nextRaw || !current) return;
+
+        if(meta) updateServerPagerDataset(table, meta);
+
+        const minSize = Number(config && config.pageSizeMin || 20);
+        const maxSize = Number(config && config.pageSizeMax || 200);
+        const norm = (val, fb) => normalizeServerPageSize(val, fb, minSize, maxSize);
+
+        prepareNativePageSizeSelect(pageSizeSelect);
+
+        const pager = readServerPagerMeta(table, config);
+        pageSizeSelect.value = String(norm(pager.pageSize, 50));
+        const start = pager.total > 0 ? ((pager.page - 1) * pager.pageSize + 1) : 0;
+        const end = pager.total > 0 ? Math.min(pager.page * pager.pageSize, pager.total) : 0;
+        info.textContent = `显示 ${start}-${end} / 共 ${pager.total} 条`;
+        current.textContent = `${pager.page} / ${pager.totalPages}`;
+        prevRaw.disabled = pager.page <= 1;
+        nextRaw.disabled = pager.page >= pager.totalPages;
+    }
+
+    function registerServerList(tableOrSelector, handlers){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return false;
+        const key = tableRegistryKeyForPagePrefs(table);
+        if(!key) return false;
+        const cfg = Object.assign({ table }, handlers || {});
+        if(!cfg.apiUrl) cfg.apiUrl = String(table.dataset.pmServerApiUrl || '').trim();
+        if(!cfg.columnParams && table.dataset.pmServerColumnParams){
+            try { cfg.columnParams = JSON.parse(table.dataset.pmServerColumnParams); } catch (_) {}
+        }
+        if(!cfg.reload && typeof cfg.loadPage === 'function'){
+            cfg.reload = (page, opts) => cfg.loadPage(page || 1, opts);
+        }
+        serverTableRegistry.set(key, cfg);
+        table.dataset.serverPaginationMode = 'server';
+        if(cfg.columnParams && !String(table.dataset.pmServerFilterColumns || '').trim()){
+            table.dataset.pmServerFilterColumns = Object.keys(cfg.columnParams).join(',');
+        }
+        bindServerPager(table);
+        return true;
+    }
+
+    function bootstrapServerTable(tableOrSelector){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return null;
+        bindServerPager(table);
+        return installServerColumnFilterTable(table);
+    }
+
+    function finishManagedBodyRefresh(tableOrSelector, extraFn){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table) return;
+        syncServerPager(table);
+        const handle = columnFilterRegistry.get(table) || null;
+        if(handle && typeof handle.refreshButtons === 'function') handle.refreshButtons();
+        if(typeof extraFn === 'function'){
+            try { extraFn(table); } catch (_) {}
+        }
+        endManagedTableBodyUpdate(table);
+    }
+
+    function withManagedBodyUpdate(tableOrSelector, fn){
+        const table = resolveTableForPagePrefs(tableOrSelector);
+        if(!table || typeof fn !== 'function') return Promise.resolve();
+        beginManagedTableBodyUpdate(table);
+        let result;
+        try {
+            result = fn(table);
+        } catch (err) {
+            endManagedTableBodyUpdate(table);
+            throw err;
+        }
+        if(result && typeof result.then === 'function'){
+            return result.finally(() => endManagedTableBodyUpdate(table));
+        }
+        endManagedTableBodyUpdate(table);
+        return Promise.resolve(result);
     }
 
     function columnFilterYesNoToDbToken(values){
@@ -6763,18 +6972,7 @@
     }
 
     function registerServerColumnFilterTable(tableOrSelector, handlers){
-        const table = resolveTableForPagePrefs(tableOrSelector);
-        if(!table) return false;
-        const key = tableRegistryKeyForPagePrefs(table);
-        if(!key) return false;
-        serverColumnFilterRegistry.set(key, Object.assign({ table }, handlers || {}));
-        if(!String(table.dataset.pmServerFilterColumns || '').trim() && handlers && handlers.columnParams){
-            table.dataset.pmServerFilterColumns = Object.keys(handlers.columnParams).join(',');
-        }
-        if(!String(table.dataset.serverPaginationMode || '').trim()){
-            table.dataset.serverPaginationMode = 'server';
-        }
-        return true;
+        return registerServerList(tableOrSelector, handlers);
     }
 
     function bindGlobalServerColumnFilterEvents(){
@@ -7075,7 +7273,16 @@
             if(tableOrRoot.tagName === 'TABLE') applyNumericColumnLayoutForTable(tableOrRoot);
             else enhanceAllTableNumericAlign(tableOrRoot);
         },
-        formatNumber: formatSitjoyNumber
+        formatNumber: formatSitjoyNumber,
+        getToolbar: getManagedToolbarForTable,
+        normalizePageSize: normalizeServerPageSize,
+        registerServerList,
+        bindServerPager,
+        syncServerPager,
+        updateServerPagerDataset: updateServerPagerDataset,
+        bootstrapServerTable,
+        finishBodyRefresh: finishManagedBodyRefresh,
+        withBodyUpdate: withManagedBodyUpdate
     });
 
     window.formatSitjoyNumber = formatSitjoyNumber;
@@ -7086,8 +7293,8 @@
         rowPassesFilters: rowPassesManagedColumnFilters,
         columnFilterScopeSignature,
         collectOptionsFromTableState: collectManagedColumnFilterOptions,
-        registerServerTable: registerServerColumnFilterTable,
-        installServerTable: installServerColumnFilterTable,
+        registerServerTable: registerServerList,
+        installServerTable: bootstrapServerTable,
         buildListQueryParams: buildServerColumnFilterListParams,
         applyServerChange: applyServerColumnFilterChange,
         clearServerTable: clearServerColumnFilterTable,

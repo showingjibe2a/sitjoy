@@ -336,7 +336,7 @@
       </div>
     </div>
     <div>
-      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-light-no-column-filter="1" data-pm-special-sort="transit-sku-detail" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-server-pagination-mode="server" data-pm-server-filter-columns="SKU详情-颜色,SKU详情-SKU,已确认装箱量,提供报关资料,提供清关资料,已登记上架,已核对上架数量,数量一致,财务已核验">
+      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-light-no-column-filter="1" data-pm-special-sort="transit-sku-detail" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-pm-default-pinned-keys="__transit_chk__,箱号,工厂,目的区域,目的仓库,预计上架时间" data-pm-pin-exclude-keys="SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量" data-server-pagination-mode="server" data-pm-server-api-url="/api/logistics-in-transit" data-pm-server-filter-columns="SKU详情-颜色,SKU详情-SKU,已确认装箱量,提供报关资料,提供清关资料,已登记上架,已核对上架数量,数量一致,财务已核验">
         <colgroup>
           <col style="width:54px" data-manage-col-key="__transit_chk__" data-pm-default-width="54">
           <col style="width:72px" data-manage-col-key="箱号" data-pm-default-width="72">
@@ -811,29 +811,8 @@ function closeForwarderModal(){$('#forwarder-modal').classList.remove('active');
 function saveForwarder(){const forwarder_name=String($('#forwarderManageName').value||'').trim();if(!forwarder_name){showForwarderStatus('请填写货代名称',true);return}const payload=forwarderEditId?{id:forwarderEditId,forwarder_name}:{forwarder_name};const method=forwarderEditId?'PUT':'POST';fetch('/api/logistics-forwarder',{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).then(data=>{if(data.status!=='success'){showForwarderStatus(data.message||'保存失败',true);return}const targetId=forwarderEditId||data.id||'';loadForwarders().then(()=>{if(targetId){activeForwarderFilterId=String(targetId);renderForwarderManageBar();fillForwarderSelects(targetId)}closeForwarderModal();loadList()})}).catch(err=>showForwarderStatus('请求失败: '+err,true))}
 async function removeForwarder(){if(!forwarderEditId)return;const ok=window.showAppConfirmAsync?await window.showAppConfirmAsync({title:'删除确认',message:'确认删除该货代？',confirmText:'确认删除'}):false;if(!ok)return;fetch('/api/logistics-forwarder',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:forwarderEditId})}).then(r=>r.json()).then(data=>{if(data.status!=='success'){showForwarderStatus(data.message||'删除失败',true);return}if(String(activeForwarderFilterId||'')===String(forwarderEditId))activeForwarderFilterId=null;closeForwarderModal();loadForwarders().then(loadList)}).catch(err=>showForwarderStatus('删除失败: '+err,true))}
 function loadOptions(force){if(optionsReadyPromise&&!force)return optionsReadyPromise;optionsReadyPromise=fetch('/api/logistics-in-transit?action=options&scope=with_order_products&order_product_limit=600').then(r=>r.json()).then(d=>{if(d.status!=='success')return;optionFactories=d.factories||[];optionForwarders=d.forwarders||[];optionDestinationRegions=d.destination_regions||[];optionWarehouses=d.warehouses||[];optionOrderProducts=d.order_products||[];optionLinks=d.links||[];rebuildTransitLinkMaps();fill('factoryId',optionFactories,'id','factory_name','请选择工厂');fillForwarderSelects();fill('destinationRegionId',optionDestinationRegions,'id','region_name','请选择目的区域');syncDestinationWarehouseOptions('');bindTransitConsolidationFactoryPickerOnce();renderTransitConsolidationFactoryOptions('');updateTransitConsolidationFactorySelected();renderForwarderManageBar();syncTransitItemSkuOptions()}).catch(()=>{});return optionsReadyPromise}
-function getTransitColumnFilterHandle(){return window.__transitColumnFilterHandle||null}
-function normalizeTransitPageSize(value,fallback){
-  const n=Math.max(20,Math.min(200,Number(value||fallback||50)));
-  return Number.isFinite(n)?n:50;
-}
-function getTransitManagedToolbarForTable(table){
-  const wrap=table?table.closest('.pm-table-wrap'):null;
-  if(!wrap)return null;
-  let prev=wrap.previousElementSibling;
-  while(prev){
-    if(prev.classList&&prev.classList.contains('pm-table-toolbar'))return prev;
-    prev=prev.previousElementSibling;
-  }
-  return null;
-}
-function buildTransitServerFilterQueryParams(){
-  if(window.SitjoyColumnFilter&&typeof SitjoyColumnFilter.buildListQueryParams==='function'){
-    return SitjoyColumnFilter.buildListQueryParams('#mainTable',transitColumnFilters||{});
-  }
-  return new URLSearchParams();
-}
-function registerTransitServerColumnFilter(){
-  if(!window.SitjoyColumnFilter||typeof SitjoyColumnFilter.registerServerTable!=='function')return;
+function getTransitColumnFilterHandle(){return window.SitjoyColumnFilter&&window.SitjoyColumnFilter.get?window.SitjoyColumnFilter.get('#mainTable'):null}
+function buildTransitServerColumnParams(){
   const columnParams={
     'SKU详情-颜色':{apiColumn:'color',selectedParam:'colors',queryParam:'color'},
     'SKU详情-SKU':{apiColumn:'sku',selectedParam:'sku_list',queryParam:'sku'}
@@ -841,11 +820,21 @@ function registerTransitServerColumnFilter(){
   Object.entries(TRANSIT_BOOL_FILTER_COL_MAP).forEach(([label,dbCol])=>{
     columnParams[label]={apiColumn:dbCol,boolField:dbCol};
   });
-  SitjoyColumnFilter.registerServerTable('#mainTable',{
+  return columnParams;
+}
+function initTransitManagedTable(){
+  const M=window.SitjoyManagedPmTable;
+  const CF=window.SitjoyColumnFilter;
+  if(!M||typeof M.registerServerList!=='function')return;
+  M.registerServerList('#mainTable',{
     apiUrl:'/api/logistics-in-transit',
-    columnParams,
+    columnParams:buildTransitServerColumnParams(),
+    pageSizeMin:20,
+    pageSizeMax:200,
     getFilters(){return transitColumnFilters||{};},
     setFilters(filters){transitColumnFilters=filters||{};},
+    getPager(){return{page:transitListPage,pageSize:transitListPageSize,total:transitListTotal,totalPages:transitListTotalPages};},
+    loadPage(page,options){loadList(page,options);},
     appendPageScope(params,_snap,_exclude,context){
       const pageQ=($('#searchInput')?.value||'').trim();
       if(pageQ){
@@ -854,86 +843,20 @@ function registerTransitServerColumnFilter(){
       }
       if(activeForwarderFilterId)params.set('forwarder_id',String(activeForwarderFilterId));
     },
-    reload(page){loadList(page||1);},
     onClear(){
       $('#searchInput').value='';
       activeForwarderFilterId=null;
       renderForwarderManageBar();
     }
   });
-}
-function applyTransitColumnFilters(filters){
-  const table=document.querySelector('#mainTable');
-  if(table&&window.SitjoyColumnFilter&&typeof SitjoyColumnFilter.applyServerChange==='function'){
-    SitjoyColumnFilter.applyServerChange(table,filters||{});
-    return;
-  }
-  transitColumnFilters=filters||{};
-  loadList(1);
-}
-function bindAndSyncTransitManagedTablePager(){
-  const table=document.querySelector('#mainTable');
-  if(!table)return;
-  const toolbar=getTransitManagedToolbarForTable(table);
-  if(!toolbar)return;
-  const pageSizeSelect=toolbar.querySelector('.pm-table-page-size');
-  const info=toolbar.querySelector('.pm-table-info');
-  const prevRaw=toolbar.querySelector('.pm-table-prev');
-  const nextRaw=toolbar.querySelector('.pm-table-next');
-  const current=toolbar.querySelector('.pm-table-pager-current');
-  if(!pageSizeSelect||!info||!prevRaw||!nextRaw||!current)return;
-  if(toolbar.dataset.transitServerPagerBound!=='1'){
-    toolbar.dataset.transitServerPagerBound='1';
-    pageSizeSelect.dataset.disableSearchable='1';
-    const selectDropdown=pageSizeSelect.nextElementSibling;
-    if(selectDropdown&&selectDropdown.classList&&selectDropdown.classList.contains('universal-select-dropdown'))selectDropdown.remove();
-    pageSizeSelect.classList.remove('universal-select-native');
-    delete pageSizeSelect.dataset.searchableEnhanced;
-    pageSizeSelect.style.display='';
-    const handlePageSizeChange=function(value){
-      const selectedSize=normalizeTransitPageSize(value,transitListPageSize||50);
-      transitListPageSize=selectedSize;
-      loadList(1,{pageSize:selectedSize});
-    };
-    pageSizeSelect.addEventListener('change',function(){handlePageSizeChange(this.value);});
-    pageSizeSelect.addEventListener('input',function(){handlePageSizeChange(this.value);});
-    toolbar.addEventListener('change',function(e){
-      const target=e.target&&e.target.closest?e.target.closest('.pm-table-page-size'):null;
-      if(!target)return;
-      handlePageSizeChange(target.value);
-    });
-    prevRaw.addEventListener('click',function(){
-      if(transitListPage<=1)return;
-      loadList(transitListPage-1);
-    });
-    nextRaw.addEventListener('click',function(){
-      if(transitListPage>=transitListTotalPages)return;
-      loadList(transitListPage+1);
-    });
-  }
-  pageSizeSelect.value=String(normalizeTransitPageSize(transitListPageSize,50));
-  const total=Number(transitListTotal||0);
-  const page=Number(transitListPage||1);
-  const totalPages=Math.max(1,Number(transitListTotalPages||1));
-  const start=total>0?((page-1)*transitListPageSize+1):0;
-  const end=total>0?Math.min(page*transitListPageSize,total):0;
-  info.textContent=`显示 ${start}-${end} / 共 ${total} 条`;
-  current.textContent=`${page} / ${totalPages}`;
-  prevRaw.disabled=page<=1;
-  nextRaw.disabled=page>=totalPages;
-}
-function installTransitColumnFilters(){
-  if(!window.SitjoyColumnFilter)return;
-  registerTransitServerColumnFilter();
-  const handle=window.SitjoyColumnFilter.installServerTable('#mainTable');
-  window.__transitColumnFilterHandle=handle||window.__transitColumnFilterHandle||null;
+  if(CF&&typeof CF.installServerTable==='function')CF.installServerTable('#mainTable');
 }
 function attachTransitColumnFilters(){
   const table=document.querySelector('#mainTable');
   if(!table)return;
   const mtState=window.SitjoyManagedPmTable&&window.SitjoyManagedPmTable.getState?window.SitjoyManagedPmTable.getState(table):null;
   if(!mtState)return window.setTimeout(attachTransitColumnFilters,120);
-  installTransitColumnFilters();
+  initTransitManagedTable();
 }
 
 function syncListedQtyEditable(){document.querySelectorAll('.transit-item-listed').forEach(inp=>{inp.setAttribute('readonly','readonly');inp.classList.add('transit-item-listed-locked')})}
@@ -1452,34 +1375,40 @@ function cleanupTransitInvalidColumnPins(){
   }catch(_e){}
 }
 function finishTransitTableBodyRefresh(){
+  const M=window.SitjoyManagedPmTable;
+  if(M&&typeof M.finishBodyRefresh==='function'){
+    M.finishBodyRefresh('#mainTable',function(){
+      refreshTransitDetailSortHeaderUi();
+      refreshTransitSkuDetailLayout();
+    });
+    return;
+  }
   refreshTransitDetailSortHeaderUi();
   refreshTransitSkuDetailLayout();
-  const handle=getTransitColumnFilterHandle();
-  if(handle&&typeof handle.refreshButtons==='function')handle.refreshButtons();
   const mt=document.querySelector('#mainTable');
-  const mgr=window.SitjoyManagedPmTable;
-  if(mt&&mgr&&typeof mgr.endBodyUpdate==='function')mgr.endBodyUpdate(mt);
-  else if(mt&&mgr&&typeof mgr.invalidateLayout==='function')mgr.invalidateLayout(mt);
+  if(mt&&M&&typeof M.endBodyUpdate==='function')M.endBodyUpdate(mt);
 }
 function loadList(page,options){
-  registerTransitServerColumnFilter();
+  initTransitManagedTable();
+  const M=window.SitjoyManagedPmTable;
+  const normPageSize=(v,fb)=>M&&typeof M.normalizePageSize==='function'?M.normalizePageSize(v,fb,20,200):50;
   const nextPage=Math.max(1,Number(page||transitListPage||1));
   transitListPage=nextPage;
   const table=document.querySelector('#mainTable');
-  const toolbar=getTransitManagedToolbarForTable(table);
+  const toolbar=M&&typeof M.getToolbar==='function'?M.getToolbar(table):null;
   const toolbarSelect=toolbar?toolbar.querySelector('.pm-table-page-size'):null;
   const forcedPageSize=options&&Number(options.pageSize)>0?Math.max(20,Number(options.pageSize)):null;
   if(forcedPageSize){
-    transitListPageSize=normalizeTransitPageSize(forcedPageSize,transitListPageSize||50);
+    transitListPageSize=normPageSize(forcedPageSize,transitListPageSize||50);
   }else if(toolbarSelect){
-    transitListPageSize=normalizeTransitPageSize(toolbarSelect.value,transitListPageSize||50);
+    transitListPageSize=normPageSize(toolbarSelect.value,transitListPageSize||50);
   }
-  if(table){
-    table.dataset.serverPaginationMode='server';
-    table.dataset.serverCurrentPage=String(nextPage);
-    table.dataset.serverPageSize=String(transitListPageSize);
+  if(table&&M&&typeof M.updateServerPagerDataset==='function'){
+    M.updateServerPagerDataset(table,{page:nextPage,pageSize:transitListPageSize});
   }
-  const query=buildTransitServerFilterQueryParams();
+  const query=window.SitjoyColumnFilter&&typeof SitjoyColumnFilter.buildListQueryParams==='function'
+    ?SitjoyColumnFilter.buildListQueryParams('#mainTable',transitColumnFilters||{})
+    :new URLSearchParams();
   query.set('page',String(nextPage));
   query.set('page_size',String(transitListPageSize));
   if(window.SitjoyPagePrefs&&typeof SitjoyPagePrefs.saveTablePageFilters==='function')SitjoyPagePrefs.saveTablePageFilters('#mainTable');
@@ -1496,7 +1425,7 @@ function loadList(page,options){
         transitListTotalPages=1;
         if(table)table.dataset.serverTotalRows='0';
         syncSelectAllState();
-        bindAndSyncTransitManagedTablePager();
+        if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
         finishTransitTableBodyRefresh();
         return;
       }
@@ -1516,7 +1445,7 @@ function loadList(page,options){
       if(!arr.length){
         tb.innerHTML=`<tr><td colspan="${colSpan}" style="text-align:center;">暂无数据</td></tr>`;
         syncSelectAllState();
-        bindAndSyncTransitManagedTablePager();
+        if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
         finishTransitTableBodyRefresh();
         return;
       }
@@ -1533,7 +1462,7 @@ function loadList(page,options){
       document.querySelectorAll('.transit-inline-edit').forEach(bindTransitInlineEditElement);
       syncSelectAllState();
       bindPreviewStatusEditors();
-      bindAndSyncTransitManagedTablePager();
+      if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
       finishTransitTableBodyRefresh();
     });
   });
