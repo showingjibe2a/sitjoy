@@ -2255,18 +2255,9 @@
         }
 
         function renderTodoTable(items) {
-            const table = document.getElementById('todoTable');
             const tbody = document.getElementById('todoTableBody');
             if (!tbody) return;
-            const pmTable = window.SitjoyManagedPmTable;
-            const beginBody = pmTable && typeof pmTable.beginBodyUpdate === 'function'
-                ? () => pmTable.beginBodyUpdate(table || '#todoTable')
-                : null;
-            const endBody = pmTable && typeof pmTable.endBodyUpdate === 'function'
-                ? () => pmTable.endBodyUpdate(table || '#todoTable')
-                : null;
-            if (beginBody) beginBody();
-            try {
+            const run = () => {
             const list = Array.isArray(items) ? items.slice() : [];
             list.sort((a, b) => {
                 const ad = (Number(a.my_is_completed || 0) === 1) ? 1 : 0;
@@ -2330,9 +2321,10 @@
                     </tr>
                 `;
             }).join('');
-            } finally {
-                if (endBody) endBody();
-            }
+            };
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#todoTable', run);
+            else run();
         }
 
         function toDatetimeLocalValue(text) {

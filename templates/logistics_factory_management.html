@@ -314,41 +314,21 @@
         function loadList(){
             const q = document.getElementById('searchInput').value.trim();
             const url = q ? `/api/logistics-factory?q=${encodeURIComponent(q)}` : '/api/logistics-factory';
+            const renderRows = (tbody, html) => {
+                const M = window.SitjoyManagedPmTable;
+                const run = () => { tbody.innerHTML = html; };
+                if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#mainTable', run);
+                else run();
+            };
             fetch(url).then(r=>r.json()).then(data=>{
-                const table = document.getElementById('mainTable');
                 const tbody = document.querySelector('#mainTable tbody');
-                const pmTable = window.SitjoyManagedPmTable;
-                const beginBody = pmTable && typeof pmTable.beginBodyUpdate === 'function'
-                    ? () => pmTable.beginBodyUpdate(table || '#mainTable')
-                    : null;
-                const endBody = pmTable && typeof pmTable.endBodyUpdate === 'function'
-                    ? () => pmTable.endBodyUpdate(table || '#mainTable')
-                    : null;
-                if (beginBody) beginBody();
-                try {
-                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                if(data.status!=='success'){ renderRows(tbody, `<tr><td colspan="3" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`); return; }
                 const items = data.items || [];
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">暂无数据</td></tr>'; return; }
-                tbody.innerHTML = items.map(item => `<tr><td>${item.factory_name||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
-                } finally {
-                    if (endBody) endBody();
-                }
+                if(!items.length){ renderRows(tbody, '<tr><td colspan="3" style="text-align:center;">暂无数据</td></tr>'); return; }
+                renderRows(tbody, items.map(item => `<tr><td>${item.factory_name||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join(''));
             }).catch(err=>{
-                const table = document.getElementById('mainTable');
                 const tbody = document.querySelector('#mainTable tbody');
-                const pmTable = window.SitjoyManagedPmTable;
-                const beginBody = pmTable && typeof pmTable.beginBodyUpdate === 'function'
-                    ? () => pmTable.beginBodyUpdate(table || '#mainTable')
-                    : null;
-                const endBody = pmTable && typeof pmTable.endBodyUpdate === 'function'
-                    ? () => pmTable.endBodyUpdate(table || '#mainTable')
-                    : null;
-                if (beginBody) beginBody();
-                try {
-                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`;
-                } finally {
-                    if (endBody) endBody();
-                }
+                renderRows(tbody, `<tr><td colspan="3" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`);
             });
         }
         window.setTimeout(function(){ var el=document.getElementById('pm-modal'); if(el&&typeof window.bindPmModalBackdropClose==='function')window.bindPmModalBackdropClose(el,closeModal); },0);

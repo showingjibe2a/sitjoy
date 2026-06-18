@@ -2576,51 +2576,12 @@
             }
         }
 
-        function salesManagedTableBodyApi() {
-            return window.SitjoyManagedPmTable || null;
-        }
-
-        function salesWhenManagedTableReady(fn) {
-            const api = salesManagedTableBodyApi();
-            const table = document.getElementById('salesProductTable');
-            if (api && typeof api.whenReady === 'function') {
-                api.whenReady(table, fn);
-                return;
-            }
-            if (typeof fn === 'function') fn(null, table);
-        }
-
-        function salesSyncManagedTableLayout() {
-            const table = document.getElementById('salesProductTable');
-            const api = salesManagedTableBodyApi();
-            if (!table || !api) return;
-            if (typeof api.syncLayout === 'function') {
-                api.syncLayout(table);
-            } else if (typeof api.invalidateLayout === 'function') {
-                api.invalidateLayout(table);
-            }
-        }
-
-        function salesBeginManagedTableBodyUpdate() {
-            const api = salesManagedTableBodyApi();
-            if (api && typeof api.beginBodyUpdate === 'function') {
-                api.beginBodyUpdate(document.getElementById('salesProductTable'));
-            }
-        }
-
-        function salesEndManagedTableBodyUpdate() {
-            const api = salesManagedTableBodyApi();
-            if (api && typeof api.endBodyUpdate === 'function') {
-                api.endBodyUpdate(document.getElementById('salesProductTable'));
-            }
-        }
-
         function renderSalesGroupedTable(items) {
             salesApplyManageLayoutSig();
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!tbody) return;
-            salesBeginManagedTableBodyUpdate();
-            try {
+            const M = window.SitjoyManagedPmTable;
+            const run = () => {
                 if (!(items || []).length) {
                     tbody.innerHTML = `<tr><td colspan="${SALES_PRODUCT_TABLE_COLSPAN}" style="text-align:center;">暂无数据</td></tr>`;
                     const host = document.getElementById('salesProductTableHost');
@@ -2687,12 +2648,13 @@
                 if (window.SitjoyRowImageRefresh && typeof SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
                     SitjoyRowImageRefresh.observeLazyThumbsIn(tbody);
                 }
-            } finally {
-                salesEndManagedTableBodyUpdate();
-                salesWhenManagedTableReady(function() {
-                    salesSyncManagedTableLayout();
-                });
-            }
+            };
+            if (M && typeof M.withBodyUpdate === 'function') {
+                M.withBodyUpdate('#salesProductTable', run);
+                if (typeof M.whenReady === 'function') {
+                    M.whenReady('#salesProductTable', () => { if (typeof M.syncLayout === 'function') M.syncLayout('#salesProductTable'); });
+                }
+            } else run();
         }
 
         function bindSalesRowSelectionEvents() {
@@ -5375,7 +5337,8 @@
                     const h = document.getElementById('salesProductTableHost');
                     if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                     salesApplyAggregateToggleLockedAndRefresh();
-                    salesWhenManagedTableReady(function() { salesSyncManagedTableLayout(); });
+                    const M = window.SitjoyManagedPmTable;
+                    if (M && typeof M.whenReady === 'function') M.whenReady('#salesProductTable', () => { if (typeof M.syncLayout === 'function') M.syncLayout('#salesProductTable'); });
                     return;
                 }
                 const items = data.items || [];
@@ -5389,7 +5352,8 @@
                 const h = document.getElementById('salesProductTableHost');
                 if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                 salesApplyAggregateToggleLockedAndRefresh();
-                salesWhenManagedTableReady(function() { salesSyncManagedTableLayout(); });
+                const M2 = window.SitjoyManagedPmTable;
+                if (M2 && typeof M2.whenReady === 'function') M2.whenReady('#salesProductTable', () => { if (typeof M2.syncLayout === 'function') M2.syncLayout('#salesProductTable'); });
             });
         }
 
@@ -5812,9 +5776,12 @@
             bindSalesAggregateSegment();
             initSalesTableInteractionDelegation();
             initSalesGroupedAggregateHelpers();
-            salesWhenManagedTableReady(function() {
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.whenReady === 'function') {
+                M.whenReady('#salesProductTable', () => { loadSalesProductList(); });
+            } else {
                 loadSalesProductList();
-            });
+            }
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),

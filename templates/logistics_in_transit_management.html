@@ -477,6 +477,7 @@ let qtyVerifyFactoryId = 0;
 let qtyVerifyExtraFactoryIds = [];
 let transitConsolidationFactorySelectedIds = [];
 let transitColumnFilters = {};
+let transitManagedTableReady = false;
 let transitListPage = 1;
 let transitListPageSize = 50;
 let transitListTotal = 0;
@@ -823,6 +824,8 @@ function buildTransitServerColumnParams(){
   return columnParams;
 }
 function initTransitManagedTable(){
+  if(transitManagedTableReady)return;
+  transitManagedTableReady=true;
   const M=window.SitjoyManagedPmTable;
   const CF=window.SitjoyColumnFilter;
   if(!M||typeof M.registerServerList!=='function')return;
@@ -1415,29 +1418,24 @@ function loadList(page,options){
   loadOptions().then(()=>{
     fetch(`/api/logistics-in-transit?${query}`).then(r=>r.json()).then(d=>{
       const tb=document.querySelector('#mainTable tbody');
-      const mt=document.querySelector('#mainTable');
-      const mgr=window.SitjoyManagedPmTable;
+      const table=document.querySelector('#mainTable');
       const colSpan=TRANSIT_TABLE_LEAF_COLS;
-      if(mt&&mgr&&typeof mgr.beginBodyUpdate==='function')mgr.beginBodyUpdate(mt);
+      const M=window.SitjoyManagedPmTable;
+      const render=()=>{
       if(d.status!=='success'){
         tb.innerHTML=`<tr><td colspan="${colSpan}" style="text-align:center;color:#a33;">${d.message||'加载失败'}</td></tr>`;
         transitListTotal=0;
         transitListTotalPages=1;
         if(table)table.dataset.serverTotalRows='0';
         syncSelectAllState();
-        if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
-        finishTransitTableBodyRefresh();
         return;
       }
       transitListPage=Number(d.page||nextPage||1);
       transitListPageSize=Number(d.page_size||transitListPageSize||50);
       transitListTotal=Number(d.total||0);
       transitListTotalPages=Math.max(1,Math.ceil(Math.max(0,transitListTotal)/Math.max(1,transitListPageSize)));
-      if(table){
-        table.dataset.serverPaginationMode='server';
-        table.dataset.serverCurrentPage=String(transitListPage);
-        table.dataset.serverPageSize=String(transitListPageSize);
-        table.dataset.serverTotalRows=String(transitListTotal);
+      if(table&&M&&typeof M.updateServerPagerDataset==='function'){
+        M.updateServerPagerDataset(table,{page:transitListPage,pageSize:transitListPageSize,total:transitListTotal});
       }
       const arr=d.items||[];
       const availableIds=new Set(arr.map(i=>Number(i.id||0)).filter(v=>v>0));
@@ -1445,8 +1443,6 @@ function loadList(page,options){
       if(!arr.length){
         tb.innerHTML=`<tr><td colspan="${colSpan}" style="text-align:center;">暂无数据</td></tr>`;
         syncSelectAllState();
-        if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
-        finishTransitTableBodyRefresh();
         return;
       }
       tb.innerHTML=arr.map(i=>buildTransitRecordRowHtml(i)).join('');
@@ -1462,8 +1458,9 @@ function loadList(page,options){
       document.querySelectorAll('.transit-inline-edit').forEach(bindTransitInlineEditElement);
       syncSelectAllState();
       bindPreviewStatusEditors();
-      if(window.SitjoyManagedPmTable&&typeof SitjoyManagedPmTable.syncServerPager==='function')SitjoyManagedPmTable.syncServerPager('#mainTable');
-      finishTransitTableBodyRefresh();
+      };
+      if(M&&typeof M.beginBodyUpdate==='function')M.beginBodyUpdate('#mainTable');
+      try{render();}finally{finishTransitTableBodyRefresh();}
     });
   });
 }

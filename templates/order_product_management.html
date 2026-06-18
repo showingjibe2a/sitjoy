@@ -4521,28 +4521,11 @@
 
         const ORDER_PRODUCT_TABLE_COLSPAN = 28;
 
-        function orderManagedTableBodyApi() {
-            return window.SitjoyManagedPmTable || null;
-        }
-
-        function orderBeginManagedTableBodyUpdate() {
-            const api = orderManagedTableBodyApi();
-            if (api && typeof api.beginBodyUpdate === 'function') {
-                api.beginBodyUpdate(document.getElementById('orderProductTable'));
-            }
-        }
-
-        function orderEndManagedTableBodyUpdate() {
-            const api = orderManagedTableBodyApi();
-            if (api && typeof api.endBodyUpdate === 'function') {
-                api.endBodyUpdate(document.getElementById('orderProductTable'));
-            }
-        }
-
         function renderOrderProductTable(items) {
             const tbody = document.querySelector('#orderProductTable tbody');
             const safeItems = Array.isArray(items) ? items : [];
-            orderBeginManagedTableBodyUpdate();
+            const M = window.SitjoyManagedPmTable;
+            const run = () => {
             const availableIdSet = new Set(safeItems.map(x => String(x.id)));
             Object.keys(previewEditDraft).forEach(id => {
                 if (!availableIdSet.has(String(id))) {
@@ -4555,7 +4538,6 @@
                 syncSelectAllCheckbox();
                 syncPreviewSaveBar();
                 syncOrderBatchFloatBar();
-                orderEndManagedTableBodyUpdate();
                 return;
             }
             tbody.innerHTML = safeItems.map(item => {
@@ -4628,7 +4610,9 @@
             syncSelectAllCheckbox();
             syncPreviewSaveBar();
             syncOrderBatchFloatBar();
-            orderEndManagedTableBodyUpdate();
+            };
+            if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#orderProductTable', run);
+            else run();
         }
 
         function loadOrderProductList() {
@@ -4639,9 +4623,10 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        orderBeginManagedTableBodyUpdate();
-                        tbody.innerHTML = `<tr><td colspan="${ORDER_PRODUCT_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
-                        orderEndManagedTableBodyUpdate();
+                        const M = window.SitjoyManagedPmTable;
+                        const run = () => { tbody.innerHTML = `<tr><td colspan="${ORDER_PRODUCT_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`; };
+                        if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#orderProductTable', run);
+                        else run();
                         return;
                     }
                     orderProductItemsCache = data.items || [];
@@ -4652,9 +4637,10 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    orderBeginManagedTableBodyUpdate();
-                    tbody.innerHTML = `<tr><td colspan="${ORDER_PRODUCT_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
-                    orderEndManagedTableBodyUpdate();
+                    const M = window.SitjoyManagedPmTable;
+                    const run = () => { tbody.innerHTML = `<tr><td colspan="${ORDER_PRODUCT_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`; };
+                    if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#orderProductTable', run);
+                    else run();
                 });
         }
 
@@ -4708,7 +4694,7 @@
         }
 
         function readSelectedOrderProductIdsFromDom() {
-            const api = orderManagedTableBodyApi();
+            const api = window.SitjoyManagedPmTable;
             if (api && typeof api.getSelectedIds === 'function') {
                 return api.getSelectedIds(document.getElementById('orderProductTable')) || [];
             }
@@ -4745,7 +4731,7 @@
             });
             syncSelectAllCheckbox();
             syncOrderBatchFloatBar();
-            const api = orderManagedTableBodyApi();
+            const api = window.SitjoyManagedPmTable;
             if (api && typeof api.syncBatchBar === 'function') {
                 api.syncBatchBar(document.getElementById('orderProductTable'));
             }

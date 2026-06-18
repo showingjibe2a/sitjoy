@@ -551,32 +551,14 @@
                 .catch(err => aaSaveResult({ action: 'delete', isError: true, message: '批量删除失败: ' + err }));
         }
 
-        function recordManagedTableApi() {
-            return window.SitjoyManagedPmTable || null;
-        }
-
-        function beginRecordTableBodyUpdate() {
-            const api = recordManagedTableApi();
-            if (api && typeof api.beginBodyUpdate === 'function') {
-                api.beginBodyUpdate(document.getElementById('recordTable'));
-            }
-        }
-
-        function endRecordTableBodyUpdate() {
-            const api = recordManagedTableApi();
-            if (api && typeof api.endBodyUpdate === 'function') {
-                api.endBodyUpdate(document.getElementById('recordTable'));
-            }
-        }
-
         function renderRecordTable() {
             const tbody = document.querySelector('#recordTable tbody');
             if (!tbody) return;
             const items = recordsFiltered || [];
-            beginRecordTableBodyUpdate();
+            const M = window.SitjoyManagedPmTable;
+            const run = () => {
             if (!items.length) {
                 tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center;">暂无调整记录</td></tr>`;
-                endRecordTableBodyUpdate();
                 syncRecordSelectAll();
                 syncRecordBatchBar();
                 return;
@@ -621,10 +603,12 @@
                     </tr>
                 `;
             }).join('');
-            endRecordTableBodyUpdate();
             syncRecordSelectAll();
             syncRecordBatchBar();
             syncRecordSaveBar();
+            };
+            if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#recordTable', run);
+            else run();
         }
 
         async function deleteRecord(id) {
@@ -654,20 +638,19 @@
             const base = '/api/amazon-ad-adjustment';
             const url = filterAdItemId ? `${base}?ad_item_id=${encodeURIComponent(filterAdItemId)}` : base;
             const tbody = document.querySelector('#recordTable tbody');
-            if (tbody) {
-                beginRecordTableBodyUpdate();
-                tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center;">加载中...</td></tr>`;
-                endRecordTableBodyUpdate();
-            }
+            const M = window.SitjoyManagedPmTable;
+            const setTbody = (html) => {
+                if (!tbody) return;
+                const run = () => { tbody.innerHTML = html; };
+                if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#recordTable', run);
+                else run();
+            };
+            setTbody(`<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center;">加载中...</td></tr>`);
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
-                        if (tbody) {
-                            beginRecordTableBodyUpdate();
-                            tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
-                            endRecordTableBodyUpdate();
-                        }
+                        setTbody(`<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`);
                         if (window.showAppToast) window.showAppToast(data.message || '加载失败', true, 6500);
                         return;
                     }
@@ -678,11 +661,7 @@
                     applyRecordFilter();
                 })
                 .catch(err => {
-                    if (tbody) {
-                        beginRecordTableBodyUpdate();
-                        tbody.innerHTML = `<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${escapeHtml(String(err))}</td></tr>`;
-                        endRecordTableBodyUpdate();
-                    }
+                    setTbody(`<tr><td colspan="${RECORD_TABLE_COLSPAN}" style="text-align:center; color:#a33;">加载失败: ${escapeHtml(String(err))}</td></tr>`);
                     if (window.showAppToast) window.showAppToast('加载失败: ' + err, true, 6500);
                 });
         }
@@ -754,9 +733,9 @@
             parseUrlFilter();
             bindRecordEditEvents();
             bindRecordSelectEvents();
-            const table = document.getElementById('recordTable');
-            if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
-                window.SitjoyManagedPmTable.invalidateLayout(table);
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.whenReady === 'function') {
+                M.whenReady('#recordTable', () => { if (typeof M.syncLayout === 'function') M.syncLayout('#recordTable'); });
             }
             loadRecords();
         });

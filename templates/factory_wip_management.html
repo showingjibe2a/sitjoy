@@ -1327,24 +1327,6 @@ function wipInvalidateManagedTableLayout(){
   }
 }
 
-function wipManagedTableBodyApi() {
-  return window.SitjoyManagedPmTable || null;
-}
-
-function wipBeginManagedTableBodyUpdate() {
-  const api = wipManagedTableBodyApi();
-  if (api && typeof api.beginBodyUpdate === 'function') {
-    api.beginBodyUpdate(document.getElementById('mainTable'));
-  }
-}
-
-function wipEndManagedTableBodyUpdate() {
-  const api = wipManagedTableBodyApi();
-  if (api && typeof api.endBodyUpdate === 'function') {
-    api.endBodyUpdate(document.getElementById('mainTable'));
-  }
-}
-
 function refreshWipTableHeaderSortUi() {
   if (window.SitjoyManagedPmTable && typeof SitjoyManagedPmTable.syncSortUi === 'function') {
     SitjoyManagedPmTable.syncSortUi('#mainTable');
@@ -1355,7 +1337,8 @@ function renderFactoryWipTable(items){
   const tbody = document.querySelector('#mainTable tbody');
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
-  wipBeginManagedTableBodyUpdate();
+  const M = window.SitjoyManagedPmTable;
+  const run = () => {
   if(!rows.length){
     tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;">暂无数据</td></tr>';
     const wipHost0 = document.getElementById('factoryWipTableHost');
@@ -1367,7 +1350,6 @@ function renderFactoryWipTable(items){
     bindFactoryWipEditEvents();
     syncWipSelectAll();
     refreshWipTableHeaderSortUi();
-    wipEndManagedTableBodyUpdate();
     return;
   }
   const html = [];
@@ -1493,7 +1475,9 @@ function renderFactoryWipTable(items){
   bindFactoryWipEditEvents();
   syncWipSelectAll();
   refreshWipTableHeaderSortUi();
-  wipEndManagedTableBodyUpdate();
+  };
+  if (M && typeof M.withBodyUpdate === 'function') M.withBodyUpdate('#mainTable', run);
+  else run();
 }
 
 function initWipGroupedAggregateHelpers(){

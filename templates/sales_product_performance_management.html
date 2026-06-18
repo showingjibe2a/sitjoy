@@ -3466,7 +3466,10 @@
             }
         }
 
+        let perfManagedTableReady = false;
         function initPerfManagedTable() {
+            if (perfManagedTableReady) return;
+            perfManagedTableReady = true;
             const M = window.SitjoyManagedPmTable;
             if (!M || typeof M.registerServerList !== 'function') return;
             M.registerServerList('#salesProductPerformanceTable', {
