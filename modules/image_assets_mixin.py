@@ -175,6 +175,7 @@ class ImageAssetsMixin:
             if parts:
                 _, preview_b64 = self._resources_rel_path_b64(*parts)
         tname = (row.get('type_name') or row.get('image_type_name') or '').strip()
+        dep = int(row.get('is_deprecated') or 0)
         return {
             'image_name': image_name or '',
             'preview_b64': preview_b64,
@@ -184,7 +185,8 @@ class ImageAssetsMixin:
             'image_type_name': tname,
             'description': (row.get('description') or '').strip(),
             'sort_order': self._parse_int(row.get('sort_order')) or 0,
-            'is_deprecated': int(row.get('is_deprecated') or 0),
+            'is_deprecated': dep,
+            'is_enabled': 0 if dep else 1,
         }
 
     def _read_fabric_image_items(self, conn, fabric_id):

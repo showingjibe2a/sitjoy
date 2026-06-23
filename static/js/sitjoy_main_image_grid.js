@@ -87,6 +87,31 @@
     return item;
   };
 
+  MainImageGrid.prototype._buildMergedRenderList = function () {
+    const filterType = this.getFilterType();
+    const list = this.getViewList();
+    const overlay = this.opts.fabricOverlay;
+    const showFabric = overlay && (typeof overlay.isVisible !== 'function' || overlay.isVisible());
+    const fabricItems = overlay && typeof overlay.getItems === 'function' ? overlay.getItems() : [];
+    const hasFabric = !!(showFabric && fabricItems && fabricItems.length);
+    let merged = list.slice();
+    if (hasFabric) {
+      const fabricMarked = fabricItems.slice()
+        .filter((x) => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+        .map((it) => Object.assign({}, it, { is_fabric_image: true }));
+      merged = merged.concat(fabricMarked);
+    }
+    const C = Card();
+    const compareFn = (C && typeof C.defaultImageListCompareWithFabricAfterMain === 'function')
+      ? C.defaultImageListCompareWithFabricAfterMain
+      : ((C && C.defaultImageListCompare) || null);
+    if (C && typeof C.sortItemsByEnabled === 'function') {
+      return C.sortItemsByEnabled(merged, compareFn);
+    }
+    if (compareFn) merged.sort(compareFn);
+    return merged;
+  };
+
   MainImageGrid.prototype.render = function () {
     const grid = this.getGridEl();
     if (!grid) return;
@@ -119,8 +144,8 @@
       return;
     }
 
-    const list = this.getViewList();
-    if (!list.length && !hasFabric) {
+    const list = this._buildMergedRenderList();
+    if (!list.length) {
       grid.innerHTML = `<div class="sj-media-image-empty">${escapeAttr(msgs.filteredEmpty || msgs.empty || '当前筛选下暂无图片')}</div>`;
       return;
     }
@@ -138,13 +163,15 @@
       placeholder.style.opacity = '0.6';
     }
 
-    list.forEach((item, index) => {
-      grid.appendChild(this._createMainCard(item, index, fcOpts, drag));
+    let mainIndex = 0;
+    list.forEach((item) => {
+      if (item && item.is_fabric_image) {
+        grid.appendChild(this._createFabricCard(item, fcOpts));
+      } else {
+        grid.appendChild(this._createMainCard(item, mainIndex, fcOpts, drag));
+        mainIndex += 1;
+      }
     });
-
-    if (hasFabric) {
-      this._appendFabricCards(grid, fabricItems, fcOpts);
-    }
 
     grid.appendChild(placeholder);
     if (this.opts.statusSegments !== false) {
@@ -217,35 +244,27 @@
     return card;
   };
 
-  MainImageGrid.prototype._appendFabricCards = function (grid, fabricItems, fcOpts) {
+  MainImageGrid.prototype._createFabricCard = function (item, fcOpts) {
     const C = Card();
-    const filterType = this.getFilterType();
-    const list = fabricItems.slice()
-      .filter((x) => filterType === '全部' || String(x.image_type_name || '').trim() === filterType);
-    if (C && typeof C.sortItemsByEnabled === 'function') {
-      list.sort(C.defaultImageListCompare);
-    } else {
-      list.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-    }
-
-    list.forEach((item) => {
-      const rawName = String(item.image_name || '');
-      const safeName = escapeAttr(rawName);
-      const card = document.createElement('div');
-      card.className = 'sj-media-image-card sj-media-image-card--static';
-      card.setAttribute('draggable', 'false');
-      const infoHtml = (C && C.buildInfoHtml)
-        ? C.buildInfoHtml(item, Object.assign({}, fcOpts, { readonly: true }))
-        : '';
-      const preview = this.previewUrl(item);
-      card.innerHTML = `
-        <div class="sj-fabric-badge-anchor"><span class="sj-fabric-badge">面料</span></div>
-        <div class="sj-media-image-preview-wrap">
-          <img src="${escapeAttr(preview)}" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
-        </div>
-        ${infoHtml}`;
-      grid.appendChild(card);
-    });
+    const rawName = String(item.image_name || '');
+    const safeName = escapeAttr(rawName);
+    const card = document.createElement('div');
+    card.className = (C && C.buildCardClassName)
+      ? C.buildCardClassName(item, 'sj-media-image-card--static')
+      : 'sj-media-image-card sj-media-image-card--static';
+    card.setAttribute('draggable', 'false');
+    const infoHtml = (C && C.buildInfoHtml)
+      ? C.buildInfoHtml(item, Object.assign({}, fcOpts, { readonly: true }))
+      : '';
+    const preview = this.previewUrl(item);
+    const previewHtml = preview
+      ? `<img src="${escapeAttr(preview)}" alt="${safeName}" class="sj-media-image-preview" loading="lazy">`
+      : '<div style="width:100%;height:100%;border:1px dashed var(--morandi-sand);border-radius:12px;background:rgba(0,0,0,0.02);"></div>';
+    card.innerHTML = `
+      <div class="sj-fabric-badge-anchor"><span class="sj-fabric-badge">面料</span></div>
+      <div class="sj-media-image-preview-wrap">${previewHtml}</div>
+      ${infoHtml}`;
+    return card;
   };
 
   MainImageGrid.prototype._bindStatusSegments = function (grid) {

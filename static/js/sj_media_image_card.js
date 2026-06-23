@@ -54,10 +54,28 @@
     return display || '-';
   }
 
+  function isFabricOverlayImage(item) {
+    return !!(item && (item.is_fabric_image || item.is_fabric));
+  }
+
   function defaultImageListCompare(a, b) {
     const ta = String(a.image_type_name || '').trim();
     const tb = String(b.image_type_name || '').trim();
     if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+    const sa = Number(a.sort_order || 0);
+    const sb = Number(b.sort_order || 0);
+    if (sa !== sb) return sa - sb;
+    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+  }
+
+  /** 同类型下主图在前、面料图在后，其余与 defaultImageListCompare 一致。 */
+  function defaultImageListCompareWithFabricAfterMain(a, b) {
+    const ta = String(a.image_type_name || '').trim();
+    const tb = String(b.image_type_name || '').trim();
+    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+    const fa = isFabricOverlayImage(a) ? 1 : 0;
+    const fb = isFabricOverlayImage(b) ? 1 : 0;
+    if (fa !== fb) return fa - fb;
     const sa = Number(a.sort_order || 0);
     const sb = Number(b.sort_order || 0);
     if (sa !== sb) return sa - sb;
@@ -209,7 +227,9 @@
   global.SjMediaImageCard = {
     escapeHtml,
     imageIsEnabled,
+    isFabricOverlayImage,
     defaultImageListCompare,
+    defaultImageListCompareWithFabricAfterMain,
     sortItemsByEnabled,
     buildCardClassName,
     applyCardStatusClasses,
