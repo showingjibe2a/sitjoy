@@ -8,6 +8,51 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/main-image-manager.css">
     <style>
+        .spi-panel-hidden { display: none !important; }
+        .spi-export-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .spi-export-section-body {
+            grid-template-columns: 1fr;
+        }
+        .spi-field-label {
+            font-size: 0.88rem;
+            line-height: 1.35;
+            color: rgba(42, 36, 32, 0.88);
+        }
+        .spi-num-input {
+            width: 4.25rem;
+            min-width: 4.25rem;
+            max-width: 4.25rem;
+            padding: 0.32rem 0.45rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            font-size: 0.88rem !important;
+            box-sizing: border-box;
+            background: #fff !important;
+        }
+        .spi-num-input:focus {
+            outline: none !important;
+            border-color: var(--morandi-ink) !important;
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+        }
+        .spi-option-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.45rem 0.55rem;
+            margin-top: 0.35rem;
+        }
+        .spi-flex-panel { margin-top: 0.35rem; }
+        .spi-flex-panel .form-group { margin-bottom: 0.55rem; }
+        .spi-flex-panel .form-group:last-child { margin-bottom: 0; }
+        .spi-export-section-body .form-group { margin-bottom: 0; }
+        .spi-file-input {
+            font-size: 0.88rem;
+            max-width: 100%;
+        }
         .required-field, .optional-field {
             padding: 0.65rem 0.8rem !important;
             border-radius: 6px !important;
@@ -447,6 +492,9 @@
                             </div>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" type="button" onclick="SalesPlatformInventoryExport.openAmazon()">下载亚马逊库存</button>
+                        <button class="btn-secondary" type="button" onclick="SalesPlatformInventoryExport.openWayfair()">下载Wayfair库存</button>
+                        <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-secondary" onclick="downloadSalesProductTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerSalesProductUpload()">批量上传</button>
                         <input type="file" id="salesProductUploadInput" accept=".xlsx" style="display:none;">
@@ -865,6 +913,140 @@
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
+
+    <div class="pm-modal" id="spiExportModal">
+        <div class="pm-modal-content" style="max-width: 640px;">
+            <h3 id="spiExportModalTitle" style="margin-top:0;">下载平台库存</h3>
+            <div class="spi-export-body">
+                <div class="pm-section">
+                    <h4>库存计算</h4>
+                    <div class="pm-section-body pm-form spi-export-section-body">
+
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">成套规则<span class="help-dot" data-tip="严格成套：任一配件海外仓为 0 则可售为 0。部分缺货可算：满足下方条件后，仅对有库存配件取 min 成套数。"></span></label>
+                        <div class="status-segment status-segment--inline" id="spiCalcModeSegment" data-value="strict_sets">
+                            <button type="button" class="status-pill is-active" data-value="strict_sets">严格成套</button>
+                            <button type="button" class="status-pill" data-value="flexible">部分缺货可算</button>
+                        </div>
+                    </div>
+
+                    <div id="spiFlexPanel" class="spi-panel-hidden spi-flex-panel pm-inline-panel">
+                        <div class="form-group pm-form-full">
+                            <label class="label-help spi-field-label">允许缺货配件数<span class="help-dot" data-tip="缺货配件数不超过此值时，缺货行不参与 min 计算。"></span></label>
+                            <div class="spi-option-row">
+                                <span class="spi-field-label">≤</span>
+                                <input type="number" id="spiMaxMissingParts" class="spi-num-input" min="0" step="1" value="2">
+                                <span class="spi-field-label">件</span>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label class="label-help spi-field-label">至少有货配件数<span class="help-dot" data-tip="有库存的下单 SKU 数达到此值，才允许按部分缺货规则计算。"></span></label>
+                            <div class="spi-option-row">
+                                <span class="spi-field-label">≥</span>
+                                <input type="number" id="spiMinInStockParts" class="spi-num-input" min="0" step="1" value="2">
+                                <span class="spi-field-label">件</span>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label class="label-help spi-field-label">两条件关系<span class="help-dot" data-tip="缺货上限与有货下限同时生效时的逻辑关系。"></span></label>
+                            <div class="status-segment status-segment--inline" id="spiFlexLogicSegment" data-value="and">
+                                <button type="button" class="status-pill is-active" data-value="and">且</button>
+                                <button type="button" class="status-pill" data-value="or">或</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">库存上限<span class="help-dot" data-tip="启用后限制显示的最大可售套数，用于营造紧缺感。"></span></label>
+                        <div class="spi-option-row">
+                            <div class="status-segment status-segment--inline" id="spiCapEnabledSegment" data-value="1">
+                                <button type="button" class="status-pill status-pill--yes is-active" data-value="1">启用</button>
+                                <button type="button" class="status-pill status-pill--no" data-value="0">关闭</button>
+                            </div>
+                            <span class="spi-field-label">上限</span>
+                            <input type="number" id="spiCapMax" class="spi-num-input" min="0" step="1" value="20">
+                        </div>
+                    </div>
+
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">大规格差异<span class="help-dot" data-tip="按 BOM 总件数与最少规格的差值扣减。仅当海外仓可售 &gt; 最少保留时，扣减后才以最少保留为底；否则以可售为底（不抬升）。可售 ≤ 最小不同步阈值时最终归零。"></span></label>
+                        <div class="spi-option-row">
+                            <div class="status-segment status-segment--inline" id="spiSpecGapEnabledSegment" data-value="1">
+                                <button type="button" class="status-pill status-pill--yes is-active" data-value="1">启用</button>
+                                <button type="button" class="status-pill status-pill--no" data-value="0">关闭</button>
+                            </div>
+                            <span class="spi-field-label">每多 1 件减</span>
+                            <input type="number" id="spiSpecGapPerPart" class="spi-num-input" min="0" step="1" value="1">
+                            <span class="spi-field-label">套，最少保留</span>
+                            <input type="number" id="spiSpecGapMin" class="spi-num-input" min="0" step="1" value="0">
+                            <span class="spi-field-label">套</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">最小不同步库存<span class="help-dot" data-tip="计算结果 ≤ 此值时，导出填 0（预留安全库存不同步到平台）。设为 0 表示不启用。"></span></label>
+                        <div class="spi-option-row">
+                            <span class="spi-field-label">≤</span>
+                            <input type="number" id="spiMinNosyncQty" class="spi-num-input" min="0" step="1" value="0">
+                            <span class="spi-field-label">套时同步为 0</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">颜色梯度<span class="help-dot" data-tip="同一父体下按面料排序：第 2 个颜色起，每升一档从可售套数中再扣减（仅在有可售库存时生效）。留用/弃用 SKU 不参与。"></span></label>
+                        <div class="spi-option-row">
+                            <div class="status-segment status-segment--inline" id="spiColorGapEnabledSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--yes" data-value="1">启用</button>
+                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">关闭</button>
+                            </div>
+                            <span class="spi-field-label">每多 1 个颜色减</span>
+                            <input type="number" id="spiColorGapPerRank" class="spi-num-input" min="0" step="1" value="1">
+                            <span class="spi-field-label">套</span>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div id="spiAmazonPanel" class="pm-section">
+                    <h4>Amazon 导出</h4>
+                    <div class="pm-section-body pm-form spi-export-section-body">
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">方式<span class="help-dot" data-tip="系统生成：按所选店铺 SKU 输出 txt。上传填写：保留上传文件结构，仅回填 quantity。"></span></label>
+                        <div class="status-segment status-segment--inline" id="spiAmazonModeSegment" data-value="generate">
+                            <button type="button" class="status-pill is-active" data-value="generate">系统生成</button>
+                            <button type="button" class="status-pill" data-value="fill">上传填写</button>
+                        </div>
+                    </div>
+                    <div id="spiAmazonGenerateWrap" class="form-group pm-form-full">
+                        <label for="spiAmazonShop" class="label-help">店铺<span class="required-asterisk">*</span><span class="help-dot" data-tip="系统生成时仅导出该亚马逊店铺下的销售平台 SKU。"></span></label>
+                        <select id="spiAmazonShop" class="required-field">
+                            <option value="">请选择亚马逊店铺</option>
+                        </select>
+                    </div>
+                    <div id="spiAmazonUploadWrap" class="form-group pm-form-full spi-panel-hidden">
+                        <label for="spiAmazonFile" class="label-help">上传 txt<span class="required-asterisk">*</span><span class="help-dot" data-tip="Tab 或逗号分隔，需含 sku 与 quantity 列。"></span></label>
+                        <input type="file" id="spiAmazonFile" class="spi-file-input" accept=".txt,text/plain">
+                    </div>
+                    </div>
+                </div>
+
+                <div id="spiWayfairPanel" class="pm-section spi-panel-hidden">
+                    <h4>Wayfair 导出</h4>
+                    <div class="pm-section-body pm-form spi-export-section-body">
+                    <div class="form-group pm-form-full">
+                        <label for="spiWayfairFile" class="label-help">上传 csv 模板<span class="required-asterisk">*</span><span class="help-dot" data-tip="需含 Supplier ID、Supplier Part#、In Stock 列；按 Supplier ID（海外仓 Wayfair ID）与 Supplier Part#（销售平台 SKU）匹配并填写 In Stock，其余列保持不变。"></span></label>
+                        <input type="file" id="spiWayfairFile" class="spi-file-input" accept=".csv,text/csv">
+                    </div>
+                    </div>
+                </div>
+            </div>
+            <div id="spiExportStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="SalesPlatformInventoryExport.close()">取消</button>
+                <button class="btn-primary" type="button" onclick="SalesPlatformInventoryExport.submit()">下载</button>
+            </div>
+        </div>
+    </div>
 
     <div id="uploadProgress" class="upload-progress" aria-live="polite">
         <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
@@ -5545,6 +5727,7 @@
                 renderParentShopOptions();
             });
         }
+        window.getSalesShopOptions = function() { return shopOptions || []; };
 
         function loadSkuFamilyOptions() {
             return fetch('/api/sku').then(r => r.json()).then(data => {
@@ -5857,6 +6040,7 @@
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>
     <script src="/static/js/sitjoy_main_image_grid.js"></script>
+    <script src="/static/js/sales_platform_inventory_export.js"></script>
 </body>
 </html>
 
