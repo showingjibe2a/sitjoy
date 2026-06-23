@@ -33,7 +33,7 @@
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin:0;">
                             <span class="pm-search-title">搜索</span>
-                            <input type="text" id="searchInput" placeholder="搜索SKU/仓库">
+                            <input type="text" id="searchInput" placeholder="搜索 SKU / 仓库 / Wayfair ID">
                             <button class="btn-primary" onclick="loadList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
@@ -56,13 +56,14 @@
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="inventorySelectAll"></th>
                             <th>仓库</th>
+                            <th>Wayfair ID</th>
                             <th>SKU</th>
                             <th>在库数量</th>
                             <th style="width:170px;">更新时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
-                    <tbody><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
+                    <tbody><tr><td colspan="7" style="text-align:center;">加载中...</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -103,7 +104,17 @@
         let orderProducts = [];
         let currentUploadMode = 'partial';
         let selectedInventoryIds = new Set();
-        function showStatus(msg, err){ if (window.showPageStatus) window.showPageStatus(msg, err); }
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        function formatWayfairId(value) {
+            const text = String(value || '').trim();
+            return text || '-';
+        }
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
@@ -223,15 +234,15 @@
             const url = q ? `/api/logistics-warehouse-inventory?q=${encodeURIComponent(q)}` : '/api/logistics-warehouse-inventory';
             fetch(url).then(r=>r.json()).then(data=>{
                 const tbody = document.querySelector('#mainTable tbody');
-                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
                 const items = data.items || [];
                 const availableIds = new Set(items.map(item => Number(item.id || 0)).filter(v => v > 0));
                 selectedInventoryIds = new Set(Array.from(selectedInventoryIds).filter(id => availableIds.has(id)));
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>'; syncInventorySelectAll(); return; }
-                tbody.innerHTML = items.map(item => `<tr><td style="text-align:center;"><input type="checkbox" class="inventory-row-checkbox row-check" data-id="${item.id}" ${selectedInventoryIds.has(Number(item.id)) ? 'checked' : ''}></td><td>${item.warehouse_name||''}</td><td>${item.sku||''}</td><td>${item.available_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; syncInventorySelectAll(); return; }
+                tbody.innerHTML = items.map(item => `<tr><td style="text-align:center;"><input type="checkbox" class="inventory-row-checkbox row-check" data-id="${item.id}" ${selectedInventoryIds.has(Number(item.id)) ? 'checked' : ''}></td><td>${escapeHtml(item.warehouse_name||'')}</td><td>${escapeHtml(formatWayfairId(item.wayfair_id))}</td><td>${escapeHtml(item.sku||'')}</td><td>${item.available_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
                 bindInventoryRowSelectionEvents();
                 syncInventorySelectAll();
-            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; syncInventorySelectAll(); });
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; syncInventorySelectAll(); });
         }
         function downloadTemplate(){ window.location.href = '/api/logistics-warehouse-inventory-template'; }
         function downloadStockSummaryBySku(){ window.location.href = '/api/logistics-warehouse-inventory?action=download_stock_summary'; }

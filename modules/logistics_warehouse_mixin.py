@@ -2843,7 +2843,7 @@ class LogisticsWarehouseMixin:
                     with conn.cursor() as cur:
                         sql = """
                             SELECT i.id, i.warehouse_id, i.order_product_id, i.available_qty,
-                                   i.updated_at, w.warehouse_name, op.sku
+                                   i.updated_at, w.warehouse_name, w.wayfair_id, op.sku
                             FROM logistics_overseas_inventory i
                             JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
                             JOIN order_products op ON op.id = i.order_product_id
@@ -2854,9 +2854,9 @@ class LogisticsWarehouseMixin:
                             filters.append("i.warehouse_id=%s")
                             params.append(warehouse_id)
                         if keyword:
-                            filters.append("(op.sku LIKE %s OR w.warehouse_name LIKE %s)")
+                            filters.append("(op.sku LIKE %s OR w.warehouse_name LIKE %s OR COALESCE(w.wayfair_id, '') LIKE %s)")
                             like = f"%{keyword}%"
-                            params.extend([like, like])
+                            params.extend([like, like, like])
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
                         cur.execute(sql + where_sql + " ORDER BY i.id DESC", params)
                         rows = cur.fetchall() or []
