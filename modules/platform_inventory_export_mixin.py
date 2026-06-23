@@ -4,6 +4,7 @@ import cgi
 import csv
 import io
 import json
+import math
 from datetime import datetime
 from urllib.parse import quote
 
@@ -70,11 +71,6 @@ class PlatformInventoryExportMixin:
             min_nosync_qty = max(0, int(data.get('min_nosync_qty', 0)))
         except Exception:
             min_nosync_qty = 0
-        color_gap_enabled = self._parse_bool_flag(data.get('color_gap_enabled'), default=False)
-        try:
-            color_gap_per_rank = max(0, int(data.get('color_gap_per_rank', 1)))
-        except Exception:
-            color_gap_per_rank = 1
         shop_id = self._parse_int(data.get('shop_id'))
         return {
             'calc_mode': calc_mode,
@@ -87,8 +83,6 @@ class PlatformInventoryExportMixin:
             'spec_gap_per_part': spec_gap_per_part,
             'spec_gap_min': spec_gap_min,
             'min_nosync_qty': min_nosync_qty,
-            'color_gap_enabled': color_gap_enabled,
-            'color_gap_per_rank': color_gap_per_rank,
             'shop_id': shop_id,
         }
 
@@ -105,7 +99,7 @@ class PlatformInventoryExportMixin:
 
     def _compute_platform_inventory_qty(
         self, bom_links, inv_by_op, opts,
-        bom_units=0, min_bom_units=0, color_rank=0,
+        bom_units=0, min_bom_units=0, fabric_share_ratio=1.0,
     ):
         """按 BOM 与选项计算可售套数。"""
         opts = opts or {}
@@ -152,11 +146,13 @@ class PlatformInventoryExportMixin:
                     sellable = max(retain_min, deducted)
                 else:
                     sellable = max(0, deducted)
-        if opts.get('color_gap_enabled') and int(sellable) > 0:
-            rank = max(0, int(color_rank or 0))
-            if rank > 0:
-                step = max(0, int(opts.get('color_gap_per_rank') or 0))
-                sellable = max(0, int(sellable) - rank * step)
+        try:
+            share = float(fabric_share_ratio if fabric_share_ratio is not None else 1.0)
+        except Exception:
+            share = 1.0
+        share = max(0.0, min(1.0, share))
+        if share < 1.0 and int(sellable) > 0:
+            sellable = int(math.floor(int(sellable) * share))
         if opts.get('cap_enabled'):
             sellable = min(int(sellable), int(opts.get('cap_max') or 0))
         min_nosync = max(0, int(opts.get('min_nosync_qty') or 0))
@@ -272,48 +268,12 @@ class PlatformInventoryExportMixin:
             for vid in ids
         }
         min_units = min(bom_units_by_vid.values()) if bom_units_by_vid else 0
-        color_ranks = self._inventory_export_color_ranks(conn, ids)
-        return links_by_vid, bom_units_by_vid, min_units, color_ranks
-
-    def _inventory_export_color_ranks(self, conn, variant_ids):
-        """同父体下按面料 ID 排序，得到颜色梯度序号（0=基准色）。"""
-        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
-        if not ids:
-            return {}
-        ph = ','.join(['%s'] * len(ids))
-        rows = []
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT v.id AS variant_id,
-                       COALESCE(MIN(sp.parent_id), 0) AS parent_id,
-                       COALESCE(v.fabric_id, 0) AS fabric_id
-                FROM sales_product_variants v
-                LEFT JOIN sales_products sp ON sp.variant_id = v.id
-                WHERE v.id IN ({ph})
-                GROUP BY v.id, v.fabric_id
-                """,
-                tuple(ids),
-            )
-            rows = cur.fetchall() or []
-        by_parent = {}
-        for row in rows:
-            vid = self._parse_int(row.get('variant_id'))
-            if not vid:
-                continue
-            parent_key = self._parse_int(row.get('parent_id')) or vid
-            fabric_id = self._parse_int(row.get('fabric_id')) or 0
-            by_parent.setdefault(parent_key, []).append((vid, fabric_id))
-        ranks = {}
-        for _parent_key, items in by_parent.items():
-            items.sort(key=lambda x: (x[1], x[0]))
-            for rank, (vid, _fid) in enumerate(items):
-                ranks[vid] = rank
-        return ranks
+        fabric_shares = self._fabric_share_map_for_variants(conn, ids)
+        return links_by_vid, bom_units_by_vid, min_units, fabric_shares
 
     def _export_variant_qty(
         self, rec, variant_id, links, inv_by_op, opts,
-        bom_units_by_vid, min_bom_units, color_ranks,
+        bom_units_by_vid, min_bom_units, fabric_shares,
     ):
         if rec and not self._sales_product_status_exportable(rec.get('product_status')):
             return 0
@@ -326,14 +286,14 @@ class PlatformInventoryExportMixin:
             opts,
             bom_units=bom_units_by_vid.get(vid, 0),
             min_bom_units=min_bom_units,
-            color_rank=color_ranks.get(vid, 0),
+            fabric_share_ratio=fabric_shares.get(vid, 1.0),
         )
 
     def _inventory_export_qty_for_variant(self, conn, variant_id, opts, wayfair_id=None):
         vid = self._parse_int(variant_id)
         if not vid:
             return 0
-        links_by_vid, bom_units_by_vid, min_units, color_ranks = self._inventory_export_bom_meta(conn, [vid])
+        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, [vid])
         links = links_by_vid.get(vid) or []
         if not links:
             return 0
@@ -346,7 +306,7 @@ class PlatformInventoryExportMixin:
             links, inv_by_op, opts,
             bom_units=bom_units_by_vid.get(vid, 0),
             min_bom_units=min_units,
-            color_rank=color_ranks.get(vid, 0),
+            fabric_share_ratio=fabric_shares.get(vid, 1.0),
         )
 
     def _parse_export_multipart(self, environ):
@@ -392,7 +352,7 @@ class PlatformInventoryExportMixin:
         if shop_id and not sku_map:
             raise ValueError('所选店铺下无亚马逊销售产品')
         variant_ids = sorted({v['variant_id'] for v in sku_map.values() if v.get('variant_id')})
-        links_by_vid, bom_units_by_vid, min_units, color_ranks = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
@@ -409,7 +369,7 @@ class PlatformInventoryExportMixin:
             links = links_by_vid.get(vid) or []
             qty = self._export_variant_qty(
                 rec, vid, links, inv_by_op, opts,
-                bom_units_by_vid, min_units, color_ranks,
+                bom_units_by_vid, min_units, fabric_shares,
             )
             rows.append((sku, qty))
         return rows
@@ -450,7 +410,7 @@ class PlatformInventoryExportMixin:
             for s in sku_list
             if s in sku_map and sku_map[s].get('variant_id')
         })
-        links_by_vid, bom_units_by_vid, min_units, color_ranks = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
@@ -468,7 +428,7 @@ class PlatformInventoryExportMixin:
             links = links_by_vid.get(vid) or []
             qty_by_sku[sku] = self._export_variant_qty(
                 rec, vid, links, inv_by_op, opts,
-                bom_units_by_vid, min_units, color_ranks,
+                bom_units_by_vid, min_units, fabric_shares,
             )
         text = (file_bytes or b'').decode('utf-8-sig', errors='replace')
         lines = text.splitlines()
@@ -552,7 +512,7 @@ class PlatformInventoryExportMixin:
         sku_map_all = self._load_sales_products_platform_sku_index(conn, 'wayfair')
         sku_map = {part: sku_map_all[part] for part in parts_needed if part in sku_map_all}
         variant_ids = sorted({rec['variant_id'] for rec in sku_map.values() if rec.get('variant_id')})
-        links_by_vid, bom_units_by_vid, min_units, color_ranks = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
@@ -578,7 +538,7 @@ class PlatformInventoryExportMixin:
                 inv_by_op = self._overseas_qty_by_wayfair_id(op_ids, sid, wayfair_matrix)
                 qty_cache[cache_key] = self._export_variant_qty(
                     rec, vid, links, inv_by_op, opts,
-                    bom_units_by_vid, min_units, color_ranks,
+                    bom_units_by_vid, min_units, fabric_shares,
                 )
             row[col_map['in_stock']] = str(int(qty_cache[cache_key]))
             filled += 1

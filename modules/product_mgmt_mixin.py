@@ -592,16 +592,33 @@ class ProductManagementMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def _replace_sku_family_fabric_ids(self, conn, sku_family_id, fabric_ids):
+        sfid = self._parse_int(sku_family_id)
+        if not sfid:
+            return
+        fabric_ids = sorted({int(self._parse_int(x)) for x in (fabric_ids or []) if self._parse_int(x)})
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM fabric_product_families WHERE sku_family_id=%s", (sku_family_id,))
-
+            if fabric_ids:
+                ph = ','.join(['%s'] * len(fabric_ids))
+                cur.execute(
+                    f"DELETE FROM fabric_product_families WHERE sku_family_id=%s AND fabric_id NOT IN ({ph})",
+                    tuple([sfid] + fabric_ids),
+                )
+            else:
+                cur.execute("DELETE FROM fabric_product_families WHERE sku_family_id=%s", (sfid,))
+            cur.execute(
+                "SELECT fabric_id FROM fabric_product_families WHERE sku_family_id=%s",
+                (sfid,),
+            )
+            existing = {self._parse_int(r.get('fabric_id')) for r in (cur.fetchall() or [])}
         if not fabric_ids:
             return
         with conn.cursor() as cur:
             for fabric_id in fabric_ids:
+                if fabric_id in existing:
+                    continue
                 cur.execute(
-                    "INSERT IGNORE INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
-                    (fabric_id, sku_family_id)
+                    "INSERT INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
+                    (fabric_id, sfid),
                 )
 
     def _ensure_listing_sku_folder(self, sku_family):

@@ -1,0 +1,46 @@
+<div class="pm-modal" id="fabricInventoryShareModal" aria-hidden="true">
+    <div class="pm-modal-content pm-modal-content--wide">
+        <h3 style="margin-top:0;">面料库存比例</h3>
+        <p class="spi-field-label" style="margin:0 0 0.75rem;">按货号维护各面料相对最高历史销量的库存展示比例（最高 100%）。用于平台库存导出时的颜色分配。</p>
+        <div class="pm-section">
+            <div class="pm-section-body pm-form" style="grid-template-columns:1fr 1fr;">
+                <div class="form-group">
+                    <label for="fisSkuFamily">货号</label>
+                    <select id="fisSkuFamily" class="required-field">
+                        <option value="">请选择货号</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="fisHistMonths">统计月数</label>
+                    <input type="number" id="fisHistMonths" class="spi-num-input" style="width:100%;max-width:none;" min="1" max="36" step="1" value="12">
+                </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.35rem;">
+                <button type="button" class="btn-secondary" id="fisReloadBtn">刷新</button>
+                <button type="button" class="btn-accent" id="fisCalcBtn">统计历史销量</button>
+            </div>
+        </div>
+        <div id="fisMetaText" class="spi-field-label" style="margin:0.65rem 0 0.45rem;"></div>
+        <div style="overflow-x:auto; max-height:52vh;">
+            <table class="pm-table" id="fisRatioTable" data-disable-table-manage="1">
+                <thead>
+                    <tr>
+                        <th>面料编码</th>
+                        <th>面料英文名</th>
+                        <th style="width:110px;">历史销量</th>
+                        <th style="width:120px;">建议比例</th>
+                        <th style="width:140px;">库存比例</th>
+                    </tr>
+                </thead>
+                <tbody id="fisRatioTbody">
+                    <tr><td colspan="5" style="text-align:center;">请选择货号</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="fisStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+        <div class="pm-modal-actions">
+            <button type="button" class="btn-secondary" id="fisCloseBtn">关闭</button>
+            <button type="button" class="btn-primary" id="fisSaveBtn">保存</button>
+        </div>
+    </div>
+</div>

@@ -46,10 +46,6 @@
 
     min_nosync_qty: 0,
 
-    color_gap_enabled: false,
-
-    color_gap_per_rank: 1,
-
   };
 
 
@@ -342,10 +338,6 @@
 
       min_nosync_qty: Math.max(0, Number(document.getElementById('spiMinNosyncQty')?.value || 0)),
 
-      color_gap_enabled: segmentValue('spiColorGapEnabledSegment', '0') === '1',
-
-      color_gap_per_rank: Math.max(0, Number(document.getElementById('spiColorGapPerRank')?.value || 1)),
-
     };
 
     if (platform === 'amazon') {
@@ -376,8 +368,6 @@
 
     syncSegmentUi('spiSpecGapEnabledSegment', p.spec_gap_enabled ? '1' : '0');
 
-    syncSegmentUi('spiColorGapEnabledSegment', p.color_gap_enabled ? '1' : '0');
-
     if (pf === 'amazon') {
 
       syncSegmentUi('spiAmazonModeSegment', p.amazon_mode);
@@ -396,8 +386,6 @@
 
     const minNosync = document.getElementById('spiMinNosyncQty');
 
-    const colorGapN = document.getElementById('spiColorGapPerRank');
-
     const shopSel = document.getElementById('spiAmazonShop');
 
     if (maxMissing) maxMissing.value = String(p.max_missing_parts);
@@ -411,8 +399,6 @@
     if (gapMin) gapMin.value = String(p.spec_gap_min);
 
     if (minNosync) minNosync.value = String(p.min_nosync_qty);
-
-    if (colorGapN) colorGapN.value = String(p.color_gap_per_rank);
 
     if (shopSel && p.shop_id) shopSel.value = String(p.shop_id);
 
@@ -686,10 +672,6 @@
 
       min_nosync_qty: prefs.min_nosync_qty,
 
-      color_gap_enabled: prefs.color_gap_enabled,
-
-      color_gap_per_rank: prefs.color_gap_per_rank,
-
       shop_id: prefs.shop_id ? Number(prefs.shop_id) : null,
 
     };
@@ -848,8 +830,6 @@
 
       'spiMinNosyncQty',
 
-      'spiColorGapPerRank',
-
       'spiAmazonShop',
 
     ].forEach(id => {
@@ -883,8 +863,6 @@
     bindSegment('spiCapEnabledSegment');
 
     bindSegment('spiSpecGapEnabledSegment');
-
-    bindSegment('spiColorGapEnabledSegment');
 
     bindSegment('spiAmazonModeSegment', syncAmazonModeUi);
 

@@ -35,6 +35,7 @@ from modules.product_mgmt_mixin import ProductManagementMixin
 from modules.request_routing_mixin import API_PERMISSION_MAP, PAGE_TEMPLATE_MAP, RequestRoutingMixin
 from modules.aplus_mixin import AplusMixin
 from modules.sales_management_mixin import SalesManagementMixin
+from modules.fabric_inventory_share_mixin import FabricInventoryShareMixin
 from modules.platform_inventory_export_mixin import PlatformInventoryExportMixin
 from modules.sales_product_mixin import SalesProductMixin
 from modules.go_play_mixin import GoPlayMixin
@@ -78,6 +79,7 @@ class WSGIApp(
     ImageAssetsMixin,         # 图片资产中心（image_assets + mapping 统一入库）
     AplusMixin,               # A+ 页面
     SalesManagementMixin,     # 销售管理
+    FabricInventoryShareMixin,  # 面料库存展示比例
     PlatformInventoryExportMixin,  # 平台库存导出
     GoPlayMixin,              # 小组件：围棋对弈
     MahjongPlayMixin,         # 小组件：麻将
