@@ -77,7 +77,7 @@ class PlatformInventoryExportMixin:
             fabric_share_min_qty = max(0, int(data.get('fabric_share_min_qty', 0)))
         except Exception:
             fabric_share_min_qty = 0
-        return {
+        out = {
             'calc_mode': calc_mode,
             'max_missing_parts': max_missing_parts,
             'min_in_stock_parts': min_in_stock_parts,
@@ -92,6 +92,10 @@ class PlatformInventoryExportMixin:
             'use_fabric_share': use_fabric_share,
             'fabric_share_min_qty': fabric_share_min_qty,
         }
+        platform = str(data.get('platform') or '').strip().lower()
+        if platform in ('amazon', 'wayfair'):
+            out['platform'] = platform
+        return out
 
     def _sales_product_status_exportable(self, status):
         """仅「启用」状态参与系统生成库存；留用/弃用导出为 0。"""

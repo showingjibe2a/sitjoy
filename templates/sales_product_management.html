@@ -53,12 +53,17 @@
             font-size: 0.88rem;
             max-width: 100%;
         }
-        .spi-preview-modal .pm-modal-content {
-            max-width: min(960px, 96vw);
+        .spi-preview-modal.pm-modal-content--wide {
+            max-width: min(1240px, 96vw);
+            width: min(1240px, 96vw);
         }
-        .spi-preview-table-wrap {
-            max-height: min(60vh, 520px);
-            overflow: auto;
+        @supports selector(:has(*)) {
+            .spi-preview-modal.pm-modal-content--wide:has(> .pm-modal-scroll) {
+                min-height: min(820px, calc(100vh - 80px));
+                max-height: calc(100vh - 48px);
+            }
+        }
+        .spi-preview-scroll {
             margin-top: 0.75rem;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
@@ -1100,10 +1105,10 @@
     </div>
 
     <div class="pm-modal" id="spiPreviewModal">
-        <div class="pm-modal-content spi-preview-modal">
+        <div class="pm-modal-content spi-preview-modal pm-modal-content--wide">
             <h3 id="spiPreviewModalTitle" style="margin-top:0;">库存导出预览</h3>
             <div id="spiPreviewSummary" class="spi-preview-summary"></div>
-            <div class="spi-preview-table-wrap">
+            <div class="pm-modal-scroll spi-preview-scroll">
                 <table class="spi-preview-table">
                     <thead>
                         <tr>

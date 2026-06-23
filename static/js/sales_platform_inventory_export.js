@@ -760,7 +760,7 @@
         <td class="${remarkClass}">${escapeHtmlLite(remarkText)}</td>
       </tr>`;
     }).join('');
-    const wrap = tbody.closest('.spi-preview-table-wrap');
+    const wrap = tbody.closest('.spi-preview-scroll');
     if (wrap && global.SitjoyRowImageRefresh && typeof global.SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
       global.SitjoyRowImageRefresh.observeLazyThumbsIn(wrap);
     }
