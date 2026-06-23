@@ -698,6 +698,155 @@
 
 
 
+  function escapeHtmlLite(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function escapeAttrLite(value) {
+    return escapeHtmlLite(value);
+  }
+
+  function previewThumbHtml(previewB64) {
+    const b64 = String(previewB64 || '').trim();
+    if (!b64) return '<span class="sj-table-thumb-empty">暂无</span>';
+    const src = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60`;
+    return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttrLite(src)}" aria-hidden="true"></span>`;
+  }
+
+  function setPreviewStatus(msg, isError) {
+    const el = document.getElementById('spiPreviewStatus');
+    if (!el) return;
+    const text = String(msg || '').trim();
+    if (!text) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.style.display = '';
+    el.className = 'response' + (isError ? ' error' : '');
+    el.textContent = text;
+  }
+
+  function renderPreviewRows(platform, items) {
+    const tbody = document.getElementById('spiPreviewTableBody');
+    const summary = document.getElementById('spiPreviewSummary');
+    const whCol = document.getElementById('spiPreviewWarehouseCol');
+    const title = document.getElementById('spiPreviewModalTitle');
+    if (!tbody) return;
+    const rows = Array.isArray(items) ? items : [];
+    if (title) {
+      title.textContent = platform === 'wayfair' ? 'Wayfair 库存导出预览' : 'Amazon 库存导出预览';
+    }
+    if (whCol) {
+      whCol.textContent = platform === 'wayfair' ? '仓库（Wayfair）' : '仓库';
+    }
+    const qtySum = rows.reduce((acc, row) => acc + Math.max(0, Number(row.qty || 0)), 0);
+    if (summary) {
+      summary.textContent = `共 ${rows.length} 行，合计数量 ${qtySum}`;
+    }
+    tbody.innerHTML = rows.map(row => {
+      const remark = String(row.remark || '').trim();
+      const remarkClass = remark ? 'spi-preview-remark' : 'spi-preview-remark is-empty';
+      const remarkText = remark || '-';
+      return `<tr>
+        <td class="sj-cell-thumb cell-center" style="text-align:center;">${previewThumbHtml(row.preview_image_b64)}</td>
+        <td>${escapeHtmlLite(row.sku || '')}</td>
+        <td>${escapeHtmlLite(row.warehouse || '-')}</td>
+        <td class="spi-preview-qty">${Math.max(0, Number(row.qty || 0))}</td>
+        <td class="${remarkClass}">${escapeHtmlLite(remarkText)}</td>
+      </tr>`;
+    }).join('');
+    const wrap = tbody.closest('.spi-preview-table-wrap');
+    if (wrap && global.SitjoyRowImageRefresh && typeof global.SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
+      global.SitjoyRowImageRefresh.observeLazyThumbsIn(wrap);
+    }
+  }
+
+  function openPreviewModal() {
+    document.getElementById('spiPreviewModal')?.classList.add('active');
+  }
+
+  function closePreviewModal() {
+    document.getElementById('spiPreviewModal')?.classList.remove('active');
+  }
+
+  async function submitPreview() {
+    const modal = document.getElementById('spiExportModal');
+    const platform = modal?.dataset.platform === 'wayfair' ? 'wayfair' : 'amazon';
+    const prefs = readFormPrefs();
+    savePrefs(prefs, platform);
+    const previewBtn = document.getElementById('spiPreviewBtn');
+    if (previewBtn?.dataset.busy === '1') return;
+    if (previewBtn) {
+      previewBtn.dataset.busy = '1';
+      previewBtn.disabled = true;
+    }
+    setStatus('正在计算预览…', false);
+    setPreviewStatus('');
+    const opts = buildExportOptions(prefs);
+    opts.platform = platform;
+    try {
+      let resp;
+      if (platform === 'amazon') {
+        const mode = prefs.amazon_mode === 'fill' ? 'fill' : 'generate';
+        opts.mode = mode;
+        if (mode === 'fill') {
+          const fileEl = document.getElementById('spiAmazonFile');
+          const file = fileEl && fileEl.files && fileEl.files[0];
+          if (!file) {
+            setStatus('请上传 Amazon txt 模板', true);
+            return;
+          }
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('options', JSON.stringify(opts));
+          resp = await fetch('/api/sales-product-inventory-export-preview', { method: 'POST', body: fd, credentials: 'include' });
+        } else {
+          if (!opts.shop_id) {
+            setStatus('请选择亚马逊店铺', true);
+            return;
+          }
+          resp = await fetch('/api/sales-product-inventory-export-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({ mode: 'generate' }, opts)),
+            credentials: 'include',
+          });
+        }
+      } else {
+        const fileEl = document.getElementById('spiWayfairFile');
+        const file = fileEl && fileEl.files && fileEl.files[0];
+        if (!file) {
+          setStatus('请上传 Wayfair csv 模板', true);
+          return;
+        }
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('options', JSON.stringify(opts));
+        resp = await fetch('/api/sales-product-inventory-export-preview', { method: 'POST', body: fd, credentials: 'include' });
+      }
+      const data = await resp.json();
+      if (!resp.ok || !data || data.status === 'error') {
+        throw new Error((data && data.message) ? data.message : ('预览失败（HTTP ' + resp.status + '）'));
+      }
+      renderPreviewRows(platform, data.items || []);
+      setStatus('');
+      openPreviewModal();
+    } catch (e) {
+      setStatus((e && e.message) ? e.message : String(e), true);
+    } finally {
+      if (previewBtn) {
+        previewBtn.dataset.busy = '0';
+        previewBtn.disabled = false;
+      }
+    }
+  }
+
+
   async function submitExport() {
 
     const modal = document.getElementById('spiExportModal');
@@ -848,6 +997,8 @@
 
       'spiMinNosyncQty',
 
+      'spiFabricShareMinQty',
+
       'spiAmazonShop',
 
     ].forEach(id => {
@@ -896,6 +1047,14 @@
 
     }
 
+    const previewModal = document.getElementById('spiPreviewModal');
+
+    if (previewModal && global.bindPmModalBackdropClose) {
+
+      global.bindPmModalBackdropClose(previewModal, closePreviewModal);
+
+    }
+
   }
 
 
@@ -907,6 +1066,10 @@
     openWayfair: () => openModal('wayfair'),
 
     close: closeModal,
+
+    preview: submitPreview,
+
+    closePreview: closePreviewModal,
 
     submit: submitExport,
 

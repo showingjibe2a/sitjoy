@@ -53,6 +53,56 @@
             font-size: 0.88rem;
             max-width: 100%;
         }
+        .spi-preview-modal .pm-modal-content {
+            max-width: min(960px, 96vw);
+        }
+        .spi-preview-table-wrap {
+            max-height: min(60vh, 520px);
+            overflow: auto;
+            margin-top: 0.75rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+        }
+        .spi-preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+        .spi-preview-table th,
+        .spi-preview-table td {
+            padding: 0.45rem 0.55rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+            text-align: left;
+            vertical-align: middle;
+        }
+        .spi-preview-table th {
+            position: sticky;
+            top: 0;
+            background: #faf8f5;
+            z-index: 1;
+            font-weight: 600;
+        }
+        .spi-preview-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .spi-preview-table .spi-preview-qty {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .spi-preview-summary {
+            font-size: 0.88rem;
+            color: var(--morandi-slate);
+            margin-top: 0.35rem;
+        }
+        .spi-preview-remark {
+            color: rgba(42, 36, 32, 0.78);
+            font-size: 0.84rem;
+            line-height: 1.35;
+        }
+        .spi-preview-remark.is-empty {
+            color: var(--morandi-slate);
+        }
         .required-field, .optional-field {
             padding: 0.65rem 0.8rem !important;
             border-radius: 6px !important;
@@ -1043,7 +1093,33 @@
             <div id="spiExportStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="SalesPlatformInventoryExport.close()">取消</button>
+                <button class="btn-secondary" id="spiPreviewBtn" type="button" onclick="SalesPlatformInventoryExport.preview()">预览</button>
                 <button class="btn-primary" type="button" onclick="SalesPlatformInventoryExport.submit()">下载</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="spiPreviewModal">
+        <div class="pm-modal-content spi-preview-modal">
+            <h3 id="spiPreviewModalTitle" style="margin-top:0;">库存导出预览</h3>
+            <div id="spiPreviewSummary" class="spi-preview-summary"></div>
+            <div class="spi-preview-table-wrap">
+                <table class="spi-preview-table">
+                    <thead>
+                        <tr>
+                            <th class="cell-center" style="width:68px;">图片</th>
+                            <th>SKU</th>
+                            <th id="spiPreviewWarehouseCol">仓库</th>
+                            <th style="width:72px; text-align:right;">数量</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="spiPreviewTableBody"></tbody>
+                </table>
+            </div>
+            <div id="spiPreviewStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-primary" type="button" onclick="SalesPlatformInventoryExport.closePreview()">关闭</button>
             </div>
         </div>
     </div>
