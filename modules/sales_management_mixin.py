@@ -2815,6 +2815,34 @@ class SalesManagementMixin:
                 bucket[oid] = int(bucket.get(oid) or 0) + qp
         return {vid: sorted(links.items(), key=lambda x: x[0]) for vid, links in out.items()}
 
+    def _load_variant_overseas_sellable_map(self, conn, variant_ids):
+        """variant_id -> 海外仓可售套数（仅海外仓；BOM 各件 floor 后取 min）。"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {i: 0 for i in ids}
+        if not ids:
+            return out
+        links_by_vid = self._forecast_load_variant_order_links_for_inventory(conn, ids)
+        op_ids = sorted({
+            int(oid)
+            for links in links_by_vid.values()
+            for oid, _ in (links or [])
+            if self._parse_int(oid)
+        })
+        inv_by_op = self._forecast_load_inventory_by_order_product(conn, op_ids) if op_ids else {}
+        for vid in ids:
+            links = links_by_vid.get(vid) or []
+            if not links:
+                continue
+            parts = []
+            for oid, qp in links:
+                oid = int(oid)
+                qp = max(1, int(qp or 1))
+                overseas = int((inv_by_op.get(oid) or {}).get('overseas_qty') or 0)
+                parts.append(overseas // qp)
+            if parts:
+                out[vid] = min(parts)
+        return out
+
     def _forecast_load_all_substitute_plans_by_owner(self, conn, owner_order_product_ids):
         """owner -> [{plan_id, plan_name, items: [(substitute_order_product_id, qty), ...]}, ...]
 

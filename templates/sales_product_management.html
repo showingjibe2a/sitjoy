@@ -476,6 +476,7 @@
                             <th data-manage-col-key="GTIN" data-sort-key="gtin">GTIN</th>
                             <th data-manage-col-key="UPC" data-sort-key="upc">UPC</th>
                             <th data-manage-col-key="下单SKU">下单SKU</th>
+                            <th data-manage-col-key="海外仓可售" data-sort-key="overseas_sellable_qty" style="width:100px;">海外仓可售</th>
                             <th data-manage-col-key="售价" data-sort-key="sale_price_usd">售价</th>
                             <th data-manage-col-key="活动形式" data-sort-key="promotion_activity_type">活动形式</th>
                             <th data-manage-col-key="折扣形式" data-sort-key="discount_form_type">折扣形式</th>
@@ -927,7 +928,7 @@
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
         let salesProductAggregateMode = 'none';
         let salesProductCollapsedParentGroups = new Set();
-        const SALES_PRODUCT_TABLE_COLSPAN = 27;
+        const SALES_PRODUCT_TABLE_COLSPAN = 28;
         const SALES_PARENT_GROUP_MIDDLE_COLSPAN = SALES_PRODUCT_TABLE_COLSPAN - 3;
         const SALES_PROMOTION_ACTIVITY_TYPES = ['Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销'];
         const SALES_DISCOUNT_FORM_OPTIONS = [
@@ -2154,6 +2155,14 @@
             return `<td class="preview-edit-cell sales-econ-cell" data-manage-col-key="折后价" data-field-wrap="discounted_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="discounted_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(val)}" title="可手动覆盖；修改售价/折扣时会自动联动"></td>`;
         }
 
+        function formatSalesOverseasSellableQty(item) {
+            const vid = Number(item && item.variant_id || 0);
+            if (!vid) return '-';
+            const n = Number(item.overseas_sellable_qty);
+            if (!Number.isFinite(n)) return '-';
+            return String(Math.max(0, Math.floor(n)));
+        }
+
         function salesComputeRowEconomics(item) {
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
@@ -2353,6 +2362,10 @@
             const econ = salesEnrichItemEconomics(item);
             const salePriceLow = econ.salePrice > 0 && econ.totalCost > 0 && econ.salePrice < econ.totalCost;
             const salePriceInputVal = salePriceVal == null || salePriceVal === '' ? '' : String(salePriceVal);
+            const sellableQty = formatSalesOverseasSellableQty(item);
+            const sellableSortVal = Number.isFinite(Number(item.overseas_sellable_qty))
+                ? String(Math.max(0, Math.floor(Number(item.overseas_sellable_qty))))
+                : '';
             const netProfitLow = econ.salePrice > 0 && econ.netProfit < 0;
             const netMarginRateLow = econ.salePrice > 0 && econ.netMarginRate < 0;
             const gk = escapeSalesGroupKeyAttr(groupKey);
@@ -2372,6 +2385,7 @@
                     <td class="preview-edit-cell" data-field-wrap="gtin"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gtin" type="text" value="${escapeAttr(gtinText)}"></td>
                     <td class="preview-edit-cell" data-field-wrap="upc"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="upc" type="text" value="${escapeAttr(upcText)}"></td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
+                    <td class="cell-center" data-manage-col-key="海外仓可售" data-display-value="${escapeAttr(sellableSortVal)}">${sellableQty}</td>
                     <td class="preview-edit-cell ${salePriceLow ? 'danger-note' : ''}" data-field-wrap="sale_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="sale_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(salePriceInputVal)}"></td>
                     ${renderSalesPromotionActivityCell(item)}
                     ${renderSalesDiscountFormCell(item)}

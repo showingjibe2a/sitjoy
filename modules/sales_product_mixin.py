@@ -4829,13 +4829,16 @@ class SalesProductMixin:
                         rows = cur.fetchall() or []
                     variant_ids = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
                     metrics_map = {}
+                    sellable_map = {}
                     if variant_ids:
                         # Reuse same DB connection for performance (must be inside conn context)
                         metrics_map = self._load_sales_variant_metrics(conn, variant_ids)
+                        sellable_map = self._load_variant_overseas_sellable_map(conn, variant_ids)
 
                     for row in rows:
                         variant_id = int(row.get('variant_id') or 0)
                         metrics = metrics_map.get(variant_id, {}) if variant_id else {}
+                        row['overseas_sellable_qty'] = int(sellable_map.get(variant_id) or 0) if variant_id else 0
                         row['warehouse_cost_usd'] = metrics.get('warehouse_cost_usd', 0.0)
                         row['last_mile_cost_usd'] = metrics.get('last_mile_cost_usd', 0.0)
                         row['package_length_in'] = metrics.get('package_length_in', 0.0)
