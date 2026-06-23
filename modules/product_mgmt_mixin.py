@@ -6,6 +6,29 @@ from urllib.parse import parse_qs
 class ProductManagementMixin:
     """产品管理 Mixin：SKU（产品系列）、分类、材料和相关辅助方法"""
 
+    def _parse_ensure_sku_family_ids(self, query_params):
+        ids = []
+        for key in ('ensure_id', 'ensure_ids'):
+            raw_list = query_params.get(key) or []
+            for raw in raw_list:
+                for part in str(raw or '').split(','):
+                    v = self._parse_int(part.strip())
+                    if v:
+                        ids.append(int(v))
+        return sorted(set(ids))
+
+    def _sku_market_filter_clause(self, include_off_market, ensure_ids, table_alias='pf'):
+        if include_off_market:
+            return '', []
+        alias = str(table_alias or 'pf').strip() or 'pf'
+        if ensure_ids:
+            ph = ','.join(['%s'] * len(ensure_ids))
+            return (
+                f' AND (COALESCE({alias}.is_on_market, 1) = 1 OR {alias}.id IN ({ph}))',
+                list(ensure_ids),
+            )
+        return f' AND COALESCE({alias}.is_on_market, 1) = 1', []
+
     def handle_sku_api(self, environ, method, start_response):
         """货号管理 API（CRUD）"""
         try:
@@ -15,36 +38,41 @@ class ProductManagementMixin:
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 brief = str(query_params.get('brief', [''])[0]).strip().lower() in ('1', 'true', 'yes')
+                include_off_market = str(query_params.get('include_off_market', [''])[0]).strip().lower() in ('1', 'true', 'yes')
+                ensure_ids = self._parse_ensure_sku_family_ids(query_params)
                 limit = max(50, min(self._parse_int(query_params.get('limit', ['800'])[0]) or 800, 3000))
+                market_clause, market_params = self._sku_market_filter_clause(include_off_market, ensure_ids, 'pf')
                 if brief:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             if keyword:
                                 cur.execute(
-                                    """
-                                    SELECT id, sku_family, category, created_at
-                                    FROM product_families
-                                    WHERE sku_family LIKE %s OR category LIKE %s
+                                    f"""
+                                    SELECT id, sku_family, category, is_on_market, created_at
+                                    FROM product_families pf
+                                    WHERE (sku_family LIKE %s OR category LIKE %s){market_clause}
                                     ORDER BY id DESC
                                     LIMIT %s
                                     """,
-                                    (f"%{keyword}%", f"%{keyword}%", limit)
+                                    tuple([f"%{keyword}%", f"%{keyword}%"] + market_params + [limit]),
                                 )
                             else:
                                 cur.execute(
-                                    """
-                                    SELECT id, sku_family, category, created_at
-                                    FROM product_families
+                                    f"""
+                                    SELECT id, sku_family, category, is_on_market, created_at
+                                    FROM product_families pf
+                                    WHERE 1=1{market_clause}
                                     ORDER BY id DESC
                                     LIMIT %s
                                     """,
-                                    (limit,)
+                                    tuple(market_params + [limit]),
                                 )
                             rows = cur.fetchall() or []
                     return self.send_json({'status': 'success', 'items': rows}, start_response)
 
+                cache_key = 'sku_list_all' if include_off_market else 'sku_list_on_market'
                 if not keyword:
-                    cached = self._template_options_cache.get('sku_list_all')
+                    cached = self._template_options_cache.get(cache_key)
                     if isinstance(cached, dict) and isinstance(cached.get('items'), list):
                         return self.send_json({'status': 'success', 'items': cached.get('items')}, start_response)
 
@@ -52,31 +80,34 @@ class ProductManagementMixin:
                     with conn.cursor() as cur:
                         if keyword:
                             cur.execute(
-                                """
-                                SELECT pf.id, pf.sku_family, pf.category, pf.created_at,
+                                f"""
+                                SELECT pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at,
                                     GROUP_CONCAT(DISTINCT fm.id ORDER BY fm.id SEPARATOR ',') AS fabric_ids,
                                     GROUP_CONCAT(DISTINCT fm.fabric_code ORDER BY fm.fabric_code SEPARATOR ' / ') AS fabric_codes
                                 FROM product_families pf
                                 LEFT JOIN fabric_product_families fpf ON fpf.sku_family_id = pf.id
                                 LEFT JOIN fabric_materials fm ON fm.id = fpf.fabric_id
-                                WHERE pf.sku_family LIKE %s OR pf.category LIKE %s
-                                GROUP BY pf.id, pf.sku_family, pf.category, pf.created_at
+                                WHERE (pf.sku_family LIKE %s OR pf.category LIKE %s){market_clause}
+                                GROUP BY pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at
                                 ORDER BY pf.id DESC
                                 """,
-                                (f"%{keyword}%", f"%{keyword}%")
+                                tuple([f"%{keyword}%", f"%{keyword}%"] + market_params),
                             )
                         else:
                             cur.execute(
-                                """
-                                SELECT pf.id, pf.sku_family, pf.category, pf.created_at,
+                                f"""
+                                SELECT pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at,
                                     GROUP_CONCAT(DISTINCT fm.id ORDER BY fm.id SEPARATOR ',') AS fabric_ids,
                                     GROUP_CONCAT(DISTINCT fm.fabric_code ORDER BY fm.fabric_code SEPARATOR ' / ') AS fabric_codes
                                 FROM product_families pf
                                 LEFT JOIN fabric_product_families fpf ON fpf.sku_family_id = pf.id
                                 LEFT JOIN fabric_materials fm ON fm.id = fpf.fabric_id
-                                GROUP BY pf.id, pf.sku_family, pf.category, pf.created_at
+                                WHERE 1=1{market_clause}
+                                GROUP BY pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at
                                 ORDER BY pf.id DESC
                                 """
+                                ,
+                                tuple(market_params),
                             )
                         rows = cur.fetchall() or []
                 for row in rows:
@@ -86,13 +117,14 @@ class ProductManagementMixin:
                     else:
                         row['fabric_ids'] = []
                 if not keyword:
-                    self._template_options_cache['sku_list_all'] = {'items': rows}
+                    self._template_options_cache[cache_key] = {'items': rows}
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
                 sku_family = (data.get('sku_family') or '').strip()
                 category = (data.get('category') or '').strip()
+                is_on_market = 1 if self._parse_int(data.get('is_on_market')) != 0 else 0
                 fabric_ids = [self._parse_int(v) for v in (data.get('fabric_ids') or [])]
                 fabric_ids = [v for v in fabric_ids if v]
                 if not sku_family or not category:
@@ -100,12 +132,13 @@ class ProductManagementMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO product_families (sku_family, category) VALUES (%s, %s)",
-                            (sku_family, category)
+                            "INSERT INTO product_families (sku_family, category, is_on_market) VALUES (%s, %s, %s)",
+                            (sku_family, category, is_on_market)
                         )
                         new_id = cur.lastrowid
                     self._replace_sku_family_fabric_ids(conn, new_id, fabric_ids)
                 self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('sku_list_on_market', None)
                 self._template_options_cache.pop('fabric_list_all', None)
                 self._ensure_listing_sku_folder(sku_family)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -115,6 +148,7 @@ class ProductManagementMixin:
                 item_id = data.get('id')
                 sku_family = (data.get('sku_family') or '').strip()
                 category = (data.get('category') or '').strip()
+                is_on_market = 1 if self._parse_int(data.get('is_on_market')) != 0 else 0
                 fabric_ids = [self._parse_int(v) for v in (data.get('fabric_ids') or [])]
                 fabric_ids = [v for v in fabric_ids if v]
                 if not item_id or not sku_family or not category:
@@ -140,10 +174,10 @@ class ProductManagementMixin:
                             cur.execute(
                                 """
                                 UPDATE product_families
-                                SET sku_family=%s, category=%s
+                                SET sku_family=%s, category=%s, is_on_market=%s
                                 WHERE id=%s
                                 """,
-                                (sku_family, category, item_id)
+                                (sku_family, category, is_on_market, item_id)
                             )
                         self._replace_sku_family_fabric_ids(conn, item_id, fabric_ids)
                         db_updated = True
@@ -154,6 +188,7 @@ class ProductManagementMixin:
                 if db_updated:
                     self._ensure_listing_sku_folder(sku_family)
                 self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('sku_list_on_market', None)
                 self._template_options_cache.pop('fabric_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -166,6 +201,7 @@ class ProductManagementMixin:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM product_families WHERE id=%s", (item_id,))
                 self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('sku_list_on_market', None)
                 self._template_options_cache.pop('fabric_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 

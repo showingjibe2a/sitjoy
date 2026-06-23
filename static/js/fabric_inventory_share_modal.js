@@ -38,6 +38,48 @@
     return Math.max(0, Math.min(1, n));
   }
 
+  function normalizeRow(row) {
+    const item = Object.assign({}, row || {});
+    const persisted = !!item.ratio_persisted;
+    let savedRatio = item.saved_ratio;
+    if (savedRatio != null && savedRatio !== '') {
+      savedRatio = parseRatioInput(savedRatio);
+    } else if (persisted) {
+      savedRatio = parseRatioInput(item.inventory_share_ratio);
+    } else {
+      savedRatio = null;
+    }
+    item.ratio_persisted = persisted;
+    item.saved_ratio = savedRatio;
+    if (item.inventory_share_ratio == null) {
+      item.inventory_share_ratio = item.suggested_ratio != null ? item.suggested_ratio : 0;
+    }
+    return item;
+  }
+
+  function syncRatioInputState(input, idx) {
+    const row = items[idx];
+    if (!row || !input) return;
+    input.classList.remove('is-not-persisted', 'is-dirty');
+    const saved = row.saved_ratio;
+    const current = parseRatioInput(row.inventory_share_ratio);
+    if (saved == null) {
+      input.classList.add('is-not-persisted');
+      return;
+    }
+    if (Math.abs(current - saved) > 0.0001) {
+      input.classList.add('is-dirty');
+    }
+  }
+
+  function onRatioInputChange(input) {
+    const i = Number(input.getAttribute('data-idx'));
+    if (!Number.isFinite(i) || !items[i]) return;
+    items[i].inventory_share_ratio = parseRatioInput(input.value);
+    input.value = pctText(items[i].inventory_share_ratio);
+    syncRatioInputState(input, i);
+  }
+
   async function ensureMounted() {
     if (mounted && el('fabricInventoryShareModal')) return;
     const resp = await fetch('/static/partials/fabric_inventory_share_modal.html', { credentials: 'include' });
@@ -49,6 +91,9 @@
     if (!modal) throw new Error('弹窗模板为空');
     document.body.appendChild(modal);
     bindUi();
+    if (global.initUniversalSingleSelects) {
+      global.initUniversalSingleSelects(modal);
+    }
     mounted = true;
   }
 
@@ -68,16 +113,14 @@
         <td>${escapeHtml(row.fabric_name_en || '')}</td>
         <td style="text-align:right;">${Number(row.history_sales_qty || 0)}</td>
         <td style="text-align:right;">${sug}</td>
-        <td><input type="text" class="fis-ratio-input spi-num-input" style="width:5.5rem;max-width:100%;" data-idx="${idx}" value="${ratioPct}"></td>
+        <td><input type="text" class="inline-input preview-edit-input fis-ratio-input" style="width:5.5rem;max-width:100%;" data-idx="${idx}" value="${ratioPct}"></td>
       </tr>`;
     }).join('');
     tbody.querySelectorAll('.fis-ratio-input').forEach(input => {
-      input.addEventListener('change', function () {
-        const i = Number(this.getAttribute('data-idx'));
-        if (!Number.isFinite(i) || !items[i]) return;
-        items[i].inventory_share_ratio = parseRatioInput(this.value);
-        this.value = pctText(items[i].inventory_share_ratio);
-      });
+      const idx = Number(input.getAttribute('data-idx'));
+      syncRatioInputState(input, idx);
+      input.addEventListener('input', function () { onRatioInputChange(this); });
+      input.addEventListener('change', function () { onRatioInputChange(this); });
     });
   }
 
@@ -85,17 +128,31 @@
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function refreshSkuFamilySelect() {
+    const sel = el('fisSkuFamily');
+    if (!sel) return;
+    if (global.refreshUniversalSingleSelect) {
+      global.refreshUniversalSingleSelect(sel);
+    } else if (global.initUniversalSingleSelects) {
+      global.initUniversalSingleSelects(sel.parentElement || document);
+    }
+  }
+
   async function loadSkuFamilies(preferredId) {
     const sel = el('fisSkuFamily');
     if (!sel) return;
-    const resp = await fetch('/api/sku', { credentials: 'include' });
+    const ensureId = String(preferredId || sel.value || '').trim();
+    const params = new URLSearchParams({ brief: '1', limit: '3000' });
+    if (ensureId) params.set('ensure_id', ensureId);
+    const resp = await fetch(`/api/sku?${params.toString()}`, { credentials: 'include' });
     const data = await resp.json();
     const rows = (data && data.status === 'success') ? (data.items || []) : [];
     sel.innerHTML = ['<option value="">请选择货号</option>'].concat(
       rows.map(r => `<option value="${r.id}">${escapeHtml(r.sku_family || '')}${r.category ? ' / ' + escapeHtml(r.category) : ''}</option>`)
     ).join('');
-    const old = String(preferredId || sel.value || '').trim();
+    const old = ensureId;
     if (old) sel.value = old;
+    refreshSkuFamilySelect();
   }
 
   function currentSkuFamilyId() {
@@ -107,7 +164,7 @@
   }
 
   function applyPayload(data) {
-    items = (data && data.items) ? data.items.slice() : [];
+    items = (data && data.items) ? data.items.map(normalizeRow) : [];
     const meta = el('fisMetaText');
     if (meta && data) {
       const sf = data.sku_family ? `货号 ${data.sku_family}` : '';
@@ -128,7 +185,7 @@
       setStatus('请选择货号', true);
       return;
     }
-    setStatus(useCalculate ? '正在统计历史销量…' : '加载中…', false);
+    setStatus('', false);
     try {
       let resp;
       if (useCalculate) {
@@ -168,7 +225,6 @@
       setStatus('无可保存的面料', true);
       return;
     }
-    setStatus('保存中…', false);
     try {
       const resp = await fetch('/api/fabric-inventory-share', {
         method: 'POST',
@@ -187,7 +243,7 @@
       if (!resp.ok || !data || data.status === 'error') {
         throw new Error((data && data.message) ? data.message : '保存失败');
       }
-      setStatus('已保存', false);
+      setStatus('', false);
       if (global.showAppToast) global.showAppToast('面料库存比例已保存', false, 2200);
       await loadCurrent(false);
     } catch (e) {
@@ -214,6 +270,7 @@
       if (opts && opts.skuFamilyId) {
         const sel = el('fisSkuFamily');
         if (sel) sel.value = String(opts.skuFamilyId);
+        refreshSkuFamilySelect();
       }
       if (opts && opts.months) {
         const m = el('fisHistMonths');

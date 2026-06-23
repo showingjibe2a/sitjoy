@@ -270,7 +270,7 @@
             .catch(() => { skuOptions = []; });
     }
 
-    function renderSkuFamilySelect(selectedValue) {
+    function renderSkuFamilySelect(selectedValue, fallbackLabel) {
         const select = $('modalSkuFamily');
         const current = String(selectedValue !== undefined ? selectedValue : (select?.value || ''));
         if (!select) return;
@@ -286,6 +286,13 @@
             }
             select.appendChild(option);
         });
+        if (current && !hasCurrent) {
+            const option = document.createElement('option');
+            option.value = current;
+            option.textContent = String(fallbackLabel || `货号#${current}`);
+            option.selected = true;
+            hasCurrent = true;
+        }
         if (current && !hasCurrent) select.value = '';
         if (global.refreshUniversalSingleSelect) global.refreshUniversalSingleSelect(select);
     }

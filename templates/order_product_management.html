@@ -2420,6 +2420,7 @@
             skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '编辑下单产品';
             setInputValue('modalSku', item.sku || '');
+            renderSkuFamilySelect(item.sku_family_id || '', item.sku_family || '');
             setSelectValue('modalSkuFamily', item.sku_family_id || '');
             setInputValue('modalVersion', item.version_no || '');
             setInputValue('modalSkuFamilySearch', '');
@@ -5529,7 +5530,7 @@
                 });
         }
 
-        function renderSkuFamilySelect(selectedValue) {
+        function renderSkuFamilySelect(selectedValue, fallbackLabel) {
             const select = document.getElementById('modalSkuFamily');
             const placeholder = document.createElement('option');
             placeholder.value = '';
@@ -5545,6 +5546,17 @@
                 }
                 select.appendChild(option);
             });
+            if (selectedValue) {
+                const sid = String(selectedValue);
+                const exists = [...select.options].some(o => String(o.value) === sid);
+                if (!exists) {
+                    const option = document.createElement('option');
+                    option.value = sid;
+                    option.textContent = String(fallbackLabel || `货号#${sid}`);
+                    option.selected = true;
+                    select.appendChild(option);
+                }
+            }
             updateSkuFamilyTrigger();
             renderSkuFamilyList();
         }

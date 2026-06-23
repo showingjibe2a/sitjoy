@@ -1463,6 +1463,14 @@ section.card.pm-card .pm-toolbar .btn-accent {
     box-shadow: 0 0 0 2px rgba(42, 36, 32, 0.1);
 }
 
+/* 可编辑字段状态色：未入库灰 / 已保存黑 / 已修改红 */
+.inline-input.is-not-persisted {
+    color: #999;
+}
+.inline-input.is-dirty {
+    color: #a33;
+}
+
 /* 胶囊小号按钮：正圆包裹单字/符号，尺寸小于 btn-small */
 .btn-capsule-sm,
 button.btn-capsule-sm {

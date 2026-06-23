@@ -992,7 +992,13 @@
                             <span class="spi-field-label">套时同步为 0</span>
                         </div>
                     </div>
-                    <p class="spi-field-label" style="margin:0;">颜色库存按「面料库存比例」维护（工具栏按钮），最高销量面料为 100%，其余为相对比例。</p>
+                    <div class="form-group pm-form-full">
+                        <label class="label-help">是否考虑面料比例<span class="help-dot" data-tip="启用后按「面料库存比例」中已保存的比例折算各颜色（面料）可售库存；关闭则所有颜色按 100% 计算。"></span></label>
+                        <div class="status-segment status-segment--inline" id="spiFabricShareSegment" data-value="1">
+                            <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                            <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                        </div>
+                    </div>
                     </div>
                 </div>
 
@@ -1845,7 +1851,7 @@
             });
         }
 
-        function renderSkuFamilySelect(selectedValue) {
+        function renderSkuFamilySelect(selectedValue, fallbackLabel) {
             const select = document.getElementById('modalSkuFamily');
             if (!select) return;
             const previous = selectedValue !== undefined && selectedValue !== null ? String(selectedValue) : String(select.value || '');
@@ -1853,6 +1859,12 @@
                 (skuFamilyOptions || []).map(item => `<option value="${item.id}">${item.sku_family || ''}</option>`)
             );
             select.innerHTML = options.join('');
+            if (previous && !select.querySelector(`option[value="${previous.replace(/"/g, '\\"')}"]`)) {
+                const opt = document.createElement('option');
+                opt.value = previous;
+                opt.textContent = String(fallbackLabel || `货号#${previous}`);
+                select.appendChild(opt);
+            }
             select.value = previous;
             updateSkuFamilyTrigger();
             renderSkuFamilyList();
@@ -5162,7 +5174,7 @@
             currentProductStatus = normalizeProductStatus(item.product_status);
             renderModalProductStatus();
             document.getElementById('modalPlatformSku').value = item.platform_sku || '';
-            renderSkuFamilySelect(item.sku_family_id || '');
+            renderSkuFamilySelect(item.sku_family_id || '', item.sku_family || '');
             document.getElementById('modalSkuFamilySearch').value = '';
             document.getElementById('modalParentCode').value = item.parent_code || '';
             document.getElementById('modalParentSkuMarker').value = '';
@@ -5686,7 +5698,7 @@
             document.getElementById('modalParentShop').value = item.shop_id ? String(item.shop_id) : '';
             currentProductStatus = normalizeProductStatus(item.product_status);
             renderModalProductStatus();
-            renderSkuFamilySelect(item.sku_family_id || '');
+            renderSkuFamilySelect(item.sku_family_id || '', item.sku_family || '');
             document.getElementById('modalParentCode').value = item.parent_code || '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalSalePrice').value = item.sale_price_usd || '';

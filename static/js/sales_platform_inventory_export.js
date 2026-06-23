@@ -46,6 +46,8 @@
 
     min_nosync_qty: 0,
 
+    use_fabric_share: true,
+
   };
 
 
@@ -338,6 +340,8 @@
 
       min_nosync_qty: Math.max(0, Number(document.getElementById('spiMinNosyncQty')?.value || 0)),
 
+      use_fabric_share: segmentValue('spiFabricShareSegment', '1') === '1',
+
     };
 
     if (platform === 'amazon') {
@@ -367,6 +371,8 @@
     syncSegmentUi('spiCapEnabledSegment', p.cap_enabled ? '1' : '0');
 
     syncSegmentUi('spiSpecGapEnabledSegment', p.spec_gap_enabled ? '1' : '0');
+
+    syncSegmentUi('spiFabricShareSegment', p.use_fabric_share ? '1' : '0');
 
     if (pf === 'amazon') {
 
@@ -672,6 +678,8 @@
 
       min_nosync_qty: prefs.min_nosync_qty,
 
+      use_fabric_share: !!prefs.use_fabric_share,
+
       shop_id: prefs.shop_id ? Number(prefs.shop_id) : null,
 
     };
@@ -863,6 +871,8 @@
     bindSegment('spiCapEnabledSegment');
 
     bindSegment('spiSpecGapEnabledSegment');
+
+    bindSegment('spiFabricShareSegment');
 
     bindSegment('spiAmazonModeSegment', syncAmazonModeUi);
 

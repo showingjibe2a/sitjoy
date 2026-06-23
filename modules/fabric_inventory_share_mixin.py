@@ -72,13 +72,17 @@ class FabricInventoryShareMixin:
             else:
                 item['suggested_ratio'] = 1.0
             stored = item.get('inventory_share_ratio')
-            if stored is not None and str(stored).strip() != '':
+            ratio_persisted = stored is not None and str(stored).strip() != ''
+            saved_ratio = None
+            if ratio_persisted:
                 try:
-                    item['inventory_share_ratio'] = round(max(0.0, min(1.0, float(stored))), 6)
+                    saved_ratio = round(max(0.0, min(1.0, float(stored))), 6)
                 except Exception:
-                    item['inventory_share_ratio'] = item['suggested_ratio']
-            else:
-                item['inventory_share_ratio'] = item['suggested_ratio']
+                    ratio_persisted = False
+                    saved_ratio = None
+            item['ratio_persisted'] = bool(ratio_persisted)
+            item['saved_ratio'] = saved_ratio
+            item['inventory_share_ratio'] = saved_ratio if ratio_persisted else item['suggested_ratio']
         return items, max_sales
 
     def _fabric_share_save_items(self, conn, sku_family_id, items):
@@ -194,6 +198,8 @@ class FabricInventoryShareMixin:
                 items, max_sales = self._fabric_share_apply_computed_ratios(rows)
                 for item in items:
                     item['inventory_share_ratio'] = item.get('suggested_ratio')
+                    item['ratio_persisted'] = False
+                    item['saved_ratio'] = None
                 return self.send_json({
                     'status': 'success',
                     'sku_family_id': sku_family_id,

@@ -72,6 +72,7 @@ class PlatformInventoryExportMixin:
         except Exception:
             min_nosync_qty = 0
         shop_id = self._parse_int(data.get('shop_id'))
+        use_fabric_share = self._parse_bool_flag(data.get('use_fabric_share'), default=True)
         return {
             'calc_mode': calc_mode,
             'max_missing_parts': max_missing_parts,
@@ -84,6 +85,7 @@ class PlatformInventoryExportMixin:
             'spec_gap_min': spec_gap_min,
             'min_nosync_qty': min_nosync_qty,
             'shop_id': shop_id,
+            'use_fabric_share': use_fabric_share,
         }
 
     def _sales_product_status_exportable(self, status):
@@ -280,13 +282,16 @@ class PlatformInventoryExportMixin:
         vid = self._parse_int(variant_id)
         if not vid:
             return 0
+        share_ratio = fabric_shares.get(vid, 1.0)
+        if not opts.get('use_fabric_share'):
+            share_ratio = 1.0
         return self._compute_platform_inventory_qty(
             links or [],
             inv_by_op,
             opts,
             bom_units=bom_units_by_vid.get(vid, 0),
             min_bom_units=min_bom_units,
-            fabric_share_ratio=fabric_shares.get(vid, 1.0),
+            fabric_share_ratio=share_ratio,
         )
 
     def _inventory_export_qty_for_variant(self, conn, variant_id, opts, wayfair_id=None):
@@ -302,11 +307,14 @@ class PlatformInventoryExportMixin:
             inv_by_op = self._load_overseas_qty_by_wayfair_id(conn, op_ids, wayfair_id)
         else:
             inv_by_op = self._load_overseas_qty_all_warehouses(conn, op_ids)
+        share_ratio = fabric_shares.get(vid, 1.0)
+        if not opts.get('use_fabric_share'):
+            share_ratio = 1.0
         return self._compute_platform_inventory_qty(
             links, inv_by_op, opts,
             bom_units=bom_units_by_vid.get(vid, 0),
             min_bom_units=min_units,
-            fabric_share_ratio=fabric_shares.get(vid, 1.0),
+            fabric_share_ratio=share_ratio,
         )
 
     def _parse_export_multipart(self, environ):

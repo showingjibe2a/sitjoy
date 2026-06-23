@@ -27,6 +27,9 @@
             white-space: nowrap;
         }
         .feature-category-create:hover { background: #6f9a7c; }
+        .market-status-segment .status-pill--yes.is-active { background: #6f9d7d; color: #fff; }
+        .market-status-segment .status-pill--no.is-active { background: #ad6f6f; color: #fff; }
+        .sku-market-off { color: #a33; }
     </style>
 </head>
 <body>
@@ -69,13 +72,14 @@
                         <tr>
                             <th>货号（父体）</th>
                             <th>品类</th>
+                            <th style="width:90px;">在市状态</th>
                             <th>关联面料</th>
                             <th style="width:160px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -93,6 +97,13 @@
                 <div class="form-group">
                     <label for="modalCategorySelect">品类<span class="required-asterisk">*</span></label>
                     <select id="modalCategorySelect" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label>在市状态</label>
+                    <div class="status-segment status-segment--inline market-status-segment" id="modalSkuMarketSegment" data-value="1">
+                        <button type="button" class="status-pill status-pill--yes is-active" data-value="1">在市</button>
+                        <button type="button" class="status-pill status-pill--no" data-value="0">下市</button>
+                    </div>
                 </div>
                 <div class="form-group pm-form-full">
                     <label>关联面料（可多选）</label>
@@ -185,12 +196,40 @@
             loadSkuList();
         }
 
+        function getModalSkuMarketValue() {
+            const seg = document.getElementById('modalSkuMarketSegment');
+            return String(seg?.dataset?.value || '1') === '0' ? 0 : 1;
+        }
+
+        function setModalSkuMarketValue(value) {
+            const onMarket = Number(value) ? 1 : 0;
+            const seg = document.getElementById('modalSkuMarketSegment');
+            if (!seg) return;
+            seg.dataset.value = String(onMarket);
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                const active = String(btn.getAttribute('data-value')) === String(onMarket);
+                btn.classList.toggle('is-active', active);
+            });
+        }
+
+        function bindModalSkuMarketSegment() {
+            const seg = document.getElementById('modalSkuMarketSegment');
+            if (!seg || seg.dataset.bound === '1') return;
+            seg.dataset.bound = '1';
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    setModalSkuMarketValue(this.getAttribute('data-value'));
+                });
+            });
+        }
+
         function openCreateModal() {
             editId = null;
             document.getElementById('pm-modal-title').innerText = '新增货号';
             document.getElementById('modalSkuInput').value = '';
             setCategorySelect('');
             setFabricSelect([]);
+            setModalSkuMarketValue(1);
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -203,6 +242,7 @@
             document.getElementById('modalSkuInput').value = item.sku_family;
             setCategorySelect(item.category);
             setFabricSelect(item.fabric_ids || []);
+            setModalSkuMarketValue(item.is_on_market);
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -225,7 +265,8 @@
             const payload = {
                 sku_family: skuFamily,
                 category: category,
-                fabric_ids: selectedFabricIds.slice()
+                fabric_ids: selectedFabricIds.slice(),
+                is_on_market: getModalSkuMarketValue(),
             };
             let method = 'POST';
             if (editId) {
@@ -298,26 +339,30 @@
 
         function loadSkuList() {
             const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/sku?q=${encodeURIComponent(q)}` : '/api/sku';
+            const base = q ? `/api/sku?q=${encodeURIComponent(q)}` : '/api/sku';
+            const url = base + (base.includes('?') ? '&' : '?') + 'include_off_market=1';
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     const tbody = document.querySelector('#skuTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
                         return;
                     }
                     tbody.innerHTML = items.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        const onMarket = Number(item.is_on_market) ? 1 : 0;
+                        const marketText = onMarket ? '在市' : '<span class="sku-market-off">下市</span>';
                         return `
                             <tr>
                                 <td>${item.sku_family}</td>
                                 <td>${item.category}</td>
+                                <td>${marketText}</td>
                                 <td>${item.fabric_codes || '-'}</td>
                                 <td>${dateText}</td>
                                 <td>
@@ -332,7 +377,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#skuTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -591,6 +636,7 @@
         window.addEventListener('load', loadSkuList);
         window.addEventListener('load', loadCategories);
         window.addEventListener('load', loadFabrics);
+        window.addEventListener('load', bindModalSkuMarketSegment);
 
         window.setTimeout(function() {
             var b = window.bindPmModalBackdropClose;
