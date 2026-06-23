@@ -73,6 +73,10 @@ class PlatformInventoryExportMixin:
             min_nosync_qty = 0
         shop_id = self._parse_int(data.get('shop_id'))
         use_fabric_share = self._parse_bool_flag(data.get('use_fabric_share'), default=True)
+        try:
+            fabric_share_min_qty = max(0, int(data.get('fabric_share_min_qty', 0)))
+        except Exception:
+            fabric_share_min_qty = 0
         return {
             'calc_mode': calc_mode,
             'max_missing_parts': max_missing_parts,
@@ -86,6 +90,7 @@ class PlatformInventoryExportMixin:
             'min_nosync_qty': min_nosync_qty,
             'shop_id': shop_id,
             'use_fabric_share': use_fabric_share,
+            'fabric_share_min_qty': fabric_share_min_qty,
         }
 
     def _sales_product_status_exportable(self, status):
@@ -101,7 +106,7 @@ class PlatformInventoryExportMixin:
 
     def _compute_platform_inventory_qty(
         self, bom_links, inv_by_op, opts,
-        bom_units=0, min_bom_units=0, fabric_share_ratio=1.0,
+        bom_units=0, fabric_share_ratio=1.0,
     ):
         """按 BOM 与选项计算可售套数。"""
         opts = opts or {}
@@ -137,30 +142,85 @@ class PlatformInventoryExportMixin:
                 allow_flex = cond_missing and cond_in_stock
             sellable = min(parts_with_stock) if (allow_flex and parts_with_stock) else 0
 
-        if opts.get('spec_gap_enabled') and min_bom_units is not None and int(sellable) > 0:
+        # 大规格差异：以 1 件下单 SKU 为基准，每多 1 件 BOM 总件数扣减 spec_gap_per_part
+        if opts.get('spec_gap_enabled') and int(sellable) > 0:
             gap = int(opts.get('spec_gap_per_part') or 0)
             retain_min = max(0, int(opts.get('spec_gap_min') or 0))
-            extra_units = max(0, int(bom_units) - int(min_bom_units))
-            if extra_units > 0:
+            extra_units = max(0, int(bom_units) - 1)
+            if extra_units > 0 and gap > 0:
                 base = int(sellable)
                 deducted = base - extra_units * gap
                 if base > retain_min:
                     sellable = max(retain_min, deducted)
                 else:
                     sellable = max(0, deducted)
-        try:
-            share = float(fabric_share_ratio if fabric_share_ratio is not None else 1.0)
-        except Exception:
-            share = 1.0
-        share = max(0.0, min(1.0, share))
-        if share < 1.0 and int(sellable) > 0:
-            sellable = int(math.floor(int(sellable) * share))
+
         if opts.get('cap_enabled'):
             sellable = min(int(sellable), int(opts.get('cap_max') or 0))
+
+        if opts.get('use_fabric_share') and int(sellable) > 0:
+            try:
+                share = float(fabric_share_ratio if fabric_share_ratio is not None else 1.0)
+            except Exception:
+                share = 1.0
+            share = max(0.0, min(1.0, share))
+            base_before_share = int(sellable)
+            allocated = int(math.floor(base_before_share * share))
+            fab_min = max(0, int(opts.get('fabric_share_min_qty') or 0))
+            if fab_min > 0 and allocated < fab_min and base_before_share >= fab_min:
+                allocated = fab_min
+            sellable = allocated
+
         min_nosync = max(0, int(opts.get('min_nosync_qty') or 0))
         if min_nosync > 0 and int(sellable) <= min_nosync:
             sellable = 0
         return max(0, int(sellable))
+
+    def _inventory_export_expand_op_ids_with_substitute_items(self, conn, order_product_ids):
+        """展开替代发货方案中的 substitute SKU；不含迭代继承。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return [], {}
+        plans_by_owner = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
+        expanded = set(ids)
+        for plans in plans_by_owner.values():
+            for grp in plans:
+                for sid, _ in grp.get('items') or []:
+                    sid = self._parse_int(sid)
+                    if sid:
+                        expanded.add(int(sid))
+        return sorted(expanded), plans_by_owner
+
+    def _inventory_export_effective_overseas_by_op(
+        self, conn, order_product_ids, wayfair_id=None, wayfair_matrix=None,
+    ):
+        """下单 SKU 海外仓可用件数：本体库存 + 全部替代发货方案各自成套后相加（与销量预测一致，不含迭代）。"""
+        base_ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: 0 for i in base_ids}
+        if not base_ids:
+            return out
+        load_ids, plans_by_owner = self._inventory_export_expand_op_ids_with_substitute_items(conn, base_ids)
+        wid = str(wayfair_id or '').strip()
+        if wid:
+            matrix = wayfair_matrix if isinstance(wayfair_matrix, dict) else self._load_overseas_qty_wayfair_matrix(conn, load_ids)
+            inv_by_op = {}
+            for oid in load_ids:
+                tier = self._forecast_inventory_zero()
+                tier['overseas_qty'] = int(matrix.get((wid, oid), 0) or 0)
+                inv_by_op[oid] = tier
+        else:
+            inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
+        for oid in base_ids:
+            owner_qty = int((inv_by_op.get(oid) or {}).get('overseas_qty') or 0)
+            plans = plans_by_owner.get(oid) or []
+            if plans:
+                sub_qty = int(
+                    self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans).get('overseas_qty') or 0
+                )
+                out[oid] = owner_qty + sub_qty
+            else:
+                out[oid] = owner_qty
+        return out
 
     def _load_overseas_qty_wayfair_matrix(self, conn, order_product_ids):
         """批量加载 (wayfair_id, order_product_id) -> 可用库存，供 Wayfair 导出复用。"""
@@ -203,23 +263,12 @@ class PlatformInventoryExportMixin:
         return out
 
     def _load_overseas_qty_by_wayfair_id(self, conn, order_product_ids, wayfair_id):
-        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
-        wid = str(wayfair_id or '').strip()
-        out = {i: 0 for i in ids}
-        if not ids or not wid:
-            return out
-        matrix = self._load_overseas_qty_wayfair_matrix(conn, ids)
-        return self._overseas_qty_by_wayfair_id(ids, wid, matrix)
+        return self._inventory_export_effective_overseas_by_op(
+            conn, order_product_ids, wayfair_id=wayfair_id,
+        )
 
     def _load_overseas_qty_all_warehouses(self, conn, order_product_ids):
-        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
-        out = {i: 0 for i in ids}
-        if not ids:
-            return out
-        inv_map = self._forecast_load_inventory_by_order_product(conn, ids)
-        for oid in ids:
-            out[oid] = int((inv_map.get(oid) or {}).get('overseas_qty') or 0)
-        return out
+        return self._inventory_export_effective_overseas_by_op(conn, order_product_ids)
 
     def _load_sales_products_platform_sku_index(self, conn, platform_key, shop_id=None):
         sp_has_shop = self._table_has_column(conn, 'sales_products', 'shop_id')
@@ -269,28 +318,24 @@ class PlatformInventoryExportMixin:
             vid: self._bom_units_for_links(links_by_vid.get(vid) or [])
             for vid in ids
         }
-        min_units = min(bom_units_by_vid.values()) if bom_units_by_vid else 0
         fabric_shares = self._fabric_share_map_for_variants(conn, ids)
-        return links_by_vid, bom_units_by_vid, min_units, fabric_shares
+        return links_by_vid, bom_units_by_vid, fabric_shares
 
     def _export_variant_qty(
         self, rec, variant_id, links, inv_by_op, opts,
-        bom_units_by_vid, min_bom_units, fabric_shares,
+        bom_units_by_vid, fabric_shares,
     ):
         if rec and not self._sales_product_status_exportable(rec.get('product_status')):
             return 0
         vid = self._parse_int(variant_id)
         if not vid:
             return 0
-        share_ratio = fabric_shares.get(vid, 1.0)
-        if not opts.get('use_fabric_share'):
-            share_ratio = 1.0
+        share_ratio = fabric_shares.get(vid, 1.0) if opts.get('use_fabric_share') else 1.0
         return self._compute_platform_inventory_qty(
             links or [],
             inv_by_op,
             opts,
             bom_units=bom_units_by_vid.get(vid, 0),
-            min_bom_units=min_bom_units,
             fabric_share_ratio=share_ratio,
         )
 
@@ -298,7 +343,7 @@ class PlatformInventoryExportMixin:
         vid = self._parse_int(variant_id)
         if not vid:
             return 0
-        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, [vid])
+        links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, [vid])
         links = links_by_vid.get(vid) or []
         if not links:
             return 0
@@ -307,13 +352,10 @@ class PlatformInventoryExportMixin:
             inv_by_op = self._load_overseas_qty_by_wayfair_id(conn, op_ids, wayfair_id)
         else:
             inv_by_op = self._load_overseas_qty_all_warehouses(conn, op_ids)
-        share_ratio = fabric_shares.get(vid, 1.0)
-        if not opts.get('use_fabric_share'):
-            share_ratio = 1.0
+        share_ratio = fabric_shares.get(vid, 1.0) if opts.get('use_fabric_share') else 1.0
         return self._compute_platform_inventory_qty(
             links, inv_by_op, opts,
             bom_units=bom_units_by_vid.get(vid, 0),
-            min_bom_units=min_units,
             fabric_share_ratio=share_ratio,
         )
 
@@ -360,7 +402,7 @@ class PlatformInventoryExportMixin:
         if shop_id and not sku_map:
             raise ValueError('所选店铺下无亚马逊销售产品')
         variant_ids = sorted({v['variant_id'] for v in sku_map.values() if v.get('variant_id')})
-        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
@@ -377,7 +419,7 @@ class PlatformInventoryExportMixin:
             links = links_by_vid.get(vid) or []
             qty = self._export_variant_qty(
                 rec, vid, links, inv_by_op, opts,
-                bom_units_by_vid, min_units, fabric_shares,
+                bom_units_by_vid, fabric_shares,
             )
             rows.append((sku, qty))
         return rows
@@ -418,7 +460,7 @@ class PlatformInventoryExportMixin:
             for s in sku_list
             if s in sku_map and sku_map[s].get('variant_id')
         })
-        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
@@ -436,7 +478,7 @@ class PlatformInventoryExportMixin:
             links = links_by_vid.get(vid) or []
             qty_by_sku[sku] = self._export_variant_qty(
                 rec, vid, links, inv_by_op, opts,
-                bom_units_by_vid, min_units, fabric_shares,
+                bom_units_by_vid, fabric_shares,
             )
         text = (file_bytes or b'').decode('utf-8-sig', errors='replace')
         lines = text.splitlines()
@@ -520,14 +562,15 @@ class PlatformInventoryExportMixin:
         sku_map_all = self._load_sales_products_platform_sku_index(conn, 'wayfair')
         sku_map = {part: sku_map_all[part] for part in parts_needed if part in sku_map_all}
         variant_ids = sorted({rec['variant_id'] for rec in sku_map.values() if rec.get('variant_id')})
-        links_by_vid, bom_units_by_vid, min_units, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
+        links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
             int(oid)
             for links in links_by_vid.values()
             for oid, _ in (links or [])
             if self._parse_int(oid)
         })
-        wayfair_matrix = self._load_overseas_qty_wayfair_matrix(conn, all_op_ids)
+        load_ids, _plans = self._inventory_export_expand_op_ids_with_substitute_items(conn, all_op_ids)
+        wayfair_matrix = self._load_overseas_qty_wayfair_matrix(conn, load_ids)
         qty_cache = {}
         filled = 0
         for row, sid, part in row_jobs:
@@ -543,10 +586,12 @@ class PlatformInventoryExportMixin:
             cache_key = (vid, sid)
             if cache_key not in qty_cache:
                 op_ids = [int(oid) for oid, _ in links]
-                inv_by_op = self._overseas_qty_by_wayfair_id(op_ids, sid, wayfair_matrix)
+                inv_by_op = self._inventory_export_effective_overseas_by_op(
+                    conn, op_ids, wayfair_id=sid, wayfair_matrix=wayfair_matrix,
+                )
                 qty_cache[cache_key] = self._export_variant_qty(
                     rec, vid, links, inv_by_op, opts,
-                    bom_units_by_vid, min_units, fabric_shares,
+                    bom_units_by_vid, fabric_shares,
                 )
             row[col_map['in_stock']] = str(int(qty_cache[cache_key]))
             filled += 1

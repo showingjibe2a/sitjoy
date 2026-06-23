@@ -48,6 +48,8 @@
 
     use_fabric_share: true,
 
+    fabric_share_min_qty: 0,
+
   };
 
 
@@ -342,6 +344,8 @@
 
       use_fabric_share: segmentValue('spiFabricShareSegment', '1') === '1',
 
+      fabric_share_min_qty: Math.max(0, Number(document.getElementById('spiFabricShareMinQty')?.value || 0)),
+
     };
 
     if (platform === 'amazon') {
@@ -392,6 +396,8 @@
 
     const minNosync = document.getElementById('spiMinNosyncQty');
 
+    const fabricShareMin = document.getElementById('spiFabricShareMinQty');
+
     const shopSel = document.getElementById('spiAmazonShop');
 
     if (maxMissing) maxMissing.value = String(p.max_missing_parts);
@@ -405,6 +411,8 @@
     if (gapMin) gapMin.value = String(p.spec_gap_min);
 
     if (minNosync) minNosync.value = String(p.min_nosync_qty);
+
+    if (fabricShareMin) fabricShareMin.value = String(p.fabric_share_min_qty ?? 0);
 
     if (shopSel && p.shop_id) shopSel.value = String(p.shop_id);
 
@@ -679,6 +687,8 @@
       min_nosync_qty: prefs.min_nosync_qty,
 
       use_fabric_share: !!prefs.use_fabric_share,
+
+      fabric_share_min_qty: Math.max(0, Number(prefs.fabric_share_min_qty || 0)),
 
       shop_id: prefs.shop_id ? Number(prefs.shop_id) : null,
 

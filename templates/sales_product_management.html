@@ -970,7 +970,7 @@
                     </div>
 
                     <div class="form-group pm-form-full">
-                        <label class="label-help">大规格差异<span class="help-dot" data-tip="按 BOM 总件数与最少规格的差值扣减。仅当海外仓可售 &gt; 最少保留时，扣减后才以最少保留为底；否则以可售为底（不抬升）。可售 ≤ 最小不同步阈值时最终归零。"></span></label>
+                        <label class="label-help">大规格差异<span class="help-dot" data-tip="以 1 件下单 SKU 为基准：BOM 总件数 = 1 时不扣减（按库存上限/可售套数）；每多 1 件 BOM 总件数扣减「每多 1 件减」套数，直至「最少保留」；可售 ≤ 最小不同步阈值时最终归零。"></span></label>
                         <div class="spi-option-row">
                             <div class="status-segment status-segment--inline" id="spiSpecGapEnabledSegment" data-value="1">
                                 <button type="button" class="status-pill status-pill--yes is-active" data-value="1">启用</button>
@@ -993,10 +993,15 @@
                         </div>
                     </div>
                     <div class="form-group pm-form-full">
-                        <label class="label-help">是否考虑面料比例<span class="help-dot" data-tip="启用后按「面料库存比例」中已保存的比例折算各颜色（面料）可售库存；关闭则所有颜色按 100% 计算。"></span></label>
-                        <div class="status-segment status-segment--inline" id="spiFabricShareSegment" data-value="1">
-                            <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
-                            <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                        <label class="label-help">是否考虑面料比例<span class="help-dot" data-tip="启用后按「面料库存比例」中已保存的比例折算各颜色（面料）可售库存（向下取整）；关闭则所有颜色按 100% 计算。"></span></label>
+                        <div class="spi-option-row">
+                            <div class="status-segment status-segment--inline" id="spiFabricShareSegment" data-value="1">
+                                <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                                <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                            </div>
+                            <span class="spi-field-label">比例最小库存</span>
+                            <input type="number" id="spiFabricShareMinQty" class="spi-num-input" min="0" step="1" value="0">
+                            <span class="spi-field-label">套（按比例算出不足此值、且扣减前可售 ≥ 此值时抬升至此值；0 表示不启用）</span>
                         </div>
                     </div>
                     </div>
