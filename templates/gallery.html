@@ -67,8 +67,24 @@
         const selectedItems = new Map();
         const GALLERY_LAST_PATH_KEY = 'sitjoy_gallery_last_path_v1';
 
-        function saveGalleryLastPath(path) { try { localStorage.setItem(GALLERY_LAST_PATH_KEY, String(path || '').trim()); } catch (_) {} }
-        function loadGalleryLastPath() { try { return String(localStorage.getItem(GALLERY_LAST_PATH_KEY) || '').trim(); } catch (_) { return ''; } }
+        function saveGalleryLastPath(path) {
+            const p = String(path || '').trim();
+            try {
+                if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.persistNasBrowseLocationState === 'function') {
+                    window.NasMainImageBrowserUi.persistNasBrowseLocationState(p, []);
+                    return;
+                }
+                localStorage.setItem(GALLERY_LAST_PATH_KEY, p);
+            } catch (_) {}
+        }
+        function loadGalleryLastPath() {
+            try {
+                if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.loadNasBrowseLocationState === 'function') {
+                    return String(window.NasMainImageBrowserUi.loadNasBrowseLocationState().pathB64 || '').trim();
+                }
+                return String(localStorage.getItem(GALLERY_LAST_PATH_KEY) || '').trim();
+            } catch (_) { return ''; }
+        }
 
         function decodeB64Utf8(b64) {
             if (!b64) return '';

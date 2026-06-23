@@ -1321,6 +1321,10 @@
 
         function persistNasOrderMainImageBrowseLocation() {
             try {
+                if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.persistNasBrowseLocationState === 'function') {
+                    window.NasMainImageBrowserUi.persistNasBrowseLocationState(nasMainImagePathB64, nasMainImageNavStack);
+                    return;
+                }
                 safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY, nasMainImagePathB64 || '');
                 safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : []));
             } catch (e) {}
@@ -1823,23 +1827,30 @@
                 showModalStatus('请先保存下单产品后再导入主图', true);
                 return;
             }
-            nasMainImagePathB64 = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY) || '';
+            nasMainImagePathB64 = '';
             nasMainImageNavStack = [];
-            try {
-                const raw = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY) || '';
-                const parsed = raw ? JSON.parse(raw) : null;
-                if (Array.isArray(parsed)) {
-                    nasMainImageNavStack = parsed
-                        .filter(x => x && typeof x.pathB64 === 'string')
-                        .map(x => ({
-                            name: String(x.name || ''),
-                            pathB64: String(x.pathB64 || ''),
-                        }));
-                    const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
-                    if (last && last.pathB64) nasMainImagePathB64 = last.pathB64;
+            if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.loadNasBrowseLocationState === 'function') {
+                const saved = window.NasMainImageBrowserUi.loadNasBrowseLocationState();
+                nasMainImagePathB64 = saved.pathB64 || '';
+                nasMainImageNavStack = Array.isArray(saved.navStack) ? saved.navStack.slice() : [];
+            } else {
+                nasMainImagePathB64 = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY) || '';
+                try {
+                    const raw = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY) || '';
+                    const parsed = raw ? JSON.parse(raw) : null;
+                    if (Array.isArray(parsed)) {
+                        nasMainImageNavStack = parsed
+                            .filter(x => x && typeof x.pathB64 === 'string')
+                            .map(x => ({
+                                name: String(x.name || ''),
+                                pathB64: String(x.pathB64 || ''),
+                            }));
+                        const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
+                        if (last && last.pathB64) nasMainImagePathB64 = last.pathB64;
+                    }
+                } catch (e) {
+                    nasMainImageNavStack = [];
                 }
-            } catch (e) {
-                nasMainImageNavStack = [];
             }
             nasMainImageSelected = new Set();
             const allowed = getOrderProductAllowedImageTypeNames();

@@ -24,6 +24,7 @@ from modules.file_management_mixin import (
     _RESOURCES_PARENT_BYTES,
 )
 from modules.file_utils_mixin import FileUtilsMixin
+from modules.image_assets_mixin import ImageAssetsMixin
 from modules.image_picker_mixin import ImagePickerMixin
 from modules.image_processing_mixin import ImageProcessingMixin
 from modules.logistics_in_transit_mixin import LogisticsInTransitMixin
@@ -73,6 +74,7 @@ class WSGIApp(
     AmazonAccountHealthMixin, # 亚马逊账户健康
     AmazonAdMixin,            # 亚马逊广告
     SalesProductMixin,        # 销售产品
+    ImageAssetsMixin,         # 图片资产中心（image_assets + mapping 统一入库）
     AplusMixin,               # A+ 页面
     SalesManagementMixin,     # 销售管理
     GoPlayMixin,              # 小组件：围棋对弈

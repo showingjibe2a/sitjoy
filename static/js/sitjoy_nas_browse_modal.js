@@ -8,7 +8,9 @@
  *   startPathB64, rootLabel,         // browse
  *   context, params,                 // image-picker
  *   onPick(pathB64), onConfirm(items),
- *   getImageTypeOptions, getImportImageType,  // fabric pick
+ *   getImageTypeOptions, getImportImageType,
+ *   importTarget: 'fabric',
+ *   onAfterImport(names, type, data),
  * })
  */
 (function (global) {
@@ -45,6 +47,8 @@
       onConfirm: null,
       getImageTypeOptions: null,
       getImportImageType: null,
+      importTarget: '',
+      onAfterImport: null,
       busy: false,
     };
   }
@@ -52,6 +56,33 @@
   function $(id) { return document.getElementById(id); }
 
   function getUi() { return global.NasMainImageBrowserUi || null; }
+
+  function isNasBrowsePathMode() {
+    return state.dataSource === 'browse';
+  }
+
+  function persistBrowseLocation() {
+    if (!isNasBrowsePathMode()) return;
+    const Ui = getUi();
+    if (Ui && typeof Ui.persistNasBrowseLocationState === 'function') {
+      Ui.persistNasBrowseLocationState(state.pathB64, state.navStack);
+    }
+  }
+
+  async function restoreBrowsePathIfNeeded() {
+    if (!isNasBrowsePathMode()) return;
+    const Ui = getUi();
+    if (!Ui || typeof Ui.restoreSavedNasBrowseLocation !== 'function') return;
+    const restored = await Ui.restoreSavedNasBrowseLocation({
+      pathB64: state.pathB64,
+      navStack: state.navStack,
+    });
+    if (restored) {
+      state.pathB64 = restored.pathB64 || '';
+      state.navStack = Array.isArray(restored.navStack) ? restored.navStack : [];
+      if (restored.fellBack) persistBrowseLocation();
+    }
+  }
 
   function escapeHtml(s) {
     return String(s || '')
@@ -101,12 +132,13 @@
 
   function normalizePickerItem(it) {
     const display = resolveDisplayName(it);
+    const nameRawB64 = String(it.name_raw_b64 || it.rawB64 || '').trim();
     return {
       display,
       name: display,
       path_b64: String(it.path_b64 || it.b64 || it.path || ''),
       b64: String(it.b64 || it.path_b64 || it.path || ''),
-      name_raw_b64: String(it.name_raw_b64 || it.rawB64 || it.name || ''),
+      name_raw_b64: nameRawB64,
     };
   }
 
@@ -138,7 +170,7 @@
   }
 
   function actionMode() {
-    if (state.profile === 'link') return 'double';
+    if (state.profile === 'link' && state.importTarget !== 'fabric') return 'double';
     const Ui = getUi();
     if (Ui && Ui.readActionModeFromSegment) {
       return Ui.readActionModeFromSegment('sjNasBrowseActionModeSegment');
@@ -148,27 +180,32 @@
   }
 
   function applyProfileUi() {
-    const isLink = state.profile === 'link';
+    const isLink = state.profile === 'link' && state.importTarget !== 'fabric';
     const isPick = state.profile === 'pick';
     const isFabric = isPick && state.dataSource === 'fabric-images';
+    const isFabricImport = state.importTarget === 'fabric';
 
     $('sjNasBrowseActionModeWrap').style.display = isLink ? 'none' : '';
     $('sjNasBrowseSearchWrap').style.display = isPick && state.dataSource === 'image-picker' ? '' : 'none';
     $('sjNasBrowseRootsWrap').style.display = isPick && state.roots.length > 1 ? '' : 'none';
-    $('sjNasBrowseImageTypeWrap').style.display = isFabric ? '' : 'none';
-    $('sjNasBrowseSelectAllLabel').style.display = isPick ? '' : 'none';
-    $('sjNasBrowseConfirmBtn').style.display = isPick ? '' : 'none';
+    $('sjNasBrowseImageTypeWrap').style.display = (isFabric || isFabricImport) ? '' : 'none';
+    $('sjNasBrowseSelectAllLabel').style.display = (isPick || isFabricImport) ? '' : 'none';
+    $('sjNasBrowseConfirmBtn').style.display = (isPick || isFabricImport) ? '' : 'none';
 
     const help = $('sjNasBrowseHelpDot');
     if (help) {
-      help.setAttribute('data-tip', state.helpTip || (isLink
-        ? '从『上架资源』浏览 NAS 文件；双击图片即可关联。'
-        : '仅显示尚未绑定的图片。文件夹请双击进入。'));
+      help.setAttribute('data-tip', state.helpTip || (isFabricImport
+        ? '从「上架资源」浏览 NAS 文件，移动至「『面料』」目录。文件夹请双击进入。'
+        : isLink
+          ? '从『上架资源』浏览 NAS 文件；双击图片即可关联。'
+          : '仅显示尚未绑定的图片。文件夹请双击进入。'));
     }
 
     const confirmBtn = $('sjNasBrowseConfirmBtn');
     if (confirmBtn) {
-      confirmBtn.textContent = isFabric ? '确认绑定' : '确认选择';
+      if (isFabricImport) confirmBtn.textContent = '批量导入所选';
+      else if (isFabric) confirmBtn.textContent = '确认绑定';
+      else confirmBtn.textContent = '确认选择';
     }
 
     if (isLink) {
@@ -329,6 +366,8 @@
     const n = Number(imageCount) || 0;
     if (state.profile === 'link') {
       el.textContent = `共 ${n} 张图片 · 双击关联`;
+    } else if (state.importTarget === 'fabric') {
+      el.textContent = `共 ${n} 张图片`;
     } else if (state.dataSource === 'image-picker') {
       el.textContent = `共 ${n} 张可选图片`;
     } else {
@@ -359,6 +398,7 @@
       state.pathB64 = last && last.pathB64 ? String(last.pathB64) : '';
     }
     state.selected.clear();
+    persistBrowseLocation();
     await reload();
   }
 
@@ -371,6 +411,7 @@
     state.pathB64 = pb;
     state.navStack.push({ name: name || '文件夹', pathB64: pb });
     state.selected.clear();
+    persistBrowseLocation();
     await reload();
   }
 
@@ -460,7 +501,23 @@
   async function pickImage(pathB64) {
     if (state.busy) return;
     const pb = String(pathB64 || '').trim();
-    if (!pb || typeof state.onPick !== 'function') return;
+    if (!pb) return;
+    if (state.importTarget === 'fabric') {
+      state.busy = true;
+      showStatus('正在移动…', false);
+      try {
+        const ok = await importFabricPaths([pb], false);
+        if (ok) await reload();
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        showStatus(msg, true);
+        if (global.showAppToast) global.showAppToast(msg, true, 8000);
+      } finally {
+        state.busy = false;
+      }
+      return;
+    }
+    if (typeof state.onPick !== 'function') return;
     state.busy = true;
     showStatus('正在处理…', false);
     try {
@@ -562,7 +619,7 @@
         };
 
         if (state.profile === 'link' || mode === 'double') {
-          card.title = '双击关联';
+          card.title = state.importTarget === 'fabric' ? '双击移动并绑定' : '双击关联';
           if (Ui && Ui.wireNasImageBrowseCard) {
             Ui.wireNasImageBrowseCard(card, 'double', {
               onDoubleImport: () => pickImage(pb),
@@ -646,6 +703,65 @@
     return String(fallback || '').trim();
   }
 
+  async function importFabricPaths(paths, closeAfter) {
+    const fabricCode = String(state.params.fabricCode || '').trim();
+    if (!fabricCode) {
+      showStatus('请先在面料表单中填写面料编号', true);
+      return false;
+    }
+    const imageType = getFabricImageType();
+    if (!imageType) {
+      showStatus('请先选择图片类型', true);
+      return false;
+    }
+    const list = (Array.isArray(paths) ? paths : []).map((p) => String(p || '').trim()).filter(Boolean);
+    if (!list.length) {
+      showStatus('请至少选择一张图片', true);
+      return false;
+    }
+    showStatus(`正在移动 ${list.length} 张…`, false);
+    const resp = await fetch('/api/fabric-import-by-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        fabric_code: fabricCode,
+        fabric_id: state.params.fabricId || null,
+        source_paths_b64: list,
+        image_type: imageType,
+      }),
+    });
+    const data = await resp.json();
+    if (!data || data.status !== 'success') {
+      showStatus((data && data.message) ? data.message : '导入失败', true);
+      return false;
+    }
+    const names = data.image_names || [];
+    const msg = data.message || `已导入 ${names.length} 张`;
+    showStatus(msg, false);
+    if (typeof state.onAfterImport === 'function') {
+      state.onAfterImport(names, imageType, data);
+    }
+    if (closeAfter) close();
+    return true;
+  }
+
+  async function confirmPickFabricMove() {
+    const picked = (state.items || []).filter((it) => state.selected.has(String(it.path_b64 || it.b64 || it.path || '')));
+    if (!picked.length) {
+      showStatus('请至少选择一张图片', true);
+      return;
+    }
+    const paths = picked.map((it) => String(it.path_b64 || it.b64 || it.path || '').trim()).filter(Boolean);
+    const btn = $('sjNasBrowseConfirmBtn');
+    if (btn) btn.disabled = true;
+    try {
+      await importFabricPaths(paths, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function confirmPickFabric() {
     const fabricCode = String(state.params.fabricCode || '').trim();
     if (!fabricCode) {
@@ -698,6 +814,10 @@
   }
 
   function confirmPick() {
+    if (state.importTarget === 'fabric') {
+      confirmPickFabricMove();
+      return;
+    }
     if (state.dataSource === 'fabric-images') {
       confirmPickFabric();
       return;
@@ -712,6 +832,7 @@
   }
 
   function close() {
+    persistBrowseLocation();
     $(MODAL_ID)?.classList.remove('active');
     state.selected.clear();
     showStatus('', false);
@@ -737,12 +858,40 @@
     state.onConfirm = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
     state.getImageTypeOptions = opts.getImageTypeOptions || null;
     state.getImportImageType = opts.getImportImageType || null;
+    state.importTarget = String(opts.importTarget || '').trim();
+    state.onAfterImport = typeof opts.onAfterImport === 'function' ? opts.onAfterImport : null;
 
-    if (state.profile === 'link' || opts.dataSource === 'browse') {
+    if (state.importTarget === 'fabric') {
+      state.profile = 'pick';
       state.dataSource = 'browse';
-      state.pathB64 = String(opts.startPathB64 || opts.pathB64 || '').trim();
       state.rootLabel = String(opts.rootLabel || DEFAULT_ROOT_LABEL).trim() || DEFAULT_ROOT_LABEL;
-      state.navStack = [];
+      state.params = {
+        fabricId: opts.fabricId || opts.fabric_id || null,
+        fabricCode: opts.fabricCode || opts.fabric_code || '',
+      };
+      const explicitPath = String(opts.startPathB64 || opts.pathB64 || '').trim();
+      if (explicitPath) {
+        state.pathB64 = explicitPath;
+        state.navStack = Array.isArray(opts.navStack) ? opts.navStack.slice() : [];
+      } else {
+        const Ui = getUi();
+        const saved = (Ui && Ui.loadNasBrowseLocationState) ? Ui.loadNasBrowseLocationState() : { pathB64: '', navStack: [] };
+        state.pathB64 = saved.pathB64 || '';
+        state.navStack = Array.isArray(saved.navStack) ? saved.navStack.slice() : [];
+      }
+    } else if (state.profile === 'link' || opts.dataSource === 'browse') {
+      state.dataSource = 'browse';
+      state.rootLabel = String(opts.rootLabel || DEFAULT_ROOT_LABEL).trim() || DEFAULT_ROOT_LABEL;
+      const explicitPath = String(opts.startPathB64 || opts.pathB64 || '').trim();
+      if (explicitPath) {
+        state.pathB64 = explicitPath;
+        state.navStack = Array.isArray(opts.navStack) ? opts.navStack.slice() : [];
+      } else {
+        const Ui = getUi();
+        const saved = (Ui && Ui.loadNasBrowseLocationState) ? Ui.loadNasBrowseLocationState() : { pathB64: '', navStack: [] };
+        state.pathB64 = saved.pathB64 || '';
+        state.navStack = Array.isArray(saved.navStack) ? saved.navStack.slice() : [];
+      }
     } else if (opts.context === 'fabric' || opts.dataSource === 'fabric-images') {
       state.dataSource = 'fabric-images';
       state.context = 'fabric';
@@ -778,6 +927,7 @@
     initActionModeSegment();
 
     $(MODAL_ID)?.classList.add('active');
+    await restoreBrowsePathIfNeeded();
     await reload();
   }
 })(typeof window !== 'undefined' ? window : this);

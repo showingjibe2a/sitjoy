@@ -45,15 +45,6 @@ class FileUtilsMixin:
                         pass
         return max_idx + 1
 
-    def _rename_fabric_image_with_remark(self, old_name, fabric_code, remark, index):
-        if not old_name:
-            return None
-        ext = os.path.splitext(old_name)[1] or '.jpg'
-        new_name = self._fabric_target_filename(fabric_code, remark, index, ext)
-        if old_name == new_name:
-            return old_name
-        return new_name
-
     def _join_resources(self, rel_path):
         """拼接资源目录（返回 bytes 路径）"""
         from app import RESOURCES_PATH_BYTES  # 导入全局常量
@@ -82,17 +73,11 @@ class FileUtilsMixin:
 
     def _fabric_image_src_from_payload(self, img, folder):
         """从保存 payload 定位面料目录中的图片（优先 image_name_raw_b64 原始字节）。"""
-        import base64
-
         raw_b64 = (img.get('image_name_raw_b64') or '').strip()
         if raw_b64:
-            try:
-                raw_bytes = base64.b64decode(raw_b64)
-                src_path = os.path.join(folder, raw_bytes)
-                if os.path.exists(src_path):
-                    return self._decode_fs_name_bytes(raw_bytes), src_path
-            except Exception:
-                pass
+            display, src_path = self._resolve_name_b64_in_folder(folder, raw_b64)
+            if display and src_path:
+                return display, src_path
 
         old_name = (img.get('image_name') or '').strip()
         if not old_name:
@@ -100,136 +85,106 @@ class FileUtilsMixin:
         src_path = os.path.join(folder, self._safe_fsencode(old_name))
         return old_name, src_path
 
-    def _build_fabric_image_plan(self, images, fabric_code):
-        """为面料图片生成重命名计划和最终入库数据"""
-        folder = self._ensure_fabric_folder()
-        remark_counters = {}
-        planned_images = []
-        rename_pairs = []
-        missing = []
-        not_ready = []
-
-        for idx, img in enumerate(images):
-            old_name, src_path = self._fabric_image_src_from_payload(img, folder)
-            if not old_name or not src_path:
-                continue
-
-            if not os.path.exists(src_path):
-                missing.append(old_name)
-                continue
-            try:
-                if os.path.getsize(src_path) <= 0:
-                    not_ready.append(old_name)
-                    continue
-            except Exception:
-                not_ready.append(old_name)
-                continue
-
-            remark = self._fabric_filename_part(img.get('remark'), '文字卖点图')
-            remark_counters[remark] = remark_counters.get(remark, 0) + 1
-            index_in_remark = remark_counters[remark]
-            new_name = self._rename_fabric_image_with_remark(old_name, fabric_code, remark, index_in_remark)
-
-            planned_images.append({
-                'image_name': new_name,
-                'remark': remark,
-                'sort_order': self._to_int(img.get('sort_order'), idx) if isinstance(img, dict) else idx,
-                'is_primary': bool(img.get('is_primary', idx == 0)) if isinstance(img, dict) else (idx == 0),
-            })
-
-            if new_name != old_name:
-                rename_pairs.append((old_name, new_name))
-
-        return {
-            'planned_images': planned_images,
-            'rename_pairs': rename_pairs,
-            'missing': missing,
-            'not_ready': not_ready,
-        }
-
-    def _execute_fabric_rename_pairs(self, rename_pairs):
-        """安全执行批量重命名，避免目标名冲突（两阶段：先临时名，再目标名）"""
-        import secrets
-        
-        if not rename_pairs:
-            return {'status': 'success', 'rollback_pairs': []}
-
-        folder = self._ensure_fabric_folder()
-        normalized = []
-        seen_src = set()
-        seen_dst = set()
-        for src_name, dst_name in rename_pairs:
-            src = (src_name or '').strip()
-            dst = (dst_name or '').strip()
-            if not src or not dst or src == dst:
-                continue
-            if src in seen_src:
-                return {'status': 'error', 'message': f'重复源文件: {src}'}
-            if dst in seen_dst:
-                return {'status': 'error', 'message': f'目标文件名冲突: {dst}'}
-            seen_src.add(src)
-            seen_dst.add(dst)
-            normalized.append((src, dst))
-
-        if not normalized:
-            return {'status': 'success', 'rollback_pairs': []}
-
-        src_set = {src for src, _ in normalized}
-        for src, dst in normalized:
-            src_path = os.path.join(folder, self._safe_fsencode(src))
-            dst_path = os.path.join(folder, self._safe_fsencode(dst))
-            if not os.path.exists(src_path):
-                return {'status': 'error', 'message': f'源文件不存在: {src}'}
-            if dst not in src_set and os.path.exists(dst_path):
-                return {'status': 'error', 'message': f'目标文件已存在: {dst}'}
-
-        temp_pairs = []
-        for index, (src, dst) in enumerate(normalized):
-            token = secrets.token_hex(6)
-            temp_name = f".__sitjoy_tmp__{token}_{index}"
-            while os.path.exists(os.path.join(folder, self._safe_fsencode(temp_name))):
-                token = secrets.token_hex(6)
-                temp_name = f".__sitjoy_tmp__{token}_{index}"
-            temp_pairs.append((src, temp_name, dst))
-
-        moved_to_temp = []
-        moved_to_final = []
+    def _fabric_folder_existing_names(self, folder=None):
+        """扫描『面料』目录已有文件名（str 集合）。"""
+        folder = folder or self._ensure_fabric_folder()
+        existing = set()
         try:
-            for src, temp_name, _ in temp_pairs:
-                src_path = os.path.join(folder, self._safe_fsencode(src))
-                temp_path = os.path.join(folder, self._safe_fsencode(temp_name))
-                os.rename(src_path, temp_path)
-                moved_to_temp.append((src, temp_name))
+            with os.scandir(folder) as it:
+                for entry in it:
+                    if entry.is_file(follow_symlinks=False):
+                        existing.add(self._decode_fs_name_bytes(self._entry_name_bytes(entry)))
+        except Exception:
+            pass
+        return existing
 
-            for src, temp_name, dst in temp_pairs:
-                temp_path = os.path.join(folder, self._safe_fsencode(temp_name))
-                dst_path = os.path.join(folder, self._safe_fsencode(dst))
-                os.rename(temp_path, dst_path)
-                moved_to_final.append((src, dst))
+    def _fabric_allocate_bind_target(self, existing, fabric_code, image_type, ext):
+        """绑定/导入时分配下一个目标文件名（编码-类型-序号.ext）。"""
+        ext_v = ext if str(ext or '').startswith('.') else f'.{ext or "jpg"}'
+        idx = self._next_fabric_image_seq(existing, fabric_code, image_type)
+        return self._fabric_target_filename(fabric_code, image_type, idx, ext_v)
 
-            rollback_pairs = [(dst, src) for src, dst in reversed(moved_to_final)]
-            return {'status': 'success', 'rollback_pairs': rollback_pairs}
-        except Exception as e:
+    def _fabric_bind_result_item(self, target_name, remark=None, old_b64=None):
+        """绑定结果项：new_name + preview_b64（与 attach/import 响应一致）。"""
+        _, preview_b64 = self._resources_rel_path_b64('『面料』', self._safe_fsencode(target_name))
+        item = {'new_name': target_name, 'preview_b64': preview_b64}
+        if remark:
+            item['remark'] = remark
+        if old_b64:
+            item['old_b64'] = old_b64
+        return item
+
+    def _fabric_move_external_into_folder(self, src_b, folder, target_name):
+        """将外部绝对路径文件移入『面料』目录（move 失败则 copy+unlink）。"""
+        import shutil
+        dst_b = os.path.join(folder, self._safe_fsencode(target_name))
+        try:
+            shutil.move(src_b, dst_b)
+        except Exception:
+            shutil.copy2(src_b, dst_b)
             try:
-                final_map = {dst: src for src, dst in moved_to_final}
-                for _, dst in reversed(moved_to_final):
-                    dst_path = os.path.join(folder, self._safe_fsencode(dst))
-                    src = final_map.get(dst)
-                    if src and os.path.exists(dst_path):
-                        os.rename(dst_path, os.path.join(folder, self._safe_fsencode(src)))
+                os.unlink(src_b)
             except Exception:
                 pass
+        return dst_b
 
+    def _fabric_bind_files_in_folder(self, folder, existing, fabric_code, image_type, raw_b64_items):
+        """
+        『面料』目录内未绑定文件：按编码-类型-序号重命名。
+        用于「选择已有图片」/api/fabric-attach。
+        """
+        results = []
+        existing = set(existing or [])
+        image_type = (image_type or '文字卖点图').strip() or '文字卖点图'
+
+        for raw_b64 in list(raw_b64_items or [])[:200]:
+            _display, src = self._resolve_name_b64_in_folder(folder, raw_b64)
+            if not src:
+                continue
+
+            base = os.path.basename(src)
+            src_basename_str = self._decode_fs_name_bytes(
+                base if isinstance(base, bytes) else self._safe_fsencode(str(base))
+            )
+            ext = os.path.splitext(src_basename_str)[1] or '.jpg'
+            candidate = self._fabric_allocate_bind_target(existing, fabric_code, image_type, ext)
+            dst = os.path.join(folder, self._safe_fsencode(candidate))
             try:
-                for src, temp_name in reversed(moved_to_temp):
-                    temp_path = os.path.join(folder, self._safe_fsencode(temp_name))
-                    src_path = os.path.join(folder, self._safe_fsencode(src))
-                    if os.path.exists(temp_path):
-                        os.rename(temp_path, src_path)
+                os.rename(src, dst)
+            except Exception as rename_err:
+                return {'status': 'error', 'message': f'重命名失败: {rename_err}', 'items': results}
+
+            existing.add(candidate)
+            results.append(self._fabric_bind_result_item(
+                candidate, remark=image_type, old_b64=str(raw_b64 or '').strip()
+            ))
+
+        return {'status': 'success', 'items': results}
+
+    def _fabric_import_external_paths(self, folder, existing, fabric_code, image_type, source_files_b):
+        """
+        从 NAS/资源绝对路径移入『面料』并按规则命名。
+        用于「云端关联」/api/fabric-import-by-path。
+        """
+        results = []
+        existing = set(existing or [])
+        image_type = (image_type or '文字卖点图').strip() or '文字卖点图'
+
+        for src_b in list(source_files_b or [])[:200]:
+            try:
+                base = self._safe_fsdecode(os.path.basename(src_b))
             except Exception:
-                pass
-            
-            return {'status': 'error', 'message': str(e)}
+                base = 'image.jpg'
+            ext = os.path.splitext(base)[1] or '.jpg'
+            target_name = self._fabric_allocate_bind_target(existing, fabric_code, image_type, ext)
+            try:
+                self._fabric_move_external_into_folder(src_b, folder, target_name)
+            except Exception as move_err:
+                return {'status': 'error', 'message': f'移动失败: {move_err}', 'items': results}
+            existing.add(target_name)
+            results.append(self._fabric_bind_result_item(target_name, remark=image_type))
+
+        return {'status': 'success', 'items': results, 'image_names': [r['new_name'] for r in results]}
 
     def handle_upload_api(self, environ, start_response):
         """处理图片上传（multipart/form-data）"""

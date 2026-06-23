@@ -6537,55 +6537,7 @@ class SalesProductMixin:
             out[vid] = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
         return out
 
-    def _read_fabric_image_items(self, conn, fabric_id):
-        """Read fabric-related images (readonly) for UI preview grids."""
-        fid = int(fabric_id or 0)
-        if not fid or not self._has_required_tables(['fabric_image_mappings', 'image_assets']):
-            return []
-
-        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
-        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
-        tname_sel = "it.name AS image_type_name" if has_ia_tid else "'' AS image_type_name"
-        dep_expr = "COALESCE(ia.is_deprecated,0)" if self._table_has_column(conn, 'image_assets', 'is_deprecated') else "0"
-        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
-        ofn_sel = "ia.original_filename AS original_filename" if has_ia_ofn else "'' AS original_filename"
-
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT fim.sort_order, ia.storage_path, {ofn_sel}, ia.description, {tname_sel}
-                FROM fabric_image_mappings fim
-                JOIN image_assets ia ON ia.id = fim.image_asset_id
-                {join_it}
-                WHERE fim.fabric_id=%s
-                ORDER BY {dep_expr} ASC, fim.sort_order ASC, fim.id ASC
-                """,
-                (fid,),
-            )
-            rows = cur.fetchall() or []
-
-        items = []
-        for row in rows:
-            storage_path = (row.get('storage_path') or '').strip()
-            image_name = (row.get('original_filename') or '').strip() or os.path.basename(storage_path)
-            if isinstance(storage_path, str):
-                try:
-                    rel_bytes = os.fsencode(storage_path)
-                except Exception:
-                    rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
-            else:
-                rel_bytes = storage_path
-            image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
-            items.append({
-                'image_name': image_name,
-                'image_b64': image_b64,
-                'description': row.get('description') or '',
-                'image_type_name': row.get('image_type_name') or '',
-                'sort_order': self._parse_int(row.get('sort_order')) or 0,
-            })
-        return items
-
-    def _find_image_asset_by_sha256(self, conn, sha256):
+    def _guess_image_ext(self, filename, content):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM image_assets WHERE sha256=%s LIMIT 1",

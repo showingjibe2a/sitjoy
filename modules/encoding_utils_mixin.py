@@ -236,7 +236,7 @@ class EncodingUtilsMixin:
                 continue
             encodings_to_try = []
             try:
-                encodings_to_try.append(os.fsencode(variant))
+                encodings_to_try.append(self._safe_fsencode(variant))
             except Exception:
                 pass
             try:
@@ -272,11 +272,52 @@ class EncodingUtilsMixin:
     def _entry_name_bytes(self, entry):
         raw = entry.name
         if isinstance(raw, str):
-            try:
-                return os.fsencode(raw)
-            except Exception:
-                return raw.encode('utf-8', errors='surrogatepass')
+            return self._safe_fsencode(raw)
         return bytes(raw)
+
+    def _b64decode_raw(self, value):
+        """Base64 → bytes；无效输入返回 None。"""
+        s = str(value or '').strip()
+        if not s:
+            return None
+        try:
+            return base64.b64decode(s)
+        except Exception:
+            return None
+
+    def _resolve_name_b64_in_folder(self, folder, name_raw_b64):
+        """
+        在 folder 内按 name_raw_b64（文件系统原始字节）定位文件。
+        返回 (display_name_str, abs_path_bytes) 或 (None, None)。
+        """
+        raw_bytes = self._b64decode_raw(name_raw_b64)
+        if not raw_bytes:
+            return None, None
+        folder_b = folder if isinstance(folder, (bytes, bytearray)) else self._safe_fsencode(folder)
+
+        candidates = [raw_bytes]
+        name_str = self._decode_fs_name_bytes(raw_bytes)
+        if name_str:
+            try:
+                enc = self._safe_fsencode(name_str)
+                if enc not in candidates:
+                    candidates.append(enc)
+            except Exception:
+                pass
+
+        for cand in candidates:
+            try:
+                src = os.path.join(folder_b, cand)
+            except Exception:
+                continue
+            try:
+                if os.path.isfile(src):
+                    base = os.path.basename(cand)
+                    display = self._decode_fs_name_bytes(base) or name_str or ''
+                    return display, src
+            except Exception:
+                continue
+        return None, None
 
     def _decode_fs_name_bytes(self, raw_bytes):
         if raw_bytes is None:

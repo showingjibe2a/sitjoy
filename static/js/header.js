@@ -2738,6 +2738,13 @@
             state.domPaginationAllRows = [];
             return;
         }
+        const cached = state.domPaginationAllRows;
+        if(Array.isArray(cached) && cached.length && rows.length){
+            const cachedSet = new Set(cached);
+            if(rows.every(row => cachedSet.has(row))){
+                return;
+            }
+        }
         state.domPaginationAllRows = rows;
         rows.forEach((row, idx) => {
             if((row.cells || []).length !== state.headerCount) return;
@@ -2759,7 +2766,18 @@
         if(!state || !shouldUseDomClientPagination(state)) return;
         const cached = state.domPaginationAllRows;
         if(!Array.isArray(cached) || !cached.length) return;
-        if(cached.some(row => !row || !row.isConnected)){
+        if(cached.some(row => !row)){
+            invalidateDomPaginationRows(state);
+            return;
+        }
+        const tbody = state.tbody;
+        if(!tbody) return;
+        const tbodyRows = Array.from(tbody.rows || []).filter(row => !isGroupedAggregateRow(row));
+        if(!tbodyRows.length) return;
+        if(tbodyRows.length === 1 && isPlaceholderRow(tbodyRows[0], state.headerCount)) return;
+        const cachedSet = new Set(cached);
+        // DOM 分页仅挂载当前页，缓存行脱离 tbody 是正常现象，不能据此清空全量行缓存。
+        if(tbodyRows.some(row => !cachedSet.has(row))){
             invalidateDomPaginationRows(state);
         }
     }
@@ -5683,16 +5701,18 @@
         rows.forEach(row => {
             if(!rowPassesManagedColumnFilters(row, filters, excludeKey)) return;
             const cell = getRowCellByKey(row, columnKey);
-            const value = readCellFilterText(cell);
-            const text = String(value === null || value === undefined ? '' : value).trim();
-            if(q){
-                if(isExact){
-                    if(text !== String(query || '').trim()) return;
-                } else if(!text.toLowerCase().includes(q)) {
-                    return;
+            const values = readCellFilterValues(cell);
+            values.forEach((raw) => {
+                const text = String(raw === null || raw === undefined ? '' : raw).trim();
+                if(q){
+                    if(isExact){
+                        if(text !== String(query || '').trim()) return;
+                    } else if(!text.toLowerCase().includes(q)) {
+                        return;
+                    }
                 }
-            }
-            counts.set(text, (counts.get(text) || 0) + 1);
+                counts.set(text, (counts.get(text) || 0) + 1);
+            });
         });
         return Array.from(counts.entries())
             .map(([value, count]) => {
@@ -6217,10 +6237,8 @@
             normalized.push(normalizedItem);
         });
 
-        const popupSearchQuery = String(state.query || '').trim();
         selectedSet.forEach(value => {
             if(seen.has(value)) return;
-            if(!popupSearchQuery) return;
             seen.add(value);
             normalized.unshift({ value, label: value === '' ? '[空]' : value, count: 0 });
         });

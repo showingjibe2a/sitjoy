@@ -506,6 +506,10 @@
 
   function specmiPersistNasBrowseLocation() {
     try {
+      if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.persistNasBrowseLocationState === 'function') {
+        window.NasMainImageBrowserUi.persistNasBrowseLocationState(specmiNasPathB64, specmiNasNavStack);
+        return;
+      }
       localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
       localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(Array.isArray(specmiNasNavStack) ? specmiNasNavStack : []));
     } catch (e) {}
@@ -2588,20 +2592,27 @@
       showToast('请先打开规格', true);
       return;
     }
-    specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
+    specmiNasPathB64 = '';
     specmiNasNavStack = [];
-    try {
-      const rawStack = localStorage.getItem(SPECMI_LS_STACK) || '';
-      const parsedStack = rawStack ? JSON.parse(rawStack) : null;
-      if (Array.isArray(parsedStack)) {
-        specmiNasNavStack = parsedStack
-          .filter(x => x && typeof x.pathB64 === 'string')
-          .map(x => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
-        const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
-        if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
+    if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.loadNasBrowseLocationState === 'function') {
+      const saved = window.NasMainImageBrowserUi.loadNasBrowseLocationState();
+      specmiNasPathB64 = saved.pathB64 || '';
+      specmiNasNavStack = Array.isArray(saved.navStack) ? saved.navStack.slice() : [];
+    } else {
+      specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
+      try {
+        const rawStack = localStorage.getItem(SPECMI_LS_STACK) || '';
+        const parsedStack = rawStack ? JSON.parse(rawStack) : null;
+        if (Array.isArray(parsedStack)) {
+          specmiNasNavStack = parsedStack
+            .filter(x => x && typeof x.pathB64 === 'string')
+            .map(x => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
+          const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
+          if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
+        }
+      } catch (e) {
+        specmiNasNavStack = [];
       }
-    } catch (e) {
-      specmiNasNavStack = [];
     }
     specmiNasSelected = new Set();
     document.getElementById('specmi-nas-import-modal')?.classList.add('active');

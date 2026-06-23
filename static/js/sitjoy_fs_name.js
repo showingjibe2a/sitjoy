@@ -34,6 +34,18 @@
     return s;
   }
 
+  function encodeUtf8ToB64(text) {
+    const s = String(text || '');
+    if (!s) return '';
+    if (typeof TextEncoder !== 'undefined') {
+      const bytes = new TextEncoder().encode(s);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    }
+    return btoa(unescape(encodeURIComponent(s)));
+  }
+
   function resolveItemDisplayName(item) {
     const it = item || {};
     const raw = String(it.name_raw_b64 || it.rawB64 || '').trim();
@@ -55,6 +67,7 @@
   global.SitjoyFsName = {
     b64ToBytes: b64ToBytes,
     decodeFsNameFromB64: decodeFsNameFromB64,
+    encodeUtf8ToB64: encodeUtf8ToB64,
     resolveItemDisplayName: resolveItemDisplayName,
   };
 })(typeof window !== 'undefined' ? window : this);

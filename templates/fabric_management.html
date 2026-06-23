@@ -191,28 +191,31 @@
                             <input type="file" id="modalImageUpload" accept="image/*,image/tiff,.tif,.tiff" multiple style="display:none;">
                             <div class="form-group pm-form-full">
                                 <div class="mim-toolbar-row">
-                                    <label class="mim-toolbar-label">图片管理</label>
+                                    <label class="mim-toolbar-label">面料图片</label>
                                     <div class="mim-toolbar-actions">
-                                        <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                                            <button type="button" class="status-pill status-pill--no" id="fabricDupOff" onclick="setFabricImagePromptDuplicate(false)">重复提示：关</button>
-                                            <button type="button" class="status-pill status-pill--yes is-active" id="fabricDupOn" onclick="setFabricImagePromptDuplicate(true)">重复提示：开</button>
+                                        <div class="nas-header-control">
+                                            <span class="nas-header-control-label">显示面料图</span>
+                                            <div class="status-segment status-segment--inline" id="fabricImageShowFabricSegment">
+                                                <button id="fabricFabOff" type="button" class="status-pill status-pill--no" onclick="setFabricImageShowFabric(false)">否</button>
+                                                <button id="fabricFabOn" type="button" class="status-pill status-pill--yes is-active" onclick="setFabricImageShowFabric(true)">是</button>
+                                            </div>
                                         </div>
-                                        <div class="status-segment status-segment--inline mim-status-segment-spaced">
-                                            <button type="button" class="status-pill status-pill--no" id="fabricFabOff" onclick="setFabricImageShowFabric(false)">面料图：关</button>
-                                            <button type="button" class="status-pill status-pill--yes is-active" id="fabricFabOn" onclick="setFabricImageShowFabric(true)">面料图：开</button>
-                                        </div>
-                                        <button type="button" class="btn-accent" id="fabricImageUploadBtn" onclick="triggerFabricImageUpload()">新增图片</button>
-                                        <button type="button" class="btn-secondary" onclick="openFabricPickExistingImages()">选择已有图片</button>
-                                        <button type="button" class="btn-secondary" onclick="openFabricNasImportModal()">从NAS选择并移动</button>
+                                        <button type="button" class="btn-accent" id="fabricImageUploadBtn" onclick="triggerFabricImageUpload()">本地上传</button>
+                                        <button type="button" class="btn-secondary" onclick="openFabricNasImportModal()">云端关联</button>
                                     </div>
                                 </div>
                                 <div class="main-images-manager main-images-manager--mt-sm">
                                     <div class="main-images-toolbar">
                                         <div class="image-type-bar" id="fabricImageTypeBar"></div>
                                     </div>
-                                    <div id="fabricImageFolderTip" class="main-images-folder-tip">图片保存在「『面料』」目录；先在类型栏选择具体类型再新增（不要选「全部」）。双击卡片可编辑类型与备注，拖动可调整顺序。</div>
+                                    <div class="main-images-folder-row">
+                                        <div id="fabricImageFolderTip" class="main-images-folder-tip">图片保存在「『面料』」目录；先在类型栏选择具体类型再上传（不要选「全部」）。双击卡片可编辑类型与备注，拖动可调整顺序。</div>
+                                        <div class="main-images-folder-row-actions">
+                                            <button type="button" class="btn-secondary btn-small" onclick="openFabricPickExistingImages()">选择已有图片</button>
+                                        </div>
+                                    </div>
                                     <div id="selectedImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
-                                        <div class="sj-media-image-empty">未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定</div>
+                                        <div class="sj-media-image-empty">未选择图片（可为空），可点击「本地上传」上传或「选择已有图片」从库中绑定</div>
                                     </div>
                                 </div>
                             </div>
@@ -259,66 +262,6 @@
         </div>
     </div>
 
-    <div class="pm-modal nas-main-image-import-modal" id="fabric-nas-import-modal">
-        <div class="pm-modal-content pm-modal-content--wide">
-            <div class="pm-modal-scroll">
-                <div class="nas-main-image-header">
-                    <div class="nas-main-image-title">
-                        <h3 style="margin:0;">从NAS选择并移动（面料库）</h3>
-                        <span class="help-dot" data-tip="服务器侧 NAS 浏览：移动文件到「『面料』」目录。文件夹请双击进入；多选模式下勾选后批量导入。"></span>
-                    </div>
-                    <div class="nas-main-image-header-actions">
-                        <div class="nas-header-control">
-                            <span class="nas-header-control-label">新增方式</span>
-                            <div class="status-segment status-segment--inline" id="fabricNasActionModeSegment" data-value="multi">
-                                <button type="button" class="status-pill" data-value="double" title="双击图片立即导入">双击</button>
-                                <button type="button" class="status-pill is-active" data-value="multi" title="多选后点击批量导入">多选</button>
-                            </div>
-                        </div>
-                        <div class="nas-header-control">
-                            <span class="nas-header-control-label">图标尺寸</span>
-                            <div class="status-segment status-segment--inline nas-thumb-segment" id="fabricNasThumbSizeSegment" data-value="lg">
-                                <button type="button" class="status-pill status-pill--shipped is-active" data-value="lg" title="大图标">大</button>
-                                <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="pm-form">
-                    <div class="form-group pm-form-full">
-                        <label>图片类型</label>
-                        <div class="pm-inline-panel">
-                            <div id="fabricNasImageTypeBar" class="status-segment status-segment--inline"></div>
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label>当前位置</label>
-                        <div class="pm-inline-panel">
-                            <nav id="fabricNasBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <div class="nas-main-image-grid-meta" id="fabricNasGridMeta">
-                            <label class="nas-grid-select-all" id="fabricNasSelectAllLabel">
-                                <input type="checkbox" id="fabricNasSelectAllBox">
-                                <span>全选</span>
-                            </label>
-                            <div class="nas-grid-count" id="fabricNasCountText">共 0 张图片</div>
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <div id="fabricNasList" class="browser-grid nas-main-image-browser-grid"></div>
-                    </div>
-                </div>
-                <div id="fabricNasStatus" class="nas-main-image-status status-message" style="display:none; margin-top:0.75rem;" role="status"></div>
-            </div>
-            <div class="pm-modal-actions nas-main-image-modal-actions">
-                <button type="button" class="btn-small" onclick="closeFabricNasImportModal()">关闭</button>
-                <button type="button" class="btn-accent" onclick="fabricNasImportSelectedClick()">批量导入所选</button>
-            </div>
-        </div>
-    </div>
-
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -336,9 +279,7 @@
         let fabricImageTypeOptions = [];
         let selectedFabricImageType = '';
         let selectedFabricImageFilterType = '全部';
-        let fabricImagePromptDuplicate = true;
         let fabricImageShowFabric = true;
-        const FABRIC_DUP_LS = 'sj.fabricImage.promptDup.v1';
         const FABRIC_FAB_LS = 'sj.fabricImage.showFabric.v1';
 
         function readFabricBoolLs(key, def) {
@@ -352,15 +293,8 @@
             try { localStorage.setItem(key, val ? '1' : '0'); } catch (e) {}
         }
         function syncFabricImageToolbarToggles() {
-            document.getElementById('fabricDupOn')?.classList.toggle('is-active', !!fabricImagePromptDuplicate);
-            document.getElementById('fabricDupOff')?.classList.toggle('is-active', !fabricImagePromptDuplicate);
             document.getElementById('fabricFabOn')?.classList.toggle('is-active', !!fabricImageShowFabric);
             document.getElementById('fabricFabOff')?.classList.toggle('is-active', !fabricImageShowFabric);
-        }
-        function setFabricImagePromptDuplicate(on) {
-            fabricImagePromptDuplicate = !!on;
-            writeFabricBoolLs(FABRIC_DUP_LS, fabricImagePromptDuplicate);
-            syncFabricImageToolbarToggles();
         }
         function setFabricImageShowFabric(on) {
             fabricImageShowFabric = !!on;
@@ -388,15 +322,14 @@
                 fabricId: editId,
                 fabricCode,
                 getImageTypeOptions: () => fabricImageTypeOptions || [],
-                getImportImageType: () => {
-                    const bar = document.getElementById('fabricNasImageTypeBar');
-                    const active = bar && bar.querySelector('button.status-pill.is-active');
-                    const v = active ? String(active.getAttribute('data-value') || '').trim() : '';
-                    return v || getDefaultFabricImageTypeForAdd();
-                },
+                getImportImageType: () => getDefaultFabricImageTypeForAdd(),
                 title: '选择已有图片（面料库 · 未绑定）',
                 onConfirm: (imageNames, imageType, data) => {
-                    fabricNasOnAfterImport(imageNames, imageType, data);
+                    const Flow = window.FabricImageFlow;
+                    if (Flow && Flow.mergeAttachItemsIntoSelection) {
+                        Flow.mergeAttachItemsIntoSelection(selectedImageObjects, imageNames, imageType, data);
+                    }
+                    renderSelectedImagesGrid();
                     loadFabricImages();
                     if (editId && data && data.bound) {
                         showModalStatus(data.message || `已绑定 ${data.bound} 张`, false);
@@ -408,58 +341,33 @@
             });
         }
 
-        function fabricNasOnAfterImport(imageNames, imageType, attachData) {
-            const typeName = imageType || getDefaultFabricImageTypeForAdd();
-            const itemsMap = new Map();
-            ((attachData && attachData.items) || []).forEach(it => {
-                const name = String(it.new_name || '').trim();
-                if (name) itemsMap.set(name, it);
-            });
-            (imageNames || []).forEach(name => {
-                if ((selectedImageObjects || []).some(x => (x.image_name || '') === name)) return;
-                const meta = itemsMap.get(name) || {};
-                selectedImageObjects.push({
-                    image_name: name,
-                    preview_b64: String(meta.preview_b64 || '').trim(),
-                    remark: typeName,
-                    description: '',
-                    sort_order: selectedImageObjects.length,
-                    is_enabled: 1,
-                    is_deprecated: 0,
-                });
-            });
-            renderSelectedImagesGrid();
-            loadFabricImages();
-        }
-        function initFabricNasImportUi() {
-            if (!window.FabricNasImportUi) return;
-            window.FabricNasImportUi.configure({
-                getFabricCode: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
-                getFabricId: () => editId || null,
-                getImageTypeOptions: () => fabricImageTypeOptions || [],
-                getImportImageType: () => {
-                    const bar = document.getElementById('fabricNasImageTypeBar');
-                    const active = bar && bar.querySelector('button.status-pill.is-active');
-                    const v = active ? String(active.getAttribute('data-value') || '').trim() : '';
-                    return v || getDefaultFabricImageTypeForAdd();
-                },
-                onAfterImport: fabricNasOnAfterImport
-            });
-            window.FabricNasImportUi.bindModalBackdrop();
-        }
-        function openFabricNasImportModal() {
-            if (!window.FabricNasImportUi) {
+        async function openFabricNasImportModal() {
+            const fabricCode = (document.getElementById('modalFabricCode')?.value || '').trim();
+            if (!fabricCode) {
+                showModalStatus('请先填写面料编号', true);
+                return;
+            }
+            if (!window.SitjoyNasBrowseModal || typeof window.SitjoyNasBrowseModal.open !== 'function') {
                 showModalStatus('NAS 浏览组件未加载，请刷新页面后重试', true);
                 return;
             }
-            initFabricNasImportUi();
-            window.FabricNasImportUi.open();
-        }
-        function closeFabricNasImportModal() {
-            window.FabricNasImportUi?.close();
-        }
-        function fabricNasImportSelectedClick() {
-            window.FabricNasImportUi?.importSelected();
+            await window.SitjoyNasBrowseModal.open({
+                importTarget: 'fabric',
+                title: '云端关联',
+                helpTip: '提示：这是「服务器侧 NAS 浏览」，可将文件移动至「『面料』」目录。文件夹请双击进入，避免单击误入子目录后第二次点击误触图片。',
+                fabricCode,
+                fabricId: editId || null,
+                getImageTypeOptions: () => fabricImageTypeOptions || [],
+                getImportImageType: () => getDefaultFabricImageTypeForAdd(),
+                onAfterImport: (imageNames, imageType, data) => {
+                    const Flow = window.FabricImageFlow;
+                    if (Flow && Flow.mergeAttachItemsIntoSelection) {
+                        Flow.mergeAttachItemsIntoSelection(selectedImageObjects, imageNames, imageType, data);
+                    }
+                    renderSelectedImagesGrid();
+                    loadFabricImages();
+                },
+            });
         }
 
         function escapeHtml(value) {
@@ -562,7 +470,7 @@
         function triggerFabricImageUpload() {
             const type = normalizeFabricImageTypeName(selectedFabricImageType || '');
             if (!type || type === '全部') {
-                showModalStatus('请先在图片类型栏选择具体类型后再新增（不要选择「全部」）', true);
+                showModalStatus('请先在图片类型栏选择具体类型后再上传（不要选择「全部」）', true);
                 return;
             }
             const input = document.getElementById('modalImageUpload');
@@ -585,47 +493,27 @@
             return '';
         }
 
-        function getImageItemByName(imageName) {
-            const arr = (fabricImages || []);
-            for (let it of arr) {
-                if (!it) continue;
-                if (it.name === imageName) return it;
-                try {
-                    const dec = tryDecodeNameFromB64(it.rawB64) || '';
-                    if (dec === imageName) return it;
-                } catch (e) {}
-                if (it.rawB64 === imageName) return it;
-            }
-            return null;
-        }
+        function fabricFlow() { return window.FabricImageFlow || null; }
 
         function resolveFabricImagePathB64(img) {
-            if (!img) return '';
-            const stored = String(img.preview_b64 || '').trim();
-            if (stored) return stored;
-            const found = getImageItemByName(img.image_name);
-            if (found && found.b64) return found.b64;
-            if (img.image_name_raw_b64) {
-                const nameDec = tryDecodeNameFromB64(img.image_name_raw_b64) || img.image_name || '';
-                if (nameDec) return utf8ToB64(`『面料』/${nameDec}`);
-            }
-            return utf8ToB64(`『面料』/${img.image_name || ''}`);
+            const Flow = fabricFlow();
+            return Flow ? Flow.resolveFabricImagePathB64(img, fabricImages) : '';
         }
 
         function enrichSelectedImagesPreviewB64() {
             (selectedImageObjects || []).forEach(img => {
                 if (!img || img._isNewUpload || String(img.preview_b64 || '').trim()) return;
-                const found = getImageItemByName(img.image_name);
-                if (found && found.b64) img.preview_b64 = found.b64;
+                const Flow = fabricFlow();
+                if (Flow) {
+                    const b64 = Flow.resolveFabricImagePathB64(img, fabricImages);
+                    if (b64) img.preview_b64 = b64;
+                }
             });
         }
 
         function getFabricImagePreviewSrc(imageName, width = 520, quality = 72) {
-            const found = getImageItemByName(imageName);
-            const fallbackPath = `『面料』/${imageName || ''}`;
-            const fallbackB64 = utf8ToB64(fallbackPath);
-            const imageB64 = found && found.b64 ? found.b64 : fallbackB64;
-            return `/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=${width}&q=${quality}`;
+            const Flow = fabricFlow();
+            return Flow ? Flow.previewUrlForFabricImage(imageName, fabricImages, width, quality) : '';
         }
 
         function getSelectedImagePreviewSrc(img, width = 520, quality = 72) {
@@ -640,7 +528,8 @@
                 if (img._localPreviewUrl) return img._localPreviewUrl;
             }
             if (img && img.preview_b64) {
-                return `/api/image-preview?id=${encodeURIComponent(img.preview_b64)}&mode=thumb&w=${width}&q=${quality}`;
+                const Flow = fabricFlow();
+                return Flow ? Flow.previewUrlFromPathB64(img.preview_b64, width, quality) : '';
             }
             return getFabricImagePreviewSrc(img ? img.image_name : '', width, quality);
         }
@@ -930,49 +819,6 @@
                 });
         }
 
-        function tryDecodeNameFromB64(rawB64) {
-            if (window.SitjoyFsName && typeof window.SitjoyFsName.decodeFsNameFromB64 === 'function') {
-                return window.SitjoyFsName.decodeFsNameFromB64(rawB64) || null;
-            }
-            if (!rawB64) return null;
-            try {
-                const binary = atob(rawB64);
-                const bytes = new Uint8Array(binary.split('').map(c => c.charCodeAt(0)));
-                const encs = ['utf-8', 'utf-8', 'gb18030', 'gbk', 'iso-8859-1'];
-                for (let enc of encs) {
-                    try {
-                        if (window.TextDecoder) {
-                            const dec = new TextDecoder(enc, { fatal: false }).decode(bytes);
-                            if (dec && dec.indexOf('\uFFFD') === -1) return dec;
-                        }
-                    } catch (e) {
-                        continue;
-                    }
-                }
-                let s = '';
-                for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-                return s;
-            } catch (e) {
-                return null;
-            }
-        }
-
-        
-
-        function utf8ToB64(text) {
-            try {
-                if (typeof TextEncoder !== 'undefined') {
-                    const bytes = new TextEncoder().encode(text);
-                    let binary = '';
-                    bytes.forEach(b => binary += String.fromCharCode(b));
-                    return btoa(binary);
-                }
-                return btoa(unescape(encodeURIComponent(text)));
-            } catch (e) {
-                return '';
-            }
-        }
-
         function enforceMutualExclusive(source) {
             const upload = document.getElementById('modalImageUpload');
             const selectBlock = document.getElementById('fabricSelectBlock');
@@ -991,25 +837,6 @@
             } else {
                 uploadBlock && uploadBlock.classList.remove('is-selected');
             }
-        }
-
-        function attachSelectedImages(fabricCode, selectedNames) {
-            // Map selected display names back to raw base64 filename entries
-            const items = [];
-            (selectedNames || []).forEach(name => {
-                const found = (fabricImages || []).find(it => {
-                    const decoded = tryDecodeNameFromB64(it.rawB64) || it.name || '';
-                    return decoded === name;
-                });
-                if (found && found.rawB64) items.push(found.rawB64);
-            });
-            if (!items.length) return Promise.resolve({status: 'success', items: []});
-
-            return fetch('/api/fabric-attach', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fabric_code: fabricCode, items: items })
-            }).then(r => r.json());
         }
 
         function saveFabricFromModal() {
@@ -1187,10 +1014,11 @@
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
                         const imageNames = Array.isArray(item.image_names) ? item.image_names : [];
                         const imageName = imageNames.length ? imageNames[0] : (item.image_name || '');
-                        const imagePath = imageName ? `『面料』/${imageName}` : '';
-                        const imageB64 = imagePath ? utf8ToB64(imagePath) : '';
-                        const imageThumb = imageB64
-                            ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=120&q=60" alt="${imageName}">`
+                        const imageThumbUrl = imageName && fabricFlow()
+                            ? fabricFlow().previewUrlForFabricImage(imageName, fabricImages, 120, 60)
+                            : '';
+                        const imageThumb = imageThumbUrl
+                            ? `<img class="sj-table-thumb-img" src="${imageThumbUrl}" alt="${imageName}">`
                             : '';
                         const imageCount = imageNames.length > 1 ? `<div class="fabric-image-count">${imageNames.length}</div>` : '';
                         const thumbWrap = imageThumb
@@ -1293,8 +1121,8 @@
                 mapInfoItem: fabricImageToCardItem,
                 previewUrl: (img) => getSelectedImagePreviewSrc(img, 520, 72),
                 messages: {
-                    empty: '未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定',
-                    filteredEmpty: '当前类型筛选下暂无图片，请切换类型或新增图片',
+                    empty: '未选择图片（可为空），可点击「本地上传」上传或「选择已有图片」从库中绑定',
+                    filteredEmpty: '当前类型筛选下暂无图片，请切换类型或本地上传',
                 },
                 onDelete: (item) => {
                     const idx = selectedImageObjects.indexOf(item);
@@ -1427,7 +1255,10 @@
                 const data = await resp.json();
                 if (data.status !== 'success') return;
                 if (data.storage_path) {
-                    img.preview_b64 = utf8ToB64(String(data.storage_path).replace(/\\/g, '/'));
+                    const Flow = fabricFlow();
+                    img.preview_b64 = Flow
+                        ? Flow.encodeUtf8PathB64(String(data.storage_path).replace(/\\/g, '/'))
+                        : '';
                 }
                 if (data.image_type_name) {
                     img.remark = normalizeImageRemark(data.image_type_name || img.remark);
@@ -1486,10 +1317,11 @@
                     prefillVariantLinks: true,
                     resolveRecommendFabricName: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
                     onRenamed: ({ oldPathB64, newFilename }) => {
-                        const oldRel = tryDecodeNameFromB64(oldPathB64) || '';
+                        const Flow = fabricFlow();
+                        const oldRel = Flow ? Flow.decodeFsNameFromB64(oldPathB64) : '';
                         const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
                         const newRel = folder ? `${folder}/${newFilename}` : newFilename;
-                        const newPathB64 = utf8ToB64(newRel);
+                        const newPathB64 = Flow ? Flow.encodeUtf8PathB64(newRel) : '';
                         const edited = selectedImageObjects[currentEditingImageIndex];
                         if (edited) {
                             edited.image_name = newFilename;
@@ -1542,7 +1374,6 @@
         window.addEventListener('load', loadSkuFamilies);
         window.addEventListener('load', () => { loadFabricImageTypes(); });
         window.addEventListener('load', function() {
-            fabricImagePromptDuplicate = readFabricBoolLs(FABRIC_DUP_LS, true);
             fabricImageShowFabric = readFabricBoolLs(FABRIC_FAB_LS, true);
             syncFabricImageToolbarToggles();
             const params = new URLSearchParams(window.location.search || '');
@@ -1587,16 +1418,12 @@
             renderSelectedImagesGrid();
         }
 
-        window.addEventListener('load', function () {
-            initFabricNasImportUi();
-        });
     </script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/sitjoy_nas_browse_modal.js"></script>
     <script src="/static/js/sitjoy_fs_name.js"></script>
     <script src="/static/js/fabric_image_flow.js"></script>
-    <script src="/static/js/fabric_nas_import.js"></script>
     <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>

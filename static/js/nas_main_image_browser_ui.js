@@ -166,6 +166,86 @@
     }
   }
 
+  const BROWSE_PATH_LS_KEY = 'sj.nasBrowse.lastPathB64.v1';
+  const BROWSE_STACK_LS_KEY = 'sj.nasBrowse.navStack.v1';
+  const LEGACY_BROWSE_PATH_KEYS = [
+    'sj.nasMainImage.lastPathB64.v1',
+    'sj.orderMainImage.lastPathB64.v1',
+    'sj.specmi.nasPathB64.v1',
+    'sitjoy_gallery_last_path_v1',
+  ];
+  const LEGACY_BROWSE_STACK_KEYS = [
+    'sj.nasMainImage.navStack.v1',
+    'sj.orderMainImage.navStack.v1',
+    'sj.specmi.nasStack.v1',
+  ];
+
+  function normalizeNavStack(navStack) {
+    if (!Array.isArray(navStack)) return [];
+    return navStack
+      .filter(function (x) { return x && typeof x.pathB64 === 'string' && String(x.pathB64).trim(); })
+      .map(function (x) {
+        return { name: String(x.name || ''), pathB64: String(x.pathB64 || '').trim() };
+      });
+  }
+
+  /** 读取全局统一的 NAS 浏览位置（含旧版 key 迁移）。 */
+  function loadNasBrowseLocationState() {
+    let pathB64 = String(safeGet(BROWSE_PATH_LS_KEY) || '').trim();
+    let navStack = [];
+    try {
+      const raw = safeGet(BROWSE_STACK_LS_KEY);
+      if (raw) navStack = normalizeNavStack(JSON.parse(raw));
+    } catch (e) {
+      navStack = [];
+    }
+    if (!pathB64 && navStack.length) {
+      const last = navStack[navStack.length - 1];
+      pathB64 = last && last.pathB64 ? String(last.pathB64).trim() : '';
+    }
+    if (!pathB64) {
+      for (let i = 0; i < LEGACY_BROWSE_PATH_KEYS.length; i++) {
+        const v = safeGet(LEGACY_BROWSE_PATH_KEYS[i]);
+        if (v) {
+          pathB64 = String(v).trim();
+          break;
+        }
+      }
+    }
+    if (!navStack.length) {
+      for (let j = 0; j < LEGACY_BROWSE_STACK_KEYS.length; j++) {
+        try {
+          const raw = safeGet(LEGACY_BROWSE_STACK_KEYS[j]);
+          if (!raw) continue;
+          const parsed = normalizeNavStack(JSON.parse(raw));
+          if (parsed.length) {
+            navStack = parsed;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    if (!pathB64 && navStack.length) {
+      const last = navStack[navStack.length - 1];
+      pathB64 = last && last.pathB64 ? String(last.pathB64).trim() : '';
+    }
+    return { pathB64: pathB64, navStack: navStack };
+  }
+
+  /** 写入全局统一的 NAS 浏览位置（云端关联等各页共用）。 */
+  function persistNasBrowseLocationState(pathB64, navStack) {
+    const p = String(pathB64 || '').trim();
+    const stack = normalizeNavStack(navStack);
+    safeSet(BROWSE_PATH_LS_KEY, p);
+    try {
+      safeSet(BROWSE_STACK_LS_KEY, JSON.stringify(stack));
+    } catch (e) {
+      safeSet(BROWSE_STACK_LS_KEY, '[]');
+    }
+  }
+
   /**
    * 恢复上次记住的 NAS 路径；不可访问时自动回退到最近可访问的上层目录。
    * @returns {Promise<{pathB64:string, navStack:Array, fellBack:boolean, browseData:object|null}|null>}
@@ -424,5 +504,9 @@
     restoreSavedNasBrowseLocation: restoreSavedNasBrowseLocation,
     notifyNasPathFallback: notifyNasPathFallback,
     formatPathDisplayForToast: formatPathDisplayForToast,
+    loadNasBrowseLocationState: loadNasBrowseLocationState,
+    persistNasBrowseLocationState: persistNasBrowseLocationState,
+    BROWSE_PATH_LS_KEY: BROWSE_PATH_LS_KEY,
+    BROWSE_STACK_LS_KEY: BROWSE_STACK_LS_KEY,
   };
 })(typeof window !== 'undefined' ? window : this);
