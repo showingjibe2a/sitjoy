@@ -172,6 +172,20 @@ class PlatformInventoryExportMixin:
             else:
                 sellable = min(parts_with_stock)
 
+        # 海外仓成套可售套数：最小不同步阈值优先判断，低于阈值直接归零
+        min_nosync = max(0, int(opts.get('min_nosync_qty') or 0))
+        overseas_sellable = int(sellable)
+        if min_nosync > 0 and overseas_sellable <= min_nosync:
+            notes.append(f'海外仓可售 {overseas_sellable} 套 ≤ 最小不同步阈值 {min_nosync}')
+            return 0, notes
+
+        if opts.get('cap_enabled'):
+            cap_max = int(opts.get('cap_max') or 0)
+            before_cap = int(sellable)
+            sellable = min(before_cap, cap_max)
+            if before_cap > cap_max:
+                notes.append(f'库存上限 {cap_max}')
+
         if opts.get('spec_gap_enabled') and int(sellable) > 0:
             gap = int(opts.get('spec_gap_per_part') or 0)
             retain_min = max(0, int(opts.get('spec_gap_min') or 0))
@@ -185,13 +199,6 @@ class PlatformInventoryExportMixin:
                     sellable = max(0, deducted)
                 if int(sellable) != base:
                     notes.append(f'大规格扣减 {base - int(sellable)} 套（BOM {int(bom_units)} 件）')
-
-        if opts.get('cap_enabled'):
-            cap_max = int(opts.get('cap_max') or 0)
-            before_cap = int(sellable)
-            sellable = min(before_cap, cap_max)
-            if before_cap > cap_max:
-                notes.append(f'库存上限 {cap_max}')
 
         if opts.get('use_fabric_share') and int(sellable) > 0:
             try:
@@ -213,12 +220,6 @@ class PlatformInventoryExportMixin:
                 notes.append(f'比例最小库存抬升至 {allocated}')
             sellable = allocated
 
-        min_nosync = max(0, int(opts.get('min_nosync_qty') or 0))
-        before_nosync = int(sellable)
-        if min_nosync > 0 and before_nosync <= min_nosync:
-            if before_nosync > 0:
-                notes.append(f'≤最小不同步阈值 {min_nosync}')
-            sellable = 0
         return max(0, int(sellable)), notes
 
     def _inventory_export_expand_op_ids_with_substitute_items(self, conn, order_product_ids):

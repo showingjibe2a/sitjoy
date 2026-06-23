@@ -1013,6 +1013,15 @@
                     </div>
 
                     <div class="form-group pm-form-full">
+                        <label class="label-help">最小不同步库存<span class="help-dot" data-tip="先按成套规则计算海外仓可售套数；可售套数 ≤ 此值时直接导出 0，不再应用库存上限、大规格差异、面料比例。设为 0 表示不启用。"></span></label>
+                        <div class="spi-option-row">
+                            <span class="spi-field-label">≤</span>
+                            <input type="number" id="spiMinNosyncQty" class="spi-num-input" min="0" step="1" value="0">
+                            <span class="spi-field-label">套时同步为 0</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group pm-form-full">
                         <label class="label-help">库存上限<span class="help-dot" data-tip="启用后限制显示的最大可售套数，用于营造紧缺感。"></span></label>
                         <div class="spi-option-row">
                             <div class="status-segment status-segment--inline" id="spiCapEnabledSegment" data-value="1">
@@ -1025,7 +1034,7 @@
                     </div>
 
                     <div class="form-group pm-form-full">
-                        <label class="label-help">大规格差异<span class="help-dot" data-tip="以 1 件下单 SKU 为基准：BOM 总件数 = 1 时不扣减（按库存上限/可售套数）；每多 1 件 BOM 总件数扣减「每多 1 件减」套数，直至「最少保留」；可售 ≤ 最小不同步阈值时最终归零。"></span></label>
+                        <label class="label-help">大规格差异<span class="help-dot" data-tip="以 1 件下单 SKU 为基准：BOM 总件数 = 1 时不扣减；每多 1 件 BOM 总件数扣减「每多 1 件减」套数，直至「最少保留」。在通过最小不同步判断后生效。"></span></label>
                         <div class="spi-option-row">
                             <div class="status-segment status-segment--inline" id="spiSpecGapEnabledSegment" data-value="1">
                                 <button type="button" class="status-pill status-pill--yes is-active" data-value="1">启用</button>
@@ -1040,15 +1049,7 @@
                     </div>
 
                     <div class="form-group pm-form-full">
-                        <label class="label-help">最小不同步库存<span class="help-dot" data-tip="计算结果 ≤ 此值时，导出填 0（预留安全库存不同步到平台）。设为 0 表示不启用。"></span></label>
-                        <div class="spi-option-row">
-                            <span class="spi-field-label">≤</span>
-                            <input type="number" id="spiMinNosyncQty" class="spi-num-input" min="0" step="1" value="0">
-                            <span class="spi-field-label">套时同步为 0</span>
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label class="label-help">是否考虑面料比例<span class="help-dot" data-tip="启用后按「面料库存比例」中已保存的比例折算各颜色（面料）可售库存（向下取整）；关闭则所有颜色按 100% 计算。"></span></label>
+                        <label class="label-help">是否考虑面料比例<span class="help-dot" data-tip="启用后按「面料库存比例」中已保存的比例折算各颜色（面料）可售库存（向下取整）；关闭则所有颜色按 100% 计算。在通过最小不同步判断后生效。"></span></label>
                         <div class="spi-option-row">
                             <div class="status-segment status-segment--inline" id="spiFabricShareSegment" data-value="1">
                                 <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
