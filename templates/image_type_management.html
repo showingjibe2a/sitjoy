@@ -97,7 +97,7 @@
                             <th style="width:120px;" class="switch-cell">适用A+</th>
                             <th style="width:100px;" class="switch-cell">启用</th>
                             <th style="width:180px;">最后修改时间</th>
-                            <th style="width:120px;">操作</th>
+                            <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -333,7 +333,7 @@
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_aplus', '适用A+')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'is_enabled', '启用')}</td>
                     <td>${escapeHtml(formatTime(item.updated_at || item.created_at))}</td>
-                    <td><button class="btn-secondary" type="button" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button></td>
+                    <td><div class="pm-actions"><button class="btn-secondary" type="button" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" type="button" onclick="deleteImageType(${Number(item.id || 0)})">删除</button></div></td>
                 </tr>
             `).join('');
         }
@@ -549,6 +549,41 @@
             })
             .catch(err => {
                 showStatus('保存失败: ' + err, true);
+            });
+        }
+
+        async function deleteImageType(id) {
+            const itemId = Number(id || 0);
+            if (!itemId) return;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该图片类型？若仍被图片或 A+ 引用将无法删除。', confirmText: '确认删除' })
+                : confirm('确认删除该图片类型？');
+            if (!ok) return;
+            fetch('/api/image-type', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: itemId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    if (window.showAppToast) window.showAppToast(data.message || '删除失败', true);
+                    else showStatus(data.message || '删除失败', true);
+                    return;
+                }
+                if (currentEditItem && Number(currentEditItem.id) === itemId) {
+                    closeEditModal();
+                }
+                loadImageTypeList();
+                if (window.showAppSaveResult) {
+                    window.showAppSaveResult({ action: 'delete' });
+                } else if (window.showAppToast) {
+                    window.showAppToast('已删除', false);
+                }
+            })
+            .catch(err => {
+                if (window.showAppToast) window.showAppToast('删除失败: ' + err, true);
+                else showStatus('删除失败: ' + err, true);
             });
         }
 

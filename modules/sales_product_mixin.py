@@ -6145,6 +6145,27 @@ class SalesProductMixin:
             out.setdefault(tid, []).append(pid)
         return out
 
+    def _get_image_type_reference_counts(self, conn, image_type_id):
+        """Return list of (label, count) for business tables still referencing this image type."""
+        tid = self._parse_int(image_type_id)
+        if not tid:
+            return []
+        checks = []
+        if self._table_has_column(conn, 'image_assets', 'image_type_id'):
+            checks.append(('image_assets', '图片库'))
+        if self._has_required_tables(['aplus_version_assets']) and self._table_has_column(conn, 'aplus_version_assets', 'image_type_id'):
+            checks.append(('aplus_version_assets', 'A+版本素材'))
+        if self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id'):
+            checks.append(('sales_variant_image_mappings', '销售规格图片映射'))
+        out = []
+        with conn.cursor() as cur:
+            for table, label in checks:
+                cur.execute(f"SELECT COUNT(1) AS c FROM {table} WHERE image_type_id=%s", (tid,))
+                c = int((cur.fetchone() or {}).get('c') or 0)
+                if c > 0:
+                    out.append((label, c))
+        return out
+
     def _set_image_type_platform_ids(self, conn, image_type_id, platform_type_ids):
         tid = self._parse_int(image_type_id)
         if not tid:
@@ -6351,7 +6372,25 @@ class SalesProductMixin:
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             if method == 'DELETE':
-                return self.send_json({'status': 'error', 'message': '图片类型不支持删除，请改为禁用'}, start_response)
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM image_types WHERE id=%s LIMIT 1", (item_id,))
+                        if not (cur.fetchone() or {}).get('id'):
+                            return self.send_json({'status': 'error', 'message': '图片类型不存在'}, start_response)
+                        refs = self._get_image_type_reference_counts(conn, item_id)
+                        if refs:
+                            parts = [f'{label}{cnt}处' for label, cnt in refs]
+                            return self.send_json({
+                                'status': 'error',
+                                'message': f'无法删除：该类型仍被引用（{"，".join(parts)}）。请先解除引用或改为禁用。',
+                            }, start_response)
+                        cur.execute("DELETE FROM image_type_platform_types WHERE image_type_id=%s", (item_id,))
+                        cur.execute("DELETE FROM image_types WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
@@ -6537,11 +6576,11 @@ class SalesProductMixin:
             out[vid] = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
         return out
 
-    def _guess_image_ext(self, filename, content):
+    def _find_image_asset_by_sha256(self, conn, sha256):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM image_assets WHERE sha256=%s LIMIT 1",
-                (sha256,)
+                (sha256,),
             )
             return cur.fetchone() or None
 
