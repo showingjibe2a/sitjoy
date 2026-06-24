@@ -666,6 +666,29 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
     position: relative;
 }
 
+.sitjoy-dingtalk-auto-send {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.sitjoy-dingtalk-auto-send[hidden] {
+    display: none !important;
+}
+
+.sitjoy-dingtalk-auto-send-label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--sj-variant-navbar-text, var(--morandi-ink));
+    white-space: nowrap;
+}
+
+.sitjoy-dingtalk-auto-send .status-segment--inline {
+    transform: scale(0.92);
+    transform-origin: center right;
+}
+
 .sitjoy-topbar-user {
     font-size: 0.76rem;
     font-weight: 600;

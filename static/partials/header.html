@@ -210,6 +210,14 @@
 
                 <div id="sitjoyUsageTickerTrack" class="sitjoy-usage-ticker-track--hidden" aria-hidden="true"></div>
 
+                <div class="sitjoy-dingtalk-auto-send" id="sitjoyDingtalkAutoSend" hidden title="开启后库存等变动将自动批量发送至钉钉群；关闭时需左下角确认">
+                    <span class="sitjoy-dingtalk-auto-send-label">自动发送通知</span>
+                    <div class="status-segment status-segment--inline" id="sitjoyDingtalkAutoSendSegment" data-value="1" role="group" aria-label="自动发送钉钉通知">
+                        <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                        <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                    </div>
+                </div>
+
                 <div class="sitjoy-notification-center" id="sitjoyNotificationCenter" hidden>
 
                     <button type="button" class="sitjoy-notification-trigger" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">

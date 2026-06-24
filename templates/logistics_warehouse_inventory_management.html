@@ -123,8 +123,8 @@
             const stockout = Array.isArray(payload.stockout_items) ? payload.stockout_items : [];
             const restock = Array.isArray(payload.restock_items) ? payload.restock_items : [];
             if(!stockout.length && !restock.length) return;
-            if(typeof window.promptAppDingtalkOverseasInventoryChanges === 'function'){
-                window.promptAppDingtalkOverseasInventoryChanges(stockout, restock);
+            if(typeof window.dispatchAppDingtalkOverseasInventoryChanges === 'function'){
+                window.dispatchAppDingtalkOverseasInventoryChanges(stockout, restock);
                 return;
             }
             if(stockout.length && typeof window.promptAppDingtalkOverseasStockout === 'function'){
