@@ -5041,19 +5041,20 @@ class AmazonAdMixin:
             return n / 100.0
         return n
 
-    def _load_sku_family_3month_atv_acoas(self, cur, sku_family_id, months=3):
+    def _load_sku_family_3month_exp_suggestions(self, cur, sku_family_id, months=3):
         sfid = self._parse_int(sku_family_id)
         if not sfid:
-            return None, None
+            return None, None, None
         month_starts = self._profit_prob_month_starts_last_n(months)
         if not month_starts:
-            return None, None
+            return None, None, None
         ph = ','.join(['%s'] * len(month_starts))
         cur.execute(
             f"""
             SELECT COALESCE(SUM(m.net_sales_amount), 0) AS net_sales,
                    COALESCE(SUM(m.order_qty), 0) AS order_qty,
-                   COALESCE(SUM(m.ad_spend), 0) AS ad_spend
+                   COALESCE(SUM(m.ad_spend), 0) AS ad_spend,
+                   COALESCE(SUM(m.ad_sales_amount), 0) AS ad_sales
             FROM sales_perf_agg_month m
             INNER JOIN sales_products sp ON sp.id = m.sales_product_id
             INNER JOIN sales_product_variants v ON v.id = sp.variant_id
@@ -5066,9 +5067,11 @@ class AmazonAdMixin:
         net_sales = float(row.get('net_sales') or 0)
         order_qty = float(row.get('order_qty') or 0)
         ad_spend = float(row.get('ad_spend') or 0)
+        ad_sales = float(row.get('ad_sales') or 0)
         atv = (net_sales / order_qty) if order_qty > 0 else None
+        acos = (ad_spend / ad_sales) if ad_sales > 0 else None
         acoas = (ad_spend / net_sales) if net_sales > 0 else None
-        return atv, acoas
+        return atv, acos, acoas
 
     def _load_sku_family_exp_fields(self, cur, sku_family_id):
         sfid = self._parse_int(sku_family_id)
@@ -5077,7 +5080,7 @@ class AmazonAdMixin:
         cur.execute(
             """
             SELECT id, sku_family,
-                   amazon_exp_atv, amazon_exp_acoas
+                   amazon_exp_atv, amazon_exp_acos, amazon_exp_acoas
             FROM product_families
             WHERE id=%s
             LIMIT 1
@@ -5086,27 +5089,34 @@ class AmazonAdMixin:
         )
         return cur.fetchone()
 
-    def _save_sku_family_exp_fields(self, cur, sku_family_id, atv, acoas):
+    def _normalize_exp_rate_ratio(self, value):
+        return self._normalize_parent_rate_ratio(value)
+
+    def _save_sku_family_exp_fields(self, cur, sku_family_id, atv, acos, acoas=None):
         sfid = self._parse_int(sku_family_id)
         if not sfid:
             raise ValueError('缺少货号 ID')
         atv_val = self._parse_float(atv)
-        acoas_val = self._parse_float(acoas)
-        if atv_val is not None and atv_val < 0:
+        acos_val = self._normalize_exp_rate_ratio(acos)
+        acoas_val = self._normalize_exp_rate_ratio(acoas) if acoas is not None and str(acoas).strip() != '' else None
+        if atv_val is None or atv_val <= 0:
+            raise ValueError('请填写有效的预估笔单价')
+        if atv_val < 0:
             raise ValueError('预估笔单价不能为负')
+        if acos_val is None or acos_val <= 0:
+            raise ValueError('请填写有效的预估 ACOS')
+        if acoas_val is not None and acoas_val < 0:
+            raise ValueError('预估 ACOAS 不能为负')
         if acoas_val is not None:
-            if acoas_val < 0:
-                raise ValueError('预估 AC OAS 不能为负')
-            if acoas_val > 1:
-                acoas_val = acoas_val / 100.0
             acoas_val = round(min(1.0, max(0.0, acoas_val)), 6)
+        acos_val = round(min(1.0, max(0.0, acos_val)), 6)
         cur.execute(
             """
             UPDATE product_families
-            SET amazon_exp_atv=%s, amazon_exp_acoas=%s
+            SET amazon_exp_atv=%s, amazon_exp_acos=%s, amazon_exp_acoas=%s
             WHERE id=%s
             """,
-            (atv_val, acoas_val, sfid),
+            (atv_val, acos_val, acoas_val, sfid),
         )
         return sfid
 
@@ -5165,7 +5175,7 @@ class AmazonAdMixin:
         cur.execute(
             """
             SELECT i.id, i.sku_family_id, i.ad_level, pf.sku_family,
-                   pf.amazon_exp_atv, pf.amazon_exp_acoas
+                   pf.amazon_exp_atv, pf.amazon_exp_acos, pf.amazon_exp_acoas
             FROM amazon_ad_items i
             LEFT JOIN product_families pf ON pf.id = i.sku_family_id
             WHERE i.id=%s
@@ -5196,17 +5206,24 @@ class AmazonAdMixin:
         else:
             clicks = int(clicks)
 
-        suggested_atv, suggested_acoas = (None, None)
+        suggested_atv, suggested_acos, suggested_acoas = (None, None, None)
         if sku_family_id:
             try:
-                suggested_atv, suggested_acoas = self._load_sku_family_3month_atv_acoas(cur, sku_family_id, 3)
+                suggested_atv, suggested_acos, suggested_acoas = self._load_sku_family_3month_exp_suggestions(
+                    cur, sku_family_id, 3,
+                )
             except Exception:
-                suggested_atv, suggested_acoas = (None, None)
+                suggested_atv, suggested_acos, suggested_acoas = (None, None, None)
 
         saved_atv = self._parse_float(ad_row.get('amazon_exp_atv'))
+        saved_acos = self._parse_float(ad_row.get('amazon_exp_acos'))
         saved_acoas = self._parse_float(ad_row.get('amazon_exp_acoas'))
+        saved_acos_ratio = (
+            self._normalize_exp_rate_ratio(saved_acos)
+            if saved_acos and saved_acos > 0 else None
+        )
         saved_acoas_ratio = (
-            self._normalize_parent_rate_ratio(saved_acoas)
+            self._normalize_exp_rate_ratio(saved_acoas)
             if saved_acoas and saved_acoas > 0 else None
         )
         cps = None
@@ -5226,17 +5243,20 @@ class AmazonAdMixin:
                 cps_detail = prod
         else:
             atv = saved_atv if saved_atv and saved_atv > 0 else suggested_atv
-            acoas = saved_acoas_ratio if saved_acoas_ratio else suggested_acoas
-            if atv and acoas and atv > 0 and acoas > 0:
-                cps = round(float(atv) * float(acoas), 4)
-                cps_source = 'sku_family_exp' if (saved_acoas_ratio and saved_atv) else 'sku_family_suggested'
+            acos = saved_acos_ratio if saved_acos_ratio else suggested_acos
+            if atv and acos and atv > 0 and acos > 0:
+                cps = round(float(atv) * float(acos), 4)
+                cps_source = 'sku_family_exp' if (saved_acos_ratio and saved_atv) else 'sku_family_suggested'
                 cps_detail = {
                     'atv': round(float(atv), 4),
-                    'acoas': round(float(acoas), 6),
-                    'acoas_raw': saved_acoas if saved_acoas_ratio else None,
+                    'acos': round(float(acos), 6),
+                    'acoas': (
+                        round(float(saved_acoas_ratio or suggested_acoas), 6)
+                        if (saved_acoas_ratio or suggested_acoas) else None
+                    ),
                 }
             else:
-                err_msg = '请先填写货号预估笔单价与预估 ACOAS'
+                err_msg = '请先填写货号预估笔单价与预估 ACOS'
 
         cvr_target = None
         if cps and cps > 0:
@@ -5259,8 +5279,10 @@ class AmazonAdMixin:
             'sku_family_id': sku_family_id,
             'sku_family': ad_row.get('sku_family') or '',
             'amazon_exp_atv': saved_atv,
+            'amazon_exp_acos': saved_acos_ratio,
             'amazon_exp_acoas': saved_acoas_ratio,
             'suggested_atv': round(suggested_atv, 4) if suggested_atv else None,
+            'suggested_acos': round(suggested_acos, 6) if suggested_acos else None,
             'suggested_acoas': round(suggested_acoas, 6) if suggested_acoas else None,
             'error': err_msg,
         }, None
@@ -5306,6 +5328,7 @@ class AmazonAdMixin:
                         self._save_sku_family_exp_fields(
                             cur, sku_family_id,
                             data.get('amazon_exp_atv'),
+                            data.get('amazon_exp_acos'),
                             data.get('amazon_exp_acoas'),
                         )
                         row = self._load_sku_family_exp_fields(cur, sku_family_id)
@@ -5313,6 +5336,7 @@ class AmazonAdMixin:
                     'status': 'success',
                     'sku_family_id': sku_family_id,
                     'amazon_exp_atv': self._parse_float((row or {}).get('amazon_exp_atv')),
+                    'amazon_exp_acos': self._parse_float((row or {}).get('amazon_exp_acos')),
                     'amazon_exp_acoas': self._parse_float((row or {}).get('amazon_exp_acoas')),
                 }, start_response)
 

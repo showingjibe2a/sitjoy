@@ -336,7 +336,7 @@
   };
 
   function isSkuFamilyExpSaved(ctx) {
-    return !!(ctx && ctx.amazon_exp_atv > 0 && ctx.amazon_exp_acoas > 0);
+    return !!(ctx && ctx.amazon_exp_atv > 0 && ctx.amazon_exp_acos > 0);
   }
 
   function renderMetaRow(label, valueHtml) {
@@ -354,11 +354,11 @@
       const d = ctx.cps_detail;
       return `${escapeHtml(formatUsd(d.sale_price_usd))} × ${escapeHtml(formatPct(d.parent_estimated_acoas))}`;
     }
-    if (ctx.amazon_exp_atv > 0 && ctx.amazon_exp_acoas > 0) {
-      return `${escapeHtml(formatUsd(ctx.amazon_exp_atv))} × ${escapeHtml(formatPct(ctx.amazon_exp_acoas))}`;
+    if (ctx.amazon_exp_atv > 0 && ctx.amazon_exp_acos > 0) {
+      return `${escapeHtml(formatUsd(ctx.amazon_exp_atv))} × ${escapeHtml(formatPct(ctx.amazon_exp_acos))}`;
     }
-    if (ctx.cps_detail && ctx.cps_detail.atv && ctx.cps_detail.acoas) {
-      return `${escapeHtml(formatUsd(ctx.cps_detail.atv))} × ${escapeHtml(formatPct(ctx.cps_detail.acoas))}（近3月参考）`;
+    if (ctx.cps_detail && ctx.cps_detail.atv && ctx.cps_detail.acos) {
+      return `${escapeHtml(formatUsd(ctx.cps_detail.atv))} × ${escapeHtml(formatPct(ctx.cps_detail.acos))}（近3月参考）`;
     }
     return '';
   }
@@ -374,9 +374,12 @@
     const atvCell = ctx.amazon_exp_atv > 0
       ? escapeHtml(formatUsd(ctx.amazon_exp_atv))
       : '<span style="color:#9a4a32;">未维护</span>';
+    const acosCell = ctx.amazon_exp_acos > 0
+      ? escapeHtml(formatPct(ctx.amazon_exp_acos))
+      : '<span style="color:#9a4a32;">未维护</span>';
     const acoasCell = ctx.amazon_exp_acoas > 0
       ? escapeHtml(formatPct(ctx.amazon_exp_acoas))
-      : '<span style="color:#9a4a32;">未维护</span>';
+      : '<span style="color:var(--morandi-slate);">-</span>';
     const cpsCell = ctx.cps
       ? renderValueWithFormula(escapeHtml(formatUsd(ctx.cps)), buildCpsFormulaHtml(ctx))
       : '-';
@@ -390,7 +393,8 @@
     const skuRows = [
       renderMetaRow('货号', escapeHtml(ctx.sku_family || '-')),
       renderMetaRow('预估笔单价', atvCell),
-      renderMetaRow('预估 ACOAS', acoasCell),
+      renderMetaRow('预估 ACOS', acosCell),
+      renderMetaRow('预估 ACOAS', `${acoasCell}<span class="aa-profit-formula">参考，不参与 CPS 计算</span>`),
       renderMetaRow('理论 CPS', cpsCell),
     ];
     const recordRows = [
@@ -407,7 +411,7 @@
       ? '<button type="button" class="btn-secondary btn-small aa-profit-exp-edit-btn">编辑</button>'
       : '';
     const warnHtml = expMissing
-      ? '<div class="aa-profit-meta-warn">货号预估笔单价 / ACOAS 尚未写入数据库，请先维护后再用于非「修改商品」类操作的 CPS 计算。<button type="button" class="btn-secondary btn-small aa-profit-exp-edit-btn">去维护</button></div>'
+      ? '<div class="aa-profit-meta-warn">货号预估笔单价 / ACOS 尚未写入数据库，请先维护后再用于非「修改商品」类操作的 CPS 计算。<button type="button" class="btn-secondary btn-small aa-profit-exp-edit-btn">去维护</button></div>'
       : '';
 
     const modelOptions = Object.keys(PROFIT_MODELS).map(key => {
@@ -443,23 +447,33 @@
 
   function updateExpMetricsCalcLabels(ctx) {
     const atvCalc = document.getElementById('aaExpAtvCalc');
+    const acosCalc = document.getElementById('aaExpAcosCalc');
     const acoasCalc = document.getElementById('aaExpAcoasCalc');
     const atvApply = document.getElementById('aaExpAtvApplyBtn');
+    const acosApply = document.getElementById('aaExpAcosApplyBtn');
     const acoasApply = document.getElementById('aaExpAcoasApplyBtn');
     const sugAtv = ctx && ctx.suggested_atv > 0 ? formatUsd(ctx.suggested_atv) : '-';
+    const sugAcos = ctx && ctx.suggested_acos > 0 ? formatPct(ctx.suggested_acos) : '-';
     const sugAcoas = ctx && ctx.suggested_acoas > 0 ? formatPct(ctx.suggested_acoas) : '-';
     if (atvCalc) atvCalc.textContent = `近3月：${sugAtv}`;
+    if (acosCalc) acosCalc.textContent = `近3月：${sugAcos}`;
     if (acoasCalc) acoasCalc.textContent = `近3月：${sugAcoas}`;
     if (atvApply) atvApply.disabled = !(ctx && ctx.suggested_atv > 0);
+    if (acosApply) acosApply.disabled = !(ctx && ctx.suggested_acos > 0);
     if (acoasApply) acoasApply.disabled = !(ctx && ctx.suggested_acoas > 0);
   }
 
   function fillExpMetricsInputs(ctx) {
     const atvEl = document.getElementById('aaExpAtv');
+    const acosEl = document.getElementById('aaExpAcos');
     const acoasEl = document.getElementById('aaExpAcoas');
     const atvDefault = ctx.amazon_exp_atv > 0 ? ctx.amazon_exp_atv : ctx.suggested_atv;
+    const acosDefault = ctx.amazon_exp_acos > 0 ? ctx.amazon_exp_acos : ctx.suggested_acos;
     const acoasDefault = ctx.amazon_exp_acoas > 0 ? ctx.amazon_exp_acoas : ctx.suggested_acoas;
     if (atvEl) atvEl.value = atvDefault != null ? String(Number(atvDefault).toFixed(2)) : '';
+    if (acosEl) {
+      acosEl.value = acosDefault != null ? String((Number(acosDefault) * 100).toFixed(2)) : '';
+    }
     if (acoasEl) {
       acoasEl.value = acoasDefault != null ? String((Number(acoasDefault) * 100).toFixed(2)) : '';
     }
@@ -516,6 +530,12 @@
     if (atvEl) atvEl.value = Number(pendingCalc.ctx.suggested_atv).toFixed(2);
   }
 
+  function applySuggestedAcos() {
+    if (!pendingCalc || !(pendingCalc.ctx.suggested_acos > 0)) return;
+    const acosEl = document.getElementById('aaExpAcos');
+    if (acosEl) acosEl.value = (Number(pendingCalc.ctx.suggested_acos) * 100).toFixed(2);
+  }
+
   function applySuggestedAcoas() {
     if (!pendingCalc || !(pendingCalc.ctx.suggested_acoas > 0)) return;
     const acoasEl = document.getElementById('aaExpAcoas');
@@ -536,16 +556,19 @@
   function saveExpMetricsAndContinue() {
     if (!pendingCalc) return;
     const atv = parseNum(document.getElementById('aaExpAtv')?.value);
+    const acosPct = parseNum(document.getElementById('aaExpAcos')?.value);
     const acoasPct = parseNum(document.getElementById('aaExpAcoas')?.value);
-    if (atv == null || atv <= 0 || acoasPct == null || acoasPct <= 0) {
-      if (global.showAppToast) global.showAppToast('请填写有效的预估笔单价与 ACOAS', true);
+    if (atv == null || atv <= 0 || acosPct == null || acosPct <= 0) {
+      if (global.showAppToast) global.showAppToast('请填写有效的预估笔单价与 ACOS', true);
       return;
     }
-    const acoas = acoasPct / 100;
     const payload = {
       sku_family_id: pendingCalc.ctx.sku_family_id,
       amazon_exp_atv: atv,
-      amazon_exp_acoas: acoas,
+      amazon_exp_acos: acosPct / 100,
+      amazon_exp_acoas: acoasPct != null && acoasPct > 0
+        ? acoasPct / 100
+        : (pendingCalc.ctx.amazon_exp_acoas > 0 ? pendingCalc.ctx.amazon_exp_acoas : null),
     };
     fetch('/api/amazon-ad-adjustment?action=save-exp-metrics', {
       method: 'POST',
@@ -653,6 +676,7 @@
     const saveBtn = document.getElementById('aaExpMetricsSaveBtn');
     const cancelBtn = document.getElementById('aaExpMetricsCancelBtn');
     const atvApplyBtn = document.getElementById('aaExpAtvApplyBtn');
+    const acosApplyBtn = document.getElementById('aaExpAcosApplyBtn');
     const acoasApplyBtn = document.getElementById('aaExpAcoasApplyBtn');
     const metaEl = document.getElementById('aaProfitMeta');
     if (saveBtn && !saveBtn.dataset.bound) {
@@ -666,6 +690,10 @@
     if (atvApplyBtn && !atvApplyBtn.dataset.bound) {
       atvApplyBtn.dataset.bound = '1';
       atvApplyBtn.addEventListener('click', applySuggestedAtv);
+    }
+    if (acosApplyBtn && !acosApplyBtn.dataset.bound) {
+      acosApplyBtn.dataset.bound = '1';
+      acosApplyBtn.addEventListener('click', applySuggestedAcos);
     }
     if (acoasApplyBtn && !acoasApplyBtn.dataset.bound) {
       acoasApplyBtn.dataset.bound = '1';

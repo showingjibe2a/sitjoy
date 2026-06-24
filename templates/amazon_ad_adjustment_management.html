@@ -1199,7 +1199,7 @@
             <div class="pm-modal aa-extra-modal" id="aaExpMetricsModal">
                 <div class="pm-modal-content" style="max-width: 560px;">
                     <h3 style="margin-top:0;">维护货号预估指标</h3>
-                    <p class="aa-exp-metrics-hint" id="aaExpMetricsHint">近 3 个月销售月聚合可作为参考；保存后写入货号档案。</p>
+                    <p class="aa-exp-metrics-hint" id="aaExpMetricsHint">理论 CPS = 笔单价 × ACOS（广告效果）。ACOAS 仅作参考。近 3 个月销售月聚合可作为「应用」参考值。</p>
                     <div class="pm-form">
                         <div class="form-group">
                             <label>货号</label>
@@ -1217,8 +1217,18 @@
                         </div>
                         <div class="aa-exp-metric-row">
                             <div class="aa-exp-metric-input">
-                                <label for="aaExpAcoas">预估 ACOAS (%)</label>
-                                <input type="number" id="aaExpAcoas" min="0" step="0.01" placeholder="广告花费占净销售额比例">
+                                <label for="aaExpAcos">预估 ACOS (%)</label>
+                                <input type="number" id="aaExpAcos" min="0" step="0.01" placeholder="广告花费 / 广告销售额">
+                            </div>
+                            <div class="aa-exp-metric-suggest">
+                                <span class="aa-exp-metric-calc" id="aaExpAcosCalc">近3月：-</span>
+                                <button type="button" class="btn-secondary btn-small" id="aaExpAcosApplyBtn">应用</button>
+                            </div>
+                        </div>
+                        <div class="aa-exp-metric-row aa-exp-metric-row--ref">
+                            <div class="aa-exp-metric-input">
+                                <label for="aaExpAcoas">预估 ACOAS (%) <span style="font-weight:400;color:var(--morandi-slate);">参考</span></label>
+                                <input type="number" id="aaExpAcoas" min="0" step="0.01" placeholder="广告花费 / 净销售额（可选）">
                             </div>
                             <div class="aa-exp-metric-suggest">
                                 <span class="aa-exp-metric-calc" id="aaExpAcoasCalc">近3月：-</span>
