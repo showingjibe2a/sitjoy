@@ -352,7 +352,7 @@
     if (!ctx || !ctx.cps) return '';
     if (ctx.cps_source === 'product' && ctx.cps_detail) {
       const d = ctx.cps_detail;
-      return `${escapeHtml(formatUsd(d.sale_price_usd))} × ${escapeHtml(formatPct(d.parent_estimated_acoas))}`;
+      return `${escapeHtml(formatUsd(d.sale_price_usd))} × ${escapeHtml(formatPct(d.amazon_exp_acos))}`;
     }
     if (ctx.amazon_exp_atv > 0 && ctx.amazon_exp_acos > 0) {
       return `${escapeHtml(formatUsd(ctx.amazon_exp_atv))} × ${escapeHtml(formatPct(ctx.amazon_exp_acos))}`;
@@ -659,7 +659,7 @@
       }
       const ctx = data.context || {};
       if (ctx.error && !ctx.cps) {
-        if (!ctx.is_modify_product && ctx.sku_family_id) {
+        if (ctx.sku_family_id) {
           return openExpMetricsModal(ctx, () => calculateForRecord(adItemId, adjustmentId), {
             requireRecalc: true,
             saveLabel: '保存并计算',

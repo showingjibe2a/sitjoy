@@ -1749,6 +1749,7 @@
     function shouldManageTable(table){
         if(!table || table.tagName !== 'TABLE') return false;
         if(table.dataset.disableTableManage === '1') return false;
+        if(table.closest && table.closest('#spiPreviewModal')) return false;
         if(!table.tHead || !table.tBodies || !table.tBodies[0]) return false;
         if(!table.tHead.rows.length) return false;
         const firstRow = table.tHead.rows[0];

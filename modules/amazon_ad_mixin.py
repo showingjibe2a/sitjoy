@@ -5131,17 +5131,15 @@ class AmazonAdMixin:
         except Exception:
             return None
 
-    def _resolve_product_mod_cps(self, cur, ad_item_id, target_object):
+    def _resolve_product_mod_cps(self, cur, ad_item_id, target_object, acos_ratio=None):
         shop_id = self._resolve_ad_item_shop_id(cur, ad_item_id)
         platform_sku = str(target_object or '').strip()
         if not shop_id or not platform_sku:
             return None, '修改商品操作须填写有效的商品 SKU'
         cur.execute(
             """
-            SELECT sp.id, sp.sale_price_usd, sp.parent_id,
-                   p.estimated_acoas
+            SELECT sp.id, sp.sale_price_usd
             FROM sales_products sp
-            LEFT JOIN sales_parents p ON p.id = sp.parent_id
             WHERE sp.shop_id=%s AND sp.platform_sku=%s
             LIMIT 1
             """,
@@ -5151,20 +5149,20 @@ class AmazonAdMixin:
         if not row:
             return None, f'未找到销售 SKU：{platform_sku}'
         sale_price = self._parse_float(row.get('sale_price_usd'))
-        acoas_raw = self._parse_float(row.get('estimated_acoas'))
-        acoas = self._normalize_parent_rate_ratio(acoas_raw)
+        acos = self._parse_float(acos_ratio)
+        if acos is not None and acos > 1:
+            acos = self._normalize_exp_rate_ratio(acos)
         if sale_price is None or sale_price <= 0:
             return None, '该商品缺少有效售价'
-        if acoas is None or acoas <= 0:
-            return None, '该商品父体缺少预估 ACOAS'
-        cps = float(sale_price) * float(acoas)
+        if acos is None or acos <= 0:
+            return None, '请先填写货号预估 ACOS'
+        cps = float(sale_price) * float(acos)
         if cps <= 0:
             return None, '无法计算理论 CPS'
         return {
             'cps': round(cps, 4),
             'sale_price_usd': float(sale_price),
-            'parent_estimated_acoas': float(acoas),
-            'parent_estimated_acoas_raw': acoas_raw,
+            'amazon_exp_acos': float(acos),
             'platform_sku': platform_sku,
         }, None
 
@@ -5232,8 +5230,9 @@ class AmazonAdMixin:
         err_msg = None
 
         if is_product:
+            acos = saved_acos_ratio if saved_acos_ratio else suggested_acos
             prod, prod_err = self._resolve_product_mod_cps(
-                cur, ad_item_id, adjustment_row.get('target_object'),
+                cur, ad_item_id, adjustment_row.get('target_object'), acos_ratio=acos,
             )
             if prod_err:
                 err_msg = prod_err

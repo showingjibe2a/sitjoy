@@ -736,6 +736,8 @@
     const summary = document.getElementById('spiPreviewSummary');
     const whCol = document.getElementById('spiPreviewWarehouseCol');
     const title = document.getElementById('spiPreviewModalTitle');
+    const table = tbody ? tbody.closest('table') : null;
+    if (table) table.dataset.disableTableManage = '1';
     if (!tbody) return;
     const rows = Array.isArray(items) ? items : [];
     if (title) {
@@ -746,7 +748,8 @@
     }
     const qtySum = rows.reduce((acc, row) => acc + Math.max(0, Number(row.qty || 0)), 0);
     if (summary) {
-      summary.textContent = `共 ${rows.length} 行，合计数量 ${qtySum}`;
+      const scrollHint = rows.length > 30 ? '，可滚动查看全部' : '';
+      summary.textContent = `共 ${rows.length} 行，合计数量 ${qtySum}${scrollHint}`;
     }
     tbody.innerHTML = rows.map(row => {
       const remark = String(row.remark || '').trim();
