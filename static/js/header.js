@@ -951,6 +951,177 @@
         }).then((result) => result === true);
     }
 
+    let appDingtalkNotifyPromptPanel = null;
+    let appDingtalkNotifyPromptState = null;
+
+    function computeAppDingtalkPromptBottomOffset(){
+        let maxHeight = 0;
+        const selectors = [
+            '.app-upload-progress-panel.show',
+            '.pm-batch-float-bar.active:not(.pm-batch-float-bar--embedded)',
+        ];
+        selectors.forEach(selector => {
+            document.querySelectorAll(selector).forEach(el => {
+                try {
+                    const style = window.getComputedStyle(el);
+                    if(style.display === 'none' || style.visibility === 'hidden') return;
+                    const rect = el.getBoundingClientRect();
+                    if(!rect || rect.height <= 0) return;
+                    maxHeight = Math.max(maxHeight, Math.ceil(rect.height) + 18);
+                } catch(_e) {
+                }
+            });
+        });
+        return maxHeight;
+    }
+
+    function syncAppDingtalkPromptOffset(){
+        try {
+            const offset = computeAppDingtalkPromptBottomOffset();
+            document.documentElement.style.setProperty('--app-dingtalk-prompt-bottom-offset', `${Math.max(0, offset)}px`);
+        } catch(_e) {
+        }
+    }
+
+    function ensureAppDingtalkNotifyPrompt(){
+        if(appDingtalkNotifyPromptPanel && document.body.contains(appDingtalkNotifyPromptPanel)){
+            return appDingtalkNotifyPromptPanel;
+        }
+        const panel = document.createElement('div');
+        panel.id = 'app-dingtalk-notify-prompt';
+        panel.className = 'app-dingtalk-notify-prompt';
+        panel.setAttribute('aria-live', 'polite');
+        panel.innerHTML = [
+            '<div class="app-dingtalk-notify-prompt-title"></div>',
+            '<div class="app-dingtalk-notify-prompt-body"></div>',
+            '<div class="app-dingtalk-notify-prompt-actions">',
+            '  <button type="button" class="btn-secondary btn-small" data-role="cancel">暂不发送</button>',
+            '  <button type="button" class="btn-primary btn-small" data-role="confirm">发送到钉钉群</button>',
+            '</div>',
+        ].join('');
+        const onCancel = () => hideAppDingtalkNotifyPrompt(false);
+        const onConfirm = async () => {
+            const state = appDingtalkNotifyPromptState;
+            const confirmBtn = panel.querySelector('[data-role="confirm"]');
+            if(!state || confirmBtn?.disabled) return;
+            confirmBtn.disabled = true;
+            let ok = true;
+            try {
+                if(typeof state.onConfirm === 'function'){
+                    ok = await state.onConfirm(state);
+                }
+            } catch(_err) {
+                ok = false;
+                if(typeof showAppToast === 'function'){
+                    showAppToast('钉钉通知发送失败', true, 0);
+                }
+            } finally {
+                if(confirmBtn) confirmBtn.disabled = false;
+            }
+            if(ok !== false) hideAppDingtalkNotifyPrompt(true);
+        };
+        panel.querySelector('[data-role="cancel"]')?.addEventListener('click', onCancel);
+        panel.querySelector('[data-role="confirm"]')?.addEventListener('click', onConfirm);
+        document.body.appendChild(panel);
+        appDingtalkNotifyPromptPanel = panel;
+        return panel;
+    }
+
+    function hideAppDingtalkNotifyPrompt(confirmed){
+        const panel = appDingtalkNotifyPromptPanel;
+        const state = appDingtalkNotifyPromptState;
+        appDingtalkNotifyPromptState = null;
+        if(panel) panel.classList.remove('show');
+        if(state && !confirmed && typeof state.onCancel === 'function'){
+            try { state.onCancel(state); } catch(_e) { /* ignore */ }
+        }
+    }
+
+    /**
+     * 全站唯一入口：左下角询问是否发送钉钉群通知。
+     * 今后所有「是否通知钉钉」场景必须调用此 API，禁止用 modal / toast / showAppConfirm 替代。
+     */
+    function showAppDingtalkNotifyPrompt(options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const title = String(opt.title || '钉钉通知').trim() || '钉钉通知';
+        const intro = String(opt.intro || '是否将通知发送到钉钉群中？').trim() || '是否将通知发送到钉钉群中？';
+        let body = String(opt.body || '').trim();
+        if(!body){
+            const previewLines = Array.isArray(opt.previewLines)
+                ? opt.previewLines.map(line => String(line || '').trim()).filter(Boolean)
+                : [];
+            body = previewLines.length ? `${intro}\n\n${previewLines.join('\n')}` : intro;
+        }
+        const panel = ensureAppDingtalkNotifyPrompt();
+        const titleEl = panel.querySelector('.app-dingtalk-notify-prompt-title');
+        const bodyEl = panel.querySelector('.app-dingtalk-notify-prompt-body');
+        const cancelBtn = panel.querySelector('[data-role="cancel"]');
+        const confirmBtn = panel.querySelector('[data-role="confirm"]');
+        if(titleEl) titleEl.textContent = title;
+        if(bodyEl) bodyEl.textContent = body;
+        if(cancelBtn) cancelBtn.textContent = String(opt.cancelText || '暂不发送').trim() || '暂不发送';
+        if(confirmBtn){
+            confirmBtn.textContent = String(opt.confirmText || '发送到钉钉群').trim() || '发送到钉钉群';
+            confirmBtn.disabled = false;
+        }
+        appDingtalkNotifyPromptState = opt;
+        syncAppDingtalkPromptOffset();
+        panel.classList.add('show');
+    }
+
+    async function sendAppDingtalkNotify(action, payload){
+        const act = String(action || '').trim();
+        if(!act) return { ok: false, message: '缺少钉钉通知类型' };
+        const resp = await fetch(`/api/dingtalk-notify?action=${encodeURIComponent(act)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload && typeof payload === 'object' ? payload : {}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if(data.status !== 'success'){
+            const message = data.message || '钉钉通知发送失败';
+            if(typeof showAppToast === 'function') showAppToast(message, true, 0);
+            return { ok: false, message };
+        }
+        const sentCount = Number(data.sent_count);
+        const countText = Number.isFinite(sentCount) && sentCount > 0 ? sentCount : '';
+        const successMessage = String(
+            (payload && payload.successMessage) || (countText ? `已发送 ${countText} 条通知到钉钉群` : '已发送到钉钉群')
+        ).trim();
+        if(typeof showAppToast === 'function') showAppToast(successMessage, false, 4200);
+        return { ok: true, data };
+    }
+
+    function formatOverseasStockoutPreviewLines(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const lines = list.slice(0, limit).map(item => {
+            const sku = String(item && item.sku || '').trim() || '-';
+            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
+            return `${sku} 在 ${warehouseName} 缺货`;
+        });
+        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
+        return lines;
+    }
+
+    function promptAppDingtalkOverseasStockout(items, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const list = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
+        if(!list.length) return;
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || '钉钉缺货通知').trim() || '钉钉缺货通知',
+            previewLines: formatOverseasStockoutPreviewLines(list, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const result = await sendAppDingtalkNotify('overseas_stockout', { items: list });
+                return !!(result && result.ok);
+            },
+        });
+    }
+
     function ensureHelpDotTooltip(){
         if(activeHelpDotTooltip && document.body.contains(activeHelpDotTooltip)) return activeHelpDotTooltip;
         const tooltip = document.createElement('div');
@@ -11680,6 +11851,10 @@
         };
         window.showAppConfirm = showAppConfirm;
         window.showAppConfirmAsync = showAppConfirmAsync;
+        window.showAppDingtalkNotifyPrompt = showAppDingtalkNotifyPrompt;
+        window.hideAppDingtalkNotifyPrompt = hideAppDingtalkNotifyPrompt;
+        window.sendAppDingtalkNotify = sendAppDingtalkNotify;
+        window.promptAppDingtalkOverseasStockout = promptAppDingtalkOverseasStockout;
         window.bindFloatingHelpDots = bindFloatingHelpDots;
         window.syncSitjoyPageFillScrollLayout = syncSitjoyPageFillScrollLayout;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;

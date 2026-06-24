@@ -41,6 +41,7 @@ from modules.sales_product_mixin import SalesProductMixin
 from modules.go_play_mixin import GoPlayMixin
 from modules.mahjong_play_mixin import MahjongPlayMixin
 from modules.notification_mixin import NotificationMixin
+from modules.dingtalk_notify_mixin import DingTalkNotifyMixin
 from modules.support_domain_mixin import SupportDomainMixin
 from modules.utility_mixin import UtilityMixin
 
@@ -57,6 +58,7 @@ class WSGIApp(
     AuditLogMixin,            # 访问/操作审计日志
     PagePermissionMixin,      # 页面权限控制
     NotificationMixin,        # 站内通知
+    DingTalkNotifyMixin,      # 钉钉群 Webhook
     CoreAppMixin,             # 核心基础逻辑
     AuthEmployeeMixin,        # 员工权限认证
     ProfileMixin,             # 首页个人信息与头像

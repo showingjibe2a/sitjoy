@@ -2766,6 +2766,93 @@ class LogisticsWarehouseMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _snapshot_overseas_inventory(self, cur):
+        cur.execute(
+            """
+            SELECT i.warehouse_id, i.order_product_id, i.available_qty,
+                   w.warehouse_name, op.sku
+            FROM logistics_overseas_inventory i
+            JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+            JOIN order_products op ON op.id = i.order_product_id
+            WHERE COALESCE(w.is_enabled, 1) = 1
+            """
+        )
+        snapshot = {}
+        for row in cur.fetchall() or []:
+            warehouse_id = self._parse_int(row.get('warehouse_id'))
+            order_product_id = self._parse_int(row.get('order_product_id'))
+            if not warehouse_id or not order_product_id:
+                continue
+            snapshot[(warehouse_id, order_product_id)] = {
+                'available_qty': self._parse_int(row.get('available_qty')) or 0,
+                'sku': str(row.get('sku') or '').strip(),
+                'warehouse_name': str(row.get('warehouse_name') or '').strip(),
+            }
+        return snapshot
+
+    def _stockout_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial'):
+        mode = (import_mode or 'partial').strip().lower()
+        items = []
+        seen = set()
+        if mode == 'replace_all':
+            candidate_keys = set(before_snapshot.keys()) | set(after_qty_by_key.keys())
+        else:
+            candidate_keys = set(after_qty_by_key.keys())
+        for key in candidate_keys:
+            before = before_snapshot.get(key) or {}
+            old_qty = self._parse_int(before.get('available_qty')) or 0
+            if mode == 'replace_all':
+                new_qty = self._parse_int(after_qty_by_key.get(key, 0)) or 0
+            else:
+                if key not in after_qty_by_key:
+                    continue
+                new_qty = self._parse_int(after_qty_by_key.get(key)) or 0
+            if old_qty <= 0 or new_qty != 0:
+                continue
+            sku = str(before.get('sku') or '').strip()
+            warehouse_name = str(before.get('warehouse_name') or '').strip()
+            if not sku or not warehouse_name:
+                continue
+            dedupe_key = (sku, warehouse_name)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            items.append({
+                'sku': sku,
+                'warehouse_name': warehouse_name,
+                'previous_qty': int(old_qty),
+            })
+        items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+        return items
+
+    def _find_overseas_inventory_duplicate(self, cur, warehouse_id, order_product_id, exclude_id=None):
+        warehouse_id = self._parse_int(warehouse_id)
+        order_product_id = self._parse_int(order_product_id)
+        exclude_id = self._parse_int(exclude_id) or 0
+        if not warehouse_id or not order_product_id:
+            return None
+        sql = """
+            SELECT i.id, w.warehouse_name, op.sku
+            FROM logistics_overseas_inventory i
+            JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+            JOIN order_products op ON op.id = i.order_product_id
+            WHERE i.warehouse_id=%s AND i.order_product_id=%s
+        """
+        params = [warehouse_id, order_product_id]
+        if exclude_id:
+            sql += ' AND i.id<>%s'
+            params.append(exclude_id)
+        sql += ' LIMIT 1'
+        cur.execute(sql, tuple(params))
+        row = cur.fetchone()
+        return row if row and row.get('id') else None
+
+    def _overseas_inventory_duplicate_message(self, duplicate_row):
+        row = duplicate_row or {}
+        sku = str(row.get('sku') or '').strip() or '该 SKU'
+        warehouse_name = str(row.get('warehouse_name') or '').strip() or '该仓库'
+        return f'库存记录已存在：{sku} @ {warehouse_name}，请勿重复新建'
+
     def handle_logistics_warehouse_inventory_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -2871,14 +2958,20 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing warehouse_id/order_product_id/available_qty'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        duplicate = self._find_overseas_inventory_duplicate(
+                            cur, warehouse_id, order_product_id,
+                        )
+                        if duplicate:
+                            return self.send_json({
+                                'status': 'error',
+                                'message': self._overseas_inventory_duplicate_message(duplicate),
+                            }, start_response)
                         cur.execute(
                             """
                             INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty)
                             VALUES (%s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                available_qty=VALUES(available_qty)
                             """,
-                            (warehouse_id, order_product_id, available_qty, 0)
+                            (warehouse_id, order_product_id, available_qty, 0),
                         )
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -2891,15 +2984,46 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        duplicate = self._find_overseas_inventory_duplicate(
+                            cur, warehouse_id, order_product_id, exclude_id=item_id,
+                        )
+                        if duplicate:
+                            return self.send_json({
+                                'status': 'error',
+                                'message': self._overseas_inventory_duplicate_message(duplicate),
+                            }, start_response)
+                        cur.execute(
+                            """
+                            SELECT i.available_qty, w.warehouse_name, op.sku
+                            FROM logistics_overseas_inventory i
+                            JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+                            JOIN order_products op ON op.id = i.order_product_id
+                            WHERE i.id=%s
+                            LIMIT 1
+                            """,
+                            (item_id,),
+                        )
+                        before_row = cur.fetchone() or {}
+                        old_qty = self._parse_int(before_row.get('available_qty')) or 0
                         cur.execute(
                             """
                             UPDATE logistics_overseas_inventory
                             SET warehouse_id=%s, order_product_id=%s, available_qty=%s
                             WHERE id=%s
                             """,
-                            (warehouse_id, order_product_id, available_qty, item_id)
+                            (warehouse_id, order_product_id, available_qty, item_id),
                         )
-                return self.send_json({'status': 'success'}, start_response)
+                stockout_items = []
+                if old_qty > 0 and available_qty == 0:
+                    sku = str(before_row.get('sku') or '').strip()
+                    warehouse_name = str(before_row.get('warehouse_name') or '').strip()
+                    if sku and warehouse_name:
+                        stockout_items.append({
+                            'sku': sku,
+                            'warehouse_name': warehouse_name,
+                            'previous_qty': int(old_qty),
+                        })
+                return self.send_json({'status': 'success', 'stockout_items': stockout_items}, start_response)
 
             if method == 'DELETE':
                 item_id = self._parse_int(data.get('id'))
@@ -3001,9 +3125,11 @@ class LogisticsWarehouseMixin:
             updated = 0
             unchanged = 0
             errors = []
+            stockout_items = []
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    before_snapshot = self._snapshot_overseas_inventory(cur)
                     raw_rows = []
                     sku_names = set()
                     warehouse_names = set()
@@ -3110,13 +3236,26 @@ class LogisticsWarehouseMixin:
                     updated += len([1 for t in to_upsert if (t[0], t[1]) in existing_map and (existing_map[(t[0], t[1])].get('available_qty') or 0) != t[2]])
                     created += len(to_insert)
 
+                    after_qty_by_key = {}
+                    if import_mode == 'replace_all':
+                        for key in before_snapshot.keys():
+                            after_qty_by_key[key] = 0
+                    for (warehouse_id, order_product_id), available_qty in normalized_map.items():
+                        after_qty_by_key[(warehouse_id, order_product_id)] = available_qty
+                    stockout_items = self._stockout_items_from_inventory_change(
+                        before_snapshot,
+                        after_qty_by_key,
+                        import_mode=import_mode,
+                    )
+
             return self.send_json({
                 'status': 'success',
                 'created': created,
                 'updated': updated,
                 'unchanged': unchanged,
                 'mode': import_mode,
-                'errors': errors
+                'errors': errors,
+                'stockout_items': stockout_items,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

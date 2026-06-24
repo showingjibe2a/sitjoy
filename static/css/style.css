@@ -3806,6 +3806,46 @@ button:hover {
 
 .app-upload-progress-panel.show { display: block; }
 
+/* 全站唯一：左下角钉钉通知确认条（询问是否发送到钉钉群；禁止用 modal/toast/confirm 替代） */
+.app-dingtalk-notify-prompt {
+    position: fixed;
+    left: 18px;
+    right: auto;
+    bottom: calc(18px + var(--app-dingtalk-prompt-bottom-offset, 0px));
+    z-index: 4200;
+    width: min(420px, calc(100vw - 24px));
+    background: #fff;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    padding: 0.75rem 0.85rem 0.8rem;
+    display: none;
+}
+
+.app-dingtalk-notify-prompt.show { display: block; }
+
+.app-dingtalk-notify-prompt-title {
+    font-weight: 700;
+    color: var(--morandi-ink);
+    font-size: 0.95rem;
+    margin-bottom: 0.45rem;
+}
+
+.app-dingtalk-notify-prompt-body {
+    font-size: 0.88rem;
+    color: var(--morandi-ink);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 0.65rem;
+}
+
+.app-dingtalk-notify-prompt-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
 .app-upload-progress-head {
     display: flex;
     align-items: center;

@@ -92,6 +92,7 @@ html[data-theme="your-name"] {
 | iconCircle | 关闭(×)、帮助(?)、通知、固定等圆形微按钮 |
 | card / modal / button / table / formInput | 业务卡片、弹窗、按钮、表格、输入 |
 | notification / toast | 通知面板与右下角提示条 |
+| dingtalkNotifyPrompt | 左下角钉钉通知确认条（`showAppDingtalkNotifyPrompt`；询问是否发钉钉群时唯一允许使用的样式） |
 | statusSegment / dateInput | 状态分段、日期输入（含 compact 变体） |
 
 ## JS API
