@@ -4067,14 +4067,7 @@
                         return;
                     }
                     const adInfo = data.ad_info || {};
-                    selectedAdDetail = {
-                        ad_name: adInfo.ad_name || '',
-                        status: adInfo.status || selectedAd?.status || '启动',
-                        budget: adInfo.budget,
-                        bid_strategy: adInfo.bid_strategy || '',
-                        amazon_id: adInfo.amazon_id || '',
-                    };
-                    updateInfoPanel(adInfo);
+                    applySelectedAdDetailFromInfo(adInfo);
                     allowedOperations = data.allowed_operations || [];
                     if (restore) {
                         applySavedFormState(restore);
@@ -4169,16 +4162,55 @@
             syncTargetObjectNextBtn();
         }
 
+        function applySelectedAdDetailFromInfo(adInfo) {
+            if (!selectedAdId) return;
+            const info = adInfo || {};
+            selectedAdDetail = {
+                ad_name: info.ad_name || selectedAdDetail?.ad_name || '',
+                status: info.status || selectedAd?.status || selectedAdDetail?.status || '启动',
+                budget: info.budget,
+                bid_strategy: info.bid_strategy || '',
+                amazon_id: info.amazon_id || selectedAdDetail?.amazon_id || '',
+            };
+            const patch = {};
+            if (info.ad_name) patch.ad_name = info.ad_name;
+            if (info.status) patch.status = info.status;
+            if (info.amazon_id) patch.amazon_id = info.amazon_id;
+            if (Object.keys(patch).length) {
+                adItemsRaw = (adItemsRaw || []).map(item => (
+                    String(item.id) === String(selectedAdId) ? Object.assign({}, item, patch) : item
+                ));
+                selectedAd = adItemsRaw.find(item => String(item.id) === String(selectedAdId)) || selectedAd;
+                applyAdListFiltersAndRender();
+                highlightSelectedAdRow();
+            }
+            updateInfoPanel(info);
+            syncOperationTypeFields();
+        }
+
+        function reloadSelectedAdDetailFromServer(targetObject) {
+            const defaultsUrl = buildAdjustmentDefaultsUrl(targetObject || '');
+            if (!defaultsUrl) return Promise.resolve(null);
+            return fetch(defaultsUrl)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success' && data.ad_info) {
+                        applySelectedAdDetailFromInfo(data.ad_info);
+                    }
+                    return data;
+                });
+        }
+
         function applyLocalAdStatusAfterSubmit(newStatus) {
             const status = String(newStatus || '').trim();
             if (!status || !selectedAdId) return;
-            if (selectedAdDetail) selectedAdDetail.status = status;
-            if (selectedAd) selectedAd.status = status;
-            adItemsRaw = (adItemsRaw || []).map(item => (
-                String(item.id) === String(selectedAdId) ? Object.assign({}, item, { status }) : item
-            ));
-            applyAdListFiltersAndRender();
-            highlightSelectedAdRow();
+            applySelectedAdDetailFromInfo({
+                ad_name: selectedAdDetail?.ad_name || selectedAd?.ad_name || '',
+                status,
+                budget: selectedAdDetail?.budget,
+                bid_strategy: selectedAdDetail?.bid_strategy || '',
+                amazon_id: selectedAdDetail?.amazon_id || selectedAd?.amazon_id || '',
+            });
             const op = getSelectedOperationType();
             if (isArchiveOp(op) || isStartPauseToggleOp(op)) {
                 syncOperationTypeFields();
@@ -4212,20 +4244,17 @@
                 updateRecordsLink();
                 loadAdjustmentPeriodList();
                 if (selectedAdId) {
+                    const targetObject = document.getElementById('targetObject')?.value || '';
                     loadTargetOptionsForSelectedAd().then(() => syncTargetObjectFieldMode());
-                    const defaultsUrl = buildAdjustmentDefaultsUrl(document.getElementById('targetObject')?.value || '');
-                    if (defaultsUrl) {
-                        fetch(defaultsUrl)
-                            .then(r => r.json())
-                            .then(d => {
-                                if (d.status === 'success' && d.defaults) {
-                                    setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
-                                    setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
-                                    setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
-                                    applyObserveDefaults();
-                                }
-                            });
-                    }
+                    reloadSelectedAdDetailFromServer(targetObject)
+                        .then(d => {
+                            if (d && d.status === 'success' && d.defaults) {
+                                setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
+                                setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                                setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
+                                applyObserveDefaults();
+                            }
+                        });
                 }
             })
             .catch(err => aaSaveResult({ action: 'create', isError: true, message: '提交失败: ' + err }))

@@ -4697,8 +4697,38 @@ class AmazonAdMixin:
                     return '修改后须与修改前不同（启动↔暂停）'
         return None
 
+    def _is_modify_budget_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '预算' in n
+
+    def _is_modify_bid_strategy_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '竞价策略' in n
+
+    def _is_modify_name_operation(self, op_name):
+        n = self._normalize_adjustment_operation_type_name(op_name)
+        return '修改' in n and '名称' in n
+
+    def _is_ad_item_field_adjustment_operation(self, op_name):
+        return (
+            self._is_ad_status_adjustment_operation(op_name)
+            or self._is_modify_budget_operation(op_name)
+            or self._is_modify_bid_strategy_operation(op_name)
+            or self._is_modify_name_operation(op_name)
+        )
+
+    def _require_campaign_ad_item(self, cur, ad_item_id, field_label):
+        cur.execute(
+            "SELECT ad_level FROM amazon_ad_items WHERE id=%s LIMIT 1",
+            (ad_item_id,),
+        )
+        row = cur.fetchone() or {}
+        if str(row.get('ad_level') or '').strip() != 'campaign':
+            return f'仅广告活动可{field_label}'
+        return None
+
     def _apply_adjustment_to_ad_item(self, cur, ad_item_id, operation_name, target_object, after_value):
-        if not self._is_ad_status_adjustment_operation(operation_name):
+        if not self._is_ad_item_field_adjustment_operation(operation_name):
             return None
         target_object = (target_object or '').strip()
         if target_object != '-':
@@ -4706,19 +4736,65 @@ class AmazonAdMixin:
         after_value = (after_value or '').strip()
         if not after_value:
             return None
-        status, err = self._normalize_ad_record_status(after_value)
-        if err:
-            return err
-        if self._is_archive_operation(operation_name) and status != '存档':
-            return '存档操作的修改后须为「存档」'
-        if self._is_start_pause_toggle_operation(operation_name) and status not in ('启动', '暂停'):
-            return '启动·暂停操作的修改后须为「启动」或「暂停」'
-        cur.execute(
-            "UPDATE amazon_ad_items SET status=%s, updated_at=NOW() WHERE id=%s",
-            (status, ad_item_id),
-        )
-        if cur.rowcount <= 0:
-            return '广告状态更新失败'
+
+        if self._is_ad_status_adjustment_operation(operation_name):
+            status, err = self._normalize_ad_record_status(after_value)
+            if err:
+                return err
+            if self._is_archive_operation(operation_name) and status != '存档':
+                return '存档操作的修改后须为「存档」'
+            if self._is_start_pause_toggle_operation(operation_name) and status not in ('启动', '暂停'):
+                return '启动·暂停操作的修改后须为「启动」或「暂停」'
+            cur.execute(
+                "UPDATE amazon_ad_items SET status=%s, updated_at=NOW() WHERE id=%s",
+                (status, ad_item_id),
+            )
+            if cur.rowcount <= 0:
+                return '广告状态更新失败'
+            return None
+
+        if self._is_modify_budget_operation(operation_name):
+            budget = self._parse_budget_value(after_value)
+            if budget is None:
+                return '预算须为有效数字'
+            level_err = self._require_campaign_ad_item(cur, ad_item_id, '修改预算')
+            if level_err:
+                return level_err
+            cur.execute(
+                "UPDATE amazon_ad_items SET budget=%s, updated_at=NOW() WHERE id=%s",
+                (budget, ad_item_id),
+            )
+            if cur.rowcount <= 0:
+                return '预算更新失败'
+            return None
+
+        if self._is_modify_bid_strategy_operation(operation_name):
+            bid_strategy, err = self._normalize_campaign_bid_strategy(after_value, required=True)
+            if err:
+                return err
+            level_err = self._require_campaign_ad_item(cur, ad_item_id, '修改竞价策略')
+            if level_err:
+                return level_err
+            cur.execute(
+                "UPDATE amazon_ad_items SET bid_strategy=%s, updated_at=NOW() WHERE id=%s",
+                (bid_strategy, ad_item_id),
+            )
+            if cur.rowcount <= 0:
+                return '竞价策略更新失败'
+            return None
+
+        if self._is_modify_name_operation(operation_name):
+            name = after_value.strip()
+            if not name:
+                return '名称不能为空'
+            cur.execute(
+                "UPDATE amazon_ad_items SET name=%s, updated_at=NOW() WHERE id=%s",
+                (name, ad_item_id),
+            )
+            if cur.rowcount <= 0:
+                return '名称更新失败'
+            return None
+
         return None
 
     def _insert_amazon_ad_target_row(self, cur, ad_item_id, target_desc, status, bid_value):
@@ -5746,8 +5822,8 @@ class AmazonAdMixin:
                             if not self._append_child_import_error(errors, row_idx, val_err):
                                 break
                             continue
-                        if self._is_ad_status_adjustment_operation(operation_name):
-                            sync_err = self._apply_adjustment_to_ad_item(
+                        if after_value:
+                            sync_err = self._apply_adjustment_sync(
                                 cur, ad_item_id, operation_name, target_object, after_value,
                             )
                             if sync_err:
