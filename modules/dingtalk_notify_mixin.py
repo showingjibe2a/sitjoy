@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from urllib.parse import parse_qs
 
 
@@ -217,6 +218,51 @@ class DingTalkNotifyMixin:
         except Exception as e:
             return False, f'钉钉请求失败: {e}'
 
+    def _dingtalk_user_display_name(self, user_id):
+        uid = self._parse_int(user_id) or 0
+        if not uid:
+            return ''
+        try:
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'SELECT username, name FROM users WHERE id=%s LIMIT 1',
+                        (uid,),
+                    )
+                    row = cur.fetchone() or {}
+            name = str(row.get('name') or '').strip()
+            if name:
+                return name
+            username = str(row.get('username') or '').strip()
+            if username:
+                return username
+        except Exception:
+            pass
+        return f'用户{uid}'
+
+    def _build_dingtalk_markdown_message(self, title, detail_lines, user_id=None):
+        """组装钉钉 Markdown 正文：列表明细 + 分隔线 + 通知人/时间。"""
+        lines = [str(line).strip() for line in (detail_lines or []) if str(line or '').strip()]
+        if not lines:
+            return ''
+        count = len(lines)
+        sections = [
+            f'本次共 **{count}** 条：',
+            '',
+            '\n'.join(lines),
+            '',
+            '---',
+        ]
+        footer_bits = []
+        notifier = self._dingtalk_user_display_name(user_id)
+        if notifier:
+            footer_bits.append(f'通知人：**{notifier}**')
+        footer_bits.append(f'时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}')
+        sections.append('> ' + ' · '.join(footer_bits))
+        body = '\n'.join(sections)
+        title_text = str(title or '').strip() or '系统通知'
+        return f'### {title_text}\n\n{body}'
+
     def _format_overseas_inventory_notify_lines(self, items, event_kind):
         lines = []
         for row in items or []:
@@ -228,10 +274,12 @@ class DingTalkNotifyMixin:
                 continue
             if event_kind == 'restock':
                 qty = self._parse_int(row.get('available_qty'))
-                qty_text = f'，在库 {qty}' if qty is not None and qty > 0 else ''
-                lines.append(f'{sku} 在 {warehouse_name} 重新上架{qty_text}')
+                qty_text = f' · 在库 **{qty}**' if qty is not None and qty > 0 else ''
+                lines.append(f'- **{sku}** · {warehouse_name} · **重新上架**{qty_text}')
             else:
-                lines.append(f'{sku} 在 {warehouse_name} 缺货')
+                prev_qty = self._parse_int(row.get('previous_qty'))
+                prev_text = f' · 原库存 **{prev_qty}**' if prev_qty is not None and prev_qty > 0 else ''
+                lines.append(f'- **{sku}** · {warehouse_name} · **缺货**{prev_text}')
         return lines
 
     def _format_overseas_stockout_lines(self, items):
@@ -240,28 +288,33 @@ class DingTalkNotifyMixin:
     def _format_overseas_restock_lines(self, items):
         return self._format_overseas_inventory_notify_lines(items, 'restock')
 
-    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None):
+    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None, user_id=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
         delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
-        text = self._prepare_dingtalk_text('\n'.join(formatted), delivery_cfg=delivery_cfg)
+        markdown_text = self._build_dingtalk_markdown_message(title, formatted, user_id=user_id)
+        text = self._prepare_dingtalk_text(markdown_text, delivery_cfg=delivery_cfg)
         payload = {
             'msgtype': 'markdown',
             'markdown': {
                 'title': title,
-                'text': f'### {title}\n\n{text}',
+                'text': text,
             },
         }
         return self._post_dingtalk_payload(payload, page_key=page_key)
 
-    def _send_dingtalk_overseas_stockout(self, items, page_key=None):
+    def _send_dingtalk_overseas_stockout(self, items, page_key=None, user_id=None):
         lines = self._format_overseas_stockout_lines(items)
-        return self._send_dingtalk_overseas_markdown('海外仓缺货提醒', lines, page_key=page_key)
+        return self._send_dingtalk_overseas_markdown(
+            '海外仓缺货提醒', lines, page_key=page_key, user_id=user_id,
+        )
 
-    def _send_dingtalk_overseas_restock(self, items, page_key=None):
+    def _send_dingtalk_overseas_restock(self, items, page_key=None, user_id=None):
         lines = self._format_overseas_restock_lines(items)
-        return self._send_dingtalk_overseas_markdown('海外仓重新上架提醒', lines, page_key=page_key)
+        return self._send_dingtalk_overseas_markdown(
+            '海外仓重新上架提醒', lines, page_key=page_key, user_id=user_id,
+        )
 
     def _validate_dingtalk_notify_page_access(self, user_id, page_key):
         page_key = str(page_key or '').strip()
@@ -525,7 +578,7 @@ class DingTalkNotifyMixin:
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_stockout(items, page_key=page_key)
+                ok, err = self._send_dingtalk_overseas_stockout(items, page_key=page_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
@@ -538,7 +591,7 @@ class DingTalkNotifyMixin:
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_restock(items, page_key=page_key)
+                ok, err = self._send_dingtalk_overseas_restock(items, page_key=page_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
