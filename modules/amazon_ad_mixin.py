@@ -5016,11 +5016,305 @@ class AmazonAdMixin:
             cur, ad_item_id, operation_name, target_object, after_value,
         )
 
+    def _profit_prob_month_starts_last_n(self, months=3):
+        try:
+            n = max(1, min(12, int(months or 3)))
+        except Exception:
+            n = 3
+        today = datetime.now().date()
+        y, m = today.year, today.month
+        out = []
+        for _ in range(n):
+            out.append(f'{y:04d}-{m:02d}-01')
+            m -= 1
+            if m < 1:
+                m = 12
+                y -= 1
+        return sorted(out)
+
+    def _normalize_parent_rate_ratio(self, value):
+        """父体预估率字段：库中常以百分数存储（10=10%），计算时统一为 0-1 比例。"""
+        n = self._parse_float(value)
+        if n is None:
+            return None
+        if n > 1:
+            return n / 100.0
+        return n
+
+    def _load_sku_family_3month_atv_acoas(self, cur, sku_family_id, months=3):
+        sfid = self._parse_int(sku_family_id)
+        if not sfid:
+            return None, None
+        month_starts = self._profit_prob_month_starts_last_n(months)
+        if not month_starts:
+            return None, None
+        ph = ','.join(['%s'] * len(month_starts))
+        cur.execute(
+            f"""
+            SELECT COALESCE(SUM(m.net_sales_amount), 0) AS net_sales,
+                   COALESCE(SUM(m.order_qty), 0) AS order_qty,
+                   COALESCE(SUM(m.ad_spend), 0) AS ad_spend
+            FROM sales_perf_agg_month m
+            INNER JOIN sales_products sp ON sp.id = m.sales_product_id
+            INNER JOIN sales_product_variants v ON v.id = sp.variant_id
+            WHERE v.sku_family_id = %s
+              AND m.month_start IN ({ph})
+            """,
+            tuple([sfid] + month_starts),
+        )
+        row = cur.fetchone() or {}
+        net_sales = float(row.get('net_sales') or 0)
+        order_qty = float(row.get('order_qty') or 0)
+        ad_spend = float(row.get('ad_spend') or 0)
+        atv = (net_sales / order_qty) if order_qty > 0 else None
+        acoas = (ad_spend / net_sales) if net_sales > 0 else None
+        return atv, acoas
+
+    def _load_sku_family_exp_fields(self, cur, sku_family_id):
+        sfid = self._parse_int(sku_family_id)
+        if not sfid:
+            return None
+        cur.execute(
+            """
+            SELECT id, sku_family,
+                   amazon_exp_atv, amazon_exp_acoas
+            FROM product_families
+            WHERE id=%s
+            LIMIT 1
+            """,
+            (sfid,),
+        )
+        return cur.fetchone()
+
+    def _save_sku_family_exp_fields(self, cur, sku_family_id, atv, acoas):
+        sfid = self._parse_int(sku_family_id)
+        if not sfid:
+            raise ValueError('缺少货号 ID')
+        atv_val = self._parse_float(atv)
+        acoas_val = self._parse_float(acoas)
+        if atv_val is not None and atv_val < 0:
+            raise ValueError('预估笔单价不能为负')
+        if acoas_val is not None:
+            if acoas_val < 0:
+                raise ValueError('预估 AC OAS 不能为负')
+            if acoas_val > 1:
+                acoas_val = acoas_val / 100.0
+            acoas_val = round(min(1.0, max(0.0, acoas_val)), 6)
+        cur.execute(
+            """
+            UPDATE product_families
+            SET amazon_exp_atv=%s, amazon_exp_acoas=%s
+            WHERE id=%s
+            """,
+            (atv_val, acoas_val, sfid),
+        )
+        return sfid
+
+    def _parse_adjustment_metric_number(self, value):
+        if value is None:
+            return None
+        text = str(value).strip().replace(',', '').replace('%', '')
+        if not text or text == '-':
+            return None
+        try:
+            return float(text)
+        except Exception:
+            return None
+
+    def _resolve_product_mod_cps(self, cur, ad_item_id, target_object):
+        shop_id = self._resolve_ad_item_shop_id(cur, ad_item_id)
+        platform_sku = str(target_object or '').strip()
+        if not shop_id or not platform_sku:
+            return None, '修改商品操作须填写有效的商品 SKU'
+        cur.execute(
+            """
+            SELECT sp.id, sp.sale_price_usd, sp.parent_id,
+                   p.estimated_acoas
+            FROM sales_products sp
+            LEFT JOIN sales_parents p ON p.id = sp.parent_id
+            WHERE sp.shop_id=%s AND sp.platform_sku=%s
+            LIMIT 1
+            """,
+            (shop_id, platform_sku),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, f'未找到销售 SKU：{platform_sku}'
+        sale_price = self._parse_float(row.get('sale_price_usd'))
+        acoas_raw = self._parse_float(row.get('estimated_acoas'))
+        acoas = self._normalize_parent_rate_ratio(acoas_raw)
+        if sale_price is None or sale_price <= 0:
+            return None, '该商品缺少有效售价'
+        if acoas is None or acoas <= 0:
+            return None, '该商品父体缺少预估 ACOAS'
+        cps = float(sale_price) * float(acoas)
+        if cps <= 0:
+            return None, '无法计算理论 CPS'
+        return {
+            'cps': round(cps, 4),
+            'sale_price_usd': float(sale_price),
+            'parent_estimated_acoas': float(acoas),
+            'parent_estimated_acoas_raw': acoas_raw,
+            'platform_sku': platform_sku,
+        }, None
+
+    def _resolve_profit_probability_context(self, cur, ad_item_id, adjustment_row):
+        ad_item_id = self._parse_int(ad_item_id)
+        if not ad_item_id or not adjustment_row:
+            return None, '缺少广告或调整记录'
+        cur.execute(
+            """
+            SELECT i.id, i.sku_family_id, i.ad_level, pf.sku_family,
+                   pf.amazon_exp_atv, pf.amazon_exp_acoas
+            FROM amazon_ad_items i
+            LEFT JOIN product_families pf ON pf.id = i.sku_family_id
+            WHERE i.id=%s
+            LIMIT 1
+            """,
+            (ad_item_id,),
+        )
+        ad_row = cur.fetchone()
+        if not ad_row:
+            return None, '广告不存在'
+        sku_family_id = self._parse_int(ad_row.get('sku_family_id'))
+        op_name = adjustment_row.get('operation_name') or ''
+        is_product = self._is_modify_product_operation(op_name)
+        orders = self._parse_adjustment_metric_number(adjustment_row.get('orders'))
+        clicks = self._parse_adjustment_metric_number(adjustment_row.get('clicks'))
+        cpc = self._parse_adjustment_metric_number(adjustment_row.get('cpc'))
+        if orders is None:
+            orders = 0
+        elif orders < 0:
+            return None, '订单量不能为负'
+        orders = int(orders)
+        if orders > 100:
+            return None, '订单量超过 100，不在可计算范围'
+        if cpc is None or cpc <= 0:
+            return None, '调整记录缺少有效 CPC'
+        if clicks is None or clicks < 0:
+            clicks = 0
+        else:
+            clicks = int(clicks)
+
+        suggested_atv, suggested_acoas = (None, None)
+        if sku_family_id:
+            try:
+                suggested_atv, suggested_acoas = self._load_sku_family_3month_atv_acoas(cur, sku_family_id, 3)
+            except Exception:
+                suggested_atv, suggested_acoas = (None, None)
+
+        saved_atv = self._parse_float(ad_row.get('amazon_exp_atv'))
+        saved_acoas = self._parse_float(ad_row.get('amazon_exp_acoas'))
+        saved_acoas_ratio = (
+            self._normalize_parent_rate_ratio(saved_acoas)
+            if saved_acoas and saved_acoas > 0 else None
+        )
+        cps = None
+        cps_source = 'missing'
+        cps_detail = {}
+        err_msg = None
+
+        if is_product:
+            prod, prod_err = self._resolve_product_mod_cps(
+                cur, ad_item_id, adjustment_row.get('target_object'),
+            )
+            if prod_err:
+                err_msg = prod_err
+            else:
+                cps = prod.get('cps')
+                cps_source = 'product'
+                cps_detail = prod
+        else:
+            atv = saved_atv if saved_atv and saved_atv > 0 else suggested_atv
+            acoas = saved_acoas_ratio if saved_acoas_ratio else suggested_acoas
+            if atv and acoas and atv > 0 and acoas > 0:
+                cps = round(float(atv) * float(acoas), 4)
+                cps_source = 'sku_family_exp' if (saved_acoas_ratio and saved_atv) else 'sku_family_suggested'
+                cps_detail = {
+                    'atv': round(float(atv), 4),
+                    'acoas': round(float(acoas), 6),
+                    'acoas_raw': saved_acoas if saved_acoas_ratio else None,
+                }
+            else:
+                err_msg = '请先填写货号预估笔单价与预估 ACOAS'
+
+        cvr_target = None
+        if cps and cps > 0:
+            cvr_target = float(cpc) / float(cps)
+            if cvr_target <= 0 or cvr_target >= 1:
+                err_msg = err_msg or 'CPC 相对理论 CPS 过高，无法建立有效转化模型'
+
+        return {
+            'adjustment_id': self._parse_int(adjustment_row.get('id')),
+            'ad_item_id': ad_item_id,
+            'operation_name': op_name,
+            'is_modify_product': bool(is_product),
+            'orders': orders,
+            'clicks': clicks,
+            'cpc': float(cpc),
+            'cps': cps,
+            'cvr_target': round(cvr_target, 8) if cvr_target else None,
+            'cps_source': cps_source,
+            'cps_detail': cps_detail,
+            'sku_family_id': sku_family_id,
+            'sku_family': ad_row.get('sku_family') or '',
+            'amazon_exp_atv': saved_atv,
+            'amazon_exp_acoas': saved_acoas_ratio,
+            'suggested_atv': round(suggested_atv, 4) if suggested_atv else None,
+            'suggested_acoas': round(suggested_acoas, 6) if suggested_acoas else None,
+            'error': err_msg,
+        }, None
+
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
         """Amazon 广告调整 API（广告搜索 / 默认值 / 调整记录 CRUD）"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            if method == 'GET' and action == 'profit-probability':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                adjustment_id = self._parse_int((query_params.get('adjustment_id', [''])[0] or '').strip())
+                if not ad_item_id or not adjustment_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 ad_item_id 或 adjustment_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT a.*, ot.name AS operation_name
+                            FROM amazon_ad_adjustments a
+                            LEFT JOIN amazon_ad_operation_types ot ON ot.id = a.operation_type_id
+                            WHERE a.id=%s AND a.ad_item_id=%s
+                            LIMIT 1
+                            """,
+                            (adjustment_id, ad_item_id),
+                        )
+                        adj = cur.fetchone()
+                        if not adj:
+                            return self.send_json({'status': 'error', 'message': '调整记录不存在'}, start_response)
+                        ctx, err = self._resolve_profit_probability_context(cur, ad_item_id, adj)
+                if err:
+                    return self.send_json({'status': 'error', 'message': err}, start_response)
+                return self.send_json({'status': 'success', 'context': ctx}, start_response)
+
+            if method == 'POST' and action == 'save-exp-metrics':
+                data = self._read_json_body(environ) or {}
+                sku_family_id = self._parse_int(data.get('sku_family_id'))
+                if not sku_family_id:
+                    return self.send_json({'status': 'error', 'message': '缺少货号 ID'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        self._save_sku_family_exp_fields(
+                            cur, sku_family_id,
+                            data.get('amazon_exp_atv'),
+                            data.get('amazon_exp_acoas'),
+                        )
+                        row = self._load_sku_family_exp_fields(cur, sku_family_id)
+                return self.send_json({
+                    'status': 'success',
+                    'sku_family_id': sku_family_id,
+                    'amazon_exp_atv': self._parse_float((row or {}).get('amazon_exp_atv')),
+                    'amazon_exp_acoas': self._parse_float((row or {}).get('amazon_exp_acoas')),
+                }, start_response)
 
             if method == 'GET' and action == 'ad-search':
                 with self._get_db_connection() as conn:
