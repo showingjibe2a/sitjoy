@@ -17,6 +17,27 @@
             background:rgba(236,231,223,0.65);
         }
         .inv-import-status.show { display:inline-flex; align-items:center; }
+        .preview-savebar {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 5300;
+            display: none;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.75rem 0.9rem;
+            border: 1px solid rgba(207, 199, 189, 0.9);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+            min-width: min(520px, calc(100vw - 24px));
+        }
+        .preview-savebar.active { display: flex; }
+        .preview-savebar span { flex: 1; color: var(--morandi-ink); font-weight: 700; }
+        .preview-savebar .btn-primary,
+        .preview-savebar .btn-secondary { padding: 0.65rem 1rem; }
+        .preview-edit-input { width: 100%; min-width: 4.5rem; }
+        .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
     </style>
 </head>
 <body>
@@ -98,12 +119,20 @@
 
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
+    <div id="inventoryPreviewSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="inventoryPreviewSaveText">已修改 0 条预览数据</span>
+        <button type="button" class="btn-secondary" onclick="cancelInventoryPreviewEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveInventoryPreviewEdits()">统一保存</button>
+    </div>
+
     <script>
         let editId = null;
         let warehouses = [];
         let orderProducts = [];
         let currentUploadMode = 'partial';
         let selectedInventoryIds = new Set();
+        let listCache = [];
+        let inventoryEditDraft = {};
         function escapeHtml(value) {
             return String(value == null ? '' : value)
                 .replace(/&/g, '&amp;')
@@ -169,6 +198,122 @@
                     syncInventorySelectAll();
                 });
             });
+        }
+        function normalizeInventoryDraftQty(rawValue){
+            const num = parseInt(String(rawValue || '').trim(), 10);
+            return Number.isFinite(num) ? Math.max(0, num) : 0;
+        }
+        function getInventoryDraft(itemId){
+            return inventoryEditDraft[String(itemId)] || null;
+        }
+        function updateInventoryDraft(itemId, rawValue){
+            const item = listCache.find(x => String(x.id) === String(itemId));
+            if(!item) return;
+            const key = String(itemId);
+            const draftQty = normalizeInventoryDraftQty(rawValue);
+            const originalQty = normalizeInventoryDraftQty(item.available_qty);
+            if(draftQty === originalQty){
+                delete inventoryEditDraft[key];
+            } else {
+                inventoryEditDraft[key] = { available_qty: draftQty };
+            }
+            syncInventoryPreviewSaveBar();
+        }
+        function bindInventoryPreviewEditEvents(){
+            document.querySelectorAll('.inventory-qty-edit-field').forEach(el => {
+                el.addEventListener('change', function(){
+                    updateInventoryDraft(this.getAttribute('data-id'), this.value);
+                });
+            });
+        }
+        function countInventoryPreviewEditedRows(){
+            return Object.keys(inventoryEditDraft).length;
+        }
+        function syncInventoryPreviewSaveBar(){
+            const bar = document.getElementById('inventoryPreviewSaveBar');
+            const text = document.getElementById('inventoryPreviewSaveText');
+            if(!bar || !text) return;
+            const count = countInventoryPreviewEditedRows();
+            text.textContent = `已修改 ${count} 条预览数据`;
+            bar.classList.toggle('active', count > 0);
+        }
+        function cancelInventoryPreviewEdits(){
+            inventoryEditDraft = {};
+            renderInventoryTable(listCache);
+            syncInventoryPreviewSaveBar();
+        }
+        function collectInventoryPreviewUpdateItems(){
+            return Object.keys(inventoryEditDraft).map(id => ({
+                id: Number(id),
+                available_qty: normalizeInventoryDraftQty(inventoryEditDraft[id].available_qty),
+            }));
+        }
+        function saveInventoryPreviewEdits(){
+            const items = collectInventoryPreviewUpdateItems();
+            if(!items.length){
+                syncInventoryPreviewSaveBar();
+                return;
+            }
+            const bar = document.getElementById('inventoryPreviewSaveBar');
+            const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+            if(saveBtn){
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+            }
+            fetch('/api/logistics-warehouse-inventory?action=bulk_update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if(data.status !== 'success'){
+                        if(window.showAppToast){ window.showAppToast(data.message || '批量更新失败', true, 3200); }
+                        return;
+                    }
+                    inventoryEditDraft = {};
+                    if(window.showAppToast){
+                        window.showAppToast(`批量更新成功：${Number(data.updated || items.length)} 条`, false, 2200);
+                    }
+                    handleInventoryNotifyAfterSave(data);
+                    loadList();
+                })
+                .catch(err => {
+                    if(window.showAppToast){ window.showAppToast('批量更新失败: ' + err, true, 3200); }
+                })
+                .finally(() => {
+                    syncInventoryPreviewSaveBar();
+                    if(saveBtn){
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '统一保存';
+                    }
+                });
+        }
+        function renderInventoryTable(items){
+            const tbody = document.querySelector('#mainTable tbody');
+            const rows = Array.isArray(items) ? items : [];
+            if(!tbody) return;
+            if(!rows.length){
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+                syncInventorySelectAll();
+                return;
+            }
+            tbody.innerHTML = rows.map(item => {
+                const draft = getInventoryDraft(item.id) || { available_qty: normalizeInventoryDraftQty(item.available_qty) };
+                const qtyValue = Number(draft.available_qty || 0);
+                return `<tr>
+                    <td style="text-align:center;"><input type="checkbox" class="inventory-row-checkbox row-check" data-id="${item.id}" ${selectedInventoryIds.has(Number(item.id)) ? 'checked' : ''}></td>
+                    <td>${escapeHtml(item.warehouse_name || '')}</td>
+                    <td>${escapeHtml(formatWayfairId(item.wayfair_id))}</td>
+                    <td>${escapeHtml(item.sku || '')}</td>
+                    <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input inventory-qty-edit-field" data-id="${item.id}" value="${qtyValue}"></td>
+                    <td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : ''}</td>
+                    <td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td>
+                </tr>`;
+            }).join('');
+            bindInventoryRowSelectionEvents();
+            bindInventoryPreviewEditEvents();
+            syncInventorySelectAll();
         }
         function renderOptions(){
             const wh = document.getElementById('warehouseId');
@@ -251,12 +396,14 @@
                 const tbody = document.querySelector('#mainTable tbody');
                 if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
                 const items = data.items || [];
+                listCache = items;
                 const availableIds = new Set(items.map(item => Number(item.id || 0)).filter(v => v > 0));
                 selectedInventoryIds = new Set(Array.from(selectedInventoryIds).filter(id => availableIds.has(id)));
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; syncInventorySelectAll(); return; }
-                tbody.innerHTML = items.map(item => `<tr><td style="text-align:center;"><input type="checkbox" class="inventory-row-checkbox row-check" data-id="${item.id}" ${selectedInventoryIds.has(Number(item.id)) ? 'checked' : ''}></td><td>${escapeHtml(item.warehouse_name||'')}</td><td>${escapeHtml(formatWayfairId(item.wayfair_id))}</td><td>${escapeHtml(item.sku||'')}</td><td>${item.available_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
-                bindInventoryRowSelectionEvents();
-                syncInventorySelectAll();
+                Object.keys(inventoryEditDraft).forEach(id => {
+                    if(!availableIds.has(Number(id))) delete inventoryEditDraft[id];
+                });
+                renderInventoryTable(items);
+                syncInventoryPreviewSaveBar();
             }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; syncInventorySelectAll(); });
         }
         function downloadTemplate(){ window.location.href = '/api/logistics-warehouse-inventory-template'; }

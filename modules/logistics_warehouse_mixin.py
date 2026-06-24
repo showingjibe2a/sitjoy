@@ -3059,6 +3059,108 @@ class LogisticsWarehouseMixin:
                 }, start_response)
 
             if method == 'PUT':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'bulk_update':
+                    items = data.get('items') if isinstance(data, dict) else None
+                    if not isinstance(items, list) or not items:
+                        return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
+
+                    parsed_items = []
+                    seen_ids = set()
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = self._parse_int(item.get('id'))
+                        if not item_id or item_id in seen_ids:
+                            continue
+                        seen_ids.add(item_id)
+                        available_qty = self._parse_int(item.get('available_qty'))
+                        if available_qty is None:
+                            continue
+                        parsed_items.append({
+                            'id': item_id,
+                            'available_qty': max(0, int(available_qty)),
+                        })
+
+                    if not parsed_items:
+                        return self.send_json({'status': 'error', 'message': '没有有效的批量更新项'}, start_response)
+
+                    id_list = [item['id'] for item in parsed_items]
+                    id_placeholders = ','.join(['%s'] * len(id_list))
+                    stockout_items = []
+                    restock_items = []
+
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"""
+                                SELECT i.id, i.available_qty, w.warehouse_name, op.sku
+                                FROM logistics_overseas_inventory i
+                                JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+                                JOIN order_products op ON op.id = i.order_product_id
+                                WHERE i.id IN ({id_placeholders})
+                                """,
+                                tuple(id_list),
+                            )
+                            existing_rows = cur.fetchall() or []
+                            existing_map = {
+                                self._parse_int(row.get('id')): row
+                                for row in existing_rows
+                                if self._parse_int(row.get('id'))
+                            }
+
+                            missing_ids = [item_id for item_id in id_list if item_id not in existing_map]
+                            if missing_ids:
+                                return self.send_json({
+                                    'status': 'error',
+                                    'message': f'部分记录不存在: {missing_ids[:5]}',
+                                }, start_response)
+
+                            for item in parsed_items:
+                                before_row = existing_map.get(item['id']) or {}
+                                old_qty = self._parse_int(before_row.get('available_qty')) or 0
+                                new_qty = item['available_qty']
+                                if old_qty == new_qty:
+                                    continue
+                                sku = str(before_row.get('sku') or '').strip()
+                                warehouse_name = str(before_row.get('warehouse_name') or '').strip()
+                                if not sku or not warehouse_name:
+                                    continue
+                                if old_qty > 0 and new_qty == 0:
+                                    stockout_items.append({
+                                        'sku': sku,
+                                        'warehouse_name': warehouse_name,
+                                        'previous_qty': int(old_qty),
+                                    })
+                                elif old_qty == 0 and new_qty > 0:
+                                    restock_items.append({
+                                        'sku': sku,
+                                        'warehouse_name': warehouse_name,
+                                        'available_qty': int(new_qty),
+                                    })
+
+                            qty_case = []
+                            sql_params = []
+                            for item in parsed_items:
+                                qty_case.append('WHEN %s THEN %s')
+                                sql_params.extend([item['id'], item['available_qty']])
+
+                            update_sql = f"""
+                                UPDATE logistics_overseas_inventory
+                                SET available_qty = CASE id {' '.join(qty_case)} ELSE available_qty END
+                                WHERE id IN ({id_placeholders})
+                            """
+                            cur.execute(update_sql, tuple(sql_params + id_list))
+
+                    stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+                    restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+                    return self.send_json({
+                        'status': 'success',
+                        'updated': len(parsed_items),
+                        'stockout_items': stockout_items,
+                        'restock_items': restock_items,
+                    }, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 warehouse_id = self._parse_int(data.get('warehouse_id'))
                 order_product_id = self._parse_int(data.get('order_product_id'))
