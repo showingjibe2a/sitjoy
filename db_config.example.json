@@ -6,7 +6,7 @@
   "password": "your_password",
   "charset": "utf8mb4",
   "dingtalk": {
-    "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN",
-    "secret": "YOUR_SIGN_SECRET"
+    "webhook_url": "",
+    "secret": ""
   }
 }

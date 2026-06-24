@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钉钉通知配置</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>钉钉通知配置</h2>
+            <p>维护钉钉群聊 Webhook / 加签 Secret，并将系统页面绑定到对应群聊。业务页发送通知时只需按页面自动路由。</p>
+        </section>
+
+        <section class="card pm-card" style="margin-bottom: 1.25rem;">
+            <div class="pm-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin:0;color:#2f2f33;">钉钉群聊</h3>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">每个群聊对应一个机器人 Webhook；删除前需先解除页面绑定。</p>
+                </div>
+                <div class="pm-toolbar-actions">
+                    <button class="btn-accent" type="button" id="dtGroupCreateBtn">新增群聊</button>
+                </div>
+            </div>
+            <div>
+                <table class="pm-table" id="dtGroupTable">
+                    <thead>
+                        <tr>
+                            <th>群聊名称</th>
+                            <th>Webhook</th>
+                            <th>Secret</th>
+                            <th style="width:90px;">启用</th>
+                            <th>备注</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card pm-card">
+            <div class="pm-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin:0;color:#2f2f33;">页面通知绑定</h3>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">为页面选择通知群聊后，该页面触发的钉钉通知将发往对应群。</p>
+                </div>
+            </div>
+            <div>
+                <table class="pm-table" id="dtBindingTable">
+                    <thead>
+                        <tr>
+                            <th>页面</th>
+                            <th style="min-width:220px;">钉钉群聊</th>
+                            <th style="width:90px;">启用</th>
+                            <th style="width:140px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="4" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div id="dtGroupModal" class="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
+                <h3 id="dtGroupModalTitle" style="margin-top:0;">新增群聊</h3>
+                <div class="pm-form">
+                    <div class="form-group">
+                        <label for="dtGroupName">群聊名称<span class="required-asterisk">*</span></label>
+                        <input type="text" id="dtGroupName" class="required-field" maxlength="128" placeholder="如：仓储通知群">
+                    </div>
+                    <div class="form-group">
+                        <label for="dtGroupWebhook">Webhook URL<span class="required-asterisk">*</span></label>
+                        <input type="text" id="dtGroupWebhook" class="required-field" maxlength="512" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                    </div>
+                    <div class="form-group">
+                        <label for="dtGroupSecret">加签 Secret<span class="required-asterisk">*</span></label>
+                        <input type="text" id="dtGroupSecret" class="required-field" maxlength="255" placeholder="SEC...">
+                        <p style="margin:0.35rem 0 0;font-size:0.78rem;color:var(--morandi-slate);">编辑时留空表示不修改原 Secret。</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="dtGroupRemark">备注</label>
+                        <input type="text" id="dtGroupRemark" class="optional-field" maxlength="255">
+                    </div>
+                    <div class="form-group">
+                        <label>启用</label>
+                        <div class="status-segment status-segment--inline" id="dtGroupEnabledSegment" data-value="1">
+                            <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                            <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="dtGroupModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" id="dtGroupModalCancel">取消</button>
+                <button type="button" class="btn-primary" id="dtGroupModalSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/system_dingtalk_notify_management.js"></script>
+    <script src="/static/js/header.js"></script>
+</body>
+</html>

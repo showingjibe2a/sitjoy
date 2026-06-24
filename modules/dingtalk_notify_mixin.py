@@ -1,4 +1,4 @@
-"""钉钉群机器人 Webhook 通知（推荐加签；未配置 secret 时回退关键词【SITJOY】）。"""
+"""钉钉群机器人 Webhook：数据库群聊配置 + 页面绑定；文件配置为回退。"""
 
 import base64
 import hashlib
@@ -14,6 +14,72 @@ from urllib.parse import parse_qs
 
 class DingTalkNotifyMixin:
     DINGTALK_KEYWORD = '【SITJOY】'
+
+    def _dingtalk_table_missing(self, exc):
+        message = str(exc or '').lower()
+        return (
+            "doesn't exist" in message
+            or 'does not exist' in message
+            or 'unknown table' in message
+        )
+
+    def _mask_dingtalk_secret(self, secret):
+        text = str(secret or '').strip()
+        if not text:
+            return ''
+        if len(text) <= 4:
+            return '****'
+        return f"****{text[-4:]}"
+
+    def _serialize_dingtalk_group(self, row, reveal_secrets=False):
+        if not row:
+            return None
+        secret = str(row.get('secret') or '')
+        webhook = str(row.get('webhook_url') or '')
+        item = {
+            'id': int(row.get('id') or 0),
+            'group_name': str(row.get('group_name') or '').strip(),
+            'webhook_url': webhook if reveal_secrets else self._mask_webhook_url(webhook),
+            'secret': secret if reveal_secrets else self._mask_dingtalk_secret(secret),
+            'remark': str(row.get('remark') or '').strip(),
+            'is_enabled': int(row.get('is_enabled') or 0),
+            'created_at': str(row.get('created_at') or ''),
+            'updated_at': str(row.get('updated_at') or ''),
+        }
+        return item
+
+    def _mask_webhook_url(self, url):
+        text = str(url or '').strip()
+        if not text:
+            return ''
+        if len(text) <= 24:
+            return text[:8] + '...'
+        return f"{text[:20]}...{text[-8:]}"
+
+    def _dingtalk_page_label(self, page_key):
+        key = str(page_key or '').strip()
+        labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
+        return str(labels.get(key) or key or '未知页面')
+
+    def _dingtalk_notify_page_options(self):
+        labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
+        skip = frozenset({'home', 'about'})
+        items = []
+        for page_key in sorted(labels.keys()):
+            if page_key in skip:
+                continue
+            items.append({
+                'page_key': page_key,
+                'page_label': self._dingtalk_page_label(page_key),
+            })
+        return items
+
+    def _require_dingtalk_admin(self, user_id, start_response):
+        if not user_id:
+            return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+        if not self._user_has_page_access(user_id, 'system_dingtalk_notify_management'):
+            return self.send_json({'status': 'error', 'message': '无权限'}, start_response)
+        return None
 
     def _get_dingtalk_notify_config(self):
         webhook = (os.environ.get('SITJOY_DINGTALK_WEBHOOK') or '').strip()
@@ -32,6 +98,56 @@ class DingTalkNotifyMixin:
             'secret': secret,
             'keyword': self.DINGTALK_KEYWORD,
         }
+
+    def _resolve_dingtalk_delivery_config(self, page_key=None):
+        page_key = str(page_key or '').strip()
+        if page_key:
+            try:
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT g.id, g.group_name, g.webhook_url, g.secret
+                            FROM dingtalk_page_notify_bindings b
+                            JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
+                            WHERE b.page_key=%s
+                              AND COALESCE(b.is_enabled, 1) = 1
+                              AND COALESCE(g.is_enabled, 1) = 1
+                            LIMIT 1
+                            """,
+                            (page_key,),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            webhook = str(row.get('webhook_url') or '').strip()
+                            secret = str(row.get('secret') or '').strip()
+                            if webhook and secret:
+                                return {
+                                    'source': 'database',
+                                    'page_key': page_key,
+                                    'group_id': int(row.get('id') or 0),
+                                    'group_name': str(row.get('group_name') or '').strip(),
+                                    'webhook_url': webhook,
+                                    'secret': secret,
+                                }, None
+            except Exception as exc:
+                if not self._dingtalk_table_missing(exc):
+                    return None, str(exc)
+        file_cfg = self._get_dingtalk_notify_config()
+        webhook = str(file_cfg.get('webhook_url') or '').strip()
+        secret = str(file_cfg.get('secret') or '').strip()
+        if webhook and secret:
+            return {
+                'source': 'file',
+                'webhook_url': webhook,
+                'secret': secret,
+            }, None
+        if page_key:
+            return None, (
+                f'页面「{self._dingtalk_page_label(page_key)}」未绑定启用的钉钉群，'
+                '请先在系统管理 → 钉钉通知配置中维护'
+            )
+        return None, '未配置钉钉通知（请维护群聊绑定或 db_config.json）'
 
     def _build_dingtalk_signed_webhook_url(self, webhook_url, secret):
         url = (webhook_url or '').strip()
@@ -56,21 +172,23 @@ class DingTalkNotifyMixin:
             body = f'{keyword}\n\n{body}' if body else keyword
         return body
 
-    def _prepare_dingtalk_text(self, text):
+    def _prepare_dingtalk_text(self, text, delivery_cfg=None):
         body = (text or '').strip()
-        cfg = self._get_dingtalk_notify_config()
+        cfg = delivery_cfg if isinstance(delivery_cfg, dict) else self._get_dingtalk_notify_config()
         if (cfg.get('secret') or '').strip():
             return body
         return self._ensure_dingtalk_keyword(body)
 
-    def _post_dingtalk_payload(self, payload):
-        cfg = self._get_dingtalk_notify_config()
-        webhook = cfg.get('webhook_url') or ''
-        secret = (cfg.get('secret') or '').strip()
+    def _post_dingtalk_payload(self, payload, page_key=None):
+        delivery_cfg, err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+        if err:
+            return False, err
+        webhook = str(delivery_cfg.get('webhook_url') or '').strip()
+        secret = str(delivery_cfg.get('secret') or '').strip()
         if not webhook:
-            return False, '未配置钉钉 Webhook（环境变量 SITJOY_DINGTALK_WEBHOOK 或 db_config.json → dingtalk.webhook_url）'
+            return False, '未配置钉钉 Webhook'
         if not secret:
-            return False, '未配置钉钉加签 Secret（db_config.json → dingtalk.secret；机器人安全设置选「加签」）'
+            return False, '未配置钉钉加签 Secret'
         url = self._build_dingtalk_signed_webhook_url(webhook, secret)
         data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         req = urllib.request.Request(
@@ -122,11 +240,12 @@ class DingTalkNotifyMixin:
     def _format_overseas_restock_lines(self, items):
         return self._format_overseas_inventory_notify_lines(items, 'restock')
 
-    def _send_dingtalk_overseas_markdown(self, title, lines):
+    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
-        text = self._prepare_dingtalk_text('\n'.join(formatted))
+        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+        text = self._prepare_dingtalk_text('\n'.join(formatted), delivery_cfg=delivery_cfg)
         payload = {
             'msgtype': 'markdown',
             'markdown': {
@@ -134,15 +253,259 @@ class DingTalkNotifyMixin:
                 'text': f'### {title}\n\n{text}',
             },
         }
-        return self._post_dingtalk_payload(payload)
+        return self._post_dingtalk_payload(payload, page_key=page_key)
 
-    def _send_dingtalk_overseas_stockout(self, items):
+    def _send_dingtalk_overseas_stockout(self, items, page_key=None):
         lines = self._format_overseas_stockout_lines(items)
-        return self._send_dingtalk_overseas_markdown('海外仓缺货提醒', lines)
+        return self._send_dingtalk_overseas_markdown('海外仓缺货提醒', lines, page_key=page_key)
 
-    def _send_dingtalk_overseas_restock(self, items):
+    def _send_dingtalk_overseas_restock(self, items, page_key=None):
         lines = self._format_overseas_restock_lines(items)
-        return self._send_dingtalk_overseas_markdown('海外仓重新上架提醒', lines)
+        return self._send_dingtalk_overseas_markdown('海外仓重新上架提醒', lines, page_key=page_key)
+
+    def _validate_dingtalk_notify_page_access(self, user_id, page_key):
+        page_key = str(page_key or '').strip()
+        if not page_key:
+            return False, '缺少 page_key'
+        if not self._user_has_page_access(user_id, page_key):
+            return False, f'无权限向页面「{self._dingtalk_page_label(page_key)}」发送钉钉通知'
+        return True, None
+
+    def handle_dingtalk_group_api(self, environ, method, start_response):
+        try:
+            user_id = self._get_session_user(environ)
+            denied = self._require_dingtalk_admin(user_id, start_response)
+            if denied:
+                return denied
+
+            query = parse_qs(environ.get('QUERY_STRING', ''))
+            item_id = self._parse_int((query.get('id', [''])[0] or '').strip())
+
+            if method == 'GET':
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if item_id:
+                            cur.execute(
+                                """
+                                SELECT id, group_name, webhook_url, secret, remark, is_enabled,
+                                       created_at, updated_at
+                                FROM dingtalk_groups
+                                WHERE id=%s
+                                LIMIT 1
+                                """,
+                                (item_id,),
+                            )
+                            row = cur.fetchone()
+                            if not row:
+                                return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                            return self.send_json({
+                                'status': 'success',
+                                'item': self._serialize_dingtalk_group(row, reveal_secrets=True),
+                            }, start_response)
+                        cur.execute(
+                            """
+                            SELECT id, group_name, webhook_url, secret, remark, is_enabled,
+                                   created_at, updated_at
+                            FROM dingtalk_groups
+                            ORDER BY id ASC
+                            """
+                        )
+                        rows = cur.fetchall() or []
+                return self.send_json({
+                    'status': 'success',
+                    'items': [self._serialize_dingtalk_group(row) for row in rows],
+                }, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                group_name = str(data.get('group_name') or '').strip()
+                webhook_url = str(data.get('webhook_url') or '').strip()
+                secret = str(data.get('secret') or '').strip()
+                remark = str(data.get('remark') or '').strip() or None
+                is_enabled = 1 if str(data.get('is_enabled', 1)).strip().lower() not in ('0', 'false', 'no') else 0
+                if not group_name:
+                    return self.send_json({'status': 'error', 'message': '请填写群聊名称'}, start_response)
+                if not webhook_url:
+                    return self.send_json({'status': 'error', 'message': '请填写 Webhook URL'}, start_response)
+                if not secret:
+                    return self.send_json({'status': 'error', 'message': '请填写加签 Secret'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO dingtalk_groups
+                            (group_name, webhook_url, secret, remark, is_enabled)
+                            VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            (group_name, webhook_url, secret, remark, is_enabled),
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': int(new_id or 0)}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                group_name = str(data.get('group_name') or '').strip()
+                webhook_url = str(data.get('webhook_url') or '').strip()
+                secret = str(data.get('secret') or '').strip()
+                remark = str(data.get('remark') or '').strip() or None
+                is_enabled = 1 if str(data.get('is_enabled', 1)).strip().lower() not in ('0', 'false', 'no') else 0
+                if not group_name:
+                    return self.send_json({'status': 'error', 'message': '请填写群聊名称'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT webhook_url, secret FROM dingtalk_groups WHERE id=%s LIMIT 1", (item_id,))
+                        existing = cur.fetchone() or {}
+                        final_webhook = webhook_url or str(existing.get('webhook_url') or '').strip()
+                        final_secret = secret or str(existing.get('secret') or '').strip()
+                        if not final_webhook:
+                            return self.send_json({'status': 'error', 'message': '请填写 Webhook URL'}, start_response)
+                        if not final_secret:
+                            return self.send_json({'status': 'error', 'message': '请填写加签 Secret'}, start_response)
+                        cur.execute(
+                            """
+                            UPDATE dingtalk_groups
+                            SET group_name=%s, webhook_url=%s, secret=%s, remark=%s, is_enabled=%s
+                            WHERE id=%s
+                            """,
+                            (group_name, final_webhook, final_secret, remark, is_enabled, item_id),
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) AS cnt FROM dingtalk_page_notify_bindings WHERE dingtalk_group_id=%s", (item_id,))
+                        bound = int((cur.fetchone() or {}).get('cnt') or 0)
+                        if bound > 0:
+                            return self.send_json({
+                                'status': 'error',
+                                'message': f'该群聊仍被 {bound} 个页面绑定，请先解除绑定',
+                            }, start_response)
+                        cur.execute("DELETE FROM dingtalk_groups WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as exc:
+            if self._dingtalk_table_missing(exc):
+                return self.send_json({
+                    'status': 'error',
+                    'message': '钉钉配置表未初始化，请先执行 scripts/sql/20260621_01_dingtalk_notify_config.sql',
+                }, start_response)
+            return self.send_json({'status': 'error', 'message': str(exc)}, start_response)
+
+    def handle_dingtalk_page_notify_binding_api(self, environ, method, start_response):
+        try:
+            user_id = self._get_session_user(environ)
+            denied = self._require_dingtalk_admin(user_id, start_response)
+            if denied:
+                return denied
+
+            if method == 'GET':
+                page_options = self._dingtalk_notify_page_options()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, group_name, is_enabled
+                            FROM dingtalk_groups
+                            ORDER BY id ASC
+                            """
+                        )
+                        groups = cur.fetchall() or []
+                        cur.execute(
+                            """
+                            SELECT b.id, b.page_key, b.dingtalk_group_id, b.is_enabled,
+                                   g.group_name
+                            FROM dingtalk_page_notify_bindings b
+                            LEFT JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
+                            ORDER BY b.page_key ASC
+                            """
+                        )
+                        bindings = cur.fetchall() or []
+                binding_map = {str(r.get('page_key') or '').strip(): r for r in bindings}
+                rows = []
+                for opt in page_options:
+                    page_key = opt['page_key']
+                    bound = binding_map.get(page_key) or {}
+                    rows.append({
+                        'id': int(bound.get('id') or 0) or None,
+                        'page_key': page_key,
+                        'page_label': opt['page_label'],
+                        'dingtalk_group_id': int(bound.get('dingtalk_group_id') or 0) or None,
+                        'group_name': str(bound.get('group_name') or '').strip(),
+                        'is_enabled': int(bound.get('is_enabled') or 0) if bound else 0,
+                        'is_bound': bool(bound),
+                    })
+                return self.send_json({
+                    'status': 'success',
+                    'page_options': page_options,
+                    'groups': [
+                        {
+                            'id': int(g.get('id') or 0),
+                            'group_name': str(g.get('group_name') or '').strip(),
+                            'is_enabled': int(g.get('is_enabled') or 0),
+                        }
+                        for g in groups
+                    ],
+                    'bindings': rows,
+                }, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                page_key = str(data.get('page_key') or '').strip()
+                group_id = self._parse_int(data.get('dingtalk_group_id'))
+                is_enabled = 1 if str(data.get('is_enabled', 1)).strip().lower() not in ('0', 'false', 'no') else 0
+                if not page_key:
+                    return self.send_json({'status': 'error', 'message': '缺少 page_key'}, start_response)
+                if not group_id:
+                    return self.send_json({'status': 'error', 'message': '请选择钉钉群聊'}, start_response)
+                labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
+                if page_key not in labels:
+                    return self.send_json({'status': 'error', 'message': '无效的 page_key'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM dingtalk_groups WHERE id=%s LIMIT 1", (group_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': '群聊不存在'}, start_response)
+                        cur.execute(
+                            """
+                            INSERT INTO dingtalk_page_notify_bindings
+                            (page_key, dingtalk_group_id, is_enabled)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                dingtalk_group_id=VALUES(dingtalk_group_id),
+                                is_enabled=VALUES(is_enabled)
+                            """,
+                            (page_key, group_id, is_enabled),
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                page_key = str(data.get('page_key') or '').strip()
+                item_id = self._parse_int(data.get('id'))
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if item_id:
+                            cur.execute("DELETE FROM dingtalk_page_notify_bindings WHERE id=%s", (item_id,))
+                        elif page_key:
+                            cur.execute("DELETE FROM dingtalk_page_notify_bindings WHERE page_key=%s", (page_key,))
+                        else:
+                            return self.send_json({'status': 'error', 'message': '缺少 id 或 page_key'}, start_response)
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as exc:
+            if self._dingtalk_table_missing(exc):
+                return self.send_json({
+                    'status': 'error',
+                    'message': '钉钉配置表未初始化，请先执行 scripts/sql/20260621_01_dingtalk_notify_config.sql',
+                }, start_response)
+            return self.send_json({'status': 'error', 'message': str(exc)}, start_response)
 
     def handle_dingtalk_notify_api(self, environ, method, start_response):
         try:
@@ -155,10 +518,14 @@ class DingTalkNotifyMixin:
             query = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query.get('action', [''])[0] or '').strip().lower()
             data = self._read_json_body(environ)
+            page_key = str(data.get('page_key') or '').strip()
 
             if action == 'overseas_stockout':
+                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_stockout(items)
+                ok, err = self._send_dingtalk_overseas_stockout(items, page_key=page_key)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
@@ -167,8 +534,11 @@ class DingTalkNotifyMixin:
                 }, start_response)
 
             if action == 'overseas_restock':
+                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_restock(items)
+                ok, err = self._send_dingtalk_overseas_restock(items, page_key=page_key)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({

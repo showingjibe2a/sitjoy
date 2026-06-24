@@ -29,7 +29,7 @@ window.SitjoyPerm = window.SitjoyPerm || {};
             { key: 'gallery', title: '图片管理', page_keys: ['gallery', 'image_type_management', 'aplus_management'] },
             { key: 'sales_product_management', title: '销售管理', page_keys: ['shop_brand_management', 'amazon_account_health_management', 'sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'container_draft_management', 'sales_order_registration_management'] },
             { key: 'amazon_ad_adjustment_management', title: 'Amazon广告管理', page_keys: ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management'] },
-            { key: 'system_management', title: '系统管理', page_keys: ['system_employee_management', 'system_audit_log_management'] },
+            { key: 'system_management', title: '系统管理', page_keys: ['system_employee_management', 'system_audit_log_management', 'system_dingtalk_notify_management'] },
             { key: 'about', title: '关于', page_keys: ['about'] },
             { key: 'widgets', title: '小组件', page_keys: ['widgets_theme', 'widgets_go_play', 'widgets_mahjong'] },
         ];
@@ -209,7 +209,7 @@ window.SitjoyPerm = window.SitjoyPerm || {};
         window.__sitjoyPermUser = user || {};
         window.SITJOY_DENIED_PERMISSION_KEYS = user && Array.isArray(user.denied_permission_keys)
             ? user.denied_permission_keys
-            : ['system_employee_management', 'system_audit_log_management'];
+            : ['system_employee_management', 'system_audit_log_management', 'system_dingtalk_notify_management'];
     }
 
     SitjoyPerm.escapeHtml = escapeHtml;

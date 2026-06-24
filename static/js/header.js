@@ -1252,11 +1252,16 @@
     async function sendAppDingtalkNotify(action, payload){
         const act = String(action || '').trim();
         if(!act) return { ok: false, message: '缺少钉钉通知类型' };
+        const body = Object.assign({}, payload && typeof payload === 'object' ? payload : {});
+        if(!body.page_key){
+            const pageInfo = resolvePageInfoFromPath(location.pathname, buildNavLinkIndex());
+            body.page_key = String(pageInfo.pageKey || '').trim();
+        }
         const resp = await fetch(`/api/dingtalk-notify?action=${encodeURIComponent(act)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify(payload && typeof payload === 'object' ? payload : {}),
+            body: JSON.stringify(body),
         });
         const data = await resp.json().catch(() => ({}));
         if(data.status !== 'success'){
