@@ -6329,8 +6329,8 @@ textarea:focus,
     font-weight: 700;
 }
 
-/* 按钮统一（排除图标微按钮、小号按钮、状态 pill 等） */
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot) {
+/* 按钮统一（排除图标微按钮、小号按钮、状态 pill、应用壳层账户/抽屉项等） */
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):not(.sitjoy-sidebar-user-btn):not(.sitjoy-user-drawer-item) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -6391,11 +6391,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):not(.sitjoy-sidebar-user-btn):not(.sitjoy-user-drawer-item):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):not(.sitjoy-sidebar-user-btn):not(.sitjoy-user-drawer-item):active {
     transform: translateY(0);
 }
 
