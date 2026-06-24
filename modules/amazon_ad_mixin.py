@@ -3655,6 +3655,7 @@ class AmazonAdMixin:
         datetime_fields = {'adjust_date', 'start_time', 'end_time'}
         text_fields = {
             'target_object',
+            'reason_name',
             'before_value', 'after_value',
             'impressions', 'clicks', 'cost', 'orders', 'sales',
             'acos', 'cpc', 'ctr', 'cvr', 'top_of_search_is',
@@ -3674,6 +3675,28 @@ class AmazonAdMixin:
             sales = patch.get('attribution_sales')
             patch['attribution_checked'] = 1 if (orders or sales) else 0
         return patch
+
+    def _validate_adjustment_reason_patch(self, cur, adjustment_id, reason_name):
+        """批量 PATCH 时校验操作原因是否属于该记录的操作类型。"""
+        adjustment_id = self._parse_int(adjustment_id)
+        if not adjustment_id:
+            return '无效记录 id'
+        reason_name = (reason_name or '').strip() or None
+        cur.execute(
+            """
+            SELECT operation_type_id, ad_item_id
+            FROM amazon_ad_adjustments
+            WHERE id=%s
+            LIMIT 1
+            """,
+            (adjustment_id,),
+        )
+        row = cur.fetchone() or {}
+        operation_type_id = self._parse_int(row.get('operation_type_id'))
+        ad_item_id = self._parse_int(row.get('ad_item_id'))
+        if not operation_type_id:
+            return '记录缺少操作类型'
+        return self._validate_adjustment_operation_for_ad(cur, ad_item_id, operation_type_id, reason_name)
 
     def _amazon_ad_adjustment_batch_patch(self, cur, items, chunk_size=120):
         """批量 PATCH：按列 CASE WHEN 合并 UPDATE，减少数据库往返。"""
@@ -3701,6 +3724,11 @@ class AmazonAdMixin:
             if not patch_fields:
                 errors.append({'id': item_id, 'message': '无可更新字段'})
                 continue
+            if 'reason_name' in patch_fields:
+                reason_err = self._validate_adjustment_reason_patch(cur, item_id, patch_fields.get('reason_name'))
+                if reason_err:
+                    errors.append({'id': item_id, 'message': reason_err})
+                    continue
             patches.append((item_id, patch_fields))
 
         if not patches:

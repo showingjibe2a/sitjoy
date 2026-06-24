@@ -1022,7 +1022,7 @@
         let adjustmentPeriodCache = [];
         let adjustmentPeriodDraft = {};
         const PERIOD_EDIT_FIELDS = [
-            'adjust_date', 'target_object',
+            'adjust_date', 'target_object', 'reason_name',
             'before_value', 'after_value',
             'start_time', 'end_time',
             'impressions', 'clicks', 'cost', 'orders', 'sales', 'top_of_search_is',
@@ -2138,7 +2138,7 @@
             const metaRows = [
                 ['操作类型', escapeHtml(opName)],
                 ['操作对象', renderPeriodEditableCell(item, 'target_object')],
-                ['操作原因', escapeHtml(formatMetricPlainText(item.reason_name))],
+                ['操作原因', renderPeriodEditableCell(item, 'reason_name')],
                 ['操作时间', renderPeriodEditableCell(item, 'adjust_date')],
             ];
             const changeRows = [
