@@ -80,7 +80,7 @@
 
                         <li><a href="/gallery" data-page-key="gallery">图片管理</a></li>
 
-                        <li><a href="/spec-main-image-management" data-page-key="gallery">规格主图管理</a></li>
+                        <li><a href="/spec-main-image-management" data-page-key="spec_main_image_management">规格主图管理</a></li>
 
                         <li><a href="/image-type-management" data-page-key="image_type_management">图片类型管理</a></li>
 
@@ -198,6 +198,8 @@
 
             <div class="sitjoy-sidebar-dock">
 
+                <div class="sitjoy-sidebar-dock-tools">
+
                 <button type="button" class="help-dot sitjoy-sidebar-dock-btn" id="sitjoyUsageTicker" aria-label="使用提示" title="使用提示"></button>
 
                 <div id="sitjoyUsageTickerTrack" class="sitjoy-usage-ticker-track--hidden" aria-hidden="true"></div>
@@ -238,11 +240,19 @@
 
                 </div>
 
-                <button type="button" class="sitjoy-sidebar-avatar-btn" id="sitjoySidebarAvatarBtn" aria-expanded="false" aria-controls="sitjoyUserDrawer" title="账户">
+                </div>
 
-                    <img id="sitjoySidebarAvatar" class="sitjoy-sidebar-avatar-img" alt="" hidden>
+                <button type="button" class="sitjoy-sidebar-user-btn" id="sitjoySidebarAvatarBtn" aria-expanded="false" aria-controls="sitjoyUserDrawer" title="账户">
 
-                    <span id="sitjoySidebarAvatarFallback" class="sitjoy-sidebar-avatar-fallback" aria-hidden="true">?</span>
+                    <span class="sitjoy-sidebar-user-avatar">
+
+                        <img id="sitjoySidebarAvatar" class="sitjoy-sidebar-avatar-img" alt="" hidden>
+
+                        <span id="sitjoySidebarAvatarFallback" class="sitjoy-sidebar-avatar-fallback" aria-hidden="true">?</span>
+
+                    </span>
+
+                    <span id="sitjoySidebarUserName" class="sitjoy-sidebar-user-name">用户</span>
 
                 </button>
 

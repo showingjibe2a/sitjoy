@@ -10099,6 +10099,22 @@
         return String(value).trim() === '1';
     }
 
+    function sitjoyPagePermissionAliases(key) {
+        const map = {
+            spec_main_image_management: ['gallery'],
+            amazon_ad_target_management: ['amazon_ad_delivery_management'],
+            amazon_ad_delivery_management: ['amazon_ad_target_management'],
+        };
+        return map[String(key || '')] || [];
+    }
+
+    function hasSitjoyPagePermission(permissions, key, adminUser) {
+        if (adminUser) return true;
+        const perms = permissions || {};
+        if (!!perms[key]) return true;
+        return sitjoyPagePermissionAliases(key).some(alias => !!perms[alias]);
+    }
+
     function applyHeaderPermissions(authData){
         const permissions = authData && authData.page_permissions ? authData.page_permissions : null;
         if(!permissions) return;
@@ -10107,7 +10123,7 @@
         document.querySelectorAll('[data-page-key]').forEach(link => {
             const key = String(link.dataset.pageKey || '');
             if(!key) return;
-            const allowed = adminUser || !!permissions[key];
+            const allowed = hasSitjoyPagePermission(permissions, key, adminUser);
             const item = link.closest('li');
             if(item){
                 item.style.display = allowed ? '' : 'none';
@@ -10126,7 +10142,7 @@
 
     const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
     const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
-    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v2';
+    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v4';
     const SITJOY_PAGE_CONTENT_SELECTORS = ['.container', '.home-container', '.pm-layout-root', '.go-play-layout-root', '.mj-layout-root'];
     const SITJOY_SHELL_SKIP_SCRIPT_RE = /header\.js|sitjoy_cell_selection_stats\.js/i;
 
@@ -11188,10 +11204,46 @@
         syncSitjoyPageFillScrollLayout(pageBody);
     }
 
+    function ensureSitjoySidebarFooterShell(html){
+        const tpl = document.createElement('template');
+        tpl.innerHTML = String(html || '').trim();
+        const srcFooter = tpl.content.querySelector('#sitjoySidebarFooter');
+        const sidebar = document.getElementById('sitjoySidebar');
+        const footer = document.getElementById('sitjoySidebarFooter');
+        if(srcFooter && sidebar){
+            if(!footer){
+                sidebar.appendChild(srcFooter.cloneNode(true));
+            } else if(!document.getElementById('sitjoySidebarUserName')){
+                footer.replaceWith(srcFooter.cloneNode(true));
+            }
+        }
+        const shell = document.querySelector('.sitjoy-app-shell');
+        if(shell){
+            ['sitjoyUserDrawerBackdrop', 'sitjoyUserDrawer'].forEach(id => {
+                if(document.getElementById(id)) return;
+                const node = tpl.content.querySelector('#' + id);
+                if(!node) return;
+                const main = shell.querySelector('.sitjoy-main');
+                if(main) shell.insertBefore(node.cloneNode(true), main);
+                else shell.appendChild(node.cloneNode(true));
+            });
+        }
+        const topbarRight = document.querySelector('.sitjoy-topbar-right');
+        if(topbarRight){
+            topbarRight.querySelectorAll(
+                '#sitjoyUsageTicker, #sitjoyUsageTickerTrack, #sitjoyNotificationCenter, '
+                + '#sitjoyDingtalkAutoSend, #sitjoyTopbarUser, #sitjoyTopbarClock, #sitjoyTopbarLogout'
+            ).forEach(el => el.remove());
+            if(!topbarRight.childElementCount){
+                topbarRight.setAttribute('aria-hidden', 'true');
+            }
+        }
+    }
+
     function initSitjoySidebarUserDock(authData){
         const footer = document.getElementById('sitjoySidebarFooter');
         if(!footer) return;
-        if(!authData || authData.status === 'error'){
+        if(!authData || authData.status === 'error' || (!authData.id && authData.status !== 'success')){
             footer.hidden = true;
             return;
         }
@@ -11199,6 +11251,8 @@
         const name = authData.display_name || authData.name || authData.username || '用户';
         const drawerName = document.getElementById('sitjoyDrawerUserName');
         if(drawerName) drawerName.textContent = name;
+        const sidebarName = document.getElementById('sitjoySidebarUserName');
+        if(sidebarName) sidebarName.textContent = name;
         const avatarUrl = authData.avatar_url || null;
         const initial = String(name || '').trim().slice(0, 1).toUpperCase() || '?';
         const pairs = [
@@ -11851,6 +11905,8 @@
                     initSitjoySidebar();
                     initSitjoyAppTabs();
                     bindSitjoyPopstate();
+                } else {
+                    ensureSitjoySidebarFooterShell(html);
                 }
                 applyHeaderPermissions(authData);
                 initSitjoySidebarUserDock(authData);

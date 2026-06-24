@@ -125,6 +125,7 @@ class PagePermissionMixin:
     _PAGE_PERMISSION_LEGACY_ALIASES = {
         'amazon_ad_delivery_management': ('amazon_ad_target_management',),
         'amazon_ad_target_management': ('amazon_ad_delivery_management',),
+        'spec_main_image_management': ('gallery',),
     }
 
     def _user_has_page_access(self, user_id, permission_key):
