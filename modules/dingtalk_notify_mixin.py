@@ -1,4 +1,4 @@
-"""钉钉群机器人 Webhook 通知（关键词安全设置须包含【SITJOY】）。"""
+"""钉钉群机器人 Webhook 通知（推荐加签；未配置 secret 时回退关键词【SITJOY】）。"""
 
 import base64
 import hashlib
@@ -56,12 +56,22 @@ class DingTalkNotifyMixin:
             body = f'{keyword}\n\n{body}' if body else keyword
         return body
 
+    def _prepare_dingtalk_text(self, text):
+        body = (text or '').strip()
+        cfg = self._get_dingtalk_notify_config()
+        if (cfg.get('secret') or '').strip():
+            return body
+        return self._ensure_dingtalk_keyword(body)
+
     def _post_dingtalk_payload(self, payload):
         cfg = self._get_dingtalk_notify_config()
         webhook = cfg.get('webhook_url') or ''
+        secret = (cfg.get('secret') or '').strip()
         if not webhook:
             return False, '未配置钉钉 Webhook（环境变量 SITJOY_DINGTALK_WEBHOOK 或 db_config.json → dingtalk.webhook_url）'
-        url = self._build_dingtalk_signed_webhook_url(webhook, cfg.get('secret'))
+        if not secret:
+            return False, '未配置钉钉加签 Secret（db_config.json → dingtalk.secret；机器人安全设置选「加签」）'
+        url = self._build_dingtalk_signed_webhook_url(webhook, secret)
         data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         req = urllib.request.Request(
             url,
@@ -89,7 +99,7 @@ class DingTalkNotifyMixin:
         except Exception as e:
             return False, f'钉钉请求失败: {e}'
 
-    def _format_overseas_stockout_lines(self, items):
+    def _format_overseas_inventory_notify_lines(self, items, event_kind):
         lines = []
         for row in items or []:
             if not isinstance(row, dict):
@@ -98,15 +108,25 @@ class DingTalkNotifyMixin:
             warehouse_name = str(row.get('warehouse_name') or '').strip()
             if not sku or not warehouse_name:
                 continue
-            lines.append(f'{sku} 在 {warehouse_name} 缺货')
+            if event_kind == 'restock':
+                qty = self._parse_int(row.get('available_qty'))
+                qty_text = f'，在库 {qty}' if qty is not None and qty > 0 else ''
+                lines.append(f'{sku} 在 {warehouse_name} 重新上架{qty_text}')
+            else:
+                lines.append(f'{sku} 在 {warehouse_name} 缺货')
         return lines
 
-    def _send_dingtalk_overseas_stockout(self, items):
-        lines = self._format_overseas_stockout_lines(items)
-        if not lines:
-            return False, '没有可发送的缺货记录'
-        title = '海外仓缺货提醒'
-        text = self._ensure_dingtalk_keyword('\n'.join(lines))
+    def _format_overseas_stockout_lines(self, items):
+        return self._format_overseas_inventory_notify_lines(items, 'stockout')
+
+    def _format_overseas_restock_lines(self, items):
+        return self._format_overseas_inventory_notify_lines(items, 'restock')
+
+    def _send_dingtalk_overseas_markdown(self, title, lines):
+        formatted = [line for line in (lines or []) if line]
+        if not formatted:
+            return False, '没有可发送的记录'
+        text = self._prepare_dingtalk_text('\n'.join(formatted))
         payload = {
             'msgtype': 'markdown',
             'markdown': {
@@ -115,6 +135,14 @@ class DingTalkNotifyMixin:
             },
         }
         return self._post_dingtalk_payload(payload)
+
+    def _send_dingtalk_overseas_stockout(self, items):
+        lines = self._format_overseas_stockout_lines(items)
+        return self._send_dingtalk_overseas_markdown('海外仓缺货提醒', lines)
+
+    def _send_dingtalk_overseas_restock(self, items):
+        lines = self._format_overseas_restock_lines(items)
+        return self._send_dingtalk_overseas_markdown('海外仓重新上架提醒', lines)
 
     def handle_dingtalk_notify_api(self, environ, method, start_response):
         try:
@@ -136,6 +164,16 @@ class DingTalkNotifyMixin:
                 return self.send_json({
                     'status': 'success',
                     'sent_count': len(self._format_overseas_stockout_lines(items)),
+                }, start_response)
+
+            if action == 'overseas_restock':
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                ok, err = self._send_dingtalk_overseas_restock(items)
+                if not ok:
+                    return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'sent_count': len(self._format_overseas_restock_lines(items)),
                 }, start_response)
 
             return self.send_json({'status': 'error', 'message': '未知 action'}, start_response)

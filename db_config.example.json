@@ -7,6 +7,6 @@
   "charset": "utf8mb4",
   "dingtalk": {
     "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN",
-    "secret": ""
+    "secret": "YOUR_SIGN_SECRET"
   }
 }

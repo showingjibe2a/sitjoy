@@ -2825,6 +2825,65 @@ class LogisticsWarehouseMixin:
         items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
         return items
 
+    def _inventory_label_for_key(self, key, before_snapshot, label_by_key=None):
+        before = before_snapshot.get(key) or {}
+        sku = str(before.get('sku') or '').strip()
+        warehouse_name = str(before.get('warehouse_name') or '').strip()
+        if sku and warehouse_name:
+            return sku, warehouse_name
+        extra = (label_by_key or {}).get(key) or {}
+        sku = sku or str(extra.get('sku') or '').strip()
+        warehouse_name = warehouse_name or str(extra.get('warehouse_name') or '').strip()
+        return sku, warehouse_name
+
+    def _restock_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial', label_by_key=None):
+        mode = (import_mode or 'partial').strip().lower()
+        items = []
+        seen = set()
+        if mode == 'replace_all':
+            candidate_keys = set(before_snapshot.keys()) | set(after_qty_by_key.keys())
+        else:
+            candidate_keys = set(after_qty_by_key.keys())
+        for key in candidate_keys:
+            before = before_snapshot.get(key) or {}
+            old_qty = self._parse_int(before.get('available_qty')) or 0
+            if mode == 'replace_all':
+                new_qty = self._parse_int(after_qty_by_key.get(key, 0)) or 0
+            else:
+                if key not in after_qty_by_key:
+                    continue
+                new_qty = self._parse_int(after_qty_by_key.get(key)) or 0
+            if old_qty != 0 or new_qty <= 0:
+                continue
+            sku, warehouse_name = self._inventory_label_for_key(key, before_snapshot, label_by_key)
+            if not sku or not warehouse_name:
+                continue
+            dedupe_key = (sku, warehouse_name)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            items.append({
+                'sku': sku,
+                'warehouse_name': warehouse_name,
+                'available_qty': int(new_qty),
+            })
+        items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+        return items
+
+    def _build_overseas_inventory_label_by_key(self, normalized_map, sku_map, wh_map):
+        sku_by_op_id = {int(v): str(k).strip() for k, v in (sku_map or {}).items() if v}
+        wh_name_by_id = {int(v): str(k).strip() for k, v in (wh_map or {}).items() if v}
+        labels = {}
+        for warehouse_id, order_product_id in (normalized_map or {}).keys():
+            key = (self._parse_int(warehouse_id), self._parse_int(order_product_id))
+            if not key[0] or not key[1]:
+                continue
+            labels[key] = {
+                'sku': sku_by_op_id.get(key[1]) or '',
+                'warehouse_name': wh_name_by_id.get(key[0]) or '',
+            }
+        return labels
+
     def _find_overseas_inventory_duplicate(self, cur, warehouse_id, order_product_id, exclude_id=None):
         warehouse_id = self._parse_int(warehouse_id)
         order_product_id = self._parse_int(order_product_id)
@@ -2973,7 +3032,31 @@ class LogisticsWarehouseMixin:
                             """,
                             (warehouse_id, order_product_id, available_qty, 0),
                         )
-                return self.send_json({'status': 'success'}, start_response)
+                        restock_items = []
+                        if available_qty > 0:
+                            cur.execute(
+                                """
+                                SELECT w.warehouse_name, op.sku
+                                FROM logistics_overseas_warehouses w
+                                JOIN order_products op ON op.id=%s
+                                WHERE w.id=%s
+                                LIMIT 1
+                                """,
+                                (order_product_id, warehouse_id),
+                            )
+                            row = cur.fetchone() or {}
+                            sku = str(row.get('sku') or '').strip()
+                            warehouse_name = str(row.get('warehouse_name') or '').strip()
+                            if sku and warehouse_name:
+                                restock_items.append({
+                                    'sku': sku,
+                                    'warehouse_name': warehouse_name,
+                                    'available_qty': int(available_qty),
+                                })
+                return self.send_json({
+                    'status': 'success',
+                    'restock_items': restock_items if available_qty > 0 else [],
+                }, start_response)
 
             if method == 'PUT':
                 item_id = self._parse_int(data.get('id'))
@@ -3014,6 +3097,7 @@ class LogisticsWarehouseMixin:
                             (warehouse_id, order_product_id, available_qty, item_id),
                         )
                 stockout_items = []
+                restock_items = []
                 if old_qty > 0 and available_qty == 0:
                     sku = str(before_row.get('sku') or '').strip()
                     warehouse_name = str(before_row.get('warehouse_name') or '').strip()
@@ -3023,7 +3107,20 @@ class LogisticsWarehouseMixin:
                             'warehouse_name': warehouse_name,
                             'previous_qty': int(old_qty),
                         })
-                return self.send_json({'status': 'success', 'stockout_items': stockout_items}, start_response)
+                elif old_qty == 0 and available_qty > 0:
+                    sku = str(before_row.get('sku') or '').strip()
+                    warehouse_name = str(before_row.get('warehouse_name') or '').strip()
+                    if sku and warehouse_name:
+                        restock_items.append({
+                            'sku': sku,
+                            'warehouse_name': warehouse_name,
+                            'available_qty': int(available_qty),
+                        })
+                return self.send_json({
+                    'status': 'success',
+                    'stockout_items': stockout_items,
+                    'restock_items': restock_items,
+                }, start_response)
 
             if method == 'DELETE':
                 item_id = self._parse_int(data.get('id'))
@@ -3126,6 +3223,7 @@ class LogisticsWarehouseMixin:
             unchanged = 0
             errors = []
             stockout_items = []
+            restock_items = []
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -3242,10 +3340,19 @@ class LogisticsWarehouseMixin:
                             after_qty_by_key[key] = 0
                     for (warehouse_id, order_product_id), available_qty in normalized_map.items():
                         after_qty_by_key[(warehouse_id, order_product_id)] = available_qty
+                    label_by_key = self._build_overseas_inventory_label_by_key(
+                        normalized_map, sku_map, wh_map,
+                    )
                     stockout_items = self._stockout_items_from_inventory_change(
                         before_snapshot,
                         after_qty_by_key,
                         import_mode=import_mode,
+                    )
+                    restock_items = self._restock_items_from_inventory_change(
+                        before_snapshot,
+                        after_qty_by_key,
+                        import_mode=import_mode,
+                        label_by_key=label_by_key,
                     )
 
             return self.send_json({
@@ -3256,6 +3363,7 @@ class LogisticsWarehouseMixin:
                 'mode': import_mode,
                 'errors': errors,
                 'stockout_items': stockout_items,
+                'restock_items': restock_items,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

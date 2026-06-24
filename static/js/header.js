@@ -954,33 +954,60 @@
     let appDingtalkNotifyPromptPanel = null;
     let appDingtalkNotifyPromptState = null;
     let appDingtalkPendingOverseasStockoutItems = [];
+    let appDingtalkPendingOverseasRestockItems = [];
+    let appDingtalkNotifyPromptFollowUp = null;
 
-    function mergeOverseasStockoutNotifyItems(pendingItems, newItems){
+    function mergeOverseasInventoryNotifyItems(pendingItems, newItems, extraFields){
         const pending = Array.isArray(pendingItems) ? pendingItems : [];
         const incoming = Array.isArray(newItems) ? newItems : [];
-        const seen = new Set();
+        const fields = Array.isArray(extraFields) ? extraFields : [];
+        const index = new Map();
         const merged = [];
         const pushItem = (item) => {
             const sku = String(item && item.sku || '').trim();
             const warehouseName = String(item && item.warehouse_name || '').trim();
             if(!sku || !warehouseName) return;
             const key = `${sku}\0${warehouseName}`;
-            if(seen.has(key)) return;
-            seen.add(key);
-            const row = { sku, warehouse_name: warehouseName };
-            const prevQty = item && item.previous_qty;
-            if(prevQty !== undefined && prevQty !== null && prevQty !== ''){
-                row.previous_qty = prevQty;
+            let row = index.get(key);
+            if(!row){
+                row = { sku, warehouse_name: warehouseName };
+                index.set(key, row);
+                merged.push(row);
             }
-            merged.push(row);
+            fields.forEach((field) => {
+                const val = item && item[field];
+                if(val !== undefined && val !== null && val !== ''){
+                    row[field] = val;
+                }
+            });
         };
         pending.forEach(pushItem);
         incoming.forEach(pushItem);
         return merged;
     }
 
+    function mergeOverseasStockoutNotifyItems(pendingItems, newItems){
+        return mergeOverseasInventoryNotifyItems(pendingItems, newItems, ['previous_qty']);
+    }
+
+    function mergeOverseasRestockNotifyItems(pendingItems, newItems){
+        return mergeOverseasInventoryNotifyItems(pendingItems, newItems, ['available_qty']);
+    }
+
     function clearAppDingtalkPendingOverseasStockout(){
         appDingtalkPendingOverseasStockoutItems = [];
+    }
+
+    function clearAppDingtalkPendingOverseasRestock(){
+        appDingtalkPendingOverseasRestockItems = [];
+    }
+
+    function runAppDingtalkNotifyPromptFollowUp(){
+        const followUp = appDingtalkNotifyPromptFollowUp;
+        appDingtalkNotifyPromptFollowUp = null;
+        if(typeof followUp === 'function'){
+            window.setTimeout(followUp, 0);
+        }
     }
 
     function computeAppDingtalkPromptBottomOffset(){
@@ -1064,6 +1091,7 @@
         if(state && !confirmed && typeof state.onCancel === 'function'){
             try { state.onCancel(state); } catch(_e) { /* ignore */ }
         }
+        runAppDingtalkNotifyPromptFollowUp();
     }
 
     /**
@@ -1134,6 +1162,20 @@
         return lines;
     }
 
+    function formatOverseasRestockPreviewLines(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const lines = list.slice(0, limit).map(item => {
+            const sku = String(item && item.sku || '').trim() || '-';
+            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
+            const qty = Number(item && item.available_qty);
+            const qtyText = Number.isFinite(qty) && qty > 0 ? `，在库 ${qty}` : '';
+            return `${sku} 在 ${warehouseName} 重新上架${qtyText}`;
+        });
+        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
+        return lines;
+    }
+
     function promptAppDingtalkOverseasStockout(items, options){
         const opt = options && typeof options === 'object' ? options : {};
         const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
@@ -1160,6 +1202,64 @@
                 return !!(result && result.ok);
             },
         });
+    }
+
+    function promptAppDingtalkOverseasRestock(items, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
+        const merged = mergeOverseasRestockNotifyItems(appDingtalkPendingOverseasRestockItems, incoming);
+        if(!merged.length) return;
+        appDingtalkPendingOverseasRestockItems = merged;
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || '钉钉重新上架通知').trim() || '钉钉重新上架通知',
+            previewLines: formatOverseasRestockPreviewLines(merged, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const batch = appDingtalkPendingOverseasRestockItems.slice();
+                const result = await sendAppDingtalkNotify('overseas_restock', {
+                    items: batch,
+                    successMessage: batch.length > 1
+                        ? `已发送 ${batch.length} 条重新上架通知到钉钉群`
+                        : '已发送重新上架通知到钉钉群',
+                });
+                if(result && result.ok){
+                    clearAppDingtalkPendingOverseasRestock();
+                }
+                return !!(result && result.ok);
+            },
+        });
+    }
+
+    function promptAppDingtalkOverseasInventoryChanges(stockoutItems, restockItems, options){
+        const stockout = (Array.isArray(stockoutItems) ? stockoutItems : []).filter(item => item && item.sku && item.warehouse_name);
+        const restock = (Array.isArray(restockItems) ? restockItems : []).filter(item => item && item.sku && item.warehouse_name);
+        if(!stockout.length && !restock.length) return;
+        const opt = options && typeof options === 'object' ? options : {};
+        const panelOpen = !!(appDingtalkNotifyPromptPanel && appDingtalkNotifyPromptPanel.classList.contains('show'));
+        const scheduleRestock = () => {
+            if(!restock.length) return;
+            if(typeof promptAppDingtalkOverseasRestock === 'function'){
+                promptAppDingtalkOverseasRestock(restock, opt.restock || opt);
+            }
+        };
+        if(stockout.length && restock.length){
+            appDingtalkNotifyPromptFollowUp = scheduleRestock;
+        } else {
+            appDingtalkNotifyPromptFollowUp = null;
+        }
+        if(stockout.length){
+            if(typeof promptAppDingtalkOverseasStockout === 'function'){
+                promptAppDingtalkOverseasStockout(stockout, opt.stockout || opt);
+            }
+            return;
+        }
+        if(panelOpen){
+            appDingtalkNotifyPromptFollowUp = scheduleRestock;
+            return;
+        }
+        scheduleRestock();
     }
 
     function ensureHelpDotTooltip(){
@@ -11895,7 +11995,10 @@
         window.hideAppDingtalkNotifyPrompt = hideAppDingtalkNotifyPrompt;
         window.sendAppDingtalkNotify = sendAppDingtalkNotify;
         window.promptAppDingtalkOverseasStockout = promptAppDingtalkOverseasStockout;
+        window.promptAppDingtalkOverseasRestock = promptAppDingtalkOverseasRestock;
+        window.promptAppDingtalkOverseasInventoryChanges = promptAppDingtalkOverseasInventoryChanges;
         window.clearAppDingtalkPendingOverseasStockout = clearAppDingtalkPendingOverseasStockout;
+        window.clearAppDingtalkPendingOverseasRestock = clearAppDingtalkPendingOverseasRestock;
         window.bindFloatingHelpDots = bindFloatingHelpDots;
         window.syncSitjoyPageFillScrollLayout = syncSitjoyPageFillScrollLayout;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;

@@ -118,10 +118,17 @@
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.innerText=msg||''; el.style.color=err?'#9b2226':'#2f6b3f'; }
-        function handleStockoutItemsAfterSave(items){
-            if(!Array.isArray(items) || !items.length) return;
-            if(typeof window.promptAppDingtalkOverseasStockout === 'function'){
-                window.promptAppDingtalkOverseasStockout(items);
+        function handleInventoryNotifyAfterSave(data){
+            const payload = data && typeof data === 'object' ? data : {};
+            const stockout = Array.isArray(payload.stockout_items) ? payload.stockout_items : [];
+            const restock = Array.isArray(payload.restock_items) ? payload.restock_items : [];
+            if(!stockout.length && !restock.length) return;
+            if(typeof window.promptAppDingtalkOverseasInventoryChanges === 'function'){
+                window.promptAppDingtalkOverseasInventoryChanges(stockout, restock);
+                return;
+            }
+            if(stockout.length && typeof window.promptAppDingtalkOverseasStockout === 'function'){
+                window.promptAppDingtalkOverseasStockout(stockout);
             }
         }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
@@ -213,7 +220,7 @@
                 .then(r=>r.json()).then(data=>{
                     if(data.status==='success'){
                         window.showAppSaveResult({ action: editId ? 'save' : 'create' });
-                        handleStockoutItemsAfterSave(data.stockout_items);
+                        handleInventoryNotifyAfterSave(data);
                         setTimeout(()=>{ closeModal(); loadList(); }, 300);
                     } else {
                         showStatus(data.message||'操作失败', true);
@@ -294,7 +301,7 @@
                         });
                     }
                     loadList();
-                    handleStockoutItemsAfterSave(data.stockout_items);
+                    handleInventoryNotifyAfterSave(data);
                 }).catch(err=>showImportStatus('导入失败: '+err, true));
         }
         document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
