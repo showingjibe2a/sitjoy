@@ -108,7 +108,7 @@ class WSGIApp(
         # 3. 定义页面 ID 与中文名称的映射关系，用于权限控制和界面显示
         label_map = {
             'home': '首页',
-            'about': '关于 - 我的网页',
+            'about': '关于',
             'shop_brand_management': '店铺/品牌管理',
             'amazon_account_health_management': 'Amazon账户健康',
             'amazon_ad_management': '广告信息管理',
@@ -154,16 +154,15 @@ class WSGIApp(
             for key in self.PAGE_PERMISSION_KEYS
         }
 
-        # 4. 定义菜单栏的分组结构
+        # 4. 定义菜单栏的分组结构（顺序与侧栏导航一致）
         self.PAGE_PERMISSION_GROUPS = [
             {'key': 'home', 'title': '首页', 'page_keys': ['home']},
             {'key': 'product_management', 'title': '产品管理', 'page_keys': ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management']},
-            {'key': 'logistics_factory_management', 'title': '物流仓储管理', 'page_keys': ['logistics_factory_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard']},
+            {'key': 'logistics', 'title': '物流仓储', 'page_keys': ['logistics_factory_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard']},
             {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery', 'image_type_management', 'aplus_management']},
             {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management', 'sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'container_draft_management', 'sales_order_registration_management']},
-            {'key': 'system_management', 'title': '系统管理', 'page_keys': ['system_employee_management', 'system_audit_log_management', 'system_dingtalk_notify_management']},
-            {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
-            {'key': 'about', 'title': '关于', 'page_keys': ['about']},
+            {'key': 'amazon_ad', 'title': 'Amazon广告', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
+            {'key': 'system_management', 'title': '系统管理', 'page_keys': ['system_employee_management', 'system_audit_log_management', 'system_dingtalk_notify_management', 'about']},
             {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets_theme', 'widgets_go_play', 'widgets_mahjong']},
         ]
 
