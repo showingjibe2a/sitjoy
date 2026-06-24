@@ -15,6 +15,8 @@ from urllib.parse import parse_qs
 
 class DingTalkNotifyMixin:
     DINGTALK_KEYWORD = '【SITJOY】'
+    DINGTALK_COLOR_NEGATIVE = '#c91d1d'
+    DINGTALK_COLOR_POSITIVE = '#2d7d4a'
 
     def _dingtalk_table_missing(self, exc):
         message = str(exc or '').lower()
@@ -240,7 +242,23 @@ class DingTalkNotifyMixin:
             pass
         return f'用户{uid}'
 
-    def _build_dingtalk_markdown_message(self, title, detail_lines, user_id=None):
+    def _dingtalk_markdown_colored_text(self, text, color):
+        body = (text or '').strip()
+        hex_color = str(color or '').strip()
+        if not body or not hex_color:
+            return body
+        if not hex_color.startswith('#'):
+            hex_color = f'#{hex_color}'
+        return f'<font color="{hex_color}">{body}</font>'
+
+    def _dingtalk_notify_tone_color(self, tone):
+        if tone == 'positive':
+            return self.DINGTALK_COLOR_POSITIVE
+        if tone == 'negative':
+            return self.DINGTALK_COLOR_NEGATIVE
+        return ''
+
+    def _build_dingtalk_markdown_message(self, title, detail_lines, user_id=None, title_tone=None):
         """组装钉钉 Markdown 正文：列表明细 + 分隔线 + 通知人/时间。"""
         lines = [str(line).strip() for line in (detail_lines or []) if str(line or '').strip()]
         if not lines:
@@ -261,6 +279,9 @@ class DingTalkNotifyMixin:
         sections.append('> ' + ' · '.join(footer_bits))
         body = '\n'.join(sections)
         title_text = str(title or '').strip() or '系统通知'
+        title_color = self._dingtalk_notify_tone_color(title_tone)
+        if title_color:
+            title_text = self._dingtalk_markdown_colored_text(title_text, title_color)
         return f'### {title_text}\n\n{body}'
 
     def _format_overseas_inventory_notify_lines(self, items, event_kind):
@@ -275,11 +296,14 @@ class DingTalkNotifyMixin:
             if event_kind == 'restock':
                 qty = self._parse_int(row.get('available_qty'))
                 qty_text = f' · 在库 **{qty}**' if qty is not None and qty > 0 else ''
-                lines.append(f'- **{sku}** · {warehouse_name} · **重新上架**{qty_text}')
+                line = f'**{sku}** · {warehouse_name} · **重新上架**{qty_text}'
+                color = self.DINGTALK_COLOR_POSITIVE
             else:
                 prev_qty = self._parse_int(row.get('previous_qty'))
                 prev_text = f' · 原库存 **{prev_qty}**' if prev_qty is not None and prev_qty > 0 else ''
-                lines.append(f'- **{sku}** · {warehouse_name} · **缺货**{prev_text}')
+                line = f'**{sku}** · {warehouse_name} · **缺货**{prev_text}'
+                color = self.DINGTALK_COLOR_NEGATIVE
+            lines.append(f'- {self._dingtalk_markdown_colored_text(line, color)}')
         return lines
 
     def _format_overseas_stockout_lines(self, items):
@@ -288,12 +312,14 @@ class DingTalkNotifyMixin:
     def _format_overseas_restock_lines(self, items):
         return self._format_overseas_inventory_notify_lines(items, 'restock')
 
-    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None, user_id=None):
+    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None, user_id=None, title_tone=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
         delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
-        markdown_text = self._build_dingtalk_markdown_message(title, formatted, user_id=user_id)
+        markdown_text = self._build_dingtalk_markdown_message(
+            title, formatted, user_id=user_id, title_tone=title_tone,
+        )
         text = self._prepare_dingtalk_text(markdown_text, delivery_cfg=delivery_cfg)
         payload = {
             'msgtype': 'markdown',
@@ -307,13 +333,13 @@ class DingTalkNotifyMixin:
     def _send_dingtalk_overseas_stockout(self, items, page_key=None, user_id=None):
         lines = self._format_overseas_stockout_lines(items)
         return self._send_dingtalk_overseas_markdown(
-            '海外仓缺货提醒', lines, page_key=page_key, user_id=user_id,
+            '海外仓缺货提醒', lines, page_key=page_key, user_id=user_id, title_tone='negative',
         )
 
     def _send_dingtalk_overseas_restock(self, items, page_key=None, user_id=None):
         lines = self._format_overseas_restock_lines(items)
         return self._send_dingtalk_overseas_markdown(
-            '海外仓重新上架提醒', lines, page_key=page_key, user_id=user_id,
+            '海外仓重新上架提醒', lines, page_key=page_key, user_id=user_id, title_tone='positive',
         )
 
     def _validate_dingtalk_notify_page_access(self, user_id, page_key):
