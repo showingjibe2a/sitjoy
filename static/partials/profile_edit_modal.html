@@ -1,0 +1,101 @@
+<!-- 个人信息编辑（由 header.js 注入 body，供全站复用） -->
+<div id="profileModal" class="pm-modal">
+    <div class="pm-modal-content pm-modal-content--wide">
+        <div class="pm-modal-scroll">
+            <div class="modal-header">
+                <h2>个人信息</h2>
+                <button type="button" class="modal-close" id="profileModalCloseBtn">×</button>
+            </div>
+            <div class="home-profile-modal-layout">
+                <div class="home-profile-modal-avatar-col">
+                    <div class="home-profile-modal-avatar-wrap">
+                        <img id="profileModalAvatar" class="home-profile-avatar home-profile-avatar--lg" alt="" hidden>
+                        <div id="profileModalAvatarFallback" class="home-profile-avatar home-profile-avatar--lg home-profile-avatar--fallback">?</div>
+                    </div>
+                    <div class="home-profile-avatar-actions">
+                        <label class="btn-secondary btn-small home-profile-upload-label">
+                            更换头像
+                            <input type="file" id="profileAvatarInput" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+                        </label>
+                        <button type="button" class="btn-ghost btn-small" id="profileAvatarRemoveBtn">移除头像</button>
+                    </div>
+                    <span class="help-dot home-profile-avatar-help" data-tip="JPG / PNG / WebP / GIF，最大 2MB" aria-label="头像格式说明"></span>
+                </div>
+                <div class="home-profile-modal-panels">
+                    <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelBasicTitle">
+                        <h4 class="permission-panel-title" id="profilePanelBasicTitle">① 基本信息<span class="help-dot" data-tip="姓名由管理员维护；可修改手机与生日。"></span></h4>
+                        <form id="profileForm" class="pm-form home-profile-form-grid">
+                            <div class="form-group">
+                                <label>姓名</label>
+                                <div id="profileName" class="history-text">—</div>
+                            </div>
+                            <div class="form-group">
+                                <label>手机</label>
+                                <input type="text" id="profilePhone" placeholder="联系电话">
+                            </div>
+                            <div class="form-group pm-form-full">
+                                <label>生日</label>
+                                <input type="date" id="profileBirthday">
+                            </div>
+                        </form>
+                    </section>
+                    <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelJobTitle">
+                        <h4 class="permission-panel-title" id="profilePanelJobTitle">② 岗位信息<span class="help-dot" data-tip="岗位、直属上级与入职时间由管理员维护。"></span></h4>
+                        <div class="pm-form home-profile-form-grid">
+                            <div class="form-group">
+                                <label>岗位</label>
+                                <div id="profileJobTitle" class="history-text">—</div>
+                            </div>
+                            <div class="form-group">
+                                <label>直属上级</label>
+                                <div id="profileDirectSupervisor" class="history-text">—</div>
+                            </div>
+                            <div class="form-group pm-form-full">
+                                <label>入职时间</label>
+                                <div id="profileHireDate" class="history-text">—</div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelSystemTitle">
+                        <h4 class="permission-panel-title" id="profilePanelSystemTitle">③ 系统信息<span class="help-dot" data-tip="登录账号须全站唯一；系统权限与注册时间仅供查看。"></span></h4>
+                        <div class="pm-form home-profile-form-grid home-profile-readonly-grid">
+                            <div class="form-group">
+                                <label>登录账号</label>
+                                <input type="text" id="profileUsername" placeholder="登录用户名" autocomplete="username">
+                            </div>
+                            <div class="form-group" id="profileSystemPermissionGroup" hidden>
+                                <label>系统权限</label>
+                                <div id="profileSystemPermission" class="history-text">—</div>
+                            </div>
+                            <div class="form-group pm-form-full">
+                                <label>注册时间</label>
+                                <div id="profileCreatedAt" class="history-text">—</div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelPasswordTitle">
+                        <h4 class="permission-panel-title" id="profilePanelPasswordTitle">④ 修改密码<span class="help-dot" data-tip="请连续输入两次相同的新密码（至少 6 位），仅修改密码时单独保存。"></span></h4>
+                        <div class="pm-form home-profile-password-form">
+                            <div class="form-group">
+                                <label>新密码</label>
+                                <input type="password" id="profileNewPassword" autocomplete="new-password" placeholder="至少 6 位">
+                            </div>
+                            <div class="form-group">
+                                <label>确认新密码</label>
+                                <input type="password" id="profileNewPasswordConfirm" autocomplete="new-password" placeholder="再次输入新密码">
+                            </div>
+                            <div class="home-profile-password-actions">
+                                <button type="button" class="btn-secondary btn-small" id="profileChangePasswordBtn">修改密码</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <div id="profileModalHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+        </div>
+        <div class="pm-modal-actions">
+            <button type="button" class="btn-secondary" id="profileModalCancelBtn">取消</button>
+            <button type="button" class="btn-primary" id="profileSaveBtn">保存资料</button>
+        </div>
+    </div>
+</div>

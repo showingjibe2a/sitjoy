@@ -194,37 +194,19 @@
 
         </nav>
 
-    </aside>
+        <footer class="sitjoy-sidebar-footer" id="sitjoySidebarFooter" hidden aria-label="账户与工具">
 
-    <div class="sitjoy-main">
+            <div class="sitjoy-sidebar-dock">
 
-        <header class="sitjoy-topbar" aria-label="顶栏">
-
-            <div class="sitjoy-topbar-tabs-wrap">
-
-                <div class="sitjoy-tabs" id="sitjoyTopTabs" role="tablist" aria-label="已打开页面"></div>
-
-            </div>
-
-            <div class="sitjoy-topbar-right">
-
-                <button type="button" class="help-dot" id="sitjoyUsageTicker" aria-label="使用提示" title="使用提示"></button>
+                <button type="button" class="help-dot sitjoy-sidebar-dock-btn" id="sitjoyUsageTicker" aria-label="使用提示" title="使用提示"></button>
 
                 <div id="sitjoyUsageTickerTrack" class="sitjoy-usage-ticker-track--hidden" aria-hidden="true"></div>
 
-                <div class="sitjoy-dingtalk-auto-send" id="sitjoyDingtalkAutoSend" hidden title="开启后库存等变动将自动批量发送至钉钉群；关闭时需左下角确认">
-                    <span class="sitjoy-dingtalk-auto-send-label">自动发送通知</span>
-                    <div class="status-segment status-segment--inline" id="sitjoyDingtalkAutoSendSegment" data-value="1" role="group" aria-label="自动发送钉钉通知">
-                        <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
-                        <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
-                    </div>
-                </div>
+                <div class="sitjoy-notification-center sitjoy-sidebar-dock-notify" id="sitjoyNotificationCenter" hidden>
 
-                <div class="sitjoy-notification-center" id="sitjoyNotificationCenter" hidden>
+                    <button type="button" class="sitjoy-notification-trigger sitjoy-sidebar-dock-btn" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">
 
-                    <button type="button" class="sitjoy-notification-trigger" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">
-
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 
                             <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
 
@@ -256,13 +238,79 @@
 
                 </div>
 
-                <span class="sitjoy-topbar-user" id="sitjoyTopbarUser" hidden></span>
+                <button type="button" class="sitjoy-sidebar-avatar-btn" id="sitjoySidebarAvatarBtn" aria-expanded="false" aria-controls="sitjoyUserDrawer" title="账户">
 
-                <span class="sitjoy-topbar-clock" id="sitjoyTopbarClock" aria-live="off"></span>
+                    <img id="sitjoySidebarAvatar" class="sitjoy-sidebar-avatar-img" alt="" hidden>
 
-                <button type="button" class="btn-secondary btn-small" id="sitjoyTopbarLogout">退出</button>
+                    <span id="sitjoySidebarAvatarFallback" class="sitjoy-sidebar-avatar-fallback" aria-hidden="true">?</span>
+
+                </button>
 
             </div>
+
+        </footer>
+
+    </aside>
+
+    <div class="sitjoy-user-drawer-backdrop" id="sitjoyUserDrawerBackdrop" hidden></div>
+
+    <aside class="sitjoy-user-drawer" id="sitjoyUserDrawer" hidden aria-label="账户菜单">
+
+        <div class="sitjoy-user-drawer-head">
+
+            <div class="sitjoy-user-drawer-avatar-wrap">
+
+                <img id="sitjoyDrawerAvatar" class="sitjoy-user-drawer-avatar" alt="" hidden>
+
+                <span id="sitjoyDrawerAvatarFallback" class="sitjoy-user-drawer-avatar sitjoy-user-drawer-avatar--fallback" aria-hidden="true">?</span>
+
+            </div>
+
+            <div class="sitjoy-user-drawer-info">
+
+                <strong id="sitjoyDrawerUserName">用户</strong>
+
+            </div>
+
+            <button type="button" class="modal-close sitjoy-user-drawer-close" id="sitjoyUserDrawerClose" aria-label="关闭">×</button>
+
+        </div>
+
+        <div class="sitjoy-user-drawer-body">
+
+            <button type="button" class="sitjoy-user-drawer-item" id="sitjoyDrawerEditProfile">编辑资料</button>
+
+            <div class="sitjoy-user-drawer-section sitjoy-dingtalk-auto-send" id="sitjoyDingtalkAutoSend" hidden title="开启后库存等变动将自动批量发送至钉钉群；关闭时需左下角确认">
+
+                <span class="sitjoy-dingtalk-auto-send-label">钉钉自动发送通知</span>
+
+                <div class="status-segment status-segment--inline" id="sitjoyDingtalkAutoSendSegment" data-value="1" role="group" aria-label="自动发送钉钉通知">
+
+                    <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+
+                    <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+
+                </div>
+
+            </div>
+
+            <button type="button" class="sitjoy-user-drawer-item sitjoy-user-drawer-item--danger" id="sitjoyDrawerLogout">登出</button>
+
+        </div>
+
+    </aside>
+
+    <div class="sitjoy-main">
+
+        <header class="sitjoy-topbar" aria-label="顶栏">
+
+            <div class="sitjoy-topbar-tabs-wrap">
+
+                <div class="sitjoy-tabs" id="sitjoyTopTabs" role="tablist" aria-label="已打开页面"></div>
+
+            </div>
+
+            <div class="sitjoy-topbar-right" aria-hidden="true"></div>
 
         </header>
 

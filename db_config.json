@@ -4,9 +4,5 @@
   "database": "sitjoy",
   "user": "root",
   "password": "Aa@2385918",
-  "charset": "utf8mb4",
-  "dingtalk": {
-    "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=994a3c9f1e079928071501413f44b1177c15a1a1e35785fca6255b203cd027ac",
-    "secret": "SEC1f0a2292a5c7a727b50d39573cde90ebd06d96e592b033885680b201704a0544"
-  }
+  "charset": "utf8mb4"
 }

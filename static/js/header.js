@@ -10126,7 +10126,7 @@
 
     const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
     const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
-    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v1';
+    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v2';
     const SITJOY_PAGE_CONTENT_SELECTORS = ['.container', '.home-container', '.pm-layout-root', '.go-play-layout-root', '.mj-layout-root'];
     const SITJOY_SHELL_SKIP_SCRIPT_RE = /header\.js|sitjoy_cell_selection_stats\.js/i;
 
@@ -11188,48 +11188,151 @@
         syncSitjoyPageFillScrollLayout(pageBody);
     }
 
-    function initTopbarUser(authData){
-        const el = document.getElementById('sitjoyTopbarUser');
-        if(!el) return;
+    function initSitjoySidebarUserDock(authData){
+        const footer = document.getElementById('sitjoySidebarFooter');
+        if(!footer) return;
         if(!authData || authData.status === 'error'){
-            el.hidden = true;
-            el.textContent = '';
+            footer.hidden = true;
             return;
         }
-        el.hidden = false;
+        footer.hidden = false;
         const name = authData.display_name || authData.name || authData.username || '用户';
-        el.textContent = name;
-        el.title = name;
-    }
-
-    function initTopbarClock(){
-        const el = document.getElementById('sitjoyTopbarClock');
-        if(!el || el.dataset.sitjoyClockBound === '1') return;
-        el.dataset.sitjoyClockBound = '1';
-        function tick(){
-            const now = new Date();
-            const y = now.getFullYear();
-            const m = String(now.getMonth() + 1).padStart(2, '0');
-            const d = String(now.getDate()).padStart(2, '0');
-            const hh = String(now.getHours()).padStart(2, '0');
-            const mm = String(now.getMinutes()).padStart(2, '0');
-            el.textContent = `${y}-${m}-${d} ${hh}:${mm}`;
+        const drawerName = document.getElementById('sitjoyDrawerUserName');
+        if(drawerName) drawerName.textContent = name;
+        const avatarUrl = authData.avatar_url || null;
+        const initial = String(name || '').trim().slice(0, 1).toUpperCase() || '?';
+        const pairs = [
+            ['sitjoySidebarAvatar', 'sitjoySidebarAvatarFallback'],
+            ['sitjoyDrawerAvatar', 'sitjoyDrawerAvatarFallback']
+        ];
+        pairs.forEach(([imgId, fbId]) => {
+            const img = document.getElementById(imgId);
+            const fb = document.getElementById(fbId);
+            if(img){
+                if(avatarUrl){
+                    img.src = `${avatarUrl}&_=${Date.now()}`;
+                    img.alt = name;
+                    img.hidden = false;
+                } else {
+                    img.removeAttribute('src');
+                    img.hidden = true;
+                }
+            }
+            if(fb){
+                fb.textContent = initial;
+                fb.style.display = avatarUrl ? 'none' : 'flex';
+            }
+        });
+        if(window.SitjoyProfile){
+            window.SitjoyProfile.setUser(authData);
         }
-        tick();
-        window.setInterval(tick, 30000);
     }
 
-    function initTopbarLogout(){
-        const btn = document.getElementById('sitjoyTopbarLogout');
-        if(!btn || btn.dataset.sitjoyLogoutBound === '1') return;
-        btn.dataset.sitjoyLogoutBound = '1';
-        btn.addEventListener('click', async () => {
-            try {
-                await fetch('/api/auth?action=logout', { method: 'POST', credentials: 'include' });
-            } catch (e) { /* ignore */ }
-            window.location.href = '/';
+    function initSitjoyUserDrawer(){
+        const btn = document.getElementById('sitjoySidebarAvatarBtn');
+        const drawer = document.getElementById('sitjoyUserDrawer');
+        const backdrop = document.getElementById('sitjoyUserDrawerBackdrop');
+        const closeBtn = document.getElementById('sitjoyUserDrawerClose');
+        const editBtn = document.getElementById('sitjoyDrawerEditProfile');
+        const logoutBtn = document.getElementById('sitjoyDrawerLogout');
+        if(!btn || !drawer) return;
+        if(btn.dataset.sitjoyDrawerBound === '1') return;
+        btn.dataset.sitjoyDrawerBound = '1';
+
+        let drawerOpen = false;
+
+        function closeUserDrawer(){
+            drawerOpen = false;
+            drawer.classList.remove('is-open');
+            drawer.hidden = true;
+            if(backdrop){
+                backdrop.classList.remove('is-open');
+                backdrop.hidden = true;
+            }
+            btn.setAttribute('aria-expanded', 'false');
+        }
+
+        function openUserDrawer(){
+            drawerOpen = true;
+            drawer.hidden = false;
+            if(backdrop){
+                backdrop.hidden = false;
+                requestAnimationFrame(() => backdrop.classList.add('is-open'));
+            }
+            requestAnimationFrame(() => drawer.classList.add('is-open'));
+            btn.setAttribute('aria-expanded', 'true');
+        }
+
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if(drawerOpen) closeUserDrawer();
+            else openUserDrawer();
+        });
+        if(closeBtn) closeBtn.addEventListener('click', closeUserDrawer);
+        if(backdrop) backdrop.addEventListener('click', closeUserDrawer);
+        if(editBtn){
+            editBtn.addEventListener('click', () => {
+                closeUserDrawer();
+                ensureProfileEditAssets()
+                    .then(() => {
+                        if(window.SitjoyProfile) window.SitjoyProfile.openModal();
+                    })
+                    .catch(() => {});
+            });
+        }
+        if(logoutBtn){
+            logoutBtn.addEventListener('click', async () => {
+                try {
+                    await fetch('/api/auth?action=logout', { method: 'POST', credentials: 'include' });
+                } catch (e) { /* ignore */ }
+                window.__sitjoyAuthStatePromise = null;
+                window.location.href = '/';
+            });
+        }
+
+        document.addEventListener('keydown', (ev) => {
+            if(ev.key === 'Escape' && drawerOpen) closeUserDrawer();
         });
     }
+
+    let profileEditAssetsPromise = null;
+
+    function ensureProfileEditAssets(){
+        if(profileEditAssetsPromise) return profileEditAssetsPromise;
+        profileEditAssetsPromise = Promise.all([
+            document.getElementById('profileModal')
+                ? Promise.resolve()
+                : fetch('/static/partials/profile_edit_modal.html')
+                    .then(r => r.text())
+                    .then(html => {
+                        if(document.getElementById('profileModal')) return;
+                        const tpl = document.createElement('template');
+                        tpl.innerHTML = html.trim();
+                        const node = tpl.content.firstElementChild;
+                        if(node) document.body.appendChild(node);
+                    }),
+            window.SitjoyProfile
+                ? Promise.resolve()
+                : new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = '/static/js/profile_edit.js';
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                })
+        ]).catch(err => {
+            profileEditAssetsPromise = null;
+            throw err;
+        });
+        return profileEditAssetsPromise;
+    }
+
+    document.addEventListener('sitjoy:profile-updated', (ev) => {
+        const profile = ev && ev.detail;
+        if(!profile) return;
+        initSitjoySidebarUserDock(Object.assign({ status: 'success' }, profile));
+    });
 
     function getCurrentAuthState(forceRefresh){
         if(forceRefresh || !window.__sitjoyAuthStatePromise){
@@ -11569,6 +11672,18 @@
             const gap = 8;
             const viewportPad = 12;
             const panelWidth = Math.min(360, Math.max(240, window.innerWidth - viewportPad * 2));
+            const inSidebarFooter = trigger.closest('.sitjoy-sidebar-footer');
+            if(inSidebarFooter){
+                let left = rect.right + gap;
+                left = Math.max(viewportPad, Math.min(left, window.innerWidth - panelWidth - viewportPad));
+                let top = rect.top;
+                const maxHeight = Math.min(420, window.innerHeight - top - viewportPad);
+                panel.style.width = panelWidth + 'px';
+                panel.style.left = left + 'px';
+                panel.style.top = top + 'px';
+                panel.style.maxHeight = Math.max(160, maxHeight) + 'px';
+                return;
+            }
             let left = rect.right - panelWidth;
             left = Math.max(viewportPad, Math.min(left, window.innerWidth - panelWidth - viewportPad));
             let top = rect.bottom + gap;
@@ -11738,12 +11853,16 @@
                     bindSitjoyPopstate();
                 }
                 applyHeaderPermissions(authData);
-                initTopbarUser(authData);
-                initTopbarClock();
-                initTopbarLogout();
+                initSitjoySidebarUserDock(authData);
+                initSitjoyUserDrawer();
                 initSitjoyNotifications(authData);
                 initSitjoyDingtalkAutoSend(authData);
                 initSitjoyUsageGuide();
+                ensureProfileEditAssets()
+                    .then(() => {
+                        if(window.SitjoyProfile && authData) window.SitjoyProfile.init(authData);
+                    })
+                    .catch(err => console.error('Load profile edit failed', err));
                 if(shellReady){
                     refreshSitjoyTabsForCurrentPath(location.pathname);
                     syncSidebarActiveState();
