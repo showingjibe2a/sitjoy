@@ -194,69 +194,21 @@
 
         </nav>
 
-        <footer class="sitjoy-sidebar-footer" id="sitjoySidebarFooter" hidden aria-label="账户与工具">
+        <footer class="sitjoy-sidebar-footer" id="sitjoySidebarFooter" hidden aria-label="账户">
 
-            <div class="sitjoy-sidebar-dock">
+            <button type="button" class="sitjoy-sidebar-user-btn" id="sitjoySidebarAvatarBtn" aria-expanded="false" aria-controls="sitjoyUserDrawer" title="账户">
 
-                <div class="sitjoy-sidebar-dock-tools">
+                <span class="sitjoy-sidebar-user-avatar">
 
-                <button type="button" class="help-dot sitjoy-sidebar-dock-btn" id="sitjoyUsageTicker" aria-label="使用提示" title="使用提示"></button>
+                    <img id="sitjoySidebarAvatar" class="sitjoy-sidebar-avatar-img" alt="" hidden>
 
-                <div id="sitjoyUsageTickerTrack" class="sitjoy-usage-ticker-track--hidden" aria-hidden="true"></div>
+                    <span id="sitjoySidebarAvatarFallback" class="sitjoy-sidebar-avatar-fallback" aria-hidden="true">?</span>
 
-                <div class="sitjoy-notification-center sitjoy-sidebar-dock-notify" id="sitjoyNotificationCenter" hidden>
+                </span>
 
-                    <button type="button" class="sitjoy-notification-trigger sitjoy-sidebar-dock-btn" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">
+                <span id="sitjoySidebarUserName" class="sitjoy-sidebar-user-name">用户</span>
 
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-
-                            <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
-
-                            <path d="M13.73 21a2 2 0 01-3.46 0"/>
-
-                        </svg>
-
-                        <span class="sitjoy-notification-badge" id="sitjoyNotificationBadge" hidden>0</span>
-
-                    </button>
-
-                    <div class="sitjoy-notification-panel" id="sitjoyNotificationPanel" hidden>
-
-                        <div class="sitjoy-notification-panel-head">
-
-                            <strong>通知</strong>
-
-                            <button type="button" class="btn-ghost btn-small" id="sitjoyNotificationMarkAll">全部已读</button>
-
-                        </div>
-
-                        <div class="sitjoy-notification-list" id="sitjoyNotificationList">
-
-                            <div class="sitjoy-notification-empty">暂无通知</div>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-                </div>
-
-                <button type="button" class="sitjoy-sidebar-user-btn" id="sitjoySidebarAvatarBtn" aria-expanded="false" aria-controls="sitjoyUserDrawer" title="账户">
-
-                    <span class="sitjoy-sidebar-user-avatar">
-
-                        <img id="sitjoySidebarAvatar" class="sitjoy-sidebar-avatar-img" alt="" hidden>
-
-                        <span id="sitjoySidebarAvatarFallback" class="sitjoy-sidebar-avatar-fallback" aria-hidden="true">?</span>
-
-                    </span>
-
-                    <span id="sitjoySidebarUserName" class="sitjoy-sidebar-user-name">用户</span>
-
-                </button>
-
-            </div>
+            </button>
 
         </footer>
 
@@ -320,7 +272,49 @@
 
             </div>
 
-            <div class="sitjoy-topbar-right" aria-hidden="true"></div>
+            <div class="sitjoy-topbar-right">
+
+                <button type="button" class="help-dot" id="sitjoyUsageTicker" aria-label="使用提示" title="使用提示"></button>
+
+                <div id="sitjoyUsageTickerTrack" class="sitjoy-usage-ticker-track--hidden" aria-hidden="true"></div>
+
+                <div class="sitjoy-notification-center" id="sitjoyNotificationCenter" hidden>
+
+                    <button type="button" class="sitjoy-notification-trigger" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">
+
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+
+                            <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+
+                            <path d="M13.73 21a2 2 0 01-3.46 0"/>
+
+                        </svg>
+
+                        <span class="sitjoy-notification-badge" id="sitjoyNotificationBadge" hidden>0</span>
+
+                    </button>
+
+                    <div class="sitjoy-notification-panel" id="sitjoyNotificationPanel" hidden>
+
+                        <div class="sitjoy-notification-panel-head">
+
+                            <strong>通知</strong>
+
+                            <button type="button" class="btn-ghost btn-small" id="sitjoyNotificationMarkAll">全部已读</button>
+
+                        </div>
+
+                        <div class="sitjoy-notification-list" id="sitjoyNotificationList">
+
+                            <div class="sitjoy-notification-empty">暂无通知</div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
 
         </header>
 

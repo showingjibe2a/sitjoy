@@ -10142,7 +10142,7 @@
 
     const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
     const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
-    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v4';
+    const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v5';
     const SITJOY_PAGE_CONTENT_SELECTORS = ['.container', '.home-container', '.pm-layout-root', '.go-play-layout-root', '.mj-layout-root'];
     const SITJOY_SHELL_SKIP_SCRIPT_RE = /header\.js|sitjoy_cell_selection_stats\.js/i;
 
@@ -11210,10 +11210,15 @@
         const srcFooter = tpl.content.querySelector('#sitjoySidebarFooter');
         const sidebar = document.getElementById('sitjoySidebar');
         const footer = document.getElementById('sitjoySidebarFooter');
+        const footerStale = footer && (
+            footer.querySelector('.sitjoy-sidebar-dock-tools')
+            || footer.querySelector('#sitjoyUsageTicker')
+            || footer.querySelector('#sitjoyNotificationCenter')
+        );
         if(srcFooter && sidebar){
             if(!footer){
                 sidebar.appendChild(srcFooter.cloneNode(true));
-            } else if(!document.getElementById('sitjoySidebarUserName')){
+            } else if(!document.getElementById('sitjoySidebarUserName') || footerStale){
                 footer.replaceWith(srcFooter.cloneNode(true));
             }
         }
@@ -11229,14 +11234,14 @@
             });
         }
         const topbarRight = document.querySelector('.sitjoy-topbar-right');
-        if(topbarRight){
-            topbarRight.querySelectorAll(
-                '#sitjoyUsageTicker, #sitjoyUsageTickerTrack, #sitjoyNotificationCenter, '
-                + '#sitjoyDingtalkAutoSend, #sitjoyTopbarUser, #sitjoyTopbarClock, #sitjoyTopbarLogout'
-            ).forEach(el => el.remove());
-            if(!topbarRight.childElementCount){
-                topbarRight.setAttribute('aria-hidden', 'true');
-            }
+        const srcTopbarRight = tpl.content.querySelector('.sitjoy-topbar-right');
+        if(topbarRight && srcTopbarRight && !topbarRight.querySelector('#sitjoyUsageTicker')){
+            topbarRight.replaceWith(srcTopbarRight.cloneNode(true));
+        }
+        if(footer && footer.querySelector('#sitjoyUsageTicker')){
+            footer.querySelector('#sitjoyUsageTicker')?.remove();
+            footer.querySelector('#sitjoyUsageTickerTrack')?.remove();
+            footer.querySelector('#sitjoyNotificationCenter')?.remove();
         }
     }
 
@@ -11282,6 +11287,27 @@
         }
     }
 
+    function ensureSitjoyUserDrawerPortaled(){
+        ['sitjoyUserDrawerBackdrop', 'sitjoyUserDrawer'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el && el.parentElement !== document.body){
+                document.body.appendChild(el);
+            }
+        });
+    }
+
+    function syncSitjoyUserDrawerPosition(){
+        const drawer = document.getElementById('sitjoyUserDrawer');
+        const sidebar = document.getElementById('sitjoySidebar');
+        if(!drawer || !sidebar) return;
+        const rect = sidebar.getBoundingClientRect();
+        const gap = 0;
+        const left = Math.max(0, Math.round(rect.right + gap));
+        const maxWidth = Math.max(160, window.innerWidth - left - 12);
+        drawer.style.left = left + 'px';
+        drawer.style.width = Math.min(288, maxWidth) + 'px';
+    }
+
     function initSitjoyUserDrawer(){
         const btn = document.getElementById('sitjoySidebarAvatarBtn');
         const drawer = document.getElementById('sitjoyUserDrawer');
@@ -11290,6 +11316,7 @@
         const editBtn = document.getElementById('sitjoyDrawerEditProfile');
         const logoutBtn = document.getElementById('sitjoyDrawerLogout');
         if(!btn || !drawer) return;
+        ensureSitjoyUserDrawerPortaled();
         if(btn.dataset.sitjoyDrawerBound === '1') return;
         btn.dataset.sitjoyDrawerBound = '1';
 
@@ -11307,6 +11334,8 @@
         }
 
         function openUserDrawer(){
+            ensureSitjoyUserDrawerPortaled();
+            syncSitjoyUserDrawerPosition();
             drawerOpen = true;
             drawer.hidden = false;
             if(backdrop){
@@ -11347,6 +11376,9 @@
 
         document.addEventListener('keydown', (ev) => {
             if(ev.key === 'Escape' && drawerOpen) closeUserDrawer();
+        });
+        window.addEventListener('resize', () => {
+            if(drawerOpen) syncSitjoyUserDrawerPosition();
         });
     }
 
@@ -11726,18 +11758,6 @@
             const gap = 8;
             const viewportPad = 12;
             const panelWidth = Math.min(360, Math.max(240, window.innerWidth - viewportPad * 2));
-            const inSidebarFooter = trigger.closest('.sitjoy-sidebar-footer');
-            if(inSidebarFooter){
-                let left = rect.right + gap;
-                left = Math.max(viewportPad, Math.min(left, window.innerWidth - panelWidth - viewportPad));
-                let top = rect.top;
-                const maxHeight = Math.min(420, window.innerHeight - top - viewportPad);
-                panel.style.width = panelWidth + 'px';
-                panel.style.left = left + 'px';
-                panel.style.top = top + 'px';
-                panel.style.maxHeight = Math.max(160, maxHeight) + 'px';
-                return;
-            }
             let left = rect.right - panelWidth;
             left = Math.max(viewportPad, Math.min(left, window.innerWidth - panelWidth - viewportPad));
             let top = rect.bottom + gap;
