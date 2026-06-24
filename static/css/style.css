@@ -58,6 +58,58 @@ button.modal-close:focus-visible {
     outline-offset: 2px;
 }
 
+/**
+ * 弹窗标题栏：标题居左、× 固定右上角（个人信息 / 员工账号等 .modal-header 结构）
+ */
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    position: relative;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    padding-right: 2.1rem;
+    border-bottom: 1px solid var(--sj-variant-modal-panel-border, rgba(207, 199, 189, 0.5));
+}
+
+.modal-header h1,
+.modal-header h2,
+.modal-header h3,
+.modal-header h4 {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--morandi-ink, var(--sj-color-ink));
+    line-height: 1.35;
+}
+
+.modal-header:not(:has(> .modal-close)) {
+    padding-right: 0;
+}
+
+.modal-header > .modal-close {
+    position: absolute;
+    top: 0;
+    right: 0;
+    flex: 0 0 auto;
+}
+
+/* 无 .modal-header 时：关闭钮贴在弹窗卡片右上角 */
+.pm-modal-content > .modal-close,
+.modal-content > .modal-close {
+    position: absolute;
+    top: 1.15rem;
+    right: 1.2rem;
+    z-index: 2;
+}
+
+.modal-content {
+    position: relative;
+}
+
 body {
     font-family: var(--sj-font-body);
     background-color: var(--sj-bg-body-base);

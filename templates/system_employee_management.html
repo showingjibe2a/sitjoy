@@ -77,10 +77,10 @@
 
     <div id="employeeCreateModal" class="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="document.getElementById('employeeCreateModal').classList.remove('active')">×</button>
             <div class="pm-modal-scroll">
                 <div class="modal-header">
                     <h2>新增账号</h2>
-                    <button class="modal-close" type="button" onclick="document.getElementById('employeeCreateModal').classList.remove('active')">×</button>
                 </div>
                 <form id="employeeCreateForm" class="pm-form">
                     <div class="form-group">
@@ -135,10 +135,10 @@
 
     <div id="employeeEditModal" class="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="document.getElementById('employeeEditModal').classList.remove('active')">×</button>
             <div class="pm-modal-scroll">
                 <div class="modal-header">
                     <h2>编辑账号资料</h2>
-                    <button class="modal-close" type="button" onclick="document.getElementById('employeeEditModal').classList.remove('active')">×</button>
                 </div>
                 <form id="employeeEditForm" class="pm-form">
                     <input type="hidden" id="employeeEditId">
