@@ -953,6 +953,35 @@
 
     let appDingtalkNotifyPromptPanel = null;
     let appDingtalkNotifyPromptState = null;
+    let appDingtalkPendingOverseasStockoutItems = [];
+
+    function mergeOverseasStockoutNotifyItems(pendingItems, newItems){
+        const pending = Array.isArray(pendingItems) ? pendingItems : [];
+        const incoming = Array.isArray(newItems) ? newItems : [];
+        const seen = new Set();
+        const merged = [];
+        const pushItem = (item) => {
+            const sku = String(item && item.sku || '').trim();
+            const warehouseName = String(item && item.warehouse_name || '').trim();
+            if(!sku || !warehouseName) return;
+            const key = `${sku}\0${warehouseName}`;
+            if(seen.has(key)) return;
+            seen.add(key);
+            const row = { sku, warehouse_name: warehouseName };
+            const prevQty = item && item.previous_qty;
+            if(prevQty !== undefined && prevQty !== null && prevQty !== ''){
+                row.previous_qty = prevQty;
+            }
+            merged.push(row);
+        };
+        pending.forEach(pushItem);
+        incoming.forEach(pushItem);
+        return merged;
+    }
+
+    function clearAppDingtalkPendingOverseasStockout(){
+        appDingtalkPendingOverseasStockoutItems = [];
+    }
 
     function computeAppDingtalkPromptBottomOffset(){
         let maxHeight = 0;
@@ -1107,16 +1136,27 @@
 
     function promptAppDingtalkOverseasStockout(items, options){
         const opt = options && typeof options === 'object' ? options : {};
-        const list = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
-        if(!list.length) return;
+        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
+        const merged = mergeOverseasStockoutNotifyItems(appDingtalkPendingOverseasStockoutItems, incoming);
+        if(!merged.length) return;
+        appDingtalkPendingOverseasStockoutItems = merged;
         if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
         showAppDingtalkNotifyPrompt({
             title: String(opt.title || '钉钉缺货通知').trim() || '钉钉缺货通知',
-            previewLines: formatOverseasStockoutPreviewLines(list, opt.maxPreviewLines),
+            previewLines: formatOverseasStockoutPreviewLines(merged, opt.maxPreviewLines),
             confirmText: opt.confirmText,
             cancelText: opt.cancelText,
             onConfirm: async () => {
-                const result = await sendAppDingtalkNotify('overseas_stockout', { items: list });
+                const batch = appDingtalkPendingOverseasStockoutItems.slice();
+                const result = await sendAppDingtalkNotify('overseas_stockout', {
+                    items: batch,
+                    successMessage: batch.length > 1
+                        ? `已发送 ${batch.length} 条缺货通知到钉钉群`
+                        : '已发送缺货通知到钉钉群',
+                });
+                if(result && result.ok){
+                    clearAppDingtalkPendingOverseasStockout();
+                }
                 return !!(result && result.ok);
             },
         });
@@ -11855,6 +11895,7 @@
         window.hideAppDingtalkNotifyPrompt = hideAppDingtalkNotifyPrompt;
         window.sendAppDingtalkNotify = sendAppDingtalkNotify;
         window.promptAppDingtalkOverseasStockout = promptAppDingtalkOverseasStockout;
+        window.clearAppDingtalkPendingOverseasStockout = clearAppDingtalkPendingOverseasStockout;
         window.bindFloatingHelpDots = bindFloatingHelpDots;
         window.syncSitjoyPageFillScrollLayout = syncSitjoyPageFillScrollLayout;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;
