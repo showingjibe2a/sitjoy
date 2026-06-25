@@ -8,9 +8,9 @@
 
   const LS_KEYS = {
 
-    amazon: 'sj.salesPlatformInventoryExport.amazon.v3',
+    amazon: 'sj.salesPlatformInventoryExport.amazon.v4',
 
-    wayfair: 'sj.salesPlatformInventoryExport.wayfair.v3',
+    wayfair: 'sj.salesPlatformInventoryExport.wayfair.v4',
 
   };
 
@@ -40,6 +40,8 @@
 
     spec_gap_enabled: true,
 
+    spec_gap_step: 1,
+
     spec_gap_per_part: 1,
 
     spec_gap_min: 0,
@@ -59,6 +61,8 @@
     amazon_mode: 'generate',
 
     shop_id: '',
+
+    parent_ids: [],
 
   });
 
@@ -308,9 +312,13 @@
 
     const genWrap = document.getElementById('spiAmazonGenerateWrap');
 
+    const parentWrap = document.getElementById('spiAmazonParentWrap');
+
     if (uploadWrap) uploadWrap.classList.toggle('spi-panel-hidden', mode !== 'fill');
 
     if (genWrap) genWrap.classList.toggle('spi-panel-hidden', mode !== 'generate');
+
+    if (parentWrap) parentWrap.classList.toggle('spi-panel-hidden', mode !== 'generate');
 
   }
 
@@ -336,6 +344,8 @@
 
       spec_gap_enabled: segmentValue('spiSpecGapEnabledSegment', '1') === '1',
 
+      spec_gap_step: Math.max(1, Number(document.getElementById('spiSpecGapStep')?.value || 1)),
+
       spec_gap_per_part: Math.max(0, Number(document.getElementById('spiSpecGapPerPart')?.value || 1)),
 
       spec_gap_min: Math.max(0, Number(document.getElementById('spiSpecGapMin')?.value || 0)),
@@ -353,6 +363,8 @@
       prefs.amazon_mode = segmentValue('spiAmazonModeSegment', 'generate');
 
       prefs.shop_id = String(document.getElementById('spiAmazonShop')?.value || '').trim();
+
+      prefs.parent_ids = readSelectedParentIds();
 
     }
 
@@ -390,6 +402,8 @@
 
     const capMax = document.getElementById('spiCapMax');
 
+    const gapStep = document.getElementById('spiSpecGapStep');
+
     const gapN = document.getElementById('spiSpecGapPerPart');
 
     const gapMin = document.getElementById('spiSpecGapMin');
@@ -406,6 +420,8 @@
 
     if (capMax) capMax.value = String(p.cap_max);
 
+    if (gapStep) gapStep.value = String(Math.max(1, Number(p.spec_gap_step || 1)));
+
     if (gapN) gapN.value = String(p.spec_gap_per_part);
 
     if (gapMin) gapMin.value = String(p.spec_gap_min);
@@ -419,6 +435,410 @@
     syncCalcModeUi();
 
     syncAmazonModeUi();
+
+  }
+
+
+
+  let _spiParentItemsCache = null;
+
+  let _spiParentShopId = '';
+
+  let _spiSelectedParentIds = [];
+
+  let _spiParentsForShop = [];
+
+
+
+  function parentMarkerLabel(item) {
+
+    const marker = String((item && item.sku_marker) || '').trim();
+
+    if (marker) return marker;
+
+    const code = String((item && item.parent_code) || '').trim();
+
+    if (code) return code;
+
+    return `父体#${item && item.id}`;
+
+  }
+
+
+
+  async function loadSpiParentItems() {
+
+    if (_spiParentItemsCache) return _spiParentItemsCache;
+
+    try {
+
+      const resp = await fetch('/api/parent', { credentials: 'include' });
+
+      const data = await resp.json();
+
+      if (!resp.ok || !data || data.status === 'error') {
+
+        _spiParentItemsCache = [];
+
+        return _spiParentItemsCache;
+
+      }
+
+      _spiParentItemsCache = Array.isArray(data.items) ? data.items : [];
+
+    } catch (e) {
+
+      _spiParentItemsCache = [];
+
+    }
+
+    return _spiParentItemsCache;
+
+  }
+
+
+
+  function readSelectedParentIds() {
+
+    return _spiSelectedParentIds
+
+      .map(id => Number(id))
+
+      .filter(n => Number.isFinite(n) && n > 0);
+
+  }
+
+
+
+  function closeAmazonParentDropdown() {
+
+    const dropdown = document.getElementById('spiAmazonParentDropdown');
+
+    if (!dropdown) return;
+
+    dropdown.classList.remove('open');
+
+    dropdown.classList.remove('expanded');
+
+  }
+
+
+
+  function ensureAmazonParentMenuVisible() {
+
+    const modal = document.getElementById('spiExportModal');
+
+    const toggle = document.getElementById('spiAmazonParentToggle');
+
+    const menu = document.getElementById('spiAmazonParentMenu');
+
+    if (!toggle || !menu) return;
+
+    const desiredSpace = 280;
+
+    const firstRect = toggle.getBoundingClientRect();
+
+    const firstAvailable = window.innerHeight - firstRect.bottom - 12;
+
+    if (modal && firstAvailable < desiredSpace) {
+
+      modal.scrollTop += (desiredSpace - firstAvailable);
+
+    }
+
+    window.requestAnimationFrame(function () {
+
+      const rect = toggle.getBoundingClientRect();
+
+      const available = window.innerHeight - rect.bottom - 12;
+
+      const maxHeight = Math.max(120, Math.min(380, available));
+
+      menu.style.maxHeight = `${maxHeight}px`;
+
+      menu.style.overflowY = 'auto';
+
+    });
+
+  }
+
+
+
+  function openAmazonParentDropdown() {
+
+    if (!_spiParentShopId || !_spiParentsForShop.length) return;
+
+    const dropdown = document.getElementById('spiAmazonParentDropdown');
+
+    if (!dropdown) return;
+
+    dropdown.classList.add('expanded');
+
+    dropdown.classList.add('open');
+
+    ensureAmazonParentMenuVisible();
+
+  }
+
+
+
+  function renderAmazonParentPickerUi() {
+
+    const chips = document.getElementById('spiAmazonParentChips');
+
+    const options = document.getElementById('spiAmazonParentOptions');
+
+    const toggle = document.getElementById('spiAmazonParentToggle');
+
+    const searchEl = document.getElementById('spiAmazonParentSearch');
+
+    if (!chips || !options) return;
+
+    const keyword = String(searchEl?.value || '').trim().toLowerCase();
+
+    const parentById = new Map(_spiParentsForShop.map(p => [String(p.id), p]));
+
+    chips.innerHTML = '';
+
+    _spiSelectedParentIds.forEach(id => {
+
+      const item = parentById.get(String(id));
+
+      if (!item) return;
+
+      const chip = document.createElement('span');
+
+      chip.className = 'feature-category-chip';
+
+      chip.textContent = parentMarkerLabel(item);
+
+      const removeBtn = document.createElement('button');
+
+      removeBtn.type = 'button';
+
+      removeBtn.className = 'feature-category-remove';
+
+      removeBtn.innerText = '×';
+
+      removeBtn.addEventListener('click', function () {
+
+        _spiSelectedParentIds = _spiSelectedParentIds.filter(x => String(x) !== String(id));
+
+        renderAmazonParentPickerUi();
+
+        persistFormPrefs();
+
+      });
+
+      chip.appendChild(removeBtn);
+
+      chips.appendChild(chip);
+
+    });
+
+    const selectedSet = new Set(_spiSelectedParentIds.map(String));
+
+    const available = _spiParentsForShop.filter(p => {
+
+      if (selectedSet.has(String(p.id))) return false;
+
+      if (!keyword) return true;
+
+      return parentMarkerLabel(p).toLowerCase().includes(keyword);
+
+    });
+
+    options.innerHTML = '';
+
+    if (!_spiParentShopId) {
+
+      options.innerHTML = '<div class="feature-category-empty">请先选择店铺</div>';
+
+      if (toggle) toggle.disabled = true;
+
+      return;
+
+    }
+
+    if (!_spiParentsForShop.length) {
+
+      options.innerHTML = '<div class="feature-category-empty">该店铺暂无父体</div>';
+
+      if (toggle) toggle.disabled = true;
+
+      return;
+
+    }
+
+    if (toggle) toggle.disabled = false;
+
+    if (!available.length) {
+
+      options.innerHTML = '<div class="feature-category-empty">无匹配父体</div>';
+
+      return;
+
+    }
+
+    available.forEach(item => {
+
+      const btn = document.createElement('button');
+
+      btn.type = 'button';
+
+      btn.className = 'feature-category-option';
+
+      btn.textContent = parentMarkerLabel(item);
+
+      btn.addEventListener('click', function () {
+
+        _spiSelectedParentIds.push(String(item.id));
+
+        renderAmazonParentPickerUi();
+
+        persistFormPrefs();
+
+      });
+
+      options.appendChild(btn);
+
+    });
+
+  }
+
+
+
+  async function renderAmazonParentPicker(shopId, selectedIds) {
+
+    _spiParentShopId = String(shopId || '').trim();
+
+    closeAmazonParentDropdown();
+
+    if (!_spiParentShopId) {
+
+      _spiParentsForShop = [];
+
+      _spiSelectedParentIds = [];
+
+      const searchEl = document.getElementById('spiAmazonParentSearch');
+
+      if (searchEl) searchEl.value = '';
+
+      renderAmazonParentPickerUi();
+
+      return;
+
+    }
+
+    const items = await loadSpiParentItems();
+
+    _spiParentsForShop = items
+
+      .filter(p => String(p.shop_id || '') === _spiParentShopId && Number(p.is_enabled) !== 0)
+
+      .sort((a, b) => parentMarkerLabel(a).localeCompare(parentMarkerLabel(b), 'zh-CN'));
+
+    const incoming = Array.isArray(selectedIds) ? selectedIds.map(String) : _spiSelectedParentIds.map(String);
+
+    const allowed = new Set(_spiParentsForShop.map(p => String(p.id)));
+
+    _spiSelectedParentIds = incoming.filter(id => allowed.has(id));
+
+    const searchEl = document.getElementById('spiAmazonParentSearch');
+
+    if (searchEl) searchEl.value = '';
+
+    renderAmazonParentPickerUi();
+
+  }
+
+
+
+  function bindAmazonParentPickerUi() {
+
+    const toggle = document.getElementById('spiAmazonParentToggle');
+
+    const searchEl = document.getElementById('spiAmazonParentSearch');
+
+    const dropdown = document.getElementById('spiAmazonParentDropdown');
+
+    const modal = document.getElementById('spiExportModal');
+
+    if (!toggle || toggle.dataset.spiParentBound === '1') return;
+
+    toggle.dataset.spiParentBound = '1';
+
+    toggle.addEventListener('click', function () {
+
+      if (toggle.disabled) return;
+
+      openAmazonParentDropdown();
+
+      searchEl?.focus();
+
+    });
+
+    if (searchEl) {
+
+      searchEl.addEventListener('input', function () {
+
+        renderAmazonParentPickerUi();
+
+        ensureAmazonParentMenuVisible();
+
+      });
+
+    }
+
+    if (dropdown) {
+
+      dropdown.addEventListener('click', function (e) {
+
+        e.stopPropagation();
+
+      });
+
+    }
+
+    if (modal) {
+
+      modal.addEventListener('scroll', function () {
+
+        const dd = document.getElementById('spiAmazonParentDropdown');
+
+        if (dd && dd.classList.contains('open')) {
+
+          ensureAmazonParentMenuVisible();
+
+        }
+
+      });
+
+    }
+
+    window.addEventListener('resize', function () {
+
+      const dd = document.getElementById('spiAmazonParentDropdown');
+
+      if (dd && dd.classList.contains('open')) {
+
+        ensureAmazonParentMenuVisible();
+
+      }
+
+    });
+
+    document.addEventListener('click', function (e) {
+
+      const dd = document.getElementById('spiAmazonParentDropdown');
+
+      if (dd && !dd.contains(e.target)) {
+
+        closeAmazonParentDropdown();
+
+      }
+
+    });
 
   }
 
@@ -554,6 +974,8 @@
 
       await populateAmazonShops(prefs.shop_id);
 
+      await renderAmazonParentPicker(prefs.shop_id, prefs.parent_ids || []);
+
     }
 
     resetFileInputs();
@@ -664,6 +1086,10 @@
 
   function buildExportOptions(prefs) {
 
+    const platform = currentPlatform();
+
+    const parentIds = platform === 'amazon' ? readSelectedParentIds() : [];
+
     return {
 
       calc_mode: prefs.calc_mode,
@@ -680,6 +1106,8 @@
 
       spec_gap_enabled: prefs.spec_gap_enabled,
 
+      spec_gap_step: Math.max(1, Number(prefs.spec_gap_step || 1)),
+
       spec_gap_per_part: prefs.spec_gap_per_part,
 
       spec_gap_min: prefs.spec_gap_min,
@@ -691,6 +1119,8 @@
       fabric_share_min_qty: Math.max(0, Number(prefs.fabric_share_min_qty || 0)),
 
       shop_id: prefs.shop_id ? Number(prefs.shop_id) : null,
+
+      parent_ids: parentIds,
 
     };
 
@@ -984,6 +1414,16 @@
 
 
 
+  async function submitFromPreview() {
+
+    closePreviewModal();
+
+    await submitExport();
+
+  }
+
+
+
   function bindPrefAutoSave() {
 
     [
@@ -993,6 +1433,8 @@
       'spiMinInStockParts',
 
       'spiCapMax',
+
+      'spiSpecGapStep',
 
       'spiSpecGapPerPart',
 
@@ -1042,6 +1484,26 @@
 
     bindPrefAutoSave();
 
+    bindAmazonParentPickerUi();
+
+    const shopSel = document.getElementById('spiAmazonShop');
+
+    if (shopSel && shopSel.dataset.spiParentBound !== '1') {
+
+      shopSel.dataset.spiParentBound = '1';
+
+      shopSel.addEventListener('change', async function () {
+
+        const prefs = loadPrefs('amazon');
+
+        await renderAmazonParentPicker(this.value, prefs.parent_ids || []);
+
+        persistFormPrefs();
+
+      });
+
+    }
+
     const modal = document.getElementById('spiExportModal');
 
     if (modal && global.bindPmModalBackdropClose) {
@@ -1073,6 +1535,8 @@
     preview: submitPreview,
 
     closePreview: closePreviewModal,
+
+    submitFromPreview,
 
     submit: submitExport,
 

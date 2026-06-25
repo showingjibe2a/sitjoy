@@ -1037,13 +1037,15 @@
                     </div>
 
                     <div class="form-group pm-form-full">
-                        <label class="label-help">大规格差异<span class="help-dot" data-tip="以 1 件下单 SKU 为基准：BOM 总件数 = 1 时不扣减；每多 1 件 BOM 总件数扣减「每多 1 件减」套数，直至「最少保留」。在通过最小不同步判断后生效。"></span></label>
+                        <label class="label-help">大规格差异<span class="help-dot" data-tip="以 1 件下单 SKU 为基准：BOM 总件数 = 1 时不扣减；每多 N 件 BOM 总件数扣减「每多 N 件减」套数，直至「最少保留」。在通过最小不同步判断后生效。"></span></label>
                         <div class="spi-option-row">
                             <div class="status-segment status-segment--inline" id="spiSpecGapEnabledSegment" data-value="1">
                                 <button type="button" class="status-pill status-pill--yes is-active" data-value="1">启用</button>
                                 <button type="button" class="status-pill status-pill--no" data-value="0">关闭</button>
                             </div>
-                            <span class="spi-field-label">每多 1 件减</span>
+                            <span class="spi-field-label">每多</span>
+                            <input type="number" id="spiSpecGapStep" class="spi-num-input" min="1" step="1" value="1">
+                            <span class="spi-field-label">件减</span>
                             <input type="number" id="spiSpecGapPerPart" class="spi-num-input" min="0" step="1" value="1">
                             <span class="spi-field-label">套，最少保留</span>
                             <input type="number" id="spiSpecGapMin" class="spi-num-input" min="0" step="1" value="0">
@@ -1081,6 +1083,22 @@
                         <select id="spiAmazonShop" class="required-field">
                             <option value="">请选择亚马逊店铺</option>
                         </select>
+                    </div>
+                    <div id="spiAmazonParentWrap" class="form-group pm-form-full">
+                        <label class="label-help">父体筛选<span class="help-dot" data-tip="系统生成时可多选父体：不选则导出全部；勾选后仅导出所选父体下的平台 SKU（预览同步）。"></span></label>
+                        <div class="feature-category-picker is-multi-check" id="spiAmazonParentPicker">
+                            <div class="feature-category-chips" id="spiAmazonParentChips"></div>
+                            <div class="feature-category-dropdown" id="spiAmazonParentDropdown">
+                                <button type="button" class="feature-category-add" id="spiAmazonParentToggle" disabled aria-label="选择父体">
+                                    <span class="feature-category-add-icon">+</span>
+                                    <span class="feature-category-add-text">选择父体</span>
+                                </button>
+                                <div class="feature-category-menu" id="spiAmazonParentMenu">
+                                    <input type="text" id="spiAmazonParentSearch" class="universal-select-search" placeholder="搜索父体标识">
+                                    <div class="feature-category-list" id="spiAmazonParentOptions"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div id="spiAmazonUploadWrap" class="form-group pm-form-full spi-panel-hidden">
                         <label for="spiAmazonFile" class="label-help">上传 txt<span class="required-asterisk">*</span><span class="help-dot" data-tip="Tab 或逗号分隔，需含 sku 与 quantity 列。"></span></label>
@@ -1128,7 +1146,8 @@
             </div>
             <div id="spiPreviewStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
-                <button class="btn-primary" type="button" onclick="SalesPlatformInventoryExport.closePreview()">关闭</button>
+                <button class="btn-secondary" type="button" onclick="SalesPlatformInventoryExport.closePreview()">关闭</button>
+                <button class="btn-primary" type="button" onclick="SalesPlatformInventoryExport.submitFromPreview()">确认下载</button>
             </div>
         </div>
     </div>

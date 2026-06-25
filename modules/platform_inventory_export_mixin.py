@@ -64,6 +64,10 @@ class PlatformInventoryExportMixin:
         except Exception:
             spec_gap_per_part = 1
         try:
+            spec_gap_step = max(1, int(data.get('spec_gap_step', 1)))
+        except Exception:
+            spec_gap_step = 1
+        try:
             spec_gap_min = max(0, int(data.get('spec_gap_min', 0)))
         except Exception:
             spec_gap_min = 0
@@ -72,6 +76,7 @@ class PlatformInventoryExportMixin:
         except Exception:
             min_nosync_qty = 0
         shop_id = self._parse_int(data.get('shop_id'))
+        parent_ids = self._parse_inventory_export_parent_ids(data.get('parent_ids'))
         use_fabric_share = self._parse_bool_flag(data.get('use_fabric_share'), default=True)
         try:
             fabric_share_min_qty = max(0, int(data.get('fabric_share_min_qty', 0)))
@@ -86,9 +91,11 @@ class PlatformInventoryExportMixin:
             'cap_max': cap_max,
             'spec_gap_enabled': spec_gap_enabled,
             'spec_gap_per_part': spec_gap_per_part,
+            'spec_gap_step': spec_gap_step,
             'spec_gap_min': spec_gap_min,
             'min_nosync_qty': min_nosync_qty,
             'shop_id': shop_id,
+            'parent_ids': parent_ids,
             'use_fabric_share': use_fabric_share,
             'fabric_share_min_qty': fabric_share_min_qty,
         }
@@ -188,17 +195,22 @@ class PlatformInventoryExportMixin:
 
         if opts.get('spec_gap_enabled') and int(sellable) > 0:
             gap = int(opts.get('spec_gap_per_part') or 0)
+            step = max(1, int(opts.get('spec_gap_step') or 1))
             retain_min = max(0, int(opts.get('spec_gap_min') or 0))
             extra_units = max(0, int(bom_units) - 1)
             if extra_units > 0 and gap > 0:
                 base = int(sellable)
-                deducted = base - extra_units * gap
+                deduction_steps = extra_units // step
+                deducted = base - deduction_steps * gap
                 if base > retain_min:
                     sellable = max(retain_min, deducted)
                 else:
                     sellable = max(0, deducted)
                 if int(sellable) != base:
-                    notes.append(f'大规格扣减 {base - int(sellable)} 套（BOM {int(bom_units)} 件）')
+                    notes.append(
+                        f'大规格扣减 {base - int(sellable)} 套'
+                        f'（BOM {int(bom_units)} 件，每 {step} 件减 {gap}）'
+                    )
 
         if opts.get('use_fabric_share') and int(sellable) > 0:
             try:
@@ -316,22 +328,41 @@ class PlatformInventoryExportMixin:
     def _load_overseas_qty_all_warehouses(self, conn, order_product_ids):
         return self._inventory_export_effective_overseas_by_op(conn, order_product_ids)
 
-    def _load_sales_products_platform_sku_index(self, conn, platform_key, shop_id=None):
+    def _parse_inventory_export_parent_ids(self, raw):
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, str):
+            items = [x.strip() for x in raw.split(',') if str(x or '').strip()]
+        else:
+            items = [raw]
+        return sorted({int(self._parse_int(x)) for x in items if self._parse_int(x)})
+
+    def _load_sales_products_platform_sku_index(self, conn, platform_key, shop_id=None, parent_ids=None):
         sp_has_shop = self._table_has_column(conn, 'sales_products', 'shop_id')
         shop_expr = self._sales_product_shop_expr(sp_has_shop)
         filter_shop_id = self._parse_int(shop_id)
+        parent_filter_ids = self._parse_inventory_export_parent_ids(parent_ids)
+        where_parts = ["sp.platform_sku IS NOT NULL AND TRIM(sp.platform_sku) <> ''"]
+        params = []
+        if parent_filter_ids:
+            placeholders = ','.join(['%s'] * len(parent_filter_ids))
+            where_parts.append(f"sp.parent_id IN ({placeholders})")
+            params.extend(parent_filter_ids)
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT sp.id, sp.platform_sku, sp.variant_id, sp.product_status,
+                SELECT sp.id, sp.platform_sku, sp.variant_id, sp.product_status, sp.parent_id,
                        {shop_expr} AS shop_id, pt.name AS platform_type_name
                 FROM sales_products sp
                 LEFT JOIN sales_parents p ON p.id = sp.parent_id
                 LEFT JOIN shops s ON s.id = {shop_expr}
                 LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
-                WHERE sp.platform_sku IS NOT NULL AND TRIM(sp.platform_sku) <> ''
+                WHERE {' AND '.join(where_parts)}
                 ORDER BY sp.id ASC
-                """
+                """,
+                params,
             )
             rows = cur.fetchall() or []
         out = {}
@@ -354,8 +385,42 @@ class PlatformInventoryExportMixin:
                     'variant_id': vid,
                     'product_status': row.get('product_status'),
                     'shop_id': self._parse_int(row.get('shop_id')),
+                    'parent_id': self._parse_int(row.get('parent_id')),
                 }
         return out
+
+    def _filter_sku_map_by_parent_ids(self, sku_map, parent_ids):
+        ids = self._parse_inventory_export_parent_ids(parent_ids)
+        if not ids:
+            return sku_map
+        allowed = set(ids)
+        return {
+            key: rec
+            for key, rec in (sku_map or {}).items()
+            if self._parse_int((rec or {}).get('parent_id')) in allowed
+        }
+
+    def _amazon_inventory_sku_map(self, conn, opts):
+        shop_id = self._parse_int((opts or {}).get('shop_id'))
+        parent_ids = self._parse_inventory_export_parent_ids((opts or {}).get('parent_ids'))
+        sku_map = self._load_sales_products_platform_sku_index(
+            conn, 'amazon', shop_id=shop_id, parent_ids=parent_ids,
+        )
+        sku_map = self._filter_sku_map_by_parent_ids(sku_map, parent_ids)
+        return sku_map, shop_id, parent_ids
+
+    def _amazon_inventory_target_skus(self, sku_map, sku_list=None):
+        if sku_list:
+            allowed = set((sku_map or {}).keys())
+            return sorted(s for s in sku_list if s in allowed)
+        return sorted((sku_map or {}).keys())
+
+    def _amazon_inventory_empty_map_message(self, shop_id, parent_ids):
+        if self._parse_inventory_export_parent_ids(parent_ids):
+            return '所选父体下无可导出的亚马逊销售产品'
+        if shop_id:
+            return '所选店铺下无亚马逊销售产品'
+        return '无可导出的亚马逊销售产品'
 
     def _inventory_export_bom_meta(self, conn, variant_ids):
         ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
@@ -424,11 +489,10 @@ class PlatformInventoryExportMixin:
         return out
 
     def _amazon_inventory_preview(self, conn, opts, sku_list=None):
-        shop_id = self._parse_int((opts or {}).get('shop_id'))
-        sku_map = self._load_sales_products_platform_sku_index(conn, 'amazon', shop_id=shop_id)
+        sku_map, shop_id, parent_ids = self._amazon_inventory_sku_map(conn, opts)
         if shop_id and not sku_map:
-            raise ValueError('所选店铺下无亚马逊销售产品')
-        target_skus = sorted(sku_list) if sku_list else sorted(sku_map.keys())
+            raise ValueError(self._amazon_inventory_empty_map_message(shop_id, parent_ids))
+        target_skus = self._amazon_inventory_target_skus(sku_map, sku_list=sku_list)
         if not target_skus:
             return []
         variant_ids = sorted({
@@ -448,13 +512,16 @@ class PlatformInventoryExportMixin:
         for sku in target_skus:
             rec = sku_map.get(sku)
             if not rec:
-                raw_rows.append({
-                    'sku': sku,
-                    'warehouse': '-',
-                    'qty': 0,
-                    'remark': '未匹配销售 SKU',
-                    'variant_id': 0,
-                })
+                if sku_list:
+                    raw_rows.append({
+                        'sku': sku,
+                        'warehouse': '-',
+                        'qty': 0,
+                        'remark': '未匹配销售 SKU',
+                        'variant_id': 0,
+                    })
+                continue
+            if not sku_list and not self._sales_product_status_exportable(rec.get('product_status')):
                 continue
             vid = rec['variant_id']
             links = links_by_vid.get(vid) or []
@@ -610,10 +677,9 @@ class PlatformInventoryExportMixin:
         return options, file_bytes, filename, mode
 
     def _amazon_inventory_lines(self, conn, opts):
-        shop_id = self._parse_int((opts or {}).get('shop_id'))
-        sku_map = self._load_sales_products_platform_sku_index(conn, 'amazon', shop_id=shop_id)
+        sku_map, shop_id, parent_ids = self._amazon_inventory_sku_map(conn, opts)
         if shop_id and not sku_map:
-            raise ValueError('所选店铺下无亚马逊销售产品')
+            raise ValueError(self._amazon_inventory_empty_map_message(shop_id, parent_ids))
         variant_ids = sorted({v['variant_id'] for v in sku_map.values() if v.get('variant_id')})
         links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
         all_op_ids = sorted({
@@ -667,10 +733,15 @@ class PlatformInventoryExportMixin:
         sku_list = self._parse_amazon_inventory_upload(file_bytes)
         if not sku_list:
             raise ValueError('上传文件无有效 SKU 行')
-        sku_map = self._load_sales_products_platform_sku_index(conn, 'amazon')
+        sku_map, shop_id, parent_ids = self._amazon_inventory_sku_map(conn, opts)
+        if shop_id and parent_ids and not sku_map:
+            raise ValueError(self._amazon_inventory_empty_map_message(shop_id, parent_ids))
+        target_skus = self._amazon_inventory_target_skus(sku_map, sku_list=sku_list)
+        if not target_skus:
+            raise ValueError(self._amazon_inventory_empty_map_message(shop_id, parent_ids))
         variant_ids = sorted({
             sku_map[s]['variant_id']
-            for s in sku_list
+            for s in target_skus
             if s in sku_map and sku_map[s].get('variant_id')
         })
         links_by_vid, bom_units_by_vid, fabric_shares = self._inventory_export_bom_meta(conn, variant_ids)
