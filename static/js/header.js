@@ -151,38 +151,44 @@
         }
     }
 
-    function positionFloatingDropdown(select, state){
-        if(!state || !state.menu || !state.wrapper.classList.contains('open')) return;
-        const triggerRect = state.trigger.getBoundingClientRect();
+    function positionFloatingMenu(trigger, menu, scrollListEl, upwardHostEl, minWidth){
+        if(!trigger || !menu) return;
+        const triggerRect = trigger.getBoundingClientRect();
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
         const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
         const spaceBelow = viewportHeight - triggerRect.bottom;
         const spaceAbove = triggerRect.top;
         const preferHeight = 280;
         const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow && spaceAbove >= 140;
-        state.wrapper.classList.toggle('open-upward', openUpward);
+        if(upwardHostEl) upwardHostEl.classList.toggle('open-upward', openUpward);
+        menu.classList.toggle('open-upward', openUpward);
         const availableSpace = (openUpward ? spaceAbove : spaceBelow) - 20;
         const maxHeight = Math.max(120, Math.min(preferHeight, availableSpace));
-        state.list.style.maxHeight = `${maxHeight}px`;
+        if(scrollListEl) scrollListEl.style.maxHeight = `${maxHeight}px`;
 
-        const width = Math.min(Math.max(triggerRect.width, 180), Math.max(200, viewportWidth - 16));
+        const panelMinWidth = Math.max(Number(minWidth || 0) || 0, 180);
+        const width = Math.min(Math.max(triggerRect.width, panelMinWidth), Math.max(200, viewportWidth - 16));
         const left = Math.max(8, Math.min(triggerRect.left, viewportWidth - width - 8));
 
-        state.menu.style.position = 'fixed';
-        state.menu.style.left = `${left}px`;
-        state.menu.style.right = 'auto';
-        state.menu.style.width = `${width}px`;
-        state.menu.style.minWidth = `${width}px`;
-        state.menu.style.maxWidth = `${width}px`;
-        /* 须高于 .pm-modal(15000) / 嵌套 NAS(15100) / .pm-modal--stack(15150)，否则挂到 body 的下拉会被遮罩盖住；低于 .app-toast-stack(16000) */
-        state.menu.style.zIndex = '15600';
+        menu.style.position = 'fixed';
+        menu.style.left = `${left}px`;
+        menu.style.right = 'auto';
+        menu.style.width = `${width}px`;
+        menu.style.minWidth = `${width}px`;
+        menu.style.maxWidth = `${width}px`;
+        menu.style.zIndex = '15600';
         if(openUpward){
-            state.menu.style.top = 'auto';
-            state.menu.style.bottom = `${Math.max(8, viewportHeight - triggerRect.top + 6)}px`;
+            menu.style.top = 'auto';
+            menu.style.bottom = `${Math.max(8, viewportHeight - triggerRect.top + 6)}px`;
         } else {
-            state.menu.style.top = `${Math.max(8, triggerRect.bottom + 6)}px`;
-            state.menu.style.bottom = 'auto';
+            menu.style.top = `${Math.max(8, triggerRect.bottom + 6)}px`;
+            menu.style.bottom = 'auto';
         }
+    }
+
+    function positionFloatingDropdown(select, state){
+        if(!state || !state.menu || !state.wrapper.classList.contains('open')) return;
+        positionFloatingMenu(state.trigger, state.menu, state.list, state.wrapper, 180);
     }
 
     function repositionOpenDropdowns(){
@@ -191,11 +197,13 @@
                 positionFloatingDropdown(select, state);
             }
         });
+        repositionOpenFloatingPanels();
     }
 
     function openDropdown(select, state){
         if(!state || state.trigger.disabled) return;
         closeAllDropdowns();
+        closeAllFloatingPanels();
         if(state.menu.parentElement !== document.body){
             document.body.appendChild(state.menu);
         }
@@ -218,6 +226,102 @@
             closeDropdown(select, state);
         });
     }
+
+    const FLOATING_OVERLAY_CFG = [
+        { host: '.check-select', trigger: '.check-select-trigger, .universal-select-trigger', panel: '.check-select-panel', list: '.check-select-list', minWidth: 240 },
+        { host: '.thumb-dropdown', trigger: '.thumb-dropdown-toggle', panel: '.thumb-dropdown-menu', list: '.thumb-dropdown-list', minWidth: 200 },
+    ];
+
+    function floatingOverlayConfig(host){
+        if(!host || !host.matches) return null;
+        for(const cfg of FLOATING_OVERLAY_CFG){
+            if(host.matches(cfg.host)) return cfg;
+        }
+        return null;
+    }
+
+    function floatingOverlayPanel(host){
+        if(!host) return null;
+        if(host._floatPanel && document.body.contains(host._floatPanel)) return host._floatPanel;
+        const cfg = floatingOverlayConfig(host);
+        if(!cfg) return null;
+        const panel = host.querySelector(cfg.panel);
+        if(panel) host._floatPanel = panel;
+        return panel || null;
+    }
+
+    function resetFloatingOverlayPanel(panel){
+        if(!panel) return;
+        panel.classList.remove('floating-dropdown-panel', 'open-upward');
+        panel.style.cssText = '';
+    }
+
+    function dockFloatingOverlayPanel(host){
+        const cfg = floatingOverlayConfig(host);
+        const panel = floatingOverlayPanel(host);
+        if(!cfg || !panel) return;
+        resetFloatingOverlayPanel(panel);
+        if(panel.parentElement !== host) host.appendChild(panel);
+    }
+
+    function openFloatingOverlayPanel(host){
+        const cfg = floatingOverlayConfig(host);
+        const trigger = cfg && host.querySelector(cfg.trigger);
+        const panel = floatingOverlayPanel(host);
+        if(!cfg || !trigger || !panel) return;
+        document.body.appendChild(panel);
+        panel.classList.add('floating-dropdown-panel');
+        panel.style.display = 'block';
+        const list = cfg.list ? panel.querySelector(cfg.list) : null;
+        positionFloatingMenu(trigger, panel, list, null, cfg.minWidth);
+    }
+
+    function closeAllFloatingPanels(){
+        document.querySelectorAll('.check-select.open, .thumb-dropdown.open').forEach((host) => {
+            host.classList.remove('open');
+            dockFloatingOverlayPanel(host);
+        });
+    }
+
+    function repositionOpenFloatingPanels(){
+        document.querySelectorAll('.check-select.open, .thumb-dropdown.open').forEach((host) => {
+            const cfg = floatingOverlayConfig(host);
+            const panel = floatingOverlayPanel(host);
+            const trigger = cfg && host.querySelector(cfg.trigger);
+            if(!cfg || !panel || !trigger || !panel.classList.contains('floating-dropdown-panel')) return;
+            const list = cfg.list ? panel.querySelector(cfg.list) : null;
+            positionFloatingMenu(trigger, panel, list, null, cfg.minWidth);
+        });
+    }
+
+    function bindFloatingOverlayDropdowns(){
+        if(document.body.dataset.floatingOverlayBound === '1') return;
+        document.body.dataset.floatingOverlayBound = '1';
+        document.addEventListener('click', (e) => {
+            if(e.target.closest('.floating-dropdown-panel')) return;
+            const trigger = e.target.closest('.check-select-trigger, .universal-select-trigger, .thumb-dropdown-toggle');
+            const host = trigger && trigger.closest('.check-select, .thumb-dropdown');
+            if(host && host.contains(trigger)){
+                e.preventDefault();
+                e.stopPropagation();
+                const opening = !host.classList.contains('open');
+                closeAllFloatingPanels();
+                closeAllDropdowns();
+                if(opening){
+                    host.classList.add('open');
+                    openFloatingOverlayPanel(host);
+                    const search = host.querySelector('.check-select-search') || host.querySelector('.thumb-dropdown-menu input[type="text"]');
+                    if(search) search.focus();
+                }
+                return;
+            }
+            if(!e.target.closest('.check-select, .thumb-dropdown')){
+                closeAllFloatingPanels();
+            }
+        }, true);
+    }
+
+    window.floatingOverlayPanel = floatingOverlayPanel;
 
     function enhanceSingleSelect(select){
         if(!shouldEnhanceSelect(select)) return;
@@ -12521,6 +12625,7 @@
         initGlobalTableCheckboxCellToggle();
         initPmTableBatchCheckboxSelection();
         initUniversalSingleSelects(document);
+        bindFloatingOverlayDropdowns();
         enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
         normalizeResetButtons(document);

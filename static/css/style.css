@@ -3390,7 +3390,7 @@ body.has-active-modal {
     box-shadow: 0 18px 40px rgba(0,0,0,0.16);
 }
 
-.thumb-dropdown.open .thumb-dropdown-menu {
+.thumb-dropdown.open .thumb-dropdown-menu:not(.floating-dropdown-panel) {
     display: block;
 }
 
@@ -4295,6 +4295,28 @@ footer {
     position: fixed;
     /* 与 header.js positionFloatingDropdown 内联 z-index 一致：高于 pm-modal，低于 app-toast-stack */
     z-index: 15600;
+}
+
+/* 任意自定义下拉挂 body 后的浮层（check-select / thumb-dropdown 等） */
+.floating-dropdown-panel,
+.check-select-panel.floating-dropdown-panel,
+.thumb-dropdown-menu.floating-dropdown-panel {
+    position: fixed !important;
+    z-index: 15600;
+    display: block !important;
+    border: 1px solid var(--morandi-sand);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.check-select-panel.floating-dropdown-panel {
+    padding: 0.5rem;
+    min-width: 240px;
+}
+
+.thumb-dropdown-menu.floating-dropdown-panel {
+    padding: 0.6rem;
 }
 
 .feature-category-menu.menu-no-search {

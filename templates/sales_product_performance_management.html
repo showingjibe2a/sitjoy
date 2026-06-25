@@ -219,7 +219,8 @@
             padding: 0.5rem;
             display: none;
         }
-        .check-select.open .check-select-panel {
+        /* 打开时由 header.js 挂到 body 并加 .floating-dropdown-panel，避免父级 overflow 裁切 */
+        .check-select.open .check-select-panel:not(.floating-dropdown-panel) {
             display: block;
         }
         .check-select-actions {
@@ -1663,10 +1664,17 @@
             return Array.from(new Set(keys));
         }
 
+        function filterSelectPanel(host) {
+            if (!host) return null;
+            if (typeof window.floatingOverlayPanel === 'function') return window.floatingOverlayPanel(host);
+            return host.querySelector('.check-select-panel');
+        }
+
         function getFilteredFilterOptions(def) {
             const host = document.getElementById(def.host);
             if (!host) return def.options || [];
-            const keyword = String(host.querySelector('.check-select-search')?.value || '').trim().toLowerCase();
+            const panel = filterSelectPanel(host);
+            const keyword = String(panel?.querySelector('.check-select-search')?.value || '').trim().toLowerCase();
             return (def.options || []).filter(x => !keyword || String(x.label || '').toLowerCase().includes(keyword));
         }
 
@@ -1684,23 +1692,15 @@
                     <div class="check-select-list"></div>
                 </div>
             `;
+            host._floatPanel = host.querySelector('.check-select-panel');
 
-            const trigger = host.querySelector('.check-select-trigger, .universal-select-trigger');
-            const search = host.querySelector('.check-select-search');
-            const list = host.querySelector('.check-select-list');
-            const btnAll = host.querySelector('button[data-action="all"]');
-            const btnNone = host.querySelector('button[data-action="none"]');
+            const panel = filterSelectPanel(host);
+            const search = panel?.querySelector('.check-select-search');
+            const btnAll = panel?.querySelector('button[data-action="all"]');
+            const btnNone = panel?.querySelector('button[data-action="none"]');
 
-            trigger.addEventListener('click', e => {
-                e.stopPropagation();
-                document.querySelectorAll('.check-select').forEach(x => {
-                    if (x !== host) x.classList.remove('open');
-                });
-                host.classList.toggle('open');
-                if (host.classList.contains('open')) search.focus();
-            });
-            search.addEventListener('input', () => renderFilterOptions(def));
-            btnAll.addEventListener('click', () => {
+            if (search) search.addEventListener('input', () => renderFilterOptions(def));
+            if (btnAll) btnAll.addEventListener('click', () => {
                 const visible = getFilteredFilterOptions(def);
                 const visibleValues = visible.map(x => String(x.value));
                 if (!visibleValues.length) return;
@@ -1713,7 +1713,7 @@
                 renderFilterOptions(def);
                 refreshFilterTrigger(def);
             });
-            btnNone.addEventListener('click', () => {
+            if (btnNone) btnNone.addEventListener('click', () => {
                 def.selected = new Set();
                 renderFilterOptions(def);
                 refreshFilterTrigger(def);
@@ -1726,7 +1726,8 @@
         function renderFilterOptions(def) {
             const host = document.getElementById(def.host);
             if (!host) return;
-            const list = host.querySelector('.check-select-list');
+            const list = filterSelectPanel(host)?.querySelector('.check-select-list');
+            if (!list) return;
             const rows = getFilteredFilterOptions(def);
             if (!rows.length) {
                 list.innerHTML = '<div class="check-select-empty">无匹配项</div>';
@@ -3852,12 +3853,6 @@
             const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';
             if (window.__salesPerfBindEpoch === navEpoch) return;
             window.__salesPerfBindEpoch = navEpoch;
-
-            document.addEventListener('click', e => {
-                if (!e.target.closest('.check-select')) {
-                    document.querySelectorAll('.check-select').forEach(x => x.classList.remove('open'));
-                }
-            });
 
             bindEl('btnQuery', 'click', loadDashboard);
             bindEl('btnReset', 'click', async () => {
