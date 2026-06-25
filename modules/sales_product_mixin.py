@@ -3378,6 +3378,262 @@ class SalesProductMixin:
         'Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销',
     })
     _SALES_DISCOUNT_FORM_TYPES = frozenset({'percent', 'amount'})
+    _SALES_DISCOUNT_SEGMENT_TRIGGER_FIELDS = frozenset({
+        'promotion_activity_type',
+        'discount_form_type',
+        'actual_discount_rate',
+        'actual_discount_amount_usd',
+        'discounted_price_usd',
+    })
+    _SALES_DISCOUNT_SEGMENT_SNAPSHOT_FIELDS = (
+        'promotion_activity_type',
+        'discount_form_type',
+        'actual_discount_rate',
+        'actual_discount_amount_usd',
+        'discounted_price_usd',
+        'sale_price_usd',
+    )
+
+    def _sales_discount_segments_table_ready(self, conn):
+        return self._table_has_column(conn, 'sales_product_discount_segments', 'sales_product_id')
+
+    def _sales_discount_snapshot_from_mapping(self, mapping):
+        if not isinstance(mapping, dict):
+            mapping = {}
+        return {
+            'promotion_activity_type': self._normalize_sales_promotion_activity_type(
+                mapping.get('promotion_activity_type')
+            ),
+            'discount_form_type': self._normalize_sales_discount_form_type(
+                mapping.get('discount_form_type')
+            ),
+            'actual_discount_rate': self._parse_float(mapping.get('actual_discount_rate')),
+            'actual_discount_amount_usd': self._parse_float(mapping.get('actual_discount_amount_usd')),
+            'discounted_price_usd': self._parse_float(mapping.get('discounted_price_usd')),
+            'sale_price_usd': self._parse_float(mapping.get('sale_price_usd')),
+        }
+
+    def _sales_discount_snapshot_is_empty(self, snap):
+        if not isinstance(snap, dict):
+            return True
+        if snap.get('promotion_activity_type'):
+            return False
+        if snap.get('discount_form_type'):
+            return False
+        for key in ('actual_discount_rate', 'actual_discount_amount_usd', 'discounted_price_usd'):
+            val = self._parse_float(snap.get(key))
+            if val is not None:
+                return False
+        return True
+
+    def _sales_discount_snapshot_compare_key(self, snap, field):
+        if field in ('actual_discount_rate', 'actual_discount_amount_usd', 'discounted_price_usd', 'sale_price_usd'):
+            val = self._parse_float((snap or {}).get(field))
+            if val is None:
+                return None
+            if field == 'actual_discount_rate':
+                return round(float(val), 4)
+            return round(float(val), 2)
+        text = (snap or {}).get(field)
+        if text is None:
+            return None
+        text = str(text).strip()
+        return text or None
+
+    def _sales_discount_snapshots_equal(self, left, right):
+        for field in (
+            'promotion_activity_type',
+            'discount_form_type',
+            'actual_discount_rate',
+            'actual_discount_amount_usd',
+            'discounted_price_usd',
+        ):
+            if self._sales_discount_snapshot_compare_key(left, field) != self._sales_discount_snapshot_compare_key(right, field):
+                return False
+        return True
+
+    def _sales_discount_segment_start_date(self, created_at):
+        today = datetime.now().date()
+        if created_at is None:
+            return today
+        if isinstance(created_at, datetime):
+            return created_at.date()
+        if hasattr(created_at, 'year') and hasattr(created_at, 'month') and hasattr(created_at, 'day'):
+            try:
+                return created_at
+            except Exception:
+                pass
+        text = str(created_at).strip()
+        if not text:
+            return today
+        try:
+            return datetime.strptime(text[:10], '%Y-%m-%d').date()
+        except Exception:
+            return today
+
+    def _sales_discount_segment_close_end_date(self, start_date, change_date):
+        start = start_date
+        if isinstance(start, datetime):
+            start = start.date()
+        elif not hasattr(start, 'year'):
+            start = self._sales_discount_segment_start_date(start)
+        if start < change_date:
+            return change_date - timedelta(days=1)
+        return change_date
+
+    def _insert_sales_discount_segment(self, cur, conn, sales_product_id, start_date, end_date, snap, user_id=None):
+        cols = [
+            'sales_product_id', 'start_date', 'end_date',
+            'promotion_activity_type', 'discount_form_type',
+            'actual_discount_rate', 'actual_discount_amount_usd',
+            'discounted_price_usd', 'sale_price_usd',
+        ]
+        vals = [
+            int(sales_product_id),
+            start_date,
+            end_date,
+            snap.get('promotion_activity_type'),
+            snap.get('discount_form_type'),
+            snap.get('actual_discount_rate'),
+            snap.get('actual_discount_amount_usd'),
+            snap.get('discounted_price_usd'),
+            snap.get('sale_price_usd'),
+        ]
+        if self._table_has_column(conn, 'sales_product_discount_segments', 'created_by'):
+            cols.append('created_by')
+            vals.append(self._parse_int(user_id) or None)
+        placeholders = ','.join(['%s'] * len(vals))
+        cur.execute(
+            f"INSERT INTO sales_product_discount_segments ({', '.join(cols)}) VALUES ({placeholders})",
+            tuple(vals),
+        )
+
+    def _load_sales_discount_snapshots(self, cur, product_ids):
+        ids = sorted(set([self._parse_int(x) for x in (product_ids or []) if self._parse_int(x)]))
+        if not ids:
+            return {}
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(
+            f"""
+            SELECT
+                sp.id,
+                sp.sale_price_usd,
+                sp.promotion_activity_type,
+                sp.discount_form_type,
+                sp.actual_discount_rate,
+                sp.actual_discount_amount_usd,
+                sp.discounted_price_usd,
+                sp.created_at
+            FROM sales_products sp
+            WHERE sp.id IN ({placeholders})
+            """,
+            tuple(ids),
+        )
+        out = {}
+        for row in (cur.fetchall() or []):
+            pid = self._parse_int(row.get('id'))
+            if not pid:
+                continue
+            out[pid] = {
+                'snapshot': self._sales_discount_snapshot_from_mapping(row),
+                'created_at': row.get('created_at'),
+            }
+        return out
+
+    def _record_sales_discount_segment_change(
+        self,
+        cur,
+        conn,
+        sales_product_id,
+        old_snap,
+        new_snap,
+        *,
+        user_id=None,
+        product_created_at=None,
+    ):
+        if self._sales_discount_snapshots_equal(old_snap, new_snap):
+            return False
+        pid = self._parse_int(sales_product_id)
+        if not pid:
+            return False
+        today = datetime.now().date()
+        old_empty = self._sales_discount_snapshot_is_empty(old_snap)
+        new_empty = self._sales_discount_snapshot_is_empty(new_snap)
+
+        cur.execute(
+            """
+            SELECT id, start_date
+            FROM sales_product_discount_segments
+            WHERE sales_product_id=%s AND end_date IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (pid,),
+        )
+        open_row = cur.fetchone() or {}
+
+        if not open_row and not old_empty:
+            backfill_start = self._sales_discount_segment_start_date(product_created_at)
+            backfill_end = self._sales_discount_segment_close_end_date(backfill_start, today)
+            self._insert_sales_discount_segment(
+                cur, conn, pid, backfill_start, backfill_end, old_snap, user_id=user_id
+            )
+        elif open_row.get('id'):
+            close_end = self._sales_discount_segment_close_end_date(open_row.get('start_date'), today)
+            cur.execute(
+                "UPDATE sales_product_discount_segments SET end_date=%s WHERE id=%s",
+                (close_end, int(open_row['id'])),
+            )
+
+        if not new_empty:
+            self._insert_sales_discount_segment(
+                cur, conn, pid, today, None, new_snap, user_id=user_id
+            )
+        return True
+
+    def _apply_sales_discount_segment_updates(self, cur, conn, row_map, touched_map, old_meta_map, user_id=None):
+        if not row_map:
+            return 0
+        recorded = 0
+        for item_id, values in row_map.items():
+            touched = touched_map.get(item_id) or set()
+            if not (set(touched) & self._SALES_DISCOUNT_SEGMENT_TRIGGER_FIELDS):
+                continue
+            meta = old_meta_map.get(int(item_id)) or {}
+            old_snap = meta.get('snapshot') or self._sales_discount_snapshot_from_mapping({})
+            new_snap = self._sales_discount_snapshot_from_mapping(values)
+            if self._record_sales_discount_segment_change(
+                cur,
+                conn,
+                item_id,
+                old_snap,
+                new_snap,
+                user_id=user_id,
+                product_created_at=meta.get('created_at'),
+            ):
+                recorded += 1
+        return recorded
+
+    def _load_sales_discount_segments(self, cur, sales_product_id, limit=200):
+        pid = self._parse_int(sales_product_id)
+        if not pid:
+            return []
+        cur.execute(
+            """
+            SELECT
+                id, sales_product_id, start_date, end_date,
+                promotion_activity_type, discount_form_type,
+                actual_discount_rate, actual_discount_amount_usd,
+                discounted_price_usd, sale_price_usd,
+                created_at, created_by
+            FROM sales_product_discount_segments
+            WHERE sales_product_id=%s
+            ORDER BY start_date DESC, id DESC
+            LIMIT %s
+            """,
+            (pid, max(1, min(int(limit or 200), 500))),
+        )
+        return cur.fetchall() or []
 
     def _sales_product_preview_select_sql(self, conn):
         parts = []
@@ -3402,6 +3658,72 @@ class SalesProductMixin:
     def _normalize_sales_discount_form_type(self, raw):
         text = (raw or '').strip().lower()
         return text if text in self._SALES_DISCOUNT_FORM_TYPES else None
+
+    _SALES_DISCOUNT_BUNDLE_FIELDS = frozenset({
+        'promotion_activity_type',
+        'discount_form_type',
+        'actual_discount_rate',
+        'actual_discount_amount_usd',
+        'discounted_price_usd',
+    })
+
+    def _sales_discount_bundle_any_touched(self, touched):
+        return bool(set(touched or []) & self._SALES_DISCOUNT_BUNDLE_FIELDS)
+
+    def _sales_discount_bundle_expand_touched(self, touched):
+        touched_set = set(touched or [])
+        if touched_set & self._SALES_DISCOUNT_BUNDLE_FIELDS:
+            touched_set |= self._SALES_DISCOUNT_BUNDLE_FIELDS
+        return touched_set
+
+    def _normalize_sales_discount_bundle_values(self, values):
+        values = dict(values or {})
+        promo = self._normalize_sales_promotion_activity_type(values.get('promotion_activity_type'))
+        if not promo:
+            values['promotion_activity_type'] = None
+            values['discount_form_type'] = None
+            values['actual_discount_rate'] = None
+            values['actual_discount_amount_usd'] = None
+            values['discounted_price_usd'] = None
+            return values
+        form = self._normalize_sales_discount_form_type(values.get('discount_form_type'))
+        rate = self._parse_float(values.get('actual_discount_rate'))
+        amount = self._parse_float(values.get('actual_discount_amount_usd'))
+        price = self._parse_float(values.get('discounted_price_usd'))
+        if form == 'amount':
+            rate = None
+        elif form == 'percent':
+            amount = None
+        values['promotion_activity_type'] = promo
+        values['discount_form_type'] = form
+        values['actual_discount_rate'] = rate
+        values['actual_discount_amount_usd'] = amount
+        values['discounted_price_usd'] = price
+        return values
+
+    def _validate_sales_discount_bundle_values(self, values):
+        promo = values.get('promotion_activity_type')
+        form = values.get('discount_form_type')
+        rate = values.get('actual_discount_rate')
+        amount = values.get('actual_discount_amount_usd')
+        price = values.get('discounted_price_usd')
+        has_any = bool(
+            promo or form or rate is not None or amount is not None or price is not None
+        )
+        if not has_any:
+            return None
+        if not promo:
+            return '填写折扣信息时须同时选择活动形式'
+        if not form:
+            return '填写折扣信息时须同时选择折扣形式'
+        if form == 'amount':
+            if amount is None:
+                return '请填写折扣记录（金额）'
+        elif rate is None:
+            return '请填写折扣记录（百分比）'
+        if price is None or float(price) <= 0:
+            return '请填写折后价'
+        return None
 
     _SALES_PREVIEW_FIELD_NAMES = frozenset({
         'child_code',
@@ -4858,7 +5180,17 @@ class SalesProductMixin:
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                get_action = (query_params.get('action', [''])[0] or '').strip().lower()
                 include_links = str((query_params.get('include_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+                if get_action == 'discount_segments':
+                    if not item_id:
+                        return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                    with self._get_db_connection() as conn:
+                        if not self._sales_discount_segments_table_ready(conn):
+                            return self.send_json({'status': 'success', 'items': []}, start_response)
+                        with conn.cursor() as cur:
+                            rows = self._load_sales_discount_segments(cur, item_id)
+                    return self.send_json({'status': 'success', 'items': rows}, start_response)
                 with self._get_db_connection() as conn:
                     sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
                     shop_expr = self._sales_product_shop_expr(sp_has_shop_col)
@@ -5179,17 +5511,55 @@ class SalesProductMixin:
                     if not row_map:
                         return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
 
+                    bundle_errors = []
+                    for item_id, values in row_map.items():
+                        touched = touched_map.get(item_id) or set()
+                        if not self._sales_discount_bundle_any_touched(touched):
+                            continue
+                        expanded = self._sales_discount_bundle_expand_touched(touched)
+                        touched_map[item_id] = expanded
+                        normalized = self._normalize_sales_discount_bundle_values(values)
+                        row_map[item_id].update(normalized)
+                        err = self._validate_sales_discount_bundle_values(normalized)
+                        if err:
+                            bundle_errors.append({'id': item_id, 'error': err})
+                    if bundle_errors:
+                        return self.send_json({
+                            'status': 'error',
+                            'message': bundle_errors[0].get('error') or '折扣信息不完整',
+                            'errors': bundle_errors,
+                        }, start_response)
+
+                    user_id = self._parse_int(self._get_session_user(environ)) or None
+                    segments_recorded = 0
                     with self._get_db_connection() as conn:
                         col_exists = self._sales_product_preview_col_exists(conn)
                         sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
+                        segments_ready = self._sales_discount_segments_table_ready(conn)
                         with conn.cursor() as cur:
+                            discount_history_ids = [
+                                pid for pid, touched in touched_map.items()
+                                if set(touched) & self._SALES_DISCOUNT_SEGMENT_TRIGGER_FIELDS
+                            ]
+                            old_discount_meta = (
+                                self._load_sales_discount_snapshots(cur, discount_history_ids)
+                                if segments_ready and discount_history_ids else {}
+                            )
                             self._sales_product_preview_resolve_product_links(
                                 conn, cur, row_map, touched_map, sp_has_shop_col
                             )
+                            if segments_ready and old_discount_meta:
+                                segments_recorded = self._apply_sales_discount_segment_updates(
+                                    cur, conn, row_map, touched_map, old_discount_meta, user_id=user_id
+                                )
                             updated = self._sales_product_preview_batch_update(
                                 cur, row_map, touched_map, col_exists
                             )
-                    return self.send_json({'status': 'success', 'updated': updated}, start_response)
+                    return self.send_json({
+                        'status': 'success',
+                        'updated': updated,
+                        'discount_segments_recorded': segments_recorded,
+                    }, start_response)
 
                 item_id = self._parse_int(data.get('id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()

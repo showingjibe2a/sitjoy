@@ -591,7 +591,7 @@
                             <th data-manage-col-key="成本总计" data-sort-key="est_total_cost_usd" class="sales-econ-col">成本总计</th>
                             <th data-manage-col-key="佣金" data-sort-key="est_commission_usd" class="sales-econ-col">佣金</th>
                             <th data-manage-col-key="单件净利" data-sort-key="est_net_profit_usd" class="sales-econ-col">单件净利</th>
-                            <th data-manage-col-key="净利率" data-sort-key="est_net_margin_rate" class="sales-econ-col"><span class="label-help">净利率<span class="help-dot" data-tip="净利率 = 单件净利 ÷ 售价。单件净利 = 售价×(1−退款率)×(1−折扣率)×(1−ACOAS−佣金费率) − 成本总计。佣金按折后价(净收入)计算；佣金费率 = 佣金÷折后价。折后价未填时按折扣记录计算；折扣记录为空时使用父体预估折扣率。"></span></span></th>
+                            <th data-manage-col-key="净利率" data-sort-key="est_net_margin_rate" class="sales-econ-col"><span class="label-help">净利率<span class="help-dot" data-tip="净利率 = 单件净利 ÷ 售价。单件净利 = 售价×(1−退款率)×(1−折扣率)×(1−ACOAS−佣金费率) − 成本总计。佣金按折后价(净收入)计算。折扣率由折后价÷售价得出；活动形式、折扣形式、折扣记录、折后价须一并填写。"></span></span></th>
                             <th data-manage-col-key="备注" data-sort-key="notes">备注</th>
                             <th data-manage-col-key="创建时间" data-sort-key="created_at">创建时间</th>
                             <th style="width:160px;" data-manage-col-key="操作">操作</th>
@@ -1226,6 +1226,13 @@
             { value: 'percent', label: '百分比' },
             { value: 'amount', label: '金额' },
         ];
+        const SALES_DISCOUNT_BUNDLE_FIELDS = [
+            'promotion_activity_type',
+            'discount_form_type',
+            'actual_discount_rate',
+            'actual_discount_amount_usd',
+            'discounted_price_usd',
+        ];
         const SALES_PREVIEW_DRAFT_FIELDS = [
             'child_code', 'product_link', 'gtin', 'upc', 'sale_price_usd',
             'promotion_activity_type', 'discount_form_type',
@@ -1359,19 +1366,27 @@
                 }
                 return normalizeSalesPreviewFieldValue(field, item[field]);
             };
-            return {
-                id: Number(id),
-                touched_fields: touched.slice(),
-                child_code: pick('child_code'),
-                product_link: pick('product_link'),
-                gtin: pick('gtin'),
-                upc: pick('upc'),
-                sale_price_usd: pick('sale_price_usd'),
+            const bundleValues = {
                 promotion_activity_type: pick('promotion_activity_type'),
                 discount_form_type: pick('discount_form_type'),
                 actual_discount_rate: pick('actual_discount_rate'),
                 actual_discount_amount_usd: pick('actual_discount_amount_usd'),
                 discounted_price_usd: pick('discounted_price_usd'),
+            };
+            const expandedTouched = salesExpandDiscountBundleTouched(draft);
+            return {
+                id: Number(id),
+                touched_fields: expandedTouched,
+                child_code: pick('child_code'),
+                product_link: pick('product_link'),
+                gtin: pick('gtin'),
+                upc: pick('upc'),
+                sale_price_usd: pick('sale_price_usd'),
+                promotion_activity_type: bundleValues.promotion_activity_type,
+                discount_form_type: bundleValues.discount_form_type,
+                actual_discount_rate: bundleValues.actual_discount_rate,
+                actual_discount_amount_usd: bundleValues.actual_discount_amount_usd,
+                discounted_price_usd: bundleValues.discounted_price_usd,
                 notes: pick('notes'),
             };
         }
@@ -1416,17 +1431,31 @@
             salesPreviewEditDraft[id][field] = normalized;
             salesPreviewMarkDraftFieldTouched(salesPreviewEditDraft[id], field);
             const draft = salesPreviewEditDraft[id];
+            if (field === 'promotion_activity_type' && !normalized) {
+                salesClearDiscountBundleDraft(draft);
+            }
             if (field === 'discount_form_type') {
                 if (normalized === 'amount') {
                     draft.actual_discount_rate = null;
                     salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_rate');
-                } else {
+                } else if (normalized === 'percent') {
                     draft.actual_discount_amount_usd = null;
                     salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_amount_usd');
+                } else {
+                    draft.actual_discount_rate = null;
+                    draft.actual_discount_amount_usd = null;
+                    draft.discounted_price_usd = null;
+                    salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_rate');
+                    salesPreviewMarkDraftFieldTouched(draft, 'actual_discount_amount_usd');
+                    salesPreviewMarkDraftFieldTouched(draft, 'discounted_price_usd');
                 }
             }
             if (field !== 'discounted_price_usd' && SALES_ECON_LINKED_FIELDS.has(field)) {
                 salesSyncDiscountedPriceDraft(item, draft);
+            }
+            if (field === 'promotion_activity_type' || field === 'discount_form_type') {
+                refreshSalesDiscountCells(itemId);
+                refreshSalesRowEconomicsCells(itemId, field);
             }
             if (salesPreviewDraftIsClean(item, draft)) {
                 delete salesPreviewEditDraft[id];
@@ -1436,6 +1465,7 @@
 
         function salesSyncDiscountedPriceDraft(item, draft) {
             const merged = Object.assign({}, item, draft);
+            if (!salesHasPromotionActivity(merged) || !salesGetDiscountFormType(merged)) return;
             const price = salesComputeDiscountedPrice(merged, { allowExplicit: false });
             const next = price > 0 ? price : null;
             if (draft.discounted_price_usd !== next) {
@@ -1477,7 +1507,9 @@
                 if (field === 'child_code') {
                     maybeAutoFillPreviewProductLinkFromChildCode(id, el.closest('tr'));
                 }
-                if (SALES_ECON_LINKED_FIELDS.has(field)) {
+                if (field === 'discount_form_type') {
+                    refreshSalesRowEconomicsCells(id, field);
+                } else if (SALES_ECON_LINKED_FIELDS.has(field)) {
                     refreshSalesRowEconomicsCells(id, field);
                 }
             });
@@ -1542,6 +1574,13 @@
                 syncSalesPreviewSaveBar();
                 return;
             }
+            for (const up of items) {
+                const err = validateSalesDiscountBundleValues(up);
+                if (err) {
+                    window.showAppSaveResult({ action: 'save', isError: true, message: `产品 #${up.id}：${err}` });
+                    return;
+                }
+            }
             fetch('/api/sales-product?action=preview_update', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1561,11 +1600,12 @@
                         if (touched.has('gtin')) row.gtin = up.gtin ? up.gtin : null;
                         if (touched.has('upc')) row.upc = up.upc ? up.upc : null;
                         if (touched.has('sale_price_usd')) row.sale_price_usd = up.sale_price_usd;
-                        if (touched.has('promotion_activity_type')) row.promotion_activity_type = up.promotion_activity_type;
-                        if (touched.has('discount_form_type')) row.discount_form_type = up.discount_form_type;
+                        if (touched.has('promotion_activity_type')) row.promotion_activity_type = up.promotion_activity_type || null;
+                        if (touched.has('discount_form_type')) row.discount_form_type = up.discount_form_type || null;
                         if (touched.has('actual_discount_rate')) row.actual_discount_rate = up.actual_discount_rate;
                         if (touched.has('actual_discount_amount_usd')) row.actual_discount_amount_usd = up.actual_discount_amount_usd;
                         if (touched.has('discounted_price_usd')) row.discounted_price_usd = up.discounted_price_usd;
+                        if (touched.has('product_link')) row.product_link = up.product_link ? up.product_link : null;
                         if (touched.has('notes')) row.notes = up.notes ? up.notes : null;
                         delete salesPreviewEditDraft[String(up.id)];
                     });
@@ -2321,9 +2361,88 @@
             return formatSalesEconomicsUsd(econ.commission, false);
         }
 
+        function salesHasPromotionActivity(item) {
+            const v = getSalesPreviewEffectiveValue(item, 'promotion_activity_type');
+            return !!(v && String(v).trim());
+        }
+
         function salesGetDiscountFormType(item) {
+            if (!salesHasPromotionActivity(item)) return '';
             const v = getSalesPreviewEffectiveValue(item, 'discount_form_type');
             return String(v || '').trim() === 'amount' ? 'amount' : 'percent';
+        }
+
+        function salesParentDiscountHintPercent(item) {
+            const parentRatio = salesNormalizeParentRateRatio(item && item.estimated_discount_rate);
+            if (parentRatio <= 0) return '';
+            return salesPercentDisplayValue(parentRatio * 100);
+        }
+
+        function salesDiscountBundleAnyTouched(draft) {
+            if (!draft || !draft._touched) return false;
+            return SALES_DISCOUNT_BUNDLE_FIELDS.some((field) => !!draft._touched[field]);
+        }
+
+        function salesExpandDiscountBundleTouched(draft) {
+            const touched = salesPreviewDraftTouchedFields(draft);
+            if (!SALES_DISCOUNT_BUNDLE_FIELDS.some((field) => touched.includes(field))) {
+                return touched;
+            }
+            const expanded = new Set(touched);
+            SALES_DISCOUNT_BUNDLE_FIELDS.forEach((field) => expanded.add(field));
+            return Array.from(expanded);
+        }
+
+        function salesClearDiscountBundleDraft(draft) {
+            if (!draft) return;
+            draft.promotion_activity_type = null;
+            draft.discount_form_type = null;
+            draft.actual_discount_rate = null;
+            draft.actual_discount_amount_usd = null;
+            draft.discounted_price_usd = null;
+            SALES_DISCOUNT_BUNDLE_FIELDS.forEach((field) => salesPreviewMarkDraftFieldTouched(draft, field));
+        }
+
+        function validateSalesDiscountBundleValues(values) {
+            const promo = values.promotion_activity_type;
+            const form = values.discount_form_type;
+            const rate = values.actual_discount_rate;
+            const amt = values.actual_discount_amount_usd;
+            const price = values.discounted_price_usd;
+            const hasAny = !!(promo || form || rate != null || amt != null || price != null);
+            if (!hasAny) return null;
+            if (!promo) return '填写折扣信息时须同时选择活动形式';
+            if (!form) return '填写折扣信息时须同时选择折扣形式';
+            if (form === 'amount') {
+                if (amt == null) return '请填写折扣记录（金额）';
+            } else if (rate == null) {
+                return '请填写折扣记录（百分比）';
+            }
+            if (price == null || !(Number(price) > 0)) return '请填写折后价';
+            return null;
+        }
+
+        function salesPreviewTdFromHtml(html) {
+            const tmp = document.createElement('tbody');
+            tmp.innerHTML = `<tr>${html}</tr>`;
+            return tmp.querySelector('td');
+        }
+
+        function refreshSalesDiscountCells(entityId) {
+            const item = (salesProductItems || []).find(x => String(x.id) === String(entityId));
+            if (!item) return;
+            const draft = salesPreviewEditDraft[String(entityId)];
+            const merged = draft ? Object.assign({}, item, draft) : item;
+            const row = sjFindSalesProductTableRow(entityId);
+            if (!row) return;
+            const promoTd = row.querySelector('td[data-field-wrap="promotion_activity_type"]');
+            if (promoTd) promoTd.replaceWith(salesPreviewTdFromHtml(renderSalesPromotionActivityCell(merged)));
+            const formTd = row.querySelector('td[data-field-wrap="discount_form_type"]');
+            if (formTd) formTd.replaceWith(salesPreviewTdFromHtml(renderSalesDiscountFormCell(merged)));
+            const recordTd = row.querySelector('td[data-field-wrap="actual_discount_rate"], td[data-field-wrap="actual_discount_amount_usd"]');
+            if (recordTd) recordTd.replaceWith(salesPreviewTdFromHtml(renderSalesDiscountRecordCell(merged)));
+            const priceTd = row.querySelector('td[data-field-wrap="discounted_price_usd"]');
+            if (priceTd) priceTd.replaceWith(salesPreviewTdFromHtml(renderSalesDiscountedPriceCell(merged)));
         }
 
         function salesPercentDisplayValue(raw) {
@@ -2353,7 +2472,10 @@
                 }
             }
 
+            if (!salesHasPromotionActivity(item)) return salePrice;
+
             const form = salesGetDiscountFormType(item);
+            if (!form) return salePrice;
             if (form === 'amount') {
                 const amtRaw = getSalesPreviewEffectiveValue(item, 'actual_discount_amount_usd');
                 if (amtRaw != null && amtRaw !== '' && Number.isFinite(Number(amtRaw))) {
@@ -2366,9 +2488,6 @@
                     return Math.round(salePrice * (1 - pct / 100) * 100) / 100;
                 }
             }
-
-            const parentRate = salesNormalizeParentRateRatio(item && item.estimated_discount_rate);
-            if (parentRate > 0) return Math.round(salePrice * (1 - parentRate) * 100) / 100;
             return salePrice;
         }
 
@@ -2380,7 +2499,32 @@
         }
 
         function salesFormatDiscountRecordCell(item) {
+            if (!salesHasPromotionActivity(item)) {
+                return {
+                    form: '',
+                    inputVal: '',
+                    placeholder: '',
+                    suffix: '',
+                    step: '0.01',
+                    min: '',
+                    max: '',
+                    disabled: true,
+                };
+            }
             const form = salesGetDiscountFormType(item);
+            const parentHint = salesParentDiscountHintPercent(item);
+            if (!form) {
+                return {
+                    form: '',
+                    inputVal: '',
+                    placeholder: '请先选折扣形式',
+                    suffix: '',
+                    step: '0.01',
+                    min: '',
+                    max: '',
+                    disabled: true,
+                };
+            }
             if (form === 'amount') {
                 const raw = getSalesPreviewEffectiveValue(item, 'actual_discount_amount_usd');
                 const hasOwn = raw != null && raw !== '';
@@ -2396,10 +2540,7 @@
             }
             const raw = getSalesPreviewEffectiveValue(item, 'actual_discount_rate');
             const hasOwn = raw != null && raw !== '';
-            const parentRatio = salesNormalizeParentRateRatio(item && item.estimated_discount_rate);
-            const placeholder = (!hasOwn && parentRatio > 0)
-                ? salesPercentDisplayValue(parentRatio * 100)
-                : '';
+            const placeholder = parentHint ? `父体约 ${parentHint}%` : '';
             return {
                 form,
                 inputVal: hasOwn ? salesPercentDisplayValue(raw) : '',
@@ -2412,9 +2553,10 @@
         }
 
         function salesFormatDiscountedPriceCell(item) {
-            const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const explicit = getSalesPreviewEffectiveValue(item, 'discounted_price_usd');
             if (explicit != null && explicit !== '') return String(explicit);
+            if (!salesHasPromotionActivity(item)) return '';
+            const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             if (salePrice <= 0) return '';
             const computed = salesComputeDiscountedPrice(item, { allowExplicit: false });
             return computed > 0 ? String(computed) : '';
@@ -2430,10 +2572,16 @@
         }
 
         function renderSalesDiscountFormCell(item) {
+            const hasPromo = salesHasPromotionActivity(item);
             const val = getSalesPreviewEffectiveValue(item, 'discount_form_type');
-            const current = String(val || '').trim() === 'amount' ? 'amount' : 'percent';
-            const options = SALES_DISCOUNT_FORM_OPTIONS.map(o =>
-                `<option value="${escapeAttr(o.value)}"${current === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+            const current = String(val || '').trim();
+            if (!hasPromo) {
+                return `<td class="preview-edit-cell" data-manage-col-key="折扣形式" data-field-wrap="discount_form_type"><select class="sales-preview-select preview-edit-field" data-id="${item.id}" data-field="discount_form_type" disabled title="请先选择活动形式"><option value="" selected>—</option></select></td>`;
+            }
+            const options = ['<option value="">—</option>'].concat(
+                SALES_DISCOUNT_FORM_OPTIONS.map(o =>
+                    `<option value="${escapeAttr(o.value)}"${current === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+                )
             );
             return `<td class="preview-edit-cell" data-manage-col-key="折扣形式" data-field-wrap="discount_form_type"><select class="sales-preview-select preview-edit-field" data-id="${item.id}" data-field="discount_form_type">${options.join('')}</select></td>`;
         }
@@ -2445,16 +2593,17 @@
             const maxAttr = dc.max ? ` max="${dc.max}"` : '';
             const title = dc.form === 'amount'
                 ? '折扣金额(USD)，通常为负数'
-                : '折扣百分比；留空则使用父体预估折扣率';
+                : (dc.placeholder ? `折扣百分比；参考：${dc.placeholder}` : '折扣百分比');
             const suffixHtml = dc.suffix
                 ? `<span class="sales-discount-input-suffix">${dc.suffix}</span>`
                 : '';
-            return `<td class="preview-edit-cell sales-econ-cell" data-manage-col-key="折扣记录" data-field-wrap="${field}"><div class="sales-discount-input-wrap"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="${field}" type="number" step="${dc.step}"${minAttr}${maxAttr} value="${escapeAttr(dc.inputVal)}" placeholder="${escapeAttr(dc.placeholder)}" title="${escapeAttr(title)}">${suffixHtml}</div></td>`;
+            const disabledAttr = dc.disabled ? ' disabled' : '';
+            return `<td class="preview-edit-cell sales-econ-cell" data-manage-col-key="折扣记录" data-field-wrap="${field}"><div class="sales-discount-input-wrap"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="${field}" type="number" step="${dc.step}"${minAttr}${maxAttr}${disabledAttr} value="${escapeAttr(dc.inputVal)}" placeholder="${escapeAttr(dc.placeholder)}" title="${escapeAttr(title)}">${suffixHtml}</div></td>`;
         }
 
         function renderSalesDiscountedPriceCell(item) {
             const val = salesFormatDiscountedPriceCell(item);
-            return `<td class="preview-edit-cell sales-econ-cell" data-manage-col-key="折后价" data-field-wrap="discounted_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="discounted_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(val)}" title="可手动覆盖；修改售价/折扣时会自动联动"></td>`;
+            return `<td class="preview-edit-cell sales-econ-cell" data-manage-col-key="折后价" data-field-wrap="discounted_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="discounted_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(val)}" title="须与活动形式、折扣形式、折扣记录一并填写；修改售价/折扣时会自动联动"></td>`;
         }
 
         function formatSalesOverseasSellableQty(item) {
