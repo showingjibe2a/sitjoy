@@ -2349,6 +2349,12 @@ class SalesManagementMixin:
             payload.update(extra_keys)
         return payload
 
+    def _forecast_perf_history_shop_joins_sql(self):
+        return (
+            'LEFT JOIN shops sh ON sh.id = sp.shop_id '
+            'LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id'
+        )
+
     def _forecast_perf_history_cost_join_sql(self, conn):
         """与产品表现看板货号分组（周/月粒度）一致的变体级单位成本子查询，用于预测历史月单元格。"""
         has_op_reship = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
@@ -2484,6 +2490,8 @@ class SalesManagementMixin:
             params.extend(int(x) for x in shop_ids)
         params.extend([start_month, end_exclusive])
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
+        shop_joins = self._forecast_perf_history_shop_joins_sql()
+        lm_factor = self._shop_handles_last_mile_factor_sql(conn, 'sh', 'pt')
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -2502,9 +2510,10 @@ class SalesManagementMixin:
                        m.refund_amount,
                        (COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (COALESCE(est_unit_cost.unit_bom_cost_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_product_cost_usd,
-                       (COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_last_mile_freight_usd
+                       (COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * COALESCE(m.sales_qty, 0) * ({lm_factor})) AS estimated_last_mile_freight_usd
                 FROM sales_perf_agg_month m
                 JOIN sales_products sp ON sp.id = m.sales_product_id
+                {shop_joins}
                 {cost_join}
                 WHERE m.sales_product_id IN ({placeholders})
                   AND m.month_start >= %s
@@ -2537,6 +2546,8 @@ class SalesManagementMixin:
             params.extend(int(x) for x in shop_ids)
         params.extend([start_month, end_exclusive])
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
+        shop_joins = self._forecast_perf_history_shop_joins_sql()
+        lm_factor = self._shop_handles_last_mile_factor_sql(conn, 'sh', 'pt')
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -2555,9 +2566,10 @@ class SalesManagementMixin:
                        SUM(COALESCE(m.refund_amount, 0)) AS refund_amount,
                        SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_product_cost_usd,
-                       (MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_last_mile_freight_usd
+                       (MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * ({lm_factor})) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_last_mile_freight_usd
                 FROM sales_perf_agg_month m
                 JOIN sales_products sp ON sp.id = m.sales_product_id
+                {shop_joins}
                 {cost_join}
                 WHERE sp.variant_id IN ({placeholders})
                   AND m.month_start >= %s

@@ -151,12 +151,14 @@ class SupportDomainMixin:
                             params.append(brand_id)
 
                         where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+                        handles_select = self._shop_handles_last_mile_select_sql(conn, 's', 'pt')
                         sql = f"""
                             SELECT
                                 s.id,
                                 s.shop_name,
                                 s.platform_type_id,
                                 s.brand_id,
+                                {handles_select},
                                 pt.name AS platform_type_name,
                                 b.name AS brand_name,
                                 pt.name AS platform_type,
@@ -177,14 +179,23 @@ class SupportDomainMixin:
                 shop_name = (data.get('shop_name') or '').strip()
                 platform_type_id = self._parse_int(data.get('platform_type_id'))
                 brand_id = self._parse_int(data.get('brand_id'))
+                handles_last_mile = 1 if data.get('handles_last_mile') in (True, 1, '1', 'true', 'yes') else 0
                 
                 if not shop_name or not platform_type_id or not brand_id:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO shops (shop_name, platform_type_id, brand_id) VALUES (%s, %s, %s)", 
-                                   (shop_name, platform_type_id, brand_id))
+                        if self._table_has_column(conn, 'shops', 'handles_last_mile'):
+                            cur.execute(
+                                "INSERT INTO shops (shop_name, platform_type_id, brand_id, handles_last_mile) VALUES (%s, %s, %s, %s)",
+                                (shop_name, platform_type_id, brand_id, handles_last_mile),
+                            )
+                        else:
+                            cur.execute(
+                                "INSERT INTO shops (shop_name, platform_type_id, brand_id) VALUES (%s, %s, %s)",
+                                (shop_name, platform_type_id, brand_id),
+                            )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -194,14 +205,23 @@ class SupportDomainMixin:
                 shop_name = (data.get('shop_name') or '').strip()
                 platform_type_id = self._parse_int(data.get('platform_type_id'))
                 brand_id = self._parse_int(data.get('brand_id'))
+                handles_last_mile = 1 if data.get('handles_last_mile') in (True, 1, '1', 'true', 'yes') else 0
                 
                 if not item_id or not shop_name or not platform_type_id or not brand_id:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE shops SET shop_name=%s, platform_type_id=%s, brand_id=%s WHERE id=%s", 
-                                   (shop_name, platform_type_id, brand_id, item_id))
+                        if self._table_has_column(conn, 'shops', 'handles_last_mile'):
+                            cur.execute(
+                                "UPDATE shops SET shop_name=%s, platform_type_id=%s, brand_id=%s, handles_last_mile=%s WHERE id=%s",
+                                (shop_name, platform_type_id, brand_id, handles_last_mile, item_id),
+                            )
+                        else:
+                            cur.execute(
+                                "UPDATE shops SET shop_name=%s, platform_type_id=%s, brand_id=%s WHERE id=%s",
+                                (shop_name, platform_type_id, brand_id, item_id),
+                            )
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

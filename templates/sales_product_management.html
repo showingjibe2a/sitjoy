@@ -2351,6 +2351,27 @@
             return isSalesAmazonPlatformName(salesPlatformTypeNameOf(item));
         }
 
+        function salesShopHandlesLastMileFromShopId(shopId) {
+            const shop = (shopOptions || []).find(s => String(s.id) === String(shopId || ''));
+            if (shop) {
+                const h = shop.handles_last_mile;
+                if (h != null && h !== '') return Number(h) === 1;
+                return isSalesAmazonPlatformName(salesPlatformTypeNameOf(shop));
+            }
+            return false;
+        }
+
+        function salesShopHandlesLastMile(itemOrShopId) {
+            if (itemOrShopId && typeof itemOrShopId === 'object') {
+                const h = itemOrShopId.handles_last_mile;
+                if (h != null && h !== '') return Number(h) === 1;
+                const sid = itemOrShopId.shop_id;
+                if (sid != null && sid !== '') return salesShopHandlesLastMileFromShopId(sid);
+                return isSalesAmazonPlatformName(salesPlatformTypeNameOf(itemOrShopId));
+            }
+            return salesShopHandlesLastMileFromShopId(itemOrShopId);
+        }
+
         function salesFormatEconLastMile(econ) {
             if (!econ || !econ.lastMileApplicable) return '-';
             return formatSalesEconomicsUsd(econ.lastMile, true);
@@ -2618,8 +2639,9 @@
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
             const lastMileRaw = Number(item.last_mile_cost_usd || 0);
+            const handlesLastMile = salesShopHandlesLastMile(item);
             const amazon = salesUsesAmazonEconomics(item);
-            const lastMile = amazon ? lastMileRaw : 0;
+            const lastMile = handlesLastMile ? lastMileRaw : 0;
             const totalCost = Math.round((bom + lastMile) * 100) / 100;
             const discountRate = salesResolveDiscountRateRatio(item);
             const refundRate = salesNormalizeParentRateRatio(item && item.estimated_refund_rate);
@@ -2639,7 +2661,7 @@
                 salePrice,
                 bom,
                 lastMile,
-                lastMileApplicable: amazon,
+                lastMileApplicable: handlesLastMile,
                 commissionApplicable: amazon,
                 totalCost,
                 commission,
@@ -3288,8 +3310,8 @@
             const sale = Number(document.getElementById('modalSalePrice').value || 0);
             const warehouse = Number(document.getElementById('modalWarehouseCost').value || 0);
             const shopId = document.getElementById('modalParentShop')?.value || '';
-            const amazon = isSalesAmazonPlatformName(salesPlatformTypeNameFromShopId(shopId));
-            const lastMile = amazon ? Number(document.getElementById('modalLastMileCost').value || 0) : 0;
+            const handlesLastMile = salesShopHandlesLastMileFromShopId(shopId);
+            const lastMile = handlesLastMile ? Number(document.getElementById('modalLastMileCost').value || 0) : 0;
             const warning = document.getElementById('modalCostWarning');
             const risk = sale > 0 && (warehouse + lastMile) > 0 && sale < (warehouse + lastMile);
             warning.style.display = risk ? '' : 'none';

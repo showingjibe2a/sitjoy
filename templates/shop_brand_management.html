@@ -53,12 +53,13 @@
                             <th>店铺名称</th>
                             <th>平台类型</th>
                             <th>品牌</th>
+                            <th style="width:100px;">负责尾程</th>
                             <th style="width:180px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -80,6 +81,12 @@
                 <div class="form-group pm-form-full">
                     <label>品牌<span class="required-asterisk">*</span></label>
                     <div class="material-type-group" id="modalBrand"></div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label class="material-type-radio" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                        <input type="checkbox" id="modalHandlesLastMile" value="1">
+                        <span>负责尾程（利润统计计入尾程运费）</span>
+                    </label>
                 </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
@@ -139,6 +146,26 @@
         let activePlatformTypeId = null;
         let activeBrandId = null;
 
+        function isAmazonPlatformName(platformName) {
+            const p = String(platformName || '').trim().toLowerCase();
+            return p.includes('亚马逊') || p === 'amazon' || p.includes('amazon');
+        }
+
+        function setModalHandlesLastMileChecked(checked) {
+            const el = document.getElementById('modalHandlesLastMile');
+            if (el) el.checked = !!checked;
+        }
+
+        function maybeDefaultHandlesLastMileFromPlatform() {
+            if (editId) return;
+            const platformInput = document.querySelector('input[name="modalPlatformType"]:checked');
+            if (!platformInput) return;
+            const pt = platformTypeOptions.find(item => String(item.id) === String(platformInput.value));
+            if (pt && isAmazonPlatformName(pt.name)) {
+                setModalHandlesLastMileChecked(true);
+            }
+        }
+
         function showModalStatus(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -162,6 +189,7 @@
             document.getElementById('modalShopName').value = '';
             setPlatformTypeSelect('');
             setBrandSelect('');
+            setModalHandlesLastMileChecked(false);
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -174,6 +202,7 @@
             document.getElementById('modalShopName').value = item.shop_name || '';
             setPlatformTypeSelect(item.platform_type_id || '');
             setBrandSelect(item.brand_id || '');
+            setModalHandlesLastMileChecked(Number(item.handles_last_mile) === 1);
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -199,7 +228,8 @@
             const payload = {
                 shop_name: shopName,
                 platform_type_id: platformTypeId,
-                brand_id: brandId
+                brand_id: brandId,
+                handles_last_mile: document.getElementById('modalHandlesLastMile')?.checked ? 1 : 0
             };
             let method = 'POST';
             if (editId) {
@@ -270,8 +300,10 @@
                 if (selectedValue && String(selectedValue) === String(item.id)) {
                     input.checked = true;
                 }
+                input.addEventListener('change', maybeDefaultHandlesLastMileFromPlatform);
                 container.appendChild(label);
             });
+            maybeDefaultHandlesLastMileFromPlatform();
         }
 
         function renderBrandRadios(selectedValue) {
@@ -600,16 +632,18 @@
         function renderShopTable(items) {
             const tbody = document.querySelector('#shopTable tbody');
             if (!items.length) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = items.map(item => {
                 const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                const lastMileText = Number(item.handles_last_mile) === 1 ? '是' : '否';
                 return `
                     <tr>
                         <td>${item.shop_name || ''}</td>
                         <td>${item.platform_type_name || ''}</td>
                         <td>${item.brand_name || ''}</td>
+                        <td>${lastMileText}</td>
                         <td>${dateText}</td>
                         <td>
                             <div class="pm-actions">
@@ -638,7 +672,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#shopTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
@@ -646,7 +680,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#shopTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 

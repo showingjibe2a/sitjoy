@@ -3148,6 +3148,20 @@ class SalesProductMixin:
         cache[key] = exists
         return exists
 
+    def _shop_handles_last_mile_factor_sql(self, conn, shop_alias='sh', platform_alias='pt'):
+        """SQL 表达式：店铺是否将尾程计入利润/成本（0 或 1）。"""
+        if self._table_has_column(conn, 'shops', 'handles_last_mile'):
+            return f'COALESCE({shop_alias}.handles_last_mile, 0)'
+        name_expr = f"LOWER(COALESCE({platform_alias}.name, ''))"
+        return (
+            f"CASE WHEN ({name_expr} LIKE '%amazon%' OR {name_expr} LIKE '%亚马逊%') "
+            f"THEN 1 ELSE 0 END"
+        )
+
+    def _shop_handles_last_mile_select_sql(self, conn, shop_alias='s', platform_alias='pt'):
+        factor = self._shop_handles_last_mile_factor_sql(conn, shop_alias, platform_alias)
+        return f"({factor}) AS handles_last_mile"
+
     def _sales_variant_fabric_select_sql(self, conn, v_alias='v'):
         """用于 SELECT：在仅有 fabric_id、仅有 fabric 文本、或两者并存时生成 JOIN 与面料编码表达式。"""
         has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
@@ -5211,6 +5225,7 @@ class SalesProductMixin:
                             if self._table_has_column(conn, 'sales_products', 'product_link')
                             else "NULL AS product_link"
                         )
+                        handles_last_mile_select = self._shop_handles_last_mile_select_sql(conn, 's', 'pt')
                         base_sql = """
                             SELECT
                                 sp.id,
@@ -5234,6 +5249,7 @@ class SalesProductMixin:
                                 s.shop_name,
                                 pt.name AS platform_type_name,
                                 b.name AS brand_name,
+                                {handles_last_mile_select},
                                 p.parent_code,
                                 p.sku_marker AS parent_sku_marker,
                                 p.estimated_refund_rate,
@@ -5255,6 +5271,7 @@ class SalesProductMixin:
                             fabric_select=fabric_select,
                             fabric_id_select=("v.fabric_id" if has_fabric_id else "NULL"),
                             preview_fields_select=preview_fields_select,
+                            handles_last_mile_select=handles_last_mile_select,
                         )
                         filters = []
                         params = []
@@ -11997,11 +12014,16 @@ class SalesProductMixin:
                     fabric_expr = ("v.fabric" if has_fabric_text else "''")
                 # --- 货号分组明细：预估成本（销售变体→下单SKU 链接表加权）；佣金统一按家具类目分段费率估算 ---
                 # estimated_product_cost_usd：下单产品 cost_usd 表示「产品至海外仓」成本（BOM），按链接数量加权汇总后再×周期销量。
-                # estimated_last_mile_freight_usd：下单产品 last_mile_avg_freight_usd 预估尾程，同样按链接数量加权汇总后再×周期销量。
+                # estimated_last_mile_freight_usd：下单产品 last_mile_avg_freight_usd 预估尾程，同样按链接数量加权汇总后再×周期销量；仅当店铺 handles_last_mile=1 时计入。
                 # 佣金：统一按「家具类目」分段费率估算（不校验货号类目）。
                 has_op_reship = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
                 has_op_last_mile = self._table_has_column(conn, 'order_products', 'last_mile_avg_freight_usd')
                 reship_clause = ' AND COALESCE(op.is_reship_accessory,0)=0 ' if has_op_reship else ''
+                lm_factor_sql = self._shop_handles_last_mile_factor_sql(conn, 'sh', 'pt')
+                lm_est_sql = (
+                    f"(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) "
+                    f"* SUM(COALESCE(spp.sales_qty,0)) * MAX({lm_factor_sql}))"
+                )
                 lm_weighted_sum = (
                     "SUM(COALESCE(op.last_mile_avg_freight_usd, 0) * COALESCE(svol.quantity, 1))"
                     if has_op_last_mile else "0"
@@ -12081,7 +12103,7 @@ class SalesProductMixin:
                     "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
                     refund_rate_sql_day,
                     "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
-                    "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                    f"{lm_est_sql} AS estimated_last_mile_freight_usd",
                     commission_sql_day,
                 ]
 
@@ -12245,7 +12267,7 @@ class SalesProductMixin:
                                 "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
                                 refund_rate_sql_day,
                                 "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
-                                "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                                f"{lm_est_sql} AS estimated_last_mile_freight_usd",
                                 commission_sql_day,
                             ]
                             local_sql = [

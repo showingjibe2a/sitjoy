@@ -1233,7 +1233,7 @@
             discount_rate: '折扣率：(销售额−净销售额)÷销售额；销售额为0时按0。',
             refund_rate: '退款率：退款金额÷净销售额；净销售额为0时按0。',
             estimated_product_cost_usd: '预估产品成本（至海外仓）：下单产品中 cost_usd 表示产品到海外仓的 BOM 成本；按销售变体关联的下单链接，对 cost_usd×链接数量 求和得到加权单位值(USD)，再×本周期销量。无链接时为0。',
-            estimated_last_mile_freight_usd: '预估尾程运费：下单产品中 last_mile_avg_freight_usd 为预估尾程平均运费；与产品成本同一套销售变体–下单链接，对 last_mile_avg_freight_usd×链接数量 求和后再×本周期销量。无链接或字段缺失时为0。',
+            estimated_last_mile_freight_usd: '预估尾程运费：下单产品中 last_mile_avg_freight_usd 为预估尾程平均运费；与产品成本同一套销售变体–下单链接，对 last_mile_avg_freight_usd×链接数量 求和后再×本周期销量。仅当店铺勾选「负责尾程」时计入；无链接或字段缺失时为0。',
             est_referral_commission_usd: '预估销售佣金：默认采用亚马逊家具类目的分段费率估算（不校验货号类目）。对该 SKU 周期净销售额 S：min(S,200)×15% + max(S−200,0)×10%。',
             estimated_total_cost_usd: '预估成本：预估产品成本(至海外仓)+预估尾程运费；与下方两项之和一致。',
             commission_rate: '佣金费率：预估销售佣金÷净销售额；净销售额为0时按0。父货号行为各子 SKU 佣金合计÷净销售额合计。',
