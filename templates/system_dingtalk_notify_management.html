@@ -13,14 +13,14 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
             <h2>钉钉通知配置</h2>
-            <p>维护钉钉群聊 Webhook / 加签 Secret，并将系统页面绑定到对应群聊。业务页发送通知时只需按页面自动路由。</p>
+            <p>维护钉钉群聊 Webhook / 加签 Secret，并将各通知功能绑定到对应群聊。新增通知功能会在下方列表自动出现。</p>
         </section>
 
         <section class="card pm-card" style="margin-bottom: 1.25rem;">
             <div class="pm-toolbar" style="align-items:flex-start;">
                 <div>
                     <h3 style="margin:0;color:#2f2f33;">钉钉群聊</h3>
-                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">每个群聊对应一个机器人 Webhook；删除前需先解除页面绑定。</p>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">每个群聊对应一个机器人 Webhook；删除前需先解除通知功能绑定。</p>
                 </div>
                 <div class="pm-toolbar-actions">
                     <button class="btn-accent" type="button" id="dtGroupCreateBtn">新增群聊</button>
@@ -48,22 +48,23 @@
         <section class="card pm-card">
             <div class="pm-toolbar" style="align-items:flex-start;">
                 <div>
-                    <h3 style="margin:0;color:#2f2f33;">页面通知绑定</h3>
-                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">为页面选择通知群聊后，该页面触发的钉钉通知将发往对应群。</p>
+                    <h3 style="margin:0;color:#2f2f33;">通知功能绑定</h3>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">为各通知功能选择钉钉群；同一业务页的不同通知可分别绑定不同群。</p>
                 </div>
             </div>
             <div>
                 <table class="pm-table" id="dtBindingTable">
                     <thead>
                         <tr>
-                            <th>页面</th>
+                            <th>通知功能</th>
+                            <th>来源页面</th>
                             <th style="min-width:220px;">钉钉群聊</th>
                             <th style="width:90px;">启用</th>
                             <th style="width:140px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="4" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>

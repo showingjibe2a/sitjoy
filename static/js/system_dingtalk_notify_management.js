@@ -95,28 +95,30 @@
         const tbody = document.querySelector('#dtBindingTable tbody');
         if (!tbody) return;
         if (!bindingRows.length) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">暂无页面</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无通知功能</td></tr>';
             return;
         }
         tbody.innerHTML = bindingRows.map((row) => {
+            const notifyKey = String(row.notify_key || '');
             const enabledSeg = `
-                <div class="status-segment status-segment--inline dt-binding-enabled-seg" data-page-key="${escapeHtml(row.page_key)}" data-value="${row.is_enabled ? '1' : '0'}">
+                <div class="status-segment status-segment--inline dt-binding-enabled-seg" data-notify-key="${escapeHtml(notifyKey)}" data-value="${row.is_enabled ? '1' : '0'}">
                     <button type="button" class="status-pill status-pill--yes ${row.is_enabled ? 'is-active' : ''}" data-value="1">是</button>
                     <button type="button" class="status-pill status-pill--no ${row.is_enabled ? '' : 'is-active'}" data-value="0">否</button>
                 </div>`;
             return `
-                <tr data-page-key="${escapeHtml(row.page_key)}">
-                    <td>${escapeHtml(row.page_label || row.page_key)}</td>
+                <tr data-notify-key="${escapeHtml(notifyKey)}">
+                    <td>${escapeHtml(row.notify_label || notifyKey)}</td>
+                    <td>${escapeHtml(row.page_label || row.page_key || '-')}</td>
                     <td>
-                        <select class="dt-binding-group-select" data-page-key="${escapeHtml(row.page_key)}">
+                        <select class="dt-binding-group-select" data-notify-key="${escapeHtml(notifyKey)}">
                             ${groupSelectHtml(row.dingtalk_group_id)}
                         </select>
                     </td>
                     <td>${enabledSeg}</td>
                     <td>
                         <div class="pm-actions">
-                            <button type="button" class="btn-primary btn-small dt-binding-save-btn" data-page-key="${escapeHtml(row.page_key)}">保存绑定</button>
-                            ${row.is_bound ? `<button type="button" class="btn-secondary btn-small dt-binding-clear-btn" data-page-key="${escapeHtml(row.page_key)}">清除</button>` : ''}
+                            <button type="button" class="btn-primary btn-small dt-binding-save-btn" data-notify-key="${escapeHtml(notifyKey)}">保存绑定</button>
+                            ${row.is_bound ? `<button type="button" class="btn-secondary btn-small dt-binding-clear-btn" data-notify-key="${escapeHtml(notifyKey)}">清除</button>` : ''}
                         </div>
                     </td>
                 </tr>`;
@@ -138,7 +140,7 @@
     }
 
     async function loadBindings() {
-        const data = await fetchJson('/api/dingtalk-page-notify-binding');
+        const data = await fetchJson('/api/dingtalk-notify-binding');
         if (data.status !== 'success') throw new Error(data.message || '加载绑定失败');
         groupOptions = data.groups || [];
         bindingRows = data.bindings || [];
@@ -224,8 +226,8 @@
         await reloadAll();
     }
 
-    async function saveBinding(pageKey) {
-        const row = document.querySelector(`tr[data-page-key="${CSS.escape(pageKey)}"]`);
+    async function saveBinding(notifyKey) {
+        const row = document.querySelector(`tr[data-notify-key="${CSS.escape(notifyKey)}"]`);
         if (!row) return;
         const groupId = Number(row.querySelector('.dt-binding-group-select')?.value || 0);
         const enabledSeg = row.querySelector('.dt-binding-enabled-seg');
@@ -234,11 +236,11 @@
             if (window.showAppToast) window.showAppToast('请选择钉钉群聊', true, 0);
             return;
         }
-        const data = await fetchJson('/api/dingtalk-page-notify-binding', {
+        const data = await fetchJson('/api/dingtalk-notify-binding', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                page_key: pageKey,
+                notify_key: notifyKey,
                 dingtalk_group_id: groupId,
                 is_enabled: isEnabled,
             }),
@@ -251,15 +253,15 @@
         await loadBindings();
     }
 
-    async function clearBinding(pageKey) {
+    async function clearBinding(notifyKey) {
         const ok = window.showAppConfirmAsync
-            ? await window.showAppConfirmAsync({ title: '清除绑定', message: '确认清除该页面的钉钉群绑定？', confirmText: '确认清除' })
+            ? await window.showAppConfirmAsync({ title: '清除绑定', message: '确认清除该通知功能的钉钉群绑定？', confirmText: '确认清除' })
             : false;
         if (!ok) return;
-        const data = await fetchJson('/api/dingtalk-page-notify-binding', {
+        const data = await fetchJson('/api/dingtalk-notify-binding', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_key: pageKey }),
+            body: JSON.stringify({ notify_key: notifyKey }),
         });
         if (data.status !== 'success') {
             if (window.showAppToast) window.showAppToast(data.message || '清除失败', true, 0);
@@ -293,11 +295,11 @@
             const saveBtn = ev.target && ev.target.closest ? ev.target.closest('.dt-binding-save-btn') : null;
             const clearBtn = ev.target && ev.target.closest ? ev.target.closest('.dt-binding-clear-btn') : null;
             if (saveBtn) {
-                saveBinding(saveBtn.getAttribute('data-page-key') || '').catch((err) => {
+                saveBinding(saveBtn.getAttribute('data-notify-key') || '').catch((err) => {
                     if (window.showAppToast) window.showAppToast(String(err.message || err), true, 0);
                 });
             } else if (clearBtn) {
-                clearBinding(clearBtn.getAttribute('data-page-key') || '').catch((err) => {
+                clearBinding(clearBtn.getAttribute('data-notify-key') || '').catch((err) => {
                     if (window.showAppToast) window.showAppToast(String(err.message || err), true, 0);
                 });
             }
@@ -314,7 +316,7 @@
         reloadAll().catch((err) => {
             const msg = String(err.message || err);
             document.querySelector('#dtGroupTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${escapeHtml(msg)}</td></tr>`;
-            document.querySelector('#dtBindingTable tbody').innerHTML = `<tr><td colspan="4" style="text-align:center;color:#a33;">${escapeHtml(msg)}</td></tr>`;
+            document.querySelector('#dtBindingTable tbody').innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a33;">${escapeHtml(msg)}</td></tr>`;
         });
     });
 })();

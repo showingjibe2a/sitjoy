@@ -1290,9 +1290,8 @@
         const act = String(action || '').trim();
         if(!act) return { ok: false, message: '缺少钉钉通知类型' };
         const body = Object.assign({}, payload && typeof payload === 'object' ? payload : {});
-        if(!body.page_key){
-            const pageInfo = resolvePageInfoFromPath(location.pathname, buildNavLinkIndex());
-            body.page_key = String(pageInfo.pageKey || '').trim();
+        if(!body.notify_key){
+            body.notify_key = act;
         }
         const resp = await fetch(`/api/dingtalk-notify?action=${encodeURIComponent(act)}`, {
             method: 'POST',

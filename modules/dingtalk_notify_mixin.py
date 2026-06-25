@@ -1,4 +1,4 @@
-"""钉钉群机器人 Webhook：数据库群聊配置 + 页面绑定；文件配置为回退。"""
+"""钉钉群机器人 Webhook：数据库群聊配置 + 通知功能绑定；文件配置为回退。"""
 
 import base64
 import hashlib
@@ -17,6 +17,30 @@ class DingTalkNotifyMixin:
     DINGTALK_KEYWORD = '【SITJOY】'
     DINGTALK_COLOR_NEGATIVE = '#c91d1d'
     DINGTALK_COLOR_POSITIVE = '#2d7d4a'
+
+    # 新增通知功能时在此注册，配置页会自动出现对应绑定项
+    DINGTALK_NOTIFY_FEATURES = (
+        {
+            'notify_key': 'overseas_stockout',
+            'label': '海外仓缺货提醒',
+            'page_key': 'logistics_warehouse_inventory_management',
+        },
+        {
+            'notify_key': 'overseas_restock',
+            'label': '海外仓重新上架提醒',
+            'page_key': 'logistics_warehouse_inventory_management',
+        },
+        {
+            'notify_key': 'transit_eta_delay',
+            'label': '在途物流到货延迟',
+            'page_key': 'logistics_in_transit_management',
+        },
+        {
+            'notify_key': 'transit_listed_available',
+            'label': '在途物流上架可售',
+            'page_key': 'logistics_in_transit_management',
+        },
+    )
 
     def _dingtalk_table_missing(self, exc):
         message = str(exc or '').lower()
@@ -64,16 +88,39 @@ class DingTalkNotifyMixin:
         labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
         return str(labels.get(key) or key or '未知页面')
 
-    def _dingtalk_notify_page_options(self):
+    def _dingtalk_notify_feature_map(self):
+        items = getattr(self, 'DINGTALK_NOTIFY_FEATURES', None) or ()
+        return {
+            str(row.get('notify_key') or '').strip(): row
+            for row in items
+            if isinstance(row, dict) and str(row.get('notify_key') or '').strip()
+        }
+
+    def _dingtalk_notify_feature(self, notify_key):
+        key = str(notify_key or '').strip()
+        return self._dingtalk_notify_feature_map().get(key)
+
+    def _dingtalk_notify_feature_label(self, notify_key):
+        feature = self._dingtalk_notify_feature(notify_key)
+        if feature:
+            return str(feature.get('label') or notify_key or '未知通知')
+        return str(notify_key or '未知通知')
+
+    def _dingtalk_notify_feature_options(self):
         labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
-        skip = frozenset({'home', 'about'})
         items = []
-        for page_key in sorted(labels.keys()):
-            if page_key in skip:
+        for feature in getattr(self, 'DINGTALK_NOTIFY_FEATURES', None) or ():
+            if not isinstance(feature, dict):
                 continue
+            notify_key = str(feature.get('notify_key') or '').strip()
+            if not notify_key:
+                continue
+            page_key = str(feature.get('page_key') or '').strip()
             items.append({
+                'notify_key': notify_key,
+                'notify_label': str(feature.get('label') or notify_key).strip(),
                 'page_key': page_key,
-                'page_label': self._dingtalk_page_label(page_key),
+                'page_label': labels.get(page_key) or self._dingtalk_page_label(page_key),
             })
         return items
 
@@ -102,23 +149,23 @@ class DingTalkNotifyMixin:
             'keyword': self.DINGTALK_KEYWORD,
         }
 
-    def _resolve_dingtalk_delivery_config(self, page_key=None):
-        page_key = str(page_key or '').strip()
-        if page_key:
+    def _resolve_dingtalk_delivery_config(self, notify_key=None):
+        notify_key = str(notify_key or '').strip()
+        if notify_key:
             try:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             SELECT g.id, g.group_name, g.webhook_url, g.secret
-                            FROM dingtalk_page_notify_bindings b
+                            FROM dingtalk_notify_bindings b
                             JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
-                            WHERE b.page_key=%s
+                            WHERE b.notify_key=%s
                               AND COALESCE(b.is_enabled, 1) = 1
                               AND COALESCE(g.is_enabled, 1) = 1
                             LIMIT 1
                             """,
-                            (page_key,),
+                            (notify_key,),
                         )
                         row = cur.fetchone()
                         if row:
@@ -127,7 +174,7 @@ class DingTalkNotifyMixin:
                             if webhook and secret:
                                 return {
                                     'source': 'database',
-                                    'page_key': page_key,
+                                    'notify_key': notify_key,
                                     'group_id': int(row.get('id') or 0),
                                     'group_name': str(row.get('group_name') or '').strip(),
                                     'webhook_url': webhook,
@@ -145,9 +192,9 @@ class DingTalkNotifyMixin:
                 'webhook_url': webhook,
                 'secret': secret,
             }, None
-        if page_key:
+        if notify_key:
             return None, (
-                f'页面「{self._dingtalk_page_label(page_key)}」未绑定启用的钉钉群，'
+                f'通知功能「{self._dingtalk_notify_feature_label(notify_key)}」未绑定启用的钉钉群，'
                 '请先在系统管理 → 钉钉通知配置中维护'
             )
         return None, '未配置钉钉通知（请维护群聊绑定或 db_config.json）'
@@ -182,8 +229,8 @@ class DingTalkNotifyMixin:
             return body
         return self._ensure_dingtalk_keyword(body)
 
-    def _post_dingtalk_payload(self, payload, page_key=None):
-        delivery_cfg, err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+    def _post_dingtalk_payload(self, payload, notify_key=None):
+        delivery_cfg, err = self._resolve_dingtalk_delivery_config(notify_key=notify_key)
         if err:
             return False, err
         webhook = str(delivery_cfg.get('webhook_url') or '').strip()
@@ -312,11 +359,11 @@ class DingTalkNotifyMixin:
     def _format_overseas_restock_lines(self, items):
         return self._format_overseas_inventory_notify_lines(items, 'restock')
 
-    def _send_dingtalk_overseas_markdown(self, title, lines, page_key=None, user_id=None, title_tone=None):
+    def _send_dingtalk_overseas_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
-        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(notify_key=notify_key)
         markdown_text = self._build_dingtalk_markdown_message(
             title, formatted, user_id=user_id, title_tone=title_tone,
         )
@@ -328,10 +375,7 @@ class DingTalkNotifyMixin:
                 'text': text,
             },
         }
-        return self._post_dingtalk_payload(payload, page_key=page_key)
-
-    def _format_overseas_restock_lines(self, items):
-        return self._format_overseas_inventory_notify_lines(items, 'restock')
+        return self._post_dingtalk_payload(payload, notify_key=notify_key)
 
     def _format_transit_sku_summary(self, sku_lines, max_items=6):
         rows = sku_lines if isinstance(sku_lines, list) else []
@@ -386,11 +430,11 @@ class DingTalkNotifyMixin:
             lines.append(f'- {self._dingtalk_markdown_colored_text(line, self.DINGTALK_COLOR_POSITIVE)}')
         return lines
 
-    def _send_dingtalk_transit_markdown(self, title, lines, page_key=None, user_id=None, title_tone=None):
+    def _send_dingtalk_transit_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
-        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(notify_key=notify_key)
         markdown_text = self._build_dingtalk_markdown_message(
             title, formatted, user_id=user_id, title_tone=title_tone,
         )
@@ -402,38 +446,51 @@ class DingTalkNotifyMixin:
                 'text': text,
             },
         }
-        return self._post_dingtalk_payload(payload, page_key=page_key)
+        return self._post_dingtalk_payload(payload, notify_key=notify_key)
 
-    def _send_dingtalk_transit_eta_delay(self, items, page_key=None, user_id=None):
+    def _send_dingtalk_transit_eta_delay(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'transit_eta_delay'
         lines = self._format_transit_eta_delay_lines(items)
         return self._send_dingtalk_transit_markdown(
-            '在途物流到货延迟提醒', lines, page_key=page_key, user_id=user_id, title_tone='negative',
+            '在途物流到货延迟提醒', lines, notify_key=key, user_id=user_id, title_tone='negative',
         )
 
-    def _send_dingtalk_transit_listed_available(self, items, page_key=None, user_id=None):
+    def _send_dingtalk_transit_listed_available(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'transit_listed_available'
         lines = self._format_transit_listed_available_lines(items)
         return self._send_dingtalk_transit_markdown(
-            '在途物流上架可售提醒', lines, page_key=page_key, user_id=user_id, title_tone='positive',
+            '在途物流上架可售提醒', lines, notify_key=key, user_id=user_id, title_tone='positive',
         )
 
-    def _send_dingtalk_overseas_stockout(self, items, page_key=None, user_id=None):
+    def _send_dingtalk_overseas_stockout(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'overseas_stockout'
         lines = self._format_overseas_stockout_lines(items)
         return self._send_dingtalk_overseas_markdown(
-            '海外仓缺货提醒', lines, page_key=page_key, user_id=user_id, title_tone='negative',
+            '海外仓缺货提醒', lines, notify_key=key, user_id=user_id, title_tone='negative',
         )
 
-    def _send_dingtalk_overseas_restock(self, items, page_key=None, user_id=None):
+    def _send_dingtalk_overseas_restock(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'overseas_restock'
         lines = self._format_overseas_restock_lines(items)
         return self._send_dingtalk_overseas_markdown(
-            '海外仓重新上架提醒', lines, page_key=page_key, user_id=user_id, title_tone='positive',
+            '海外仓重新上架提醒', lines, notify_key=key, user_id=user_id, title_tone='positive',
         )
 
-    def _validate_dingtalk_notify_page_access(self, user_id, page_key):
-        page_key = str(page_key or '').strip()
+    def _validate_dingtalk_notify_access(self, user_id, notify_key):
+        notify_key = str(notify_key or '').strip()
+        if not notify_key:
+            return False, '缺少 notify_key'
+        feature = self._dingtalk_notify_feature(notify_key)
+        if not feature:
+            return False, f'未知的通知功能：{notify_key}'
+        page_key = str(feature.get('page_key') or '').strip()
         if not page_key:
-            return False, '缺少 page_key'
+            return False, f'通知功能「{self._dingtalk_notify_feature_label(notify_key)}」未配置来源页面'
         if not self._user_has_page_access(user_id, page_key):
-            return False, f'无权限向页面「{self._dingtalk_page_label(page_key)}」发送钉钉通知'
+            return False, (
+                f'无权限发送「{self._dingtalk_notify_feature_label(notify_key)}」通知'
+                f'（需 {self._dingtalk_page_label(page_key)} 页面权限）'
+            )
         return True, None
 
     def handle_dingtalk_group_api(self, environ, method, start_response):
@@ -544,12 +601,15 @@ class DingTalkNotifyMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT COUNT(*) AS cnt FROM dingtalk_page_notify_bindings WHERE dingtalk_group_id=%s", (item_id,))
+                        cur.execute(
+                            "SELECT COUNT(*) AS cnt FROM dingtalk_notify_bindings WHERE dingtalk_group_id=%s",
+                            (item_id,),
+                        )
                         bound = int((cur.fetchone() or {}).get('cnt') or 0)
                         if bound > 0:
                             return self.send_json({
                                 'status': 'error',
-                                'message': f'该群聊仍被 {bound} 个页面绑定，请先解除绑定',
+                                'message': f'该群聊仍被 {bound} 个通知功能绑定，请先解除绑定',
                             }, start_response)
                         cur.execute("DELETE FROM dingtalk_groups WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
@@ -563,7 +623,7 @@ class DingTalkNotifyMixin:
                 }, start_response)
             return self.send_json({'status': 'error', 'message': str(exc)}, start_response)
 
-    def handle_dingtalk_page_notify_binding_api(self, environ, method, start_response):
+    def handle_dingtalk_notify_binding_api(self, environ, method, start_response):
         try:
             user_id = self._get_session_user(environ)
             denied = self._require_dingtalk_admin(user_id, start_response)
@@ -571,7 +631,7 @@ class DingTalkNotifyMixin:
                 return denied
 
             if method == 'GET':
-                page_options = self._dingtalk_notify_page_options()
+                feature_options = self._dingtalk_notify_feature_options()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -584,23 +644,25 @@ class DingTalkNotifyMixin:
                         groups = cur.fetchall() or []
                         cur.execute(
                             """
-                            SELECT b.id, b.page_key, b.dingtalk_group_id, b.is_enabled,
+                            SELECT b.id, b.notify_key, b.dingtalk_group_id, b.is_enabled,
                                    g.group_name
-                            FROM dingtalk_page_notify_bindings b
+                            FROM dingtalk_notify_bindings b
                             LEFT JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
-                            ORDER BY b.page_key ASC
+                            ORDER BY b.notify_key ASC
                             """
                         )
                         bindings = cur.fetchall() or []
-                binding_map = {str(r.get('page_key') or '').strip(): r for r in bindings}
+                binding_map = {str(r.get('notify_key') or '').strip(): r for r in bindings}
                 rows = []
-                for opt in page_options:
-                    page_key = opt['page_key']
-                    bound = binding_map.get(page_key) or {}
+                for opt in feature_options:
+                    notify_key = opt['notify_key']
+                    bound = binding_map.get(notify_key) or {}
                     rows.append({
                         'id': int(bound.get('id') or 0) or None,
-                        'page_key': page_key,
-                        'page_label': opt['page_label'],
+                        'notify_key': notify_key,
+                        'notify_label': opt['notify_label'],
+                        'page_key': opt.get('page_key'),
+                        'page_label': opt.get('page_label'),
                         'dingtalk_group_id': int(bound.get('dingtalk_group_id') or 0) or None,
                         'group_name': str(bound.get('group_name') or '').strip(),
                         'is_enabled': int(bound.get('is_enabled') or 0) if bound else 0,
@@ -608,7 +670,7 @@ class DingTalkNotifyMixin:
                     })
                 return self.send_json({
                     'status': 'success',
-                    'page_options': page_options,
+                    'feature_options': feature_options,
                     'groups': [
                         {
                             'id': int(g.get('id') or 0),
@@ -622,16 +684,15 @@ class DingTalkNotifyMixin:
 
             data = self._read_json_body(environ)
             if method == 'POST':
-                page_key = str(data.get('page_key') or '').strip()
+                notify_key = str(data.get('notify_key') or '').strip()
                 group_id = self._parse_int(data.get('dingtalk_group_id'))
                 is_enabled = 1 if str(data.get('is_enabled', 1)).strip().lower() not in ('0', 'false', 'no') else 0
-                if not page_key:
-                    return self.send_json({'status': 'error', 'message': '缺少 page_key'}, start_response)
+                if not notify_key:
+                    return self.send_json({'status': 'error', 'message': '缺少 notify_key'}, start_response)
                 if not group_id:
                     return self.send_json({'status': 'error', 'message': '请选择钉钉群聊'}, start_response)
-                labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
-                if page_key not in labels:
-                    return self.send_json({'status': 'error', 'message': '无效的 page_key'}, start_response)
+                if not self._dingtalk_notify_feature(notify_key):
+                    return self.send_json({'status': 'error', 'message': '无效的通知功能'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT id FROM dingtalk_groups WHERE id=%s LIMIT 1", (group_id,))
@@ -639,28 +700,28 @@ class DingTalkNotifyMixin:
                             return self.send_json({'status': 'error', 'message': '群聊不存在'}, start_response)
                         cur.execute(
                             """
-                            INSERT INTO dingtalk_page_notify_bindings
-                            (page_key, dingtalk_group_id, is_enabled)
+                            INSERT INTO dingtalk_notify_bindings
+                            (notify_key, dingtalk_group_id, is_enabled)
                             VALUES (%s, %s, %s)
                             ON DUPLICATE KEY UPDATE
                                 dingtalk_group_id=VALUES(dingtalk_group_id),
                                 is_enabled=VALUES(is_enabled)
                             """,
-                            (page_key, group_id, is_enabled),
+                            (notify_key, group_id, is_enabled),
                         )
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
-                page_key = str(data.get('page_key') or '').strip()
+                notify_key = str(data.get('notify_key') or '').strip()
                 item_id = self._parse_int(data.get('id'))
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if item_id:
-                            cur.execute("DELETE FROM dingtalk_page_notify_bindings WHERE id=%s", (item_id,))
-                        elif page_key:
-                            cur.execute("DELETE FROM dingtalk_page_notify_bindings WHERE page_key=%s", (page_key,))
+                            cur.execute("DELETE FROM dingtalk_notify_bindings WHERE id=%s", (item_id,))
+                        elif notify_key:
+                            cur.execute("DELETE FROM dingtalk_notify_bindings WHERE notify_key=%s", (notify_key,))
                         else:
-                            return self.send_json({'status': 'error', 'message': '缺少 id 或 page_key'}, start_response)
+                            return self.send_json({'status': 'error', 'message': '缺少 id 或 notify_key'}, start_response)
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -668,9 +729,13 @@ class DingTalkNotifyMixin:
             if self._dingtalk_table_missing(exc):
                 return self.send_json({
                     'status': 'error',
-                    'message': '钉钉配置表未初始化，请先执行 scripts/sql/20260621_01_dingtalk_notify_config.sql',
+                    'message': '钉钉配置表未初始化，请先执行 scripts/sql/20260621_01_dingtalk_notify_config.sql 与 20260622_01_dingtalk_notify_feature_bindings.sql',
                 }, start_response)
             return self.send_json({'status': 'error', 'message': str(exc)}, start_response)
+
+    def handle_dingtalk_page_notify_binding_api(self, environ, method, start_response):
+        """兼容旧 API 路径。"""
+        return self.handle_dingtalk_notify_binding_api(environ, method, start_response)
 
     def handle_dingtalk_notify_api(self, environ, method, start_response):
         try:
@@ -683,14 +748,14 @@ class DingTalkNotifyMixin:
             query = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query.get('action', [''])[0] or '').strip().lower()
             data = self._read_json_body(environ)
-            page_key = str(data.get('page_key') or '').strip()
+            notify_key = str(data.get('notify_key') or action or '').strip()
 
             if action == 'overseas_stockout':
-                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_stockout(items, page_key=page_key, user_id=user_id)
+                ok, err = self._send_dingtalk_overseas_stockout(items, notify_key=notify_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
@@ -699,11 +764,11 @@ class DingTalkNotifyMixin:
                 }, start_response)
 
             if action == 'overseas_restock':
-                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_overseas_restock(items, page_key=page_key, user_id=user_id)
+                ok, err = self._send_dingtalk_overseas_restock(items, notify_key=notify_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
@@ -712,11 +777,11 @@ class DingTalkNotifyMixin:
                 }, start_response)
 
             if action == 'transit_eta_delay':
-                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_transit_eta_delay(items, page_key=page_key, user_id=user_id)
+                ok, err = self._send_dingtalk_transit_eta_delay(items, notify_key=notify_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
@@ -725,11 +790,11 @@ class DingTalkNotifyMixin:
                 }, start_response)
 
             if action == 'transit_listed_available':
-                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
                 if not ok_access:
                     return self.send_json({'status': 'error', 'message': access_err}, start_response)
                 items = data.get('items') if isinstance(data.get('items'), list) else []
-                ok, err = self._send_dingtalk_transit_listed_available(items, page_key=page_key, user_id=user_id)
+                ok, err = self._send_dingtalk_transit_listed_available(items, notify_key=notify_key, user_id=user_id)
                 if not ok:
                     return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
                 return self.send_json({
