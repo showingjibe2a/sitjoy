@@ -448,6 +448,456 @@
 
   let _spiParentsForShop = [];
 
+  let _spiPreviewPlatform = '';
+
+  let _spiPreviewAmazonMode = 'generate';
+
+  let _spiPreviewItems = [];
+
+
+
+  function previewRowKey(row) {
+
+    return `${String(row.warehouse || '').trim()}::${String(row.sku || '').trim()}`;
+
+  }
+
+
+
+  function normalizePreviewQty(value) {
+
+    const n = Number(value);
+
+    if (!Number.isFinite(n) || n < 0) return 0;
+
+    return Math.floor(n);
+
+  }
+
+
+
+  function syncPreviewItemsFromTable() {
+
+    const tbody = document.getElementById('spiPreviewTableBody');
+
+    if (!tbody) return _spiPreviewItems;
+
+    tbody.querySelectorAll('tr[data-preview-row-key]').forEach(tr => {
+
+      const key = String(tr.getAttribute('data-preview-row-key') || '').trim();
+
+      const input = tr.querySelector('.spi-preview-qty-input');
+
+      if (!key || !input) return;
+
+      const item = _spiPreviewItems.find(row => previewRowKey(row) === key);
+
+      if (item) item.qty = normalizePreviewQty(input.value);
+
+    });
+
+    return _spiPreviewItems;
+
+  }
+
+
+
+  function updatePreviewSummary() {
+
+    syncPreviewItemsFromTable();
+
+    const summary = document.getElementById('spiPreviewSummary');
+
+    if (!summary) return;
+
+    const qtySum = _spiPreviewItems.reduce((acc, row) => acc + normalizePreviewQty(row.qty), 0);
+
+    summary.textContent = `共 ${_spiPreviewItems.length} 行，合计数量 ${qtySum}（数量可直接修改）`;
+
+  }
+
+
+
+  function refreshPreviewManagedTable(table) {
+
+    const el = table || document.getElementById('spiPreviewTable');
+
+    if (!el) return;
+
+    const M = global.SitjoyManagedPmTable;
+
+    if (M && typeof M.finishBodyRefresh === 'function') {
+
+      M.finishBodyRefresh(el);
+
+    } else if (M && typeof M.enhance === 'function') {
+
+      M.enhance(document.getElementById('spiPreviewModal') || document);
+
+    }
+
+    if (global.SitjoyRowImageRefresh && typeof global.SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
+
+      const host = document.getElementById('spiPreviewTableScroll') || el;
+
+      global.SitjoyRowImageRefresh.observeLazyThumbsIn(host);
+
+    }
+
+  }
+
+
+
+  function downloadTextFile(content, filename) {
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+
+    a.href = url;
+
+    a.download = filename;
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  }
+
+
+
+  function buildAmazonTxtFromPreviewItems(items) {
+
+    const lines = ['sku\tquantity'];
+
+    (items || []).forEach(row => {
+
+      const sku = String(row.sku || '').trim();
+
+      if (!sku) return;
+
+      lines.push(`${sku}\t${normalizePreviewQty(row.qty)}`);
+
+    });
+
+    return lines.join('\n') + '\n';
+
+  }
+
+
+
+  async function mergeAmazonFillTxt(file, items) {
+
+    const text = await file.text();
+
+    const qtyMap = new Map(
+
+      (items || []).map(row => [String(row.sku || '').trim(), normalizePreviewQty(row.qty)])
+
+    );
+
+    const lines = text.split(/\r?\n/);
+
+    if (!lines.length) return text;
+
+    const delim = lines[0].includes('\t') ? '\t' : ',';
+
+    const headerLower = lines[0].split(delim).map(part => String(part || '').trim().toLowerCase());
+
+    let skuIdx = headerLower.findIndex(h => ['sku', 'seller-sku', 'seller sku'].includes(h));
+
+    let qtyIdx = headerLower.findIndex(h => ['quantity', 'qty', 'available'].includes(h));
+
+    if (skuIdx < 0) skuIdx = 0;
+
+    if (qtyIdx < 0) qtyIdx = headerLower.length > 1 ? 1 : 0;
+
+    const out = [lines[0]];
+
+    for (let i = 1; i < lines.length; i += 1) {
+
+      const ln = lines[i];
+
+      if (!String(ln || '').trim()) {
+
+        out.push(ln);
+
+        continue;
+
+      }
+
+      const parts = ln.split(delim);
+
+      const sku = String(parts[skuIdx] || parts[0] || '').trim();
+
+      if (sku && qtyMap.has(sku)) {
+
+        while (parts.length <= qtyIdx) parts.push('');
+
+        parts[qtyIdx] = String(qtyMap.get(sku));
+
+      }
+
+      out.push(parts.join(delim));
+
+    }
+
+    const suffix = text.endsWith('\n') ? '\n' : '';
+
+    return out.join('\n') + suffix;
+
+  }
+
+
+
+  function parseCsvLine(line, delim) {
+
+    const out = [];
+
+    let cur = '';
+
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+
+      const ch = line[i];
+
+      if (ch === '"') {
+
+        if (inQuotes && line[i + 1] === '"') {
+
+          cur += '"';
+
+          i += 1;
+
+        } else {
+
+          inQuotes = !inQuotes;
+
+        }
+
+        continue;
+
+      }
+
+      if (!inQuotes && ch === delim) {
+
+        out.push(cur);
+
+        cur = '';
+
+        continue;
+
+      }
+
+      cur += ch;
+
+    }
+
+    out.push(cur);
+
+    return out;
+
+  }
+
+
+
+  function joinCsvLine(parts, delim) {
+
+    return parts.map(part => {
+
+      const text = String(part == null ? '' : part);
+
+      if (text.includes('"') || text.includes(delim) || text.includes('\n') || text.includes('\r')) {
+
+        return `"${text.replace(/"/g, '""')}"`;
+
+      }
+
+      return text;
+
+    }).join(delim);
+
+  }
+
+
+
+  function mapWayfairHeaderIndices(headerRow) {
+
+    const wayfairHeaders = {
+
+      'supplier id': 'supplier_id',
+
+      'supplier part#': 'part',
+
+      'in stock': 'in_stock',
+
+    };
+
+    const mapping = {};
+
+    (headerRow || []).forEach((cell, idx) => {
+
+      const key = String(cell || '').trim().toLowerCase();
+
+      if (wayfairHeaders[key]) mapping[wayfairHeaders[key]] = idx;
+
+    });
+
+    if (mapping.supplier_id != null && mapping.part != null && mapping.in_stock != null) {
+
+      return mapping;
+
+    }
+
+    return null;
+
+  }
+
+
+
+  async function mergeWayfairCsv(file, items) {
+
+    const text = await file.text();
+
+    const lines = text.split(/\r?\n/);
+
+    if (!lines.length) return text;
+
+    const qtyMap = new Map(
+
+      (items || []).map(row => [previewRowKey(row), normalizePreviewQty(row.qty)])
+
+    );
+
+    let headerIdx = -1;
+
+    let colMap = null;
+
+    let delim = ',';
+
+    for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
+
+      const line = lines[i];
+
+      if (!String(line || '').trim()) continue;
+
+      delim = (line.match(/\t/g) || []).length > (line.match(/,/g) || []).length ? '\t' : ',';
+
+      const row = parseCsvLine(line, delim);
+
+      const mapped = mapWayfairHeaderIndices(row);
+
+      if (mapped) {
+
+        headerIdx = i;
+
+        colMap = mapped;
+
+        break;
+
+      }
+
+    }
+
+    if (headerIdx < 0 || !colMap) {
+
+      throw new Error('未找到 Wayfair 表头（需含 Supplier ID、Supplier Part#、In Stock）');
+
+    }
+
+    const out = lines.slice();
+
+    for (let i = headerIdx + 1; i < lines.length; i += 1) {
+
+      const line = lines[i];
+
+      if (!String(line || '').trim()) continue;
+
+      const row = parseCsvLine(line, delim);
+
+      while (row.length <= Math.max(colMap.supplier_id, colMap.part, colMap.in_stock)) row.push('');
+
+      const sid = String(row[colMap.supplier_id] || '').trim();
+
+      const part = String(row[colMap.part] || '').trim();
+
+      if (!sid || !part) continue;
+
+      const key = `${sid}::${part}`;
+
+      if (!qtyMap.has(key)) continue;
+
+      row[colMap.in_stock] = String(qtyMap.get(key));
+
+      out[i] = joinCsvLine(row, delim);
+
+    }
+
+    const suffix = text.endsWith('\n') ? '\n' : '';
+
+    return out.join('\n') + suffix;
+
+  }
+
+
+
+  async function downloadFromPreviewItems() {
+
+    syncPreviewItemsFromTable();
+
+    if (!_spiPreviewItems.length) {
+
+      throw new Error('预览无数据可下载');
+
+    }
+
+    const ts = new Date();
+
+    const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}_${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}${String(ts.getSeconds()).padStart(2, '0')}`;
+
+    if (_spiPreviewPlatform === 'wayfair') {
+
+      const fileEl = document.getElementById('spiWayfairFile');
+
+      const file = fileEl && fileEl.files && fileEl.files[0];
+
+      if (!file) throw new Error('请上传 Wayfair csv 模板');
+
+      const content = await mergeWayfairCsv(file, _spiPreviewItems);
+
+      downloadTextFile(content, `wayfair_inventory_${stamp}.csv`);
+
+      return;
+
+    }
+
+    if (_spiPreviewAmazonMode === 'fill') {
+
+      const fileEl = document.getElementById('spiAmazonFile');
+
+      const file = fileEl && fileEl.files && fileEl.files[0];
+
+      if (!file) throw new Error('请上传 Amazon txt 模板');
+
+      const content = await mergeAmazonFillTxt(file, _spiPreviewItems);
+
+      downloadTextFile(content, `amazon_inventory_${stamp}.txt`);
+
+      return;
+
+    }
+
+    downloadTextFile(buildAmazonTxtFromPreviewItems(_spiPreviewItems), `amazon_inventory_${stamp}.txt`);
+
+  }
+
 
 
   function parentMarkerLabel(item) {
@@ -1162,41 +1612,111 @@
   }
 
   function renderPreviewRows(platform, items) {
+
+    _spiPreviewPlatform = platform === 'wayfair' ? 'wayfair' : 'amazon';
+
+    const exportModal = document.getElementById('spiExportModal');
+
+    _spiPreviewAmazonMode = _spiPreviewPlatform === 'amazon'
+
+      ? (segmentValue('spiAmazonModeSegment', 'generate') === 'fill' ? 'fill' : 'generate')
+
+      : 'generate';
+
+    _spiPreviewItems = (Array.isArray(items) ? items : []).map(row => ({
+
+      sku: String(row.sku || '').trim(),
+
+      warehouse: String(row.warehouse || '-').trim() || '-',
+
+      qty: normalizePreviewQty(row.qty),
+
+      remark: String(row.remark || '').trim(),
+
+      preview_image_b64: String(row.preview_image_b64 || '').trim(),
+
+    }));
+
     const tbody = document.getElementById('spiPreviewTableBody');
-    const summary = document.getElementById('spiPreviewSummary');
+
     const whCol = document.getElementById('spiPreviewWarehouseCol');
+
     const title = document.getElementById('spiPreviewModalTitle');
-    const table = tbody ? tbody.closest('table') : null;
-    if (table) table.dataset.disableTableManage = '1';
+
+    const table = document.getElementById('spiPreviewTable');
+
     if (!tbody) return;
-    const rows = Array.isArray(items) ? items : [];
+
     if (title) {
-      title.textContent = platform === 'wayfair' ? 'Wayfair 库存导出预览' : 'Amazon 库存导出预览';
+
+      title.textContent = _spiPreviewPlatform === 'wayfair' ? 'Wayfair 库存导出预览' : 'Amazon 库存导出预览';
+
     }
+
     if (whCol) {
-      whCol.textContent = platform === 'wayfair' ? '仓库（Wayfair）' : '仓库';
+
+      whCol.textContent = _spiPreviewPlatform === 'wayfair' ? '仓库（Wayfair）' : '仓库';
+
     }
-    const qtySum = rows.reduce((acc, row) => acc + Math.max(0, Number(row.qty || 0)), 0);
-    if (summary) {
-      const scrollHint = rows.length > 30 ? '，可滚动查看全部' : '';
-      summary.textContent = `共 ${rows.length} 行，合计数量 ${qtySum}${scrollHint}`;
-    }
-    tbody.innerHTML = rows.map(row => {
-      const remark = String(row.remark || '').trim();
-      const remarkClass = remark ? 'spi-preview-remark' : 'spi-preview-remark is-empty';
-      const remarkText = remark || '-';
-      return `<tr>
+
+    const run = () => {
+
+      if (!_spiPreviewItems.length) {
+
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+
+        return;
+
+      }
+
+      tbody.innerHTML = _spiPreviewItems.map(row => {
+
+        const key = previewRowKey(row);
+
+        const remark = String(row.remark || '').trim();
+
+        const remarkClass = remark ? 'spi-preview-remark' : 'spi-preview-remark is-empty';
+
+        const remarkText = remark || '-';
+
+        return `<tr data-preview-row-key="${escapeAttrLite(key)}">
+
         <td class="sj-cell-thumb cell-center" style="text-align:center;">${previewThumbHtml(row.preview_image_b64)}</td>
+
         <td>${escapeHtmlLite(row.sku || '')}</td>
+
         <td>${escapeHtmlLite(row.warehouse || '-')}</td>
-        <td class="spi-preview-qty">${Math.max(0, Number(row.qty || 0))}</td>
+
+        <td class="preview-edit-cell pm-col-num" data-manage-col-key="数量">
+
+          <input type="number" class="inline-input preview-edit-input spi-preview-qty-input" min="0" step="1" value="${normalizePreviewQty(row.qty)}">
+
+        </td>
+
         <td class="${remarkClass}">${escapeHtmlLite(remarkText)}</td>
+
       </tr>`;
-    }).join('');
-    const wrap = tbody.closest('.spi-preview-scroll');
-    if (wrap && global.SitjoyRowImageRefresh && typeof global.SitjoyRowImageRefresh.observeLazyThumbsIn === 'function') {
-      global.SitjoyRowImageRefresh.observeLazyThumbsIn(wrap);
+
+      }).join('');
+
+    };
+
+    const M = global.SitjoyManagedPmTable;
+
+    if (M && typeof M.withBodyUpdate === 'function' && table) {
+
+      M.withBodyUpdate(table, run);
+
+    } else {
+
+      run();
+
     }
+
+    updatePreviewSummary();
+
+    refreshPreviewManagedTable(table);
+
   }
 
   function openPreviewModal() {
@@ -1416,9 +1936,81 @@
 
   async function submitFromPreview() {
 
-    closePreviewModal();
+    const dlBtn = document.querySelector('#spiPreviewModal .pm-modal-actions .btn-primary');
 
-    await submitExport();
+    if (dlBtn?.dataset.busy === '1') return;
+
+    if (dlBtn) {
+
+      dlBtn.dataset.busy = '1';
+
+      dlBtn.disabled = true;
+
+    }
+
+    setPreviewStatus('正在生成文件…', false);
+
+    try {
+
+      await downloadFromPreviewItems();
+
+      setPreviewStatus('');
+
+      if (global.showAppToast) global.showAppToast('库存文件已下载', false, 2500);
+
+      closePreviewModal();
+
+    } catch (e) {
+
+      setPreviewStatus((e && e.message) ? e.message : String(e), true);
+
+    } finally {
+
+      if (dlBtn) {
+
+        dlBtn.dataset.busy = '0';
+
+        dlBtn.disabled = false;
+
+      }
+
+    }
+
+  }
+
+
+
+  function bindPreviewQtyEditor() {
+
+    const tbody = document.getElementById('spiPreviewTableBody');
+
+    if (!tbody || tbody.dataset.spiQtyBound === '1') return;
+
+    tbody.dataset.spiQtyBound = '1';
+
+    tbody.addEventListener('input', function (e) {
+
+      const input = e.target && e.target.closest ? e.target.closest('.spi-preview-qty-input') : null;
+
+      if (!input) return;
+
+      input.value = String(normalizePreviewQty(input.value));
+
+      updatePreviewSummary();
+
+    });
+
+    tbody.addEventListener('change', function (e) {
+
+      const input = e.target && e.target.closest ? e.target.closest('.spi-preview-qty-input') : null;
+
+      if (!input) return;
+
+      input.value = String(normalizePreviewQty(input.value));
+
+      updatePreviewSummary();
+
+    });
 
   }
 
@@ -1519,6 +2111,8 @@
       global.bindPmModalBackdropClose(previewModal, closePreviewModal);
 
     }
+
+    bindPreviewQtyEditor();
 
   }
 

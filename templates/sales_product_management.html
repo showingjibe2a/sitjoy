@@ -56,6 +56,9 @@
         .spi-preview-modal.pm-modal-content--wide {
             max-width: min(1240px, 96vw);
             width: min(1240px, 96vw);
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 48px);
         }
         @supports selector(:has(*)) {
             .spi-preview-modal.pm-modal-content--wide:has(> .pm-modal-scroll) {
@@ -65,44 +68,26 @@
         }
         .spi-preview-scroll {
             margin-top: 0.75rem;
-            border: 1px solid var(--morandi-sand);
-            border-radius: 8px;
-            max-height: min(62vh, 640px);
+            flex: 1 1 auto;
+            min-height: 0;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
         }
-        .spi-preview-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.88rem;
+        #spiPreviewModal .preview-edit-cell {
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
         }
-        .spi-preview-table th,
-        .spi-preview-table td {
-            padding: 0.45rem 0.55rem;
-            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
-            text-align: left;
-            vertical-align: middle;
-        }
-        .spi-preview-table th {
-            position: sticky;
-            top: 0;
-            background: #faf8f5;
-            z-index: 1;
-            font-weight: 600;
-        }
-        .spi-preview-table tbody tr:last-child td {
-            border-bottom: none;
-        }
-        .spi-preview-table .spi-preview-qty {
-            font-variant-numeric: tabular-nums;
-            text-align: right;
-            white-space: nowrap;
+        #spiPreviewModal .spi-preview-remark {
+            color: rgba(42, 36, 32, 0.78);
+            font-size: 0.84rem;
+            line-height: 1.35;
         }
         .spi-preview-summary {
             font-size: 0.88rem;
             color: var(--morandi-slate);
             margin-top: 0.35rem;
         }
+        #spiPreviewModal .spi-preview-remark,
         .spi-preview-remark {
             color: rgba(42, 36, 32, 0.78);
             font-size: 0.84rem;
@@ -1130,15 +1115,15 @@
         <div class="pm-modal-content spi-preview-modal pm-modal-content--wide">
             <h3 id="spiPreviewModalTitle" style="margin-top:0;">库存导出预览</h3>
             <div id="spiPreviewSummary" class="spi-preview-summary"></div>
-            <div class="pm-modal-scroll spi-preview-scroll">
-                        <table class="spi-preview-table" data-disable-table-manage="1">
+            <div class="pm-modal-scroll spi-preview-scroll" id="spiPreviewTableScroll">
+                <table class="pm-table" id="spiPreviewTable">
                     <thead>
                         <tr>
-                            <th class="cell-center" style="width:68px;">图片</th>
-                            <th>SKU</th>
-                            <th id="spiPreviewWarehouseCol">仓库</th>
-                            <th style="width:72px; text-align:right;">数量</th>
-                            <th>备注</th>
+                            <th class="cell-center pm-col-thumb" data-manage-col-key="图片" style="width:68px;">图片</th>
+                            <th data-manage-col-key="SKU">SKU</th>
+                            <th data-manage-col-key="仓库" id="spiPreviewWarehouseCol">仓库</th>
+                            <th class="pm-col-num" data-manage-col-key="数量" style="width:96px;">数量</th>
+                            <th data-manage-col-key="备注">备注</th>
                         </tr>
                     </thead>
                     <tbody id="spiPreviewTableBody"></tbody>
