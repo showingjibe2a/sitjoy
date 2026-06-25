@@ -955,6 +955,8 @@
     let appDingtalkNotifyPromptState = null;
     let appDingtalkPendingOverseasStockoutItems = [];
     let appDingtalkPendingOverseasRestockItems = [];
+    let appDingtalkPendingTransitEtaDelayItems = [];
+    let appDingtalkPendingTransitListedItems = [];
     let appDingtalkNotifyPromptFollowUp = null;
     const APP_DINGTALK_AUTO_SEND_KEY = 'sitjoy_dingtalk_auto_send';
 
@@ -1123,6 +1125,41 @@
 
     function clearAppDingtalkPendingOverseasRestock(){
         appDingtalkPendingOverseasRestockItems = [];
+    }
+
+    function clearAppDingtalkPendingTransitEtaDelay(){
+        appDingtalkPendingTransitEtaDelayItems = [];
+    }
+
+    function clearAppDingtalkPendingTransitListed(){
+        appDingtalkPendingTransitListedItems = [];
+    }
+
+    function mergeTransitNotifyItems(pendingItems, newItems, keyFields){
+        const pending = Array.isArray(pendingItems) ? pendingItems : [];
+        const incoming = Array.isArray(newItems) ? newItems : [];
+        const fields = Array.isArray(keyFields) ? keyFields : [];
+        const index = new Map();
+        const merged = [];
+        const pushItem = (item) => {
+            if(!item || typeof item !== 'object') return;
+            const key = fields.map((field) => String(item[field] || '').trim()).join('\0');
+            if(!key || fields.some((field) => !String(item[field] || '').trim())) return;
+            if(index.has(key)) return;
+            index.set(key, true);
+            merged.push(item);
+        };
+        pending.forEach(pushItem);
+        incoming.forEach(pushItem);
+        return merged;
+    }
+
+    function mergeTransitEtaDelayNotifyItems(pendingItems, newItems){
+        return mergeTransitNotifyItems(pendingItems, newItems, ['transit_id', 'field', 'new_date']);
+    }
+
+    function mergeTransitListedNotifyItems(pendingItems, newItems){
+        return mergeTransitNotifyItems(pendingItems, newItems, ['transit_id', 'event_kind']);
     }
 
     function runAppDingtalkNotifyPromptFollowUp(){
@@ -1304,6 +1341,198 @@
         });
         if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
         return lines;
+    }
+
+    function formatOverseasRestockPreviewLines(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const lines = list.slice(0, limit).map(item => {
+            const sku = String(item && item.sku || '').trim() || '-';
+            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
+            const qty = Number(item && item.available_qty);
+            const qtyText = Number.isFinite(qty) && qty > 0 ? `，在库 ${qty}` : '';
+            return `${sku} 在 ${warehouseName} 重新上架${qtyText}`;
+        });
+        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
+        return lines;
+    }
+
+    function formatTransitSkuPreviewSummary(skuLines, maxItems){
+        const rows = Array.isArray(skuLines) ? skuLines : [];
+        const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : 4;
+        const parts = rows.slice(0, limit).map((row) => {
+            const sku = String(row && row.sku || '').trim() || '-';
+            const qty = Number(row && row.qty);
+            return Number.isFinite(qty) && qty > 0 ? `${sku}×${qty}` : sku;
+        });
+        if(rows.length > limit) parts.push(`…等 ${rows.length} 个 SKU`);
+        return parts.join('、');
+    }
+
+    function formatTransitEtaDelayPreviewLines(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const lines = list.slice(0, limit).map((item) => {
+            const box = String(item && item.logistics_box_no || '').trim() || '-';
+            const wh = String(item && item.warehouse_name || '').trim() || '-';
+            const label = String(item && item.field_label || '预计到货').trim();
+            const oldDate = String(item && item.previous_date || '').trim() || '-';
+            const newDate = String(item && item.new_date || '').trim() || '-';
+            return `${box} @ ${wh}：${label} ${oldDate} → ${newDate}`;
+        });
+        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
+        return lines;
+    }
+
+    function formatTransitListedPreviewLines(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const lines = list.slice(0, limit).map((item) => {
+            const box = String(item && item.logistics_box_no || '').trim() || '-';
+            const wh = String(item && item.warehouse_name || '').trim() || '-';
+            const action = String(item && item.event_kind || '') === 'stock_applied' ? '上架可售入仓' : '物流上架可售';
+            const skuText = formatTransitSkuPreviewSummary(item && item.sku_lines);
+            return `${box} @ ${wh}：${action}${skuText ? `（${skuText}）` : ''}`;
+        });
+        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
+        return lines;
+    }
+
+    function promptAppDingtalkTransitEtaDelay(items, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const incoming = (Array.isArray(items) ? items : [])
+            .filter(item => item && item.transit_id && item.new_date && item.previous_date);
+        const merged = mergeTransitEtaDelayNotifyItems(appDingtalkPendingTransitEtaDelayItems, incoming);
+        if(!merged.length) return;
+        appDingtalkPendingTransitEtaDelayItems = merged;
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || '钉钉在途延迟通知').trim() || '钉钉在途延迟通知',
+            previewLines: formatTransitEtaDelayPreviewLines(merged, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const batch = appDingtalkPendingTransitEtaDelayItems.slice();
+                const result = await sendAppDingtalkNotify('transit_eta_delay', {
+                    items: batch,
+                    successMessage: batch.length > 1
+                        ? `已发送 ${batch.length} 条在途延迟通知到钉钉群`
+                        : '已发送在途延迟通知到钉钉群',
+                });
+                if(result && result.ok){
+                    clearAppDingtalkPendingTransitEtaDelay();
+                }
+                return !!(result && result.ok);
+            },
+        });
+    }
+
+    function promptAppDingtalkTransitListedAvailable(items, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const incoming = (Array.isArray(items) ? items : [])
+            .filter(item => item && item.transit_id && Array.isArray(item.sku_lines) && item.sku_lines.length);
+        const merged = mergeTransitListedNotifyItems(appDingtalkPendingTransitListedItems, incoming);
+        if(!merged.length) return;
+        appDingtalkPendingTransitListedItems = merged;
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || '钉钉在途上架可售通知').trim() || '钉钉在途上架可售通知',
+            previewLines: formatTransitListedPreviewLines(merged, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const batch = appDingtalkPendingTransitListedItems.slice();
+                const result = await sendAppDingtalkNotify('transit_listed_available', {
+                    items: batch,
+                    successMessage: batch.length > 1
+                        ? `已发送 ${batch.length} 条上架可售通知到钉钉群`
+                        : '已发送上架可售通知到钉钉群',
+                });
+                if(result && result.ok){
+                    clearAppDingtalkPendingTransitListed();
+                }
+                return !!(result && result.ok);
+            },
+        });
+    }
+
+    async function autoSendAppDingtalkTransitChanges(etaDelayItems, listedItems, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const etaIncoming = (Array.isArray(etaDelayItems) ? etaDelayItems : [])
+            .filter(item => item && item.transit_id && item.new_date && item.previous_date);
+        const listedIncoming = (Array.isArray(listedItems) ? listedItems : [])
+            .filter(item => item && item.transit_id && Array.isArray(item.sku_lines) && item.sku_lines.length);
+        const etaBatch = mergeTransitEtaDelayNotifyItems(appDingtalkPendingTransitEtaDelayItems, etaIncoming);
+        const listedBatch = mergeTransitListedNotifyItems(appDingtalkPendingTransitListedItems, listedIncoming);
+        clearAppDingtalkPendingTransitEtaDelay();
+        clearAppDingtalkPendingTransitListed();
+        appDingtalkNotifyPromptFollowUp = null;
+        hideAppDingtalkNotifyPrompt(false);
+
+        let sentEta = 0;
+        let sentListed = 0;
+        if(etaBatch.length){
+            const result = await sendAppDingtalkNotify('transit_eta_delay', {
+                items: etaBatch,
+                silent: true,
+            });
+            if(result && result.ok) sentEta = etaBatch.length;
+        }
+        if(listedBatch.length){
+            const result = await sendAppDingtalkNotify('transit_listed_available', {
+                items: listedBatch,
+                silent: true,
+            });
+            if(result && result.ok) sentListed = listedBatch.length;
+        }
+        if(opt.silent === true) return { sentEta, sentListed };
+        if(sentEta || sentListed){
+            const parts = [];
+            if(sentEta) parts.push(`到货延迟 ${sentEta} 条`);
+            if(sentListed) parts.push(`上架可售 ${sentListed} 条`);
+            if(typeof showAppToast === 'function'){
+                showAppToast(`已自动发送钉钉通知：${parts.join('，')}`, false, 3200);
+            }
+        }
+        return { sentEta, sentListed };
+    }
+
+    function dispatchAppDingtalkTransitChanges(etaDelayItems, listedItems, options){
+        const etaDelay = (Array.isArray(etaDelayItems) ? etaDelayItems : [])
+            .filter(item => item && item.transit_id && item.new_date && item.previous_date);
+        const listed = (Array.isArray(listedItems) ? listedItems : [])
+            .filter(item => item && item.transit_id && Array.isArray(item.sku_lines) && item.sku_lines.length);
+        if(!etaDelay.length && !listed.length) return;
+        if(isAppDingtalkAutoSendEnabled()){
+            autoSendAppDingtalkTransitChanges(etaDelay, listed, options).catch((err) => {
+                console.error('autoSendAppDingtalkTransitChanges failed', err);
+            });
+            return;
+        }
+        const opt = options && typeof options === 'object' ? options : {};
+        const panelOpen = !!(appDingtalkNotifyPromptPanel && appDingtalkNotifyPromptPanel.classList.contains('show'));
+        const scheduleListed = () => {
+            if(!listed.length) return;
+            if(typeof promptAppDingtalkTransitListedAvailable === 'function'){
+                promptAppDingtalkTransitListedAvailable(listed, opt.listed || opt);
+            }
+        };
+        if(etaDelay.length && listed.length){
+            appDingtalkNotifyPromptFollowUp = scheduleListed;
+        } else {
+            appDingtalkNotifyPromptFollowUp = null;
+        }
+        if(etaDelay.length){
+            if(typeof promptAppDingtalkTransitEtaDelay === 'function'){
+                promptAppDingtalkTransitEtaDelay(etaDelay, opt.etaDelay || opt);
+            }
+            return;
+        }
+        if(panelOpen){
+            appDingtalkNotifyPromptFollowUp = scheduleListed;
+            return;
+        }
+        scheduleListed();
     }
 
     function promptAppDingtalkOverseasStockout(items, options){
@@ -12324,10 +12553,15 @@
         window.promptAppDingtalkOverseasRestock = promptAppDingtalkOverseasRestock;
         window.dispatchAppDingtalkOverseasInventoryChanges = dispatchAppDingtalkOverseasInventoryChanges;
         window.promptAppDingtalkOverseasInventoryChanges = dispatchAppDingtalkOverseasInventoryChanges;
+        window.promptAppDingtalkTransitEtaDelay = promptAppDingtalkTransitEtaDelay;
+        window.promptAppDingtalkTransitListedAvailable = promptAppDingtalkTransitListedAvailable;
+        window.dispatchAppDingtalkTransitChanges = dispatchAppDingtalkTransitChanges;
         window.isAppDingtalkAutoSendEnabled = isAppDingtalkAutoSendEnabled;
         window.setAppDingtalkAutoSendEnabled = setAppDingtalkAutoSendEnabled;
         window.clearAppDingtalkPendingOverseasStockout = clearAppDingtalkPendingOverseasStockout;
         window.clearAppDingtalkPendingOverseasRestock = clearAppDingtalkPendingOverseasRestock;
+        window.clearAppDingtalkPendingTransitEtaDelay = clearAppDingtalkPendingTransitEtaDelay;
+        window.clearAppDingtalkPendingTransitListed = clearAppDingtalkPendingTransitListed;
         window.bindFloatingHelpDots = bindFloatingHelpDots;
         window.syncSitjoyPageFillScrollLayout = syncSitjoyPageFillScrollLayout;
         window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;

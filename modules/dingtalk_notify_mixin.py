@@ -330,6 +330,92 @@ class DingTalkNotifyMixin:
         }
         return self._post_dingtalk_payload(payload, page_key=page_key)
 
+    def _format_overseas_restock_lines(self, items):
+        return self._format_overseas_inventory_notify_lines(items, 'restock')
+
+    def _format_transit_sku_summary(self, sku_lines, max_items=6):
+        rows = sku_lines if isinstance(sku_lines, list) else []
+        parts = []
+        for row in rows[:max_items]:
+            if not isinstance(row, dict):
+                continue
+            sku = str(row.get('sku') or '').strip()
+            if not sku:
+                continue
+            qty = self._parse_int(row.get('qty'))
+            qty_text = f'×**{qty}**' if qty is not None and qty > 0 else ''
+            parts.append(f'{sku}{qty_text}')
+        if len(rows) > max_items:
+            parts.append(f'…等 {len(rows)} 个 SKU')
+        return '、'.join(parts)
+
+    def _format_transit_eta_delay_lines(self, items):
+        lines = []
+        for row in items or []:
+            if not isinstance(row, dict):
+                continue
+            box = str(row.get('logistics_box_no') or '').strip() or '-'
+            wh = str(row.get('warehouse_name') or '').strip() or '-'
+            label = str(row.get('field_label') or '预计到货').strip()
+            old_date = str(row.get('previous_date') or '').strip() or '-'
+            new_date = str(row.get('new_date') or '').strip() or '-'
+            bl = str(row.get('bill_of_lading_no') or '').strip()
+            bl_text = f' · 提单 {bl}' if bl else ''
+            line = f'**{box}**{bl_text} · {wh} · {label} **{old_date} → {new_date}**'
+            lines.append(f'- {self._dingtalk_markdown_colored_text(line, self.DINGTALK_COLOR_NEGATIVE)}')
+        return lines
+
+    def _format_transit_listed_available_lines(self, items):
+        lines = []
+        for row in items or []:
+            if not isinstance(row, dict):
+                continue
+            box = str(row.get('logistics_box_no') or '').strip() or '-'
+            wh = str(row.get('warehouse_name') or '').strip() or '-'
+            listed_date = str(row.get('listed_date') or '').strip()
+            sku_summary = self._format_transit_sku_summary(row.get('sku_lines'))
+            if not sku_summary:
+                continue
+            event_kind = str(row.get('event_kind') or 'registered').strip()
+            if event_kind == 'stock_applied':
+                action = '上架可售入仓'
+            else:
+                action = '物流上架可售'
+            date_text = f' · 上架日 **{listed_date}**' if listed_date else ''
+            line = f'**{box}** · {wh} · **{action}**{date_text} · {sku_summary}'
+            lines.append(f'- {self._dingtalk_markdown_colored_text(line, self.DINGTALK_COLOR_POSITIVE)}')
+        return lines
+
+    def _send_dingtalk_transit_markdown(self, title, lines, page_key=None, user_id=None, title_tone=None):
+        formatted = [line for line in (lines or []) if line]
+        if not formatted:
+            return False, '没有可发送的记录'
+        delivery_cfg, _err = self._resolve_dingtalk_delivery_config(page_key=page_key)
+        markdown_text = self._build_dingtalk_markdown_message(
+            title, formatted, user_id=user_id, title_tone=title_tone,
+        )
+        text = self._prepare_dingtalk_text(markdown_text, delivery_cfg=delivery_cfg)
+        payload = {
+            'msgtype': 'markdown',
+            'markdown': {
+                'title': title,
+                'text': text,
+            },
+        }
+        return self._post_dingtalk_payload(payload, page_key=page_key)
+
+    def _send_dingtalk_transit_eta_delay(self, items, page_key=None, user_id=None):
+        lines = self._format_transit_eta_delay_lines(items)
+        return self._send_dingtalk_transit_markdown(
+            '在途物流到货延迟提醒', lines, page_key=page_key, user_id=user_id, title_tone='negative',
+        )
+
+    def _send_dingtalk_transit_listed_available(self, items, page_key=None, user_id=None):
+        lines = self._format_transit_listed_available_lines(items)
+        return self._send_dingtalk_transit_markdown(
+            '在途物流上架可售提醒', lines, page_key=page_key, user_id=user_id, title_tone='positive',
+        )
+
     def _send_dingtalk_overseas_stockout(self, items, page_key=None, user_id=None):
         lines = self._format_overseas_stockout_lines(items)
         return self._send_dingtalk_overseas_markdown(
@@ -623,6 +709,32 @@ class DingTalkNotifyMixin:
                 return self.send_json({
                     'status': 'success',
                     'sent_count': len(self._format_overseas_restock_lines(items)),
+                }, start_response)
+
+            if action == 'transit_eta_delay':
+                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                ok, err = self._send_dingtalk_transit_eta_delay(items, page_key=page_key, user_id=user_id)
+                if not ok:
+                    return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'sent_count': len(self._format_transit_eta_delay_lines(items)),
+                }, start_response)
+
+            if action == 'transit_listed_available':
+                ok_access, access_err = self._validate_dingtalk_notify_page_access(user_id, page_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                ok, err = self._send_dingtalk_transit_listed_available(items, page_key=page_key, user_id=user_id)
+                if not ok:
+                    return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'sent_count': len(self._format_transit_listed_available_lines(items)),
                 }, start_response)
 
             return self.send_json({'status': 'error', 'message': '未知 action'}, start_response)

@@ -382,6 +382,110 @@ class LogisticsInTransitMixin:
                             break
                 cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (qty_consistent, transit_id))
 
+    def _transit_notify_date_text(self, value):
+        text = ('' if value is None else str(value)).strip()
+        if not text:
+            return ''
+        for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
+            try:
+                return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+            except Exception:
+                continue
+        return ''
+
+    def _transit_date_is_delayed(self, old_value, new_value):
+        old_s = self._transit_notify_date_text(old_value)
+        new_s = self._transit_notify_date_text(new_value)
+        if not old_s or not new_s:
+            return False
+        return new_s > old_s
+
+    def _fetch_transit_notify_meta(self, cur, transit_id):
+        cur.execute(
+            """
+            SELECT t.id, t.logistics_box_no, t.bill_of_lading_no, t.listed_date,
+                   w.warehouse_name, dr.region_name, f.factory_name
+            FROM logistics_in_transit t
+            LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+            LEFT JOIN logistics_destination_regions dr ON dr.id = t.destination_region_id
+            LEFT JOIN logistics_factories f ON f.id = t.factory_id
+            WHERE t.id=%s
+            LIMIT 1
+            """,
+            (transit_id,),
+        )
+        return cur.fetchone() or {}
+
+    def _fetch_transit_sku_lines(self, cur, transit_id, qty_by_order_product=None):
+        cur.execute(
+            """
+            SELECT li.order_product_id, op.sku, li.shipped_qty, li.listed_qty
+            FROM logistics_in_transit_items li
+            JOIN order_products op ON op.id = li.order_product_id
+            WHERE li.transit_id=%s
+            ORDER BY op.sku ASC
+            """,
+            (transit_id,),
+        )
+        qty_map = qty_by_order_product if isinstance(qty_by_order_product, dict) else None
+        lines = []
+        for row in cur.fetchall() or []:
+            sku = str(row.get('sku') or '').strip()
+            if not sku:
+                continue
+            op_id = self._parse_int(row.get('order_product_id'))
+            if qty_map is not None and op_id in qty_map:
+                qty = max(0, self._parse_int(qty_map.get(op_id)) or 0)
+            else:
+                qty = self._parse_int(row.get('listed_qty'))
+                if qty is None:
+                    qty = self._parse_int(row.get('shipped_qty')) or 0
+                else:
+                    qty = max(0, int(qty))
+            if qty <= 0:
+                continue
+            lines.append({'sku': sku, 'qty': int(qty)})
+        return lines
+
+    def _build_transit_eta_delay_item(self, meta, field_key, field_label, old_date, new_date):
+        if not meta:
+            return None
+        return {
+            'transit_id': int(meta.get('id') or 0),
+            'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
+            'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
+            'warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
+            'field': str(field_key or '').strip(),
+            'field_label': str(field_label or '').strip() or '预计到货',
+            'previous_date': self._transit_notify_date_text(old_date),
+            'new_date': self._transit_notify_date_text(new_date),
+        }
+
+    def _build_transit_listed_available_item(self, cur, transit_id, event_kind='registered', sku_lines=None, qty_by_order_product=None):
+        meta = self._fetch_transit_notify_meta(cur, transit_id)
+        if not meta or not int(meta.get('id') or 0):
+            return None
+        if sku_lines is None:
+            sku_lines = self._fetch_transit_sku_lines(cur, transit_id, qty_by_order_product=qty_by_order_product)
+        if not sku_lines:
+            return None
+        return {
+            'transit_id': int(meta.get('id') or 0),
+            'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
+            'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
+            'warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
+            'listed_date': self._transit_notify_date_text(meta.get('listed_date')),
+            'event_kind': str(event_kind or 'registered').strip() or 'registered',
+            'sku_lines': sku_lines,
+        }
+
+    def _append_transit_eta_delay_if_needed(self, bucket, meta, field_key, field_label, old_date, new_date):
+        if not self._transit_date_is_delayed(old_date, new_date):
+            return
+        item = self._build_transit_eta_delay_item(meta, field_key, field_label, old_date, new_date)
+        if item and item.get('transit_id'):
+            bucket.append(item)
+
     def handle_logistics_in_transit_api(self, environ, method, start_response):
         perf_ctx = self._perf_begin('logistics_in_transit_api', environ, {'entry_method': method})
         try:
@@ -918,6 +1022,7 @@ class LogisticsInTransitMixin:
                             )
 
                         added_stock_rows = 0
+                        transit_listed_available_items = []
                         if apply_to_overseas_stock and warehouse_id:
                             for order_product_id, qty in final_listed.items():
                                 qty = max(0, self._parse_int(qty) or 0)
@@ -932,11 +1037,22 @@ class LogisticsInTransitMixin:
                                     (warehouse_id, order_product_id, qty, 0)
                                 )
                                 added_stock_rows += 1
+                            if added_stock_rows > 0:
+                                item = self._build_transit_listed_available_item(
+                                    cur, item_id, event_kind='stock_applied', qty_by_order_product=final_listed,
+                                )
+                                if item:
+                                    transit_listed_available_items.append(item)
                         cur.execute("UPDATE logistics_in_transit SET qty_verified=1 WHERE id=%s", (item_id,))
 
                 self._refresh_transit_qty_consistent(item_id)
                 self._perf_mark(perf_ctx, 'verify_qty_write')
-                return self.send_json({'status': 'success', 'id': item_id, 'added_stock_rows': added_stock_rows if apply_to_overseas_stock else 0}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'id': item_id,
+                    'added_stock_rows': added_stock_rows if apply_to_overseas_stock else 0,
+                    'transit_listed_available_items': transit_listed_available_items,
+                }, start_response)
 
             if method == 'POST' and action == 'quick_status':
                 item_id = self._parse_int(data.get('id'))
@@ -957,13 +1073,23 @@ class LogisticsInTransitMixin:
 
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_quick_status')
+                    transit_listed_available_items = []
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id, factory_id, inventory_registered, qty_verified, confirmed_boxed_qty FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
+                        cur.execute(
+                            """
+                            SELECT id, factory_id, inventory_registered, qty_verified, confirmed_boxed_qty
+                            FROM logistics_in_transit
+                            WHERE id=%s
+                            LIMIT 1
+                            """,
+                            (item_id,),
+                        )
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
 
                         bool_value = _to_bool_flag(data.get('value'))
+                        prev_inventory_registered = 1 if self._parse_int(existing.get('inventory_registered')) else 0
                         if field == 'qty_verified' and bool_value == 1 and not self._parse_int(existing.get('inventory_registered')):
                             return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
                         if field == 'inventory_registered' and bool_value == 0 and self._parse_int(existing.get('qty_verified')):
@@ -976,6 +1102,10 @@ class LogisticsInTransitMixin:
                                     "UPDATE logistics_in_transit SET inventory_registered=1, listed_date=COALESCE(listed_date, CURDATE()) WHERE id=%s",
                                     (item_id,)
                                 )
+                                if prev_inventory_registered == 0:
+                                    item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
+                                    if item:
+                                        transit_listed_available_items.append(item)
                             else:
                                 cur.execute(
                                     "UPDATE logistics_in_transit SET inventory_registered=0, listed_date=NULL WHERE id=%s",
@@ -1011,7 +1141,13 @@ class LogisticsInTransitMixin:
                                     )
                 self._perf_mark(perf_ctx, 'quick_status_write')
                 self._refresh_transit_qty_consistent(item_id)
-                return self.send_json({'status': 'success', 'id': item_id, 'field': field, 'value': bool_value}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'id': item_id,
+                    'field': field,
+                    'value': bool_value,
+                    'transit_listed_available_items': transit_listed_available_items,
+                }, start_response)
 
             if method == 'POST' and action == 'quick_batch_fields':
                 updates = data.get('updates') if isinstance(data.get('updates'), list) else []
@@ -1103,6 +1239,8 @@ class LogisticsInTransitMixin:
 
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_quick_batch_fields')
+                    transit_eta_delay_items = []
+                    transit_listed_available_items = []
                     with conn.cursor() as cur:
                         for payload in normalized_updates:
                             item_id = payload['id']
@@ -1110,7 +1248,8 @@ class LogisticsInTransitMixin:
                                 """
                                 SELECT id, qty_verified, destination_region_id, destination_warehouse_id,
                                        factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
-                                       etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest
+                                       etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest,
+                                       expected_listed_date_latest, inventory_registered, listed_date
                                 FROM logistics_in_transit
                                 WHERE id=%s
                                 LIMIT 1
@@ -1120,6 +1259,8 @@ class LogisticsInTransitMixin:
                             existing = cur.fetchone() or {}
                             if not existing:
                                 return self.send_json({'status': 'error', 'message': f'记录 {item_id} 不存在'}, start_response)
+
+                            meta = self._fetch_transit_notify_meta(cur, item_id)
 
                             if 'destination_region_id' in payload and 'destination_warehouse_id' not in payload:
                                 wh_id = self._parse_int(existing.get('destination_warehouse_id'))
@@ -1165,17 +1306,30 @@ class LogisticsInTransitMixin:
                             params = []
 
                             if 'expected_listed_date_latest' in payload:
+                                self._append_transit_eta_delay_if_needed(
+                                    transit_eta_delay_items,
+                                    meta,
+                                    'expected_listed_date_latest',
+                                    '预计上架时间',
+                                    existing.get('expected_listed_date_latest'),
+                                    payload.get('expected_listed_date_latest'),
+                                )
                                 sets.append('expected_listed_date_latest=%s')
                                 params.append(payload.get('expected_listed_date_latest'))
 
                             if 'listed_date' in payload:
                                 listed_date = payload.get('listed_date')
+                                prev_registered = 1 if self._parse_int(existing.get('inventory_registered')) else 0
                                 if listed_date is None and self._parse_int(existing.get('qty_verified')):
                                     return self.send_json({'status': 'error', 'message': f'记录 {item_id} 已核对上架数量，不能清空实际上架日期'}, start_response)
                                 sets.append('listed_date=%s')
                                 params.append(listed_date)
                                 sets.append('inventory_registered=%s')
                                 params.append(1 if listed_date else 0)
+                                if listed_date and prev_registered == 0:
+                                    item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
+                                    if item:
+                                        transit_listed_available_items.append(item)
 
                             if 'factory_ship_date_latest' in payload:
                                 factory_ship_latest = payload.get('factory_ship_date_latest')
@@ -1204,6 +1358,14 @@ class LogisticsInTransitMixin:
                             if 'eta_latest' in payload:
                                 eta_latest = payload.get('eta_latest')
                                 old_eta_latest = existing.get('eta_latest')
+                                self._append_transit_eta_delay_if_needed(
+                                    transit_eta_delay_items,
+                                    meta,
+                                    'eta_latest',
+                                    'ETA（预计到港）',
+                                    old_eta_latest,
+                                    eta_latest,
+                                )
                                 sets.append('eta_latest=%s')
                                 params.append(eta_latest)
                                 if eta_latest and not existing.get('eta_initial'):
@@ -1275,7 +1437,12 @@ class LogisticsInTransitMixin:
                             )
 
                 self._perf_mark(perf_ctx, 'quick_batch_fields_write')
-                return self.send_json({'status': 'success', 'updated_count': len(normalized_updates)}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'updated_count': len(normalized_updates),
+                    'transit_eta_delay_items': transit_eta_delay_items,
+                    'transit_listed_available_items': transit_listed_available_items,
+                }, start_response)
 
             if method in ('POST', 'PUT'):
                 item_id = self._parse_int(data.get('id'))
@@ -1349,6 +1516,9 @@ class LogisticsInTransitMixin:
                 consolidation_factory_ids = self._parse_consolidation_factory_ids(data, factory_id)
 
                 payload['qty_consistent'] = self._calc_qty_consistent_from_items(normalized_items)
+                transit_eta_delay_items = []
+                transit_listed_available_items = []
+                prev_inventory_registered = 0
 
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_write')
@@ -1359,7 +1529,7 @@ class LogisticsInTransitMixin:
                             return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                         with conn.cursor() as cur:
                             cur.execute(
-                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, expected_listed_date_initial, expected_listed_date_latest, etd_initial, etd_latest, eta_initial, eta_latest, confirmed_boxed_qty FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, expected_listed_date_initial, expected_listed_date_latest, etd_initial, etd_latest, eta_initial, eta_latest, confirmed_boxed_qty, inventory_registered, listed_date FROM logistics_in_transit WHERE id=%s LIMIT 1",
                                 (item_id,)
                             )
                             existing = cur.fetchone()
@@ -1367,6 +1537,7 @@ class LogisticsInTransitMixin:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
                         old_bl = (existing.get('bill_of_lading_no') or '').strip() or None
                         prev_confirmed_boxed_qty = 1 if self._parse_int(existing.get('confirmed_boxed_qty')) else 0
+                        prev_inventory_registered = 1 if self._parse_int(existing.get('inventory_registered')) else 0
                         payload['factory_ship_date_initial'] = existing.get('factory_ship_date_initial') or factory_ship_latest
                         payload['factory_ship_date_previous'] = existing.get('factory_ship_date_latest') if factory_ship_latest and str(existing.get('factory_ship_date_latest') or '') != str(factory_ship_latest) else existing.get('factory_ship_date_previous')
                         payload['factory_ship_date_latest'] = factory_ship_latest or existing.get('factory_ship_date_latest')
@@ -1489,6 +1660,28 @@ class LogisticsInTransitMixin:
                                     """,
                                     (op_id, factory_id, -shipped_qty)
                                 )
+                        if method == 'PUT' and existing:
+                            meta = self._fetch_transit_notify_meta(cur, item_id)
+                            self._append_transit_eta_delay_if_needed(
+                                transit_eta_delay_items,
+                                meta,
+                                'eta_latest',
+                                'ETA（预计到港）',
+                                existing.get('eta_latest'),
+                                payload.get('eta_latest'),
+                            )
+                            self._append_transit_eta_delay_if_needed(
+                                transit_eta_delay_items,
+                                meta,
+                                'expected_listed_date_latest',
+                                '预计上架时间',
+                                existing.get('expected_listed_date_latest'),
+                                payload.get('expected_listed_date_latest'),
+                            )
+                            if self._parse_int(payload.get('inventory_registered')) and prev_inventory_registered == 0:
+                                item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
+                                if item:
+                                    transit_listed_available_items.append(item)
                     self._perf_mark(perf_ctx, 'create_or_update_write')
 
                 new_bl = (payload.get('bill_of_lading_no') or '').strip()
@@ -1502,7 +1695,12 @@ class LogisticsInTransitMixin:
                     elif new_bl:
                         self._ensure_logistics_bl_folder(new_bl)
 
-                return self.send_json({'status': 'success', 'id': item_id}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'id': item_id,
+                    'transit_eta_delay_items': transit_eta_delay_items,
+                    'transit_listed_available_items': transit_listed_available_items,
+                }, start_response)
 
             if method == 'DELETE':
                 item_id = self._parse_int(data.get('id'))
