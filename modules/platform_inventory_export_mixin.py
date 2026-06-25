@@ -465,7 +465,50 @@ class PlatformInventoryExportMixin:
             fabric_share_ratio=share_ratio,
         )
 
-    def _attach_preview_images(self, conn, rows):
+    def _normalize_handling_time(self, value, default=2):
+        try:
+            n = int(value)
+        except Exception:
+            n = int(default)
+        return max(1, n)
+
+    def _load_inventory_export_variant_meta(self, conn, variant_ids):
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+        if has_fabric_id and has_fabric_text:
+            fabric_select = "COALESCE(fm.fabric_code, v.fabric)"
+        elif has_fabric_id:
+            fabric_select = "fm.fabric_code"
+        else:
+            fabric_select = ("v.fabric" if has_fabric_text else "''")
+        placeholders = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT v.id, v.spec_name, {fabric_select} AS fabric
+                FROM sales_product_variants v
+                {fabric_join}
+                WHERE v.id IN ({placeholders})
+                """,
+                ids,
+            )
+            rows = cur.fetchall() or []
+        out = {}
+        for row in rows:
+            vid = self._parse_int(row.get('id'))
+            if not vid:
+                continue
+            out[vid] = {
+                'spec_name': str(row.get('spec_name') or '').strip(),
+                'fabric': str(row.get('fabric') or '').strip(),
+            }
+        return out
+
+    def _finalize_inventory_preview_rows(self, conn, rows, include_handling_time=False):
         if not rows:
             return rows
         variant_ids = sorted({
@@ -479,12 +522,18 @@ class PlatformInventoryExportMixin:
                 preview_map = self._load_variant_first_image_preview(conn, variant_ids, type_name='白底纯图') or {}
             except Exception:
                 preview_map = {}
+        meta_map = self._load_inventory_export_variant_meta(conn, variant_ids)
         out = []
         for row in rows:
             vid = int(row.get('variant_id') or 0)
             item = dict(row)
             item.pop('variant_id', None)
+            meta = meta_map.get(vid) or {}
+            item['spec_name'] = meta.get('spec_name') or ''
+            item['fabric'] = meta.get('fabric') or ''
             item['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
+            if include_handling_time:
+                item['handling_time'] = self._normalize_handling_time(item.get('handling_time'), default=2)
             out.append(item)
         return out
 
@@ -519,6 +568,7 @@ class PlatformInventoryExportMixin:
                         'qty': 0,
                         'remark': '未匹配销售 SKU',
                         'variant_id': 0,
+                        'handling_time': 2,
                     })
                 continue
             if not sku_list and not self._sales_product_status_exportable(rec.get('product_status')):
@@ -535,8 +585,9 @@ class PlatformInventoryExportMixin:
                 'qty': qty,
                 'remark': '；'.join(notes),
                 'variant_id': vid,
+                'handling_time': 2,
             })
-        return self._attach_preview_images(conn, raw_rows)
+        return self._finalize_inventory_preview_rows(conn, raw_rows, include_handling_time=True)
 
     def _wayfair_inventory_preview(self, conn, file_bytes, opts):
         text = (file_bytes or b'').decode('utf-8-sig', errors='replace')
@@ -617,7 +668,7 @@ class PlatformInventoryExportMixin:
                 'remark': '；'.join(notes),
                 'variant_id': vid,
             })
-        return self._attach_preview_images(conn, raw_rows)
+        return self._finalize_inventory_preview_rows(conn, raw_rows, include_handling_time=False)
 
     def _inventory_export_qty_for_variant(self, conn, variant_id, opts, wayfair_id=None):
         vid = self._parse_int(variant_id)
@@ -700,13 +751,27 @@ class PlatformInventoryExportMixin:
                 rec, vid, links, inv_by_op, opts,
                 bom_units_by_vid, fabric_shares,
             )
-            rows.append((sku, qty))
+            rows.append({
+                'sku': sku,
+                'qty': qty,
+                'handling_time': 2,
+            })
         return rows
 
     def _amazon_inventory_txt_bytes(self, rows):
-        lines = ['sku\tquantity']
-        for sku, qty in rows:
-            lines.append(f"{sku}\t{int(qty)}")
+        lines = ['sku\tquantity\thandling-time']
+        for row in rows:
+            if isinstance(row, dict):
+                sku = str(row.get('sku') or '').strip()
+                qty = int(row.get('qty') or 0)
+                ht = self._normalize_handling_time(row.get('handling_time'), default=2)
+            else:
+                sku = str(row[0] or '').strip()
+                qty = int(row[1] if len(row) > 1 else 0)
+                ht = self._normalize_handling_time(row[2] if len(row) > 2 else 2, default=2)
+            if not sku:
+                continue
+            lines.append(f"{sku}\t{qty}\t{ht}")
         return ('\n'.join(lines) + '\n').encode('utf-8')
 
     def _parse_amazon_inventory_upload(self, file_bytes):
@@ -753,10 +818,12 @@ class PlatformInventoryExportMixin:
         })
         inv_by_op = self._load_overseas_qty_all_warehouses(conn, all_op_ids)
         qty_by_sku = {}
+        ht_by_sku = {}
         for sku in sku_list:
             rec = sku_map.get(sku)
             if not rec:
                 qty_by_sku[sku] = 0
+                ht_by_sku[sku] = 2
                 continue
             vid = rec['variant_id']
             links = links_by_vid.get(vid) or []
@@ -764,29 +831,39 @@ class PlatformInventoryExportMixin:
                 rec, vid, links, inv_by_op, opts,
                 bom_units_by_vid, fabric_shares,
             )
+            ht_by_sku[sku] = 2
         text = (file_bytes or b'').decode('utf-8-sig', errors='replace')
         lines = text.splitlines()
         if not lines:
-            return self._amazon_inventory_txt_bytes([(s, qty_by_sku.get(s, 0)) for s in sku_list])
+            return self._amazon_inventory_txt_bytes([
+                {'sku': s, 'qty': qty_by_sku.get(s, 0), 'handling_time': ht_by_sku.get(s, 2)}
+                for s in sku_list
+            ])
         delim = '\t' if '\t' in lines[0] else ','
         header_parts = lines[0].split(delim)
         header_lower = [str(x or '').strip().lower() for x in header_parts]
         sku_idx = next((i for i, h in enumerate(header_lower) if h in ('sku', 'seller-sku', 'seller sku')), 0)
         qty_idx = next((i for i, h in enumerate(header_lower) if h in ('quantity', 'qty', 'available')), len(header_parts))
+        ht_idx = next((i for i, h in enumerate(header_lower) if h in ('handling-time', 'handling_time', 'handling time')), None)
         if qty_idx >= len(header_parts):
             header_parts.append('quantity')
             qty_idx = len(header_parts) - 1
-            lines[0] = delim.join(header_parts)
+        if ht_idx is None:
+            header_parts.append('handling-time')
+            ht_idx = len(header_parts) - 1
+        lines[0] = delim.join(header_parts)
         out_lines = [lines[0]]
         for ln in lines[1:]:
             if not str(ln or '').strip():
                 out_lines.append(ln)
                 continue
             parts = ln.split(delim)
-            while len(parts) <= qty_idx:
+            while len(parts) <= max(qty_idx, ht_idx):
                 parts.append('')
             sku = str(parts[sku_idx] if sku_idx < len(parts) else '').strip()
-            parts[qty_idx] = str(int(qty_by_sku.get(sku, 0)))
+            if sku in qty_by_sku:
+                parts[qty_idx] = str(int(qty_by_sku.get(sku, 0)))
+                parts[ht_idx] = str(self._normalize_handling_time(ht_by_sku.get(sku, 2)))
             out_lines.append(delim.join(parts))
         body = '\n'.join(out_lines)
         if not body.endswith('\n'):

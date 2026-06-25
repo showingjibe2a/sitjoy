@@ -476,6 +476,44 @@
 
 
 
+  function normalizeHandlingTime(value) {
+
+    const n = Number(value);
+
+    if (!Number.isFinite(n) || n < 1) return 2;
+
+    return Math.floor(n);
+
+  }
+
+
+
+  function previewTableColspan() {
+
+    return 8;
+
+  }
+
+
+
+  function syncPreviewHandlingColumnVisibility() {
+
+    const show = _spiPreviewPlatform === 'amazon';
+
+    const th = document.getElementById('spiPreviewHandlingCol');
+
+    if (th) th.style.display = show ? '' : 'none';
+
+    document.querySelectorAll('#spiPreviewTable .spi-preview-handling-col').forEach(el => {
+
+      el.style.display = show ? '' : 'none';
+
+    });
+
+  }
+
+
+
   function syncPreviewItemsFromTable() {
 
     const tbody = document.getElementById('spiPreviewTableBody');
@@ -486,13 +524,21 @@
 
       const key = String(tr.getAttribute('data-preview-row-key') || '').trim();
 
-      const input = tr.querySelector('.spi-preview-qty-input');
+      const qtyInput = tr.querySelector('.spi-preview-qty-input');
 
-      if (!key || !input) return;
+      const htInput = tr.querySelector('.spi-preview-handling-input');
+
+      if (!key || !qtyInput) return;
 
       const item = _spiPreviewItems.find(row => previewRowKey(row) === key);
 
-      if (item) item.qty = normalizePreviewQty(input.value);
+      if (item) {
+
+        item.qty = normalizePreviewQty(qtyInput.value);
+
+        if (htInput) item.handling_time = normalizeHandlingTime(htInput.value);
+
+      }
 
     });
 
@@ -512,7 +558,13 @@
 
     const qtySum = _spiPreviewItems.reduce((acc, row) => acc + normalizePreviewQty(row.qty), 0);
 
-    summary.textContent = `共 ${_spiPreviewItems.length} 行，合计数量 ${qtySum}（数量可直接修改）`;
+    const editHint = _spiPreviewPlatform === 'amazon'
+
+      ? '（数量与 handling-time 可直接修改）'
+
+      : '（数量可直接修改）';
+
+    summary.textContent = `共 ${_spiPreviewItems.length} 行，合计数量 ${qtySum}${editHint}`;
 
   }
 
@@ -574,7 +626,7 @@
 
   function buildAmazonTxtFromPreviewItems(items) {
 
-    const lines = ['sku\tquantity'];
+    const lines = ['sku\tquantity\thandling-time'];
 
     (items || []).forEach(row => {
 
@@ -582,7 +634,7 @@
 
       if (!sku) return;
 
-      lines.push(`${sku}\t${normalizePreviewQty(row.qty)}`);
+      lines.push(`${sku}\t${normalizePreviewQty(row.qty)}\t${normalizeHandlingTime(row.handling_time)}`);
 
     });
 
@@ -602,23 +654,41 @@
 
     );
 
+    const htMap = new Map(
+
+      (items || []).map(row => [String(row.sku || '').trim(), normalizeHandlingTime(row.handling_time)])
+
+    );
+
     const lines = text.split(/\r?\n/);
 
     if (!lines.length) return text;
 
     const delim = lines[0].includes('\t') ? '\t' : ',';
 
-    const headerLower = lines[0].split(delim).map(part => String(part || '').trim().toLowerCase());
+    const headerParts = lines[0].split(delim);
+
+    const headerLower = headerParts.map(part => String(part || '').trim().toLowerCase());
 
     let skuIdx = headerLower.findIndex(h => ['sku', 'seller-sku', 'seller sku'].includes(h));
 
     let qtyIdx = headerLower.findIndex(h => ['quantity', 'qty', 'available'].includes(h));
 
+    let htIdx = headerLower.findIndex(h => ['handling-time', 'handling_time', 'handling time'].includes(h));
+
     if (skuIdx < 0) skuIdx = 0;
 
     if (qtyIdx < 0) qtyIdx = headerLower.length > 1 ? 1 : 0;
 
-    const out = [lines[0]];
+    if (htIdx < 0) {
+
+      headerParts.push('handling-time');
+
+      htIdx = headerParts.length - 1;
+
+    }
+
+    const out = [headerParts.join(delim)];
 
     for (let i = 1; i < lines.length; i += 1) {
 
@@ -634,13 +704,15 @@
 
       const parts = ln.split(delim);
 
+      while (parts.length <= Math.max(qtyIdx, htIdx)) parts.push('');
+
       const sku = String(parts[skuIdx] || parts[0] || '').trim();
 
       if (sku && qtyMap.has(sku)) {
 
-        while (parts.length <= qtyIdx) parts.push('');
-
         parts[qtyIdx] = String(qtyMap.get(sku));
+
+        parts[htIdx] = String(htMap.get(sku));
 
       }
 
@@ -1629,7 +1701,13 @@
 
       warehouse: String(row.warehouse || '-').trim() || '-',
 
+      fabric: String(row.fabric || '').trim(),
+
+      spec_name: String(row.spec_name || '').trim(),
+
       qty: normalizePreviewQty(row.qty),
+
+      handling_time: normalizeHandlingTime(row.handling_time),
 
       remark: String(row.remark || '').trim(),
 
@@ -1659,11 +1737,15 @@
 
     }
 
+    syncPreviewHandlingColumnVisibility();
+
+    const isAmazon = _spiPreviewPlatform === 'amazon';
+
     const run = () => {
 
       if (!_spiPreviewItems.length) {
 
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${previewTableColspan()}" style="text-align:center;">暂无数据</td></tr>`;
 
         return;
 
@@ -1679,11 +1761,25 @@
 
         const remarkText = remark || '-';
 
+        const handlingCell = isAmazon
+
+          ? `<td class="preview-edit-cell pm-col-num spi-preview-handling-col" data-manage-col-key="handling-time">
+
+          <input type="number" class="inline-input preview-edit-input spi-preview-handling-input" min="1" step="1" value="${normalizeHandlingTime(row.handling_time)}">
+
+        </td>`
+
+          : '<td class="spi-preview-handling-col" data-manage-col-key="handling-time" style="display:none;"></td>';
+
         return `<tr data-preview-row-key="${escapeAttrLite(key)}">
 
         <td class="sj-cell-thumb cell-center" style="text-align:center;">${previewThumbHtml(row.preview_image_b64)}</td>
 
         <td>${escapeHtmlLite(row.sku || '')}</td>
+
+        <td>${escapeHtmlLite(row.fabric || '-')}</td>
+
+        <td>${escapeHtmlLite(row.spec_name || '-')}</td>
 
         <td>${escapeHtmlLite(row.warehouse || '-')}</td>
 
@@ -1692,6 +1788,8 @@
           <input type="number" class="inline-input preview-edit-input spi-preview-qty-input" min="0" step="1" value="${normalizePreviewQty(row.qty)}">
 
         </td>
+
+        ${handlingCell}
 
         <td class="${remarkClass}">${escapeHtmlLite(remarkText)}</td>
 
@@ -1988,29 +2086,23 @@
 
     tbody.dataset.spiQtyBound = '1';
 
-    tbody.addEventListener('input', function (e) {
+    const onEdit = function (e) {
 
-      const input = e.target && e.target.closest ? e.target.closest('.spi-preview-qty-input') : null;
+      const qtyInput = e.target && e.target.closest ? e.target.closest('.spi-preview-qty-input') : null;
 
-      if (!input) return;
+      const htInput = e.target && e.target.closest ? e.target.closest('.spi-preview-handling-input') : null;
 
-      input.value = String(normalizePreviewQty(input.value));
+      if (qtyInput) qtyInput.value = String(normalizePreviewQty(qtyInput.value));
 
-      updatePreviewSummary();
+      if (htInput) htInput.value = String(normalizeHandlingTime(htInput.value));
 
-    });
+      if (qtyInput || htInput) updatePreviewSummary();
 
-    tbody.addEventListener('change', function (e) {
+    };
 
-      const input = e.target && e.target.closest ? e.target.closest('.spi-preview-qty-input') : null;
+    tbody.addEventListener('input', onEdit);
 
-      if (!input) return;
-
-      input.value = String(normalizePreviewQty(input.value));
-
-      updatePreviewSummary();
-
-    });
+    tbody.addEventListener('change', onEdit);
 
   }
 
