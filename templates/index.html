@@ -1380,11 +1380,16 @@
         }
 
         async function loadAssigneeCheckboxes() {
+            const list = document.getElementById('todoModalAssigneeList');
+            if (!list) return;
+            if (Array.isArray(window.todoAssigneeOptions) && window.todoAssigneeOptions.length) {
+                renderAssigneeOptions(document.getElementById('todoModalAssigneeSearch') ? document.getElementById('todoModalAssigneeSearch').value : '');
+                updateAssigneeSelected();
+                return;
+            }
             try {
                 const resp = await fetch('/api/employee', { credentials: 'include' });
                 const data = await resp.json();
-                const list = document.getElementById('todoModalAssigneeList');
-                if (!list) return;
                 window.todoAssigneeOptions = Array.isArray(data.items) ? data.items.map(emp => ({
                     id: emp.id,
                     username: emp.username || '',
@@ -1774,9 +1779,55 @@
             });
         }
 
+        function buildTodoItemFromSavePayload(payload, todoId, serverItem) {
+            if (serverItem && serverItem.id != null) return serverItem;
+            const id = parseInt(todoId, 10) || 0;
+            if (!id) return null;
+            const prev = (window.homeTodosCache || []).find(x => (parseInt(x.id, 10) || 0) === id) || {};
+            const typeId = parseInt(payload.todo_type_id || prev.todo_type_id || 0, 10) || 0;
+            const typeRow = (window.todoTypesCache || []).find(x => (parseInt(x.id, 10) || 0) === typeId);
+            const assigneeOpts = window.todoAssigneeOptions || [];
+            const assignees = (payload.assignee_ids || []).map((aid) => {
+                const uid = parseInt(aid, 10) || 0;
+                const emp = assigneeOpts.find(x => (parseInt(x.id, 10) || 0) === uid);
+                const old = (prev.assignees || []).find(x => (parseInt(x.assignee_id, 10) || 0) === uid);
+                return {
+                    assignee_id: uid,
+                    name: (emp && emp.displayName) || (old && old.name) || '',
+                    username: (emp && emp.username) || (old && old.username) || '',
+                    is_completed: uid === (currentUser && Number(currentUser.id)) ? Number(payload.is_completed || 0) : (old ? Number(old.is_completed || 0) : 0),
+                    completed_at: uid === (currentUser && Number(currentUser.id)) ? (payload.completed_at || null) : (old ? old.completed_at : null),
+                };
+            });
+            return {
+                ...prev,
+                id,
+                title: payload.title,
+                todo_type_id: typeId,
+                todo_type_name: typeRow ? (typeRow.type_name || prev.todo_type_name || '') : (prev.todo_type_name || ''),
+                start_date: payload.start_date,
+                due_date: payload.due_date,
+                reminder_interval_days: payload.reminder_interval_days,
+                is_recurring: payload.is_recurring,
+                detail: payload.detail,
+                priority: payload.priority,
+                my_is_completed: payload.is_completed,
+                my_completed_at: payload.completed_at,
+                sales_product_ids: payload.related_sales_product_ids || [],
+                sku_family_ids: payload.related_sku_family_ids || [],
+                platform_type_ids: payload.related_platform_type_ids || [],
+                platform_skus: prev.platform_skus || [],
+                sku_families: prev.sku_families || [],
+                platform_type_names: prev.platform_type_names || [],
+                assignees,
+            };
+        }
+
         async function handleTodoModalSubmit(event) {
             event.preventDefault();
             
+            const saveBtn = document.getElementById('modalSaveBtn');
+            if (saveBtn && saveBtn.disabled) return;
             const title = document.getElementById('todoModalTitle_input').value.trim();
             const todo_type_id = parseInt((document.getElementById('todoModalTypeSegment') || {}).dataset.value || '0', 10) || 0;
             const start_date = document.getElementById('todoModalStartDate').value;
@@ -1844,6 +1895,10 @@
                 const todoId = (document.getElementById('todoModalId') || {}).value || '';
                 const isEdit = !!todoId;
                 if (isEdit) payload.id = parseInt(todoId, 10);
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = '保存中…';
+                }
                 const resp = await fetch('/api/todo', {
                     method: isEdit ? 'PUT' : 'POST',
                     credentials: 'include',
@@ -1853,15 +1908,17 @@
                 
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    window.showAppSaveResult({ action: isEdit ? 'save' : 'create' });
+                    const savedId = isEdit ? (parseInt(todoId, 10) || 0) : (parseInt(data.id, 10) || 0);
+                    const item = data.item || buildTodoItemFromSavePayload(payload, savedId, null);
                     closeTodoModal();
-                    if (data.item) {
-                        mergeTodoIntoCaches(data.item);
+                    if (item) {
+                        mergeTodoIntoCaches(item);
                         renderTodoTable(window.homeTodosCache || []);
                         refreshCalendarFromCache();
                     } else {
-                        loadTodos().then(() => refreshCalendarFromCache());
+                        loadTodos({ skipRecurringReset: true }).then(() => refreshCalendarFromCache());
                     }
+                    window.showAppSaveResult({ action: isEdit ? 'save' : 'create' });
                 } else {
                     window.showAppSaveResult({ action: 'save', isError: true, message: data.message || '保存失败' });
                 }
@@ -1871,6 +1928,11 @@
                     isError: true,
                     message: '请求失败：' + (err && err.message ? err.message : ''),
                 });
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存待办';
+                }
             }
         }
 
