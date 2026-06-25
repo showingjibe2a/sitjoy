@@ -225,6 +225,17 @@
             flex: 1;
             min-width: 0;
         }
+        .sales-product-link-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            width: 100%;
+            min-width: 0;
+        }
+        .sales-product-link-wrap .preview-edit-input {
+            flex: 1;
+            min-width: 0;
+        }
         a.sales-asin-open.btn-capsule-sm {
             flex-shrink: 0;
             text-decoration: none;
@@ -565,6 +576,7 @@
                             <th data-manage-col-key="规格名称" data-sort-key="spec_name">规格名称</th>
                             <th data-manage-col-key="销售平台SKU" data-sort-key="platform_sku">销售平台SKU</th>
                             <th data-manage-col-key="子体编号" data-sort-key="child_code">子体编号</th>
+                            <th data-manage-col-key="链接" data-sort-key="product_link">链接</th>
                             <th data-manage-col-key="GTIN" data-sort-key="gtin">GTIN</th>
                             <th data-manage-col-key="UPC" data-sort-key="upc">UPC</th>
                             <th data-manage-col-key="下单SKU">下单SKU</th>
@@ -641,6 +653,10 @@
                         <div class="form-group">
                             <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN，或其他平台的自定义编号（如沃尔玛的Item ID）"></span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalProductLink" class="label-help">链接<span class="help-dot" data-tip="产品网页链接；亚马逊店铺下填写子ASIN后会自动填入 https://www.amazon.com/dp/+ASIN"></span></label>
+                            <input type="url" id="modalProductLink" class="optional-field" placeholder="https://">
                         </div>
                         <div class="pm-grid-3 pm-form-full" style="margin-top:0.15rem;">
                             <div class="form-group pm-span-1">
@@ -1186,6 +1202,7 @@
         let manualFabric = false;
         let manualSpecName = false;
         let manualPlatformSku = false;
+        let manualProductLink = false;
         let insideAutoComputeFabricSpec = false;
         let variantPrefillTimer = null;
         let specSuggestTimer = null;
@@ -1202,7 +1219,7 @@
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
         let salesProductAggregateMode = 'none';
         let salesProductCollapsedParentGroups = new Set();
-        const SALES_PRODUCT_TABLE_COLSPAN = 28;
+        const SALES_PRODUCT_TABLE_COLSPAN = 29;
         const SALES_PARENT_GROUP_MIDDLE_COLSPAN = SALES_PRODUCT_TABLE_COLSPAN - 3;
         const SALES_PROMOTION_ACTIVITY_TYPES = ['Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销'];
         const SALES_DISCOUNT_FORM_OPTIONS = [
@@ -1210,7 +1227,7 @@
             { value: 'amount', label: '金额' },
         ];
         const SALES_PREVIEW_DRAFT_FIELDS = [
-            'child_code', 'gtin', 'upc', 'sale_price_usd',
+            'child_code', 'product_link', 'gtin', 'upc', 'sale_price_usd',
             'promotion_activity_type', 'discount_form_type',
             'actual_discount_rate', 'actual_discount_amount_usd', 'discounted_price_usd',
             'notes',
@@ -1278,7 +1295,7 @@
         }
 
         function normalizeSalesPreviewFieldValue(field, rawValue) {
-            if (field === 'child_code' || field === 'gtin' || field === 'upc' || field === 'notes') {
+            if (field === 'child_code' || field === 'gtin' || field === 'upc' || field === 'notes' || field === 'product_link') {
                 return String(rawValue == null ? '' : rawValue).trim();
             }
             if (field === 'promotion_activity_type' || field === 'discount_form_type') {
@@ -1295,6 +1312,7 @@
         function salesPreviewDraftSnapshot(item) {
             return {
                 child_code: item.child_code == null ? '' : String(item.child_code),
+                product_link: item.product_link == null ? '' : String(item.product_link),
                 gtin: item.gtin == null ? '' : String(item.gtin),
                 upc: item.upc == null ? '' : String(item.upc),
                 sale_price_usd: item.sale_price_usd,
@@ -1345,6 +1363,7 @@
                 id: Number(id),
                 touched_fields: touched.slice(),
                 child_code: pick('child_code'),
+                product_link: pick('product_link'),
                 gtin: pick('gtin'),
                 upc: pick('upc'),
                 sale_price_usd: pick('sale_price_usd'),
@@ -1455,6 +1474,9 @@
                 const field = el.getAttribute('data-field');
                 if (!id || !field) return;
                 updateSalesPreviewDraft(id, field, el.value);
+                if (field === 'child_code') {
+                    maybeAutoFillPreviewProductLinkFromChildCode(id, el.closest('tr'));
+                }
                 if (SALES_ECON_LINKED_FIELDS.has(field)) {
                     refreshSalesRowEconomicsCells(id, field);
                 }
@@ -2596,6 +2618,43 @@
             return `https://www.amazon.com/dp/${encodeURIComponent(code)}`;
         }
 
+        function salesEffectiveProductLink(item) {
+            const link = getSalesPreviewEffectiveValue(item, 'product_link');
+            const text = link == null ? '' : String(link).trim();
+            if (text) return text;
+            if (isSalesAmazonPlatform(item)) {
+                const asin = String(getSalesPreviewEffectiveValue(item, 'child_code') || '').trim();
+                if (asin) return salesAmazonAsinDpUrl(asin);
+            }
+            return '';
+        }
+
+        function maybeAutoFillModalAmazonProductLink(force) {
+            const shopId = document.getElementById('modalParentShop')?.value || '';
+            if (!isSalesAmazonPlatformName(salesPlatformTypeNameFromShopId(shopId))) return;
+            if (!force && manualProductLink) return;
+            const asin = (document.getElementById('modalChildCode')?.value || '').trim();
+            const linkEl = document.getElementById('modalProductLink');
+            if (!linkEl) return;
+            const autoUrl = asin ? salesAmazonAsinDpUrl(asin) : '';
+            linkEl.value = autoUrl;
+            if (force || !manualProductLink) manualProductLink = false;
+        }
+
+        function maybeAutoFillPreviewProductLinkFromChildCode(itemId, row) {
+            const item = (salesProductItems || []).find(x => String(x.id) === String(itemId));
+            if (!item || !row || !isSalesAmazonPlatform(item)) return;
+            const draft = salesPreviewEditDraft[String(itemId)];
+            if (draft && draft._touched && draft._touched.product_link) return;
+            const childEl = row.querySelector('.preview-edit-field[data-field="child_code"]');
+            if (!childEl) return;
+            const asin = childEl.value.trim();
+            const autoUrl = asin ? salesAmazonAsinDpUrl(asin) : '';
+            const linkEl = row.querySelector('.preview-edit-field[data-field="product_link"]');
+            if (linkEl) linkEl.value = autoUrl;
+            if (draft) draft.product_link = autoUrl;
+        }
+
         function sjSalesListThumbHtml(previewB64) {
             const b64 = String(previewB64 || '').trim();
             if (!b64) return sjSalesListThumbEmptyHtml();
@@ -2609,10 +2668,21 @@
 
         function renderSalesChildCodeCell(item, childCodeText) {
             const asin = String(childCodeText || '').trim();
-            const linkHtml = (isSalesAmazonPlatform(item) && asin)
-                ? `<a class="btn-capsule-sm sales-asin-open" href="${escapeAttr(salesAmazonAsinDpUrl(asin))}" target="_blank" rel="noopener noreferrer" title="在 Amazon 打开（${escapeAttr(asin)}）" aria-label="在 Amazon 打开">↗</a>`
+            const openUrl = salesEffectiveProductLink(item) || ((isSalesAmazonPlatform(item) && asin) ? salesAmazonAsinDpUrl(asin) : '');
+            const linkHtml = openUrl
+                ? `<a class="btn-capsule-sm sales-asin-open" href="${escapeAttr(openUrl)}" target="_blank" rel="noopener noreferrer" title="打开产品链接" aria-label="打开产品链接">↗</a>`
                 : '';
             return `<td class="preview-edit-cell sales-child-code-cell"><div class="sales-child-code-wrap"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="child_code" type="text" value="${escapeAttr(childCodeText)}">${linkHtml}</div></td>`;
+        }
+
+        function renderSalesProductLinkCell(item) {
+            const linkVal = getSalesPreviewEffectiveValue(item, 'product_link');
+            const linkText = linkVal == null ? '' : String(linkVal);
+            const openUrl = salesEffectiveProductLink(item);
+            const linkHtml = openUrl
+                ? `<a class="btn-capsule-sm sales-asin-open" href="${escapeAttr(openUrl)}" target="_blank" rel="noopener noreferrer" title="打开产品链接" aria-label="打开产品链接">↗</a>`
+                : '';
+            return `<td class="preview-edit-cell sales-product-link-cell" data-manage-col-key="链接" data-field-wrap="product_link"><div class="sales-product-link-wrap"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="product_link" type="url" value="${escapeAttr(linkText)}" placeholder="产品网页链接">${linkHtml}</div></td>`;
         }
 
         function renderSalesDataRowHtml(item, groupKey, hidden) {
@@ -2662,6 +2732,7 @@
                     <td data-display-value="${escapeAttr(item.spec_name || '')}">${item.spec_name || ''}</td>
                     <td data-display-value="${escapeAttr(item.platform_sku || '')}">${item.platform_sku || ''}</td>
                     ${renderSalesChildCodeCell(item, childCodeText)}
+                    ${renderSalesProductLinkCell(item)}
                     <td class="preview-edit-cell" data-field-wrap="gtin"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gtin" type="text" value="${escapeAttr(gtinText)}"></td>
                     <td class="preview-edit-cell" data-field-wrap="upc"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="upc" type="text" value="${escapeAttr(upcText)}"></td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
@@ -5200,6 +5271,7 @@
             manualFabric = false;
             manualSpecName = false;
             manualPlatformSku = false;
+            manualProductLink = false;
             originalSpecName = '';
             originalFabric = '';
             document.getElementById('pm-modal-title').innerText = '新增销售产品';
@@ -5217,6 +5289,7 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
+            document.getElementById('modalProductLink').value = '';
             document.getElementById('modalGtin').value = '';
             document.getElementById('modalUpc').value = '';
             document.getElementById('modalNotes').value = '';
@@ -5265,6 +5338,7 @@
             manualFabric = false;
             manualSpecName = false;
             manualPlatformSku = true;
+            manualProductLink = false;
             document.getElementById('pm-modal-title').innerText = '编辑销售产品';
 
             document.getElementById('modalParentShop').value = item.shop_id ? String(item.shop_id) : '';
@@ -5277,6 +5351,13 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = item.child_code || '';
+            const editShopId = item.shop_id ? String(item.shop_id) : '';
+            const editAsin = (item.child_code || '').trim();
+            const editAutoLink = (isSalesAmazonPlatformName(salesPlatformTypeNameFromShopId(editShopId)) && editAsin)
+                ? salesAmazonAsinDpUrl(editAsin) : '';
+            const savedLink = (item.product_link || '').trim();
+            manualProductLink = !!(savedLink && savedLink !== editAutoLink);
+            document.getElementById('modalProductLink').value = savedLink || editAutoLink || '';
             document.getElementById('modalGtin').value = item.gtin || '';
             document.getElementById('modalUpc').value = item.upc || '';
             document.getElementById('modalNotes').value = item.notes || '';
@@ -5334,6 +5415,7 @@
                 parent_code: document.getElementById('modalParentCode').value || null,
                 parent_sku_marker: document.getElementById('modalParentSkuMarker').value.trim(),
                 child_code: document.getElementById('modalChildCode').value.trim(),
+                product_link: document.getElementById('modalProductLink').value.trim(),
                 gtin: document.getElementById('modalGtin').value.trim(),
                 upc: document.getElementById('modalUpc').value.trim(),
                 notes: document.getElementById('modalNotes').value.trim(),
@@ -5943,6 +6025,7 @@
                 renderParentCodeSuggestions();
                 updateParentSkuMarkerVisibility();
                 updateCostWarning();
+                maybeAutoFillModalAmazonProductLink(true);
             });
             bindEl('modalParentCode', 'input', updateParentSkuMarkerVisibility);
             bindEl('modalSalePrice', 'input', updateCostWarning);
@@ -5973,6 +6056,15 @@
             const modalPlatformSkuEl = document.getElementById('modalPlatformSku');
             if (modalPlatformSkuEl) {
                 modalPlatformSkuEl.addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
+            }
+            const modalChildCodeEl = document.getElementById('modalChildCode');
+            if (modalChildCodeEl) {
+                modalChildCodeEl.addEventListener('input', function() { maybeAutoFillModalAmazonProductLink(false); });
+                modalChildCodeEl.addEventListener('change', function() { maybeAutoFillModalAmazonProductLink(false); });
+            }
+            const modalProductLinkEl = document.getElementById('modalProductLink');
+            if (modalProductLinkEl) {
+                modalProductLinkEl.addEventListener('input', function() { manualProductLink = this.value.trim() !== ''; });
             }
             const salesProductUploadInputEl = document.getElementById('salesProductUploadInput');
             if (salesProductUploadInputEl) {

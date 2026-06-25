@@ -3304,6 +3304,56 @@ class SalesProductMixin:
             text = text[:512]
         return text
 
+    def _parse_sales_product_link(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if len(text) > 512:
+            text = text[:512]
+        return text
+
+    def _is_amazon_platform_type_name(self, name):
+        text = (name or '').strip().lower()
+        return '亚马逊' in text or text == 'amazon' or 'amazon' in text
+
+    def _amazon_product_link_from_child_code(self, child_code):
+        code = (str(child_code) if child_code is not None else '').strip()
+        if not code:
+            return None
+        return f'https://www.amazon.com/dp/{code}'
+
+    def _resolve_sales_product_link(self, platform_type_name, child_code, product_link_raw):
+        if product_link_raw is not None:
+            text = str(product_link_raw).strip()
+            if text:
+                return self._parse_sales_product_link(text)
+        if self._is_amazon_platform_type_name(platform_type_name):
+            return self._amazon_product_link_from_child_code(child_code)
+        return None
+
+    def _load_shop_platform_type_name(self, cur, shop_id):
+        if not shop_id:
+            return None
+        cur.execute(
+            """
+            SELECT pt.name AS platform_type_name
+            FROM shops s
+            LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
+            WHERE s.id=%s
+            LIMIT 1
+            """,
+            (int(shop_id),),
+        )
+        row = cur.fetchone() or {}
+        return row.get('platform_type_name')
+
+    def _extend_sales_product_link_write(self, conn, columns, values, product_link):
+        if self._table_has_column(conn, 'sales_products', 'product_link'):
+            columns.append('product_link')
+            values.append(product_link)
+
     def _sales_product_barcode_select_sql(self, conn, alias='sp'):
         parts = []
         if self._table_has_column(conn, 'sales_products', 'gtin'):
@@ -3355,6 +3405,7 @@ class SalesProductMixin:
 
     _SALES_PREVIEW_FIELD_NAMES = frozenset({
         'child_code',
+        'product_link',
         'gtin',
         'upc',
         'sale_price_usd',
@@ -3371,6 +3422,7 @@ class SalesProductMixin:
         exists = {
             'gtin': self._table_has_column(conn, 'sales_products', 'gtin'),
             'upc': self._table_has_column(conn, 'sales_products', 'upc'),
+            'product_link': self._table_has_column(conn, 'sales_products', 'product_link'),
         }
         for col in (
             'promotion_activity_type',
@@ -3382,6 +3434,44 @@ class SalesProductMixin:
         ):
             exists[col] = self._table_has_column(conn, 'sales_products', col)
         return exists
+
+    def _sales_product_preview_resolve_product_links(self, conn, cur, row_map, touched_map, sp_has_shop_col):
+        """子体编号变更时，亚马逊店铺自动补全 product_link。"""
+        if not self._table_has_column(conn, 'sales_products', 'product_link'):
+            return
+        if not row_map:
+            return
+        shop_expr = self._sales_product_shop_expr(sp_has_shop_col)
+        ids = list(row_map.keys())
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(
+            f"""
+            SELECT sp.id, pt.name AS platform_type_name
+            FROM sales_products sp
+            LEFT JOIN sales_parents p ON p.id = sp.parent_id
+            LEFT JOIN shops s ON s.id = {shop_expr}
+            LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
+            WHERE sp.id IN ({placeholders})
+            """,
+            ids,
+        )
+        platform_by_id = {
+            int(row.get('id') or 0): row.get('platform_type_name')
+            for row in (cur.fetchall() or [])
+            if row.get('id')
+        }
+        for item_id, values in row_map.items():
+            touched = touched_map.get(item_id) or set()
+            platform = platform_by_id.get(int(item_id))
+            if 'product_link' in touched:
+                values['product_link'] = self._resolve_sales_product_link(
+                    platform, values.get('child_code'), values.get('product_link')
+                )
+            elif 'child_code' in touched:
+                values['product_link'] = self._resolve_sales_product_link(
+                    platform, values.get('child_code'), None
+                )
+                touched_map.setdefault(item_id, set()).add('product_link')
 
     def _sales_product_preview_batch_update(self, cur, row_map, touched_map, col_exists, chunk_size=120):
         """预览行内编辑批量保存：按列 CASE WHEN 合并 UPDATE，减少数据库往返。"""
@@ -3395,6 +3485,8 @@ class SalesProductMixin:
             patch = {}
             if 'child_code' in touched:
                 patch['child_code'] = values.get('child_code')
+            if col_exists.get('product_link') and 'product_link' in touched:
+                patch['product_link'] = values.get('product_link')
             if col_exists.get('gtin') and 'gtin' in touched:
                 patch['gtin'] = values.get('gtin')
             if col_exists.get('upc') and 'upc' in touched:
@@ -3943,6 +4035,7 @@ class SalesProductMixin:
                             f"""
                             SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
                                 sp.platform_sku, sp.child_code,
+                                {('sp.product_link' if self._table_has_column(conn, 'sales_products', 'product_link') else 'NULL AS product_link')},
                                 {self._sales_product_barcode_select_sql(conn, 'sp')},
                                 pf.sku_family, v.spec_name,                                 {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
                                 sp.sale_price_usd,
@@ -3990,6 +4083,7 @@ class SalesProductMixin:
                             row.get('sku_marker') or '',
                             row.get('platform_sku') or '',
                             row.get('child_code') or '',
+                            row.get('product_link') or '',
                             row.get('gtin') or '',
                             row.get('upc') or '',
                             row.get('sku_family') or '',
@@ -4004,15 +4098,15 @@ class SalesProductMixin:
             section_headers = [
                 ('产品状态', 1, 1),
                 ('父体关联', 2, 4),
-                ('基础信息', 5, 8),
-                ('规格信息', 9, 12),
-                ('销售信息', 13, 14)
+                ('基础信息', 5, 9),
+                ('规格信息', 10, 12),
+                ('销售信息', 13, 15)
             ]
             # 第2行：字段标题
             cn_headers = [
                 '产品状态(启用/留用/弃用)',
                 '店铺(必填)', '父体编号', '新父体SKU标识(父体不存在时选填)',
-                '销售平台SKU', '子体编号', 'GTIN', 'UPC',
+                '销售平台SKU', '子体编号', '链接', 'GTIN', 'UPC',
                 '货号', '规格名称', '面料(面料编号)',
                 '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)',
                 '售价(USD)', '备注'
@@ -4263,6 +4357,9 @@ class SalesProductMixin:
                 '父体编号': 'parent_code',
                 '新父体SKU标识(父体不存在时选填)': 'parent_sku_marker',
                 '子体编号': 'child_code',
+                '链接': 'product_link',
+                '产品网页链接': 'product_link',
+                'product_link': 'product_link',
                 'GTIN': 'gtin',
                 'UPC': 'upc',
                 'gtin': 'gtin',
@@ -4395,6 +4492,19 @@ class SalesProductMixin:
                     cur.execute("SELECT id, shop_name FROM shops")
                     shop_map = {str(row['shop_name']).strip(): row['id'] for row in (cur.fetchall() or []) if row.get('shop_name')}
 
+                    cur.execute(
+                        """
+                        SELECT s.id, pt.name AS platform_type_name
+                        FROM shops s
+                        LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
+                        """
+                    )
+                    shop_platform_map = {
+                        int(row.get('id') or 0): row.get('platform_type_name')
+                        for row in (cur.fetchall() or [])
+                        if row.get('id')
+                    }
+
                     has_reship_accessory = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
                     accessory_filter_sql = "WHERE COALESCE(op.is_reship_accessory, 0) = 0" if has_reship_accessory else ""
                     cur.execute(
@@ -4471,6 +4581,8 @@ class SalesProductMixin:
                         parent_code = (get_cell(row, 'parent_code') or '').strip() or None
                         parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
                         child_code = (get_cell(row, 'child_code') or '').strip() or None
+                        import_has_product_link = 'product_link' in header_map
+                        product_link_raw = get_cell(row, 'product_link') if import_has_product_link else None
                         import_has_gtin = 'gtin' in header_map
                         import_has_upc = 'upc' in header_map
                         gtin = self._parse_sales_barcode(get_cell(row, 'gtin')) if import_has_gtin else None
@@ -4526,6 +4638,11 @@ class SalesProductMixin:
                             parent_id = parent_row.get('id')
                         else:
                             shop_id = shop_id_from_file
+
+                        platform_name = shop_platform_map.get(int(shop_id))
+                        product_link = self._resolve_sales_product_link(
+                            platform_name, child_code, product_link_raw
+                        )
 
                         link_entries = []
                         for sku, qty in parse_links(order_sku_links):
@@ -4653,6 +4770,9 @@ class SalesProductMixin:
                                     "child_code=%s",
                                 ]
                                 update_values = [final_platform_sku, product_status, variant_id, parent_id, child_code]
+                                if self._table_has_column(conn, 'sales_products', 'product_link'):
+                                    update_fields.append("product_link=%s")
+                                    update_values.append(product_link)
                                 if import_has_gtin and self._table_has_column(conn, 'sales_products', 'gtin'):
                                     update_fields.append("gtin=%s")
                                     update_values.append(gtin)
@@ -4683,6 +4803,9 @@ class SalesProductMixin:
                                 insert_values.extend([final_platform_sku, product_status])
                                 insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
                                 insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
+                                if self._table_has_column(conn, 'sales_products', 'product_link'):
+                                    insert_columns.append('product_link')
+                                    insert_values.append(product_link)
                                 if import_has_gtin and self._table_has_column(conn, 'sales_products', 'gtin'):
                                     insert_columns.append('gtin')
                                     insert_values.append(gtin)
@@ -4751,6 +4874,11 @@ class SalesProductMixin:
                             fabric_select = "v.fabric" if has_fabric_text else "''"
                         barcode_select = self._sales_product_barcode_select_sql(conn, 'sp')
                         preview_fields_select = self._sales_product_preview_select_sql(conn)
+                        product_link_select = (
+                            "sp.product_link"
+                            if self._table_has_column(conn, 'sales_products', 'product_link')
+                            else "NULL AS product_link"
+                        )
                         base_sql = """
                             SELECT
                                 sp.id,
@@ -4759,6 +4887,7 @@ class SalesProductMixin:
                                 sp.product_status,
                                 sp.parent_id,
                                 sp.child_code,
+                                {product_link_select},
                                 {barcode_select},
                                 sp.variant_id,
                                 v.sku_family_id,
@@ -4788,6 +4917,7 @@ class SalesProductMixin:
                             LEFT JOIN brands b ON b.id = s.brand_id
                         """.format(
                             shop_expr=shop_expr,
+                            product_link_select=product_link_select,
                             barcode_select=barcode_select,
                             fabric_join=fabric_join,
                             fabric_select=fabric_select,
@@ -4818,6 +4948,9 @@ class SalesProductMixin:
                                 kw_params.append(f"%{keyword}%")
                             if self._table_has_column(conn, 'sales_products', 'notes'):
                                 text_filters.append("sp.notes LIKE %s")
+                                kw_params.append(f"%{keyword}%")
+                            if self._table_has_column(conn, 'sales_products', 'product_link'):
+                                text_filters.append("sp.product_link LIKE %s")
                                 kw_params.append(f"%{keyword}%")
                             params.extend(kw_params)
                             if has_fabric_text:
@@ -4956,6 +5089,12 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '无法生成销售平台SKU，请手动输入'}, start_response)
                     
                     with conn.cursor() as cur:
+                        platform_name = self._load_shop_platform_type_name(cur, final_shop_id)
+                    product_link = self._resolve_sales_product_link(
+                        platform_name, child_code, data.get('product_link')
+                    )
+
+                    with conn.cursor() as cur:
                         insert_columns = []
                         insert_values = []
                         if sp_has_shop_col:
@@ -4965,6 +5104,7 @@ class SalesProductMixin:
                         insert_values.extend([platform_sku, product_status])
                         insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
                         insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
+                        self._extend_sales_product_link_write(conn, insert_columns, insert_values, product_link)
                         self._extend_sales_product_barcode_write(conn, insert_columns, insert_values, gtin, upc)
                         if self._table_has_column(conn, 'sales_products', 'notes'):
                             insert_columns.append('notes')
@@ -5008,8 +5148,13 @@ class SalesProductMixin:
                         upc = self._parse_sales_barcode(upc_raw) if upc_raw is not None else None
                         notes_raw = item.get('notes')
                         notes = self._parse_sales_notes(notes_raw) if notes_raw is not None else None
+                        product_link_raw = item.get('product_link')
+                        product_link = None
+                        if product_link_raw is not None:
+                            product_link = (str(product_link_raw).strip() or None)
                         row_map[int(item_id)] = {
                             'child_code': child_code,
+                            'product_link': product_link,
                             'gtin': gtin,
                             'upc': upc,
                             'sale_price_usd': self._parse_float(item.get('sale_price_usd')),
@@ -5036,7 +5181,11 @@ class SalesProductMixin:
 
                     with self._get_db_connection() as conn:
                         col_exists = self._sales_product_preview_col_exists(conn)
+                        sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
                         with conn.cursor() as cur:
+                            self._sales_product_preview_resolve_product_links(
+                                conn, cur, row_map, touched_map, sp_has_shop_col
+                            )
                             updated = self._sales_product_preview_batch_update(
                                 cur, row_map, touched_map, col_exists
                             )
@@ -5180,6 +5329,12 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '修改规格名称或面料将新建主图文件夹，请二次确认后重试'}, start_response)
                     
                     with conn.cursor() as cur:
+                        platform_name = self._load_shop_platform_type_name(cur, final_shop_id)
+                    product_link = self._resolve_sales_product_link(
+                        platform_name, child_code, data.get('product_link')
+                    )
+
+                    with conn.cursor() as cur:
                         update_fields = [
                             "platform_sku=%s",
                             "product_status=%s",
@@ -5188,6 +5343,9 @@ class SalesProductMixin:
                             "child_code=%s",
                         ]
                         update_values = [platform_sku, product_status, variant_id, parent_id, child_code]
+                        if self._table_has_column(conn, 'sales_products', 'product_link'):
+                            update_fields.append("product_link=%s")
+                            update_values.append(product_link)
                         if self._table_has_column(conn, 'sales_products', 'gtin'):
                             update_fields.append("gtin=%s")
                             update_values.append(gtin)
