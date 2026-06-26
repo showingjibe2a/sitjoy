@@ -389,7 +389,7 @@ class DingTalkNotifyMixin:
             us_total = entry.get('us_remaining_qty')
             if us_total is None:
                 us_total = 0
-            header = f'**{sku}**（美国剩余：{us_total}）'
+            header = f'**{sku}**（全美库存：{us_total}）<br/>'
             detail_parts = []
             for row in rows:
                 wh = str(row.get('warehouse_name') or '').strip()
@@ -401,7 +401,7 @@ class DingTalkNotifyMixin:
                 else:
                     prev_qty = 0
                     new_qty = self._parse_int(row.get('available_qty')) or 0
-                detail_parts.append(f'**{wh}：**{prev_qty} → {new_qty}')
+                detail_parts.append(f'{wh}：{prev_qty} → {new_qty}')
             if not detail_parts:
                 continue
             detail_block = '<br/>'.join(detail_parts)
@@ -502,7 +502,7 @@ class DingTalkNotifyMixin:
             box = str(meta.get('logistics_box_no') or '').strip() or '-'
             bl = str(meta.get('bill_of_lading_no') or '').strip()
             bl_text = f' · 提单 {bl}' if bl else ''
-            header = f'**{box}**{bl_text}'
+            header = f'**{box}**{bl_text}<br/>'
             detail_parts = []
             seen_fields = set()
             for row in changes:

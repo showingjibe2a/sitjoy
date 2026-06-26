@@ -1487,7 +1487,7 @@
                 return `<div class="app-dingtalk-notify-sku-line"><strong>${wh}：</strong>0 → ${escapeAppNotifyHtml(String(qty))}</div>`;
             }).join('');
             return '<div class="app-dingtalk-notify-block">'
-                + `<div class="app-dingtalk-notify-block-head ${headClass}">• ${sku}（美国剩余：${escapeAppNotifyHtml(String(usTotal))}）</div>`
+                + `<div class="app-dingtalk-notify-block-head ${headClass}">• ${sku}（全美库存：${escapeAppNotifyHtml(String(usTotal))}）</div>`
                 + (detailHtml ? `<div class="app-dingtalk-notify-block-skus">${detailHtml}</div>` : '')
                 + '</div>';
         });
@@ -1576,7 +1576,7 @@
             const meta = group.meta || {};
             const box = escapeAppNotifyHtml(String(meta.logistics_box_no || '').trim() || '-');
             const bl = String(meta.bill_of_lading_no || '').trim();
-            const blText = bl ? ` · 提单 ${escapeAppNotifyHtml(bl)}` : '';
+            const blText = bl ? `<br>提单 ${escapeAppNotifyHtml(bl)}` : '';
             const seen = new Set();
             const detailHtml = (group.changes || []).map((item) => {
                 const field = String(item && item.field || '').trim();

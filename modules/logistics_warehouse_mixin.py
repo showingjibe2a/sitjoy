@@ -2804,27 +2804,22 @@ class LogisticsWarehouseMixin:
         placeholders = ','.join(['%s'] * len(sku_list))
         cur.execute(
             f"""
-            SELECT op.sku, COALESCE(SUM(GREATEST(i.available_qty, 0)), 0) AS us_qty
+            SELECT op.sku, COALESCE(SUM(GREATEST(i.available_qty, 0)), 0) AS total_qty
             FROM logistics_overseas_inventory i
             JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
             JOIN order_products op ON op.id = i.order_product_id
-            LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
             WHERE COALESCE(w.is_enabled, 1) = 1
-              AND (
-                    COALESCE(dr.region_name, w.region) LIKE %s
-                 OR COALESCE(dr.region_name, w.region) LIKE %s
-              )
               AND op.sku IN ({placeholders})
             GROUP BY op.sku
             """,
-            ('%美国%', '%US%') + tuple(sku_list),
+            tuple(sku_list),
         )
         out = {}
         for row in cur.fetchall() or []:
             sku = str(row.get('sku') or '').strip()
             if not sku:
                 continue
-            out[sku] = max(0, self._parse_int(row.get('us_qty')) or 0)
+            out[sku] = max(0, self._parse_int(row.get('total_qty')) or 0)
         return out
 
     def _enrich_overseas_notify_items(self, cur, items):
@@ -3100,7 +3095,7 @@ class LogisticsWarehouseMixin:
                                     'warehouse_name': warehouse_name,
                                     'available_qty': int(available_qty),
                                 })
-                restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                        restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                 return self.send_json({
                     'status': 'success',
                     'restock_items': restock_items if available_qty > 0 else [],
@@ -3200,10 +3195,10 @@ class LogisticsWarehouseMixin:
                             """
                             cur.execute(update_sql, tuple(sql_params + id_list))
 
-                    stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
-                    restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
-                    stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
-                    restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                            stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+                            restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+                            stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
+                            restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                     return self.send_json({
                         'status': 'success',
                         'updated': len(parsed_items),
