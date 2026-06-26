@@ -1475,11 +1475,22 @@
         return lines;
     }
 
+    function formatTransitSkuDetailHtmlLines(skuLines){
+        return (Array.isArray(skuLines) ? skuLines : []).map((row) => {
+            const sku = String(row && row.sku || '').trim() || '-';
+            const qty = Number(row && row.qty);
+            if(Number.isFinite(qty) && qty > 0){
+                return `${escapeAppNotifyHtml(sku)}<br>× ${escapeAppNotifyHtml(String(qty))}`;
+            }
+            return escapeAppNotifyHtml(sku);
+        }).filter(Boolean);
+    }
+
     function formatTransitSkuDetailLines(skuLines){
         return (Array.isArray(skuLines) ? skuLines : []).map((row) => {
             const sku = String(row && row.sku || '').trim() || '-';
             const qty = Number(row && row.qty);
-            return Number.isFinite(qty) && qty > 0 ? `${sku} · ${qty}` : sku;
+            return Number.isFinite(qty) && qty > 0 ? `${sku} × ${qty}` : sku;
         }).filter(Boolean);
     }
 
@@ -1489,16 +1500,11 @@
         const blocks = list.slice(0, limit).map((item) => {
             const box = escapeAppNotifyHtml(String(item && item.logistics_box_no || '').trim() || '-');
             const wh = escapeAppNotifyHtml(String(item && item.warehouse_name || '').trim() || '-');
-            const action = String(item && item.event_kind || '') === 'stock_applied' ? '上架可售入仓' : '物流上架可售';
-            const listedDate = String(item && item.listed_date || '').trim();
-            let header = `${box} · ${wh} · ${escapeAppNotifyHtml(action)}`;
-            if(listedDate) header += ` · 上架日 ${escapeAppNotifyHtml(listedDate)}`;
-            const skuLines = formatTransitSkuDetailLines(item && item.sku_lines);
-            const skuHtml = skuLines.map((line) => (
-                `<div class="app-dingtalk-notify-sku-line">${escapeAppNotifyHtml(line)}</div>`
+            const skuHtml = formatTransitSkuDetailHtmlLines(item && item.sku_lines).map((line) => (
+                `<div class="app-dingtalk-notify-sku-line">${line}</div>`
             )).join('');
             return '<div class="app-dingtalk-notify-block">'
-                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--positive">• ${header}</div>`
+                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--positive">• ${box} · ${wh}</div>`
                 + (skuHtml ? `<div class="app-dingtalk-notify-block-skus">${skuHtml}</div>` : '')
                 + '</div>';
         });
@@ -1508,19 +1514,58 @@
         return blocks.join('');
     }
 
-    function formatTransitEtaDelayPreviewLines(items, maxLines){
-        const list = Array.isArray(items) ? items : [];
-        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
-        const lines = list.slice(0, limit).map((item) => {
-            const box = String(item && item.logistics_box_no || '').trim() || '-';
-            const wh = String(item && item.warehouse_name || '').trim() || '-';
-            const label = String(item && item.field_label || '预计到货').trim();
-            const oldDate = String(item && item.previous_date || '').trim() || '-';
-            const newDate = String(item && item.new_date || '').trim() || '-';
-            return `${box} @ ${wh}：${label} ${oldDate} → ${newDate}`;
+    function groupTransitEtaDelayItems(items){
+        const grouped = new Map();
+        const order = [];
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const tid = Number(item && item.transit_id);
+            if(!tid) return;
+            if(!grouped.has(tid)){
+                grouped.set(tid, { meta: item, changes: [] });
+                order.push(tid);
+            }
+            grouped.get(tid).changes.push(item);
         });
-        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
-        return lines;
+        return order.map((tid) => grouped.get(tid));
+    }
+
+    function transitEtaDelayDetailLabel(item){
+        const field = String(item && item.field || '').trim();
+        if(field === 'eta_latest') return 'ETA';
+        if(field === 'expected_listed_date_latest') return '预计上架时间';
+        const label = String(item && item.field_label || '').trim();
+        if(/^ETA/i.test(label)) return 'ETA';
+        if(label.indexOf('预计上架') >= 0) return '预计上架时间';
+        return label || '预计到货';
+    }
+
+    function buildTransitEtaDelayPreviewHtml(items, maxLines){
+        const groups = groupTransitEtaDelayItems(items);
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const blocks = groups.slice(0, limit).map((group) => {
+            const meta = group.meta || {};
+            const box = escapeAppNotifyHtml(String(meta.logistics_box_no || '').trim() || '-');
+            const bl = String(meta.bill_of_lading_no || '').trim();
+            const blText = bl ? ` · 提单 ${escapeAppNotifyHtml(bl)}` : '';
+            const seen = new Set();
+            const detailHtml = (group.changes || []).map((item) => {
+                const field = String(item && item.field || '').trim();
+                if(field && seen.has(field)) return '';
+                if(field) seen.add(field);
+                const label = escapeAppNotifyHtml(transitEtaDelayDetailLabel(item));
+                const oldDate = escapeAppNotifyHtml(String(item && item.previous_date || '').trim() || '-');
+                const newDate = escapeAppNotifyHtml(String(item && item.new_date || '').trim() || '-');
+                return `<div class="app-dingtalk-notify-sku-line">${label} ${oldDate} → ${newDate}</div>`;
+            }).filter(Boolean).join('');
+            return '<div class="app-dingtalk-notify-block">'
+                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--negative">• ${box}${blText}</div>`
+                + (detailHtml ? `<div class="app-dingtalk-notify-block-skus">${detailHtml}</div>` : '')
+                + '</div>';
+        });
+        if(groups.length > limit){
+            blocks.push(`<div class="app-dingtalk-notify-block-more">…等共 ${groups.length} 条</div>`);
+        }
+        return blocks.join('');
     }
 
     function promptAppDingtalkTransitEtaDelay(items, options){
@@ -1533,15 +1578,16 @@
         if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
         showAppDingtalkNotifyPrompt({
             title: String(opt.title || '钉钉在途延迟通知').trim() || '钉钉在途延迟通知',
-            previewLines: formatTransitEtaDelayPreviewLines(merged, opt.maxPreviewLines),
+            previewHtml: buildTransitEtaDelayPreviewHtml(merged, opt.maxPreviewLines),
             confirmText: opt.confirmText,
             cancelText: opt.cancelText,
             onConfirm: async () => {
                 const batch = appDingtalkPendingTransitEtaDelayItems.slice();
+                const groupCount = groupTransitEtaDelayItems(batch).length;
                 const result = await sendAppDingtalkNotify('transit_eta_delay', {
                     items: batch,
-                    successMessage: batch.length > 1
-                        ? `已发送 ${batch.length} 条在途延迟通知到钉钉群`
+                    successMessage: groupCount > 1
+                        ? `已发送 ${groupCount} 条在途延迟通知到钉钉群`
                         : '已发送在途延迟通知到钉钉群',
                 });
                 if(result && result.ok){

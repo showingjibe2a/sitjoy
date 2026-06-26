@@ -1022,7 +1022,6 @@ class LogisticsInTransitMixin:
                             )
 
                         added_stock_rows = 0
-                        transit_listed_available_items = []
                         if apply_to_overseas_stock and warehouse_id:
                             for order_product_id, qty in final_listed.items():
                                 qty = max(0, self._parse_int(qty) or 0)
@@ -1037,12 +1036,7 @@ class LogisticsInTransitMixin:
                                     (warehouse_id, order_product_id, qty, 0)
                                 )
                                 added_stock_rows += 1
-                            if added_stock_rows > 0:
-                                item = self._build_transit_listed_available_item(
-                                    cur, item_id, event_kind='stock_applied', qty_by_order_product=final_listed,
-                                )
-                                if item:
-                                    transit_listed_available_items.append(item)
+                        transit_listed_available_items = []
                         cur.execute("UPDATE logistics_in_transit SET qty_verified=1 WHERE id=%s", (item_id,))
 
                 self._refresh_transit_qty_consistent(item_id)
@@ -1326,10 +1320,6 @@ class LogisticsInTransitMixin:
                                 params.append(listed_date)
                                 sets.append('inventory_registered=%s')
                                 params.append(1 if listed_date else 0)
-                                if listed_date and prev_registered == 0:
-                                    item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
-                                    if item:
-                                        transit_listed_available_items.append(item)
 
                             if 'factory_ship_date_latest' in payload:
                                 factory_ship_latest = payload.get('factory_ship_date_latest')

@@ -873,7 +873,8 @@ function quickUpdateStatus(id,field,value,extra){
 function handleTransitNotifyAfterSave(data){
   const payload = data && typeof data === 'object' ? data : {};
   const etaDelay = Array.isArray(payload.transit_eta_delay_items) ? payload.transit_eta_delay_items : [];
-  const listed = Array.isArray(payload.transit_listed_available_items) ? payload.transit_listed_available_items : [];
+  const listed = (Array.isArray(payload.transit_listed_available_items) ? payload.transit_listed_available_items : [])
+    .filter((item) => item && String(item.event_kind || 'registered') === 'registered');
   if(!etaDelay.length && !listed.length) return;
   if(typeof window.dispatchAppDingtalkTransitChanges === 'function'){
     window.dispatchAppDingtalkTransitChanges(etaDelay, listed);

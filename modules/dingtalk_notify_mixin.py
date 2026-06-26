@@ -317,19 +317,23 @@ class DingTalkNotifyMixin:
             return self.DINGTALK_COLOR_NEGATIVE
         return ''
 
-    def _build_dingtalk_markdown_message(self, title, detail_lines, user_id=None, title_tone=None):
+    def _build_dingtalk_markdown_message(self, title, detail_lines, user_id=None, title_tone=None, include_summary_line=True):
         """组装钉钉 Markdown 正文：列表明细 + 分隔线 + 通知人/时间。"""
         lines = [str(line).strip() for line in (detail_lines or []) if str(line or '').strip()]
         if not lines:
             return ''
         count = len(lines)
-        sections = [
-            f'本次共 **{count}** 条：',
-            '',
+        sections = []
+        if include_summary_line:
+            sections.extend([
+                f'本次共 **{count}** 条：',
+                '',
+            ])
+        sections.extend([
             '\n'.join(lines),
             '',
             '---',
-        ]
+        ])
         footer_bits = []
         notifier = self._dingtalk_user_display_name(user_id)
         if notifier:
@@ -389,6 +393,22 @@ class DingTalkNotifyMixin:
         }
         return self._post_dingtalk_payload(payload, notify_key=notify_key)
 
+    def _format_transit_listed_sku_block_text(self, sku_lines):
+        rows = sku_lines if isinstance(sku_lines, list) else []
+        parts = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            sku = str(row.get('sku') or '').strip()
+            if not sku:
+                continue
+            qty = self._parse_int(row.get('qty'))
+            if qty is not None and qty > 0:
+                parts.append(f'<br>{sku} × {qty}')
+            else:
+                parts.append(sku)
+        return '<br/><br/>'.join(parts)
+
     def _format_transit_sku_detail_lines(self, sku_lines):
         rows = sku_lines if isinstance(sku_lines, list) else []
         lines = []
@@ -400,52 +420,87 @@ class DingTalkNotifyMixin:
                 continue
             qty = self._parse_int(row.get('qty'))
             if qty is not None and qty > 0:
-                lines.append(f'{sku} · {qty}')
+                lines.append(f'{sku} × {qty}')
             else:
                 lines.append(sku)
         return lines
 
+    def _transit_eta_delay_detail_label(self, field_key, field_label):
+        key = str(field_key or '').strip()
+        if key == 'eta_latest':
+            return 'ETA'
+        if key == 'expected_listed_date_latest':
+            return '预计上架时间'
+        label = str(field_label or '').strip()
+        if label.upper().startswith('ETA'):
+            return 'ETA'
+        if '预计上架' in label:
+            return '预计上架时间'
+        return label or '预计到货'
+
     def _format_transit_eta_delay_lines(self, items):
-        lines = []
+        grouped = {}
+        order = []
         for row in items or []:
             if not isinstance(row, dict):
                 continue
-            box = str(row.get('logistics_box_no') or '').strip() or '-'
-            wh = str(row.get('warehouse_name') or '').strip() or '-'
-            label = str(row.get('field_label') or '预计到货').strip()
-            old_date = str(row.get('previous_date') or '').strip() or '-'
-            new_date = str(row.get('new_date') or '').strip() or '-'
-            bl = str(row.get('bill_of_lading_no') or '').strip()
+            transit_id = self._parse_int(row.get('transit_id'))
+            if not transit_id:
+                continue
+            if transit_id not in grouped:
+                grouped[transit_id] = {'meta': row, 'changes': []}
+                order.append(transit_id)
+            grouped[transit_id]['changes'].append(row)
+
+        blocks = []
+        for transit_id in order:
+            entry = grouped.get(transit_id) or {}
+            meta = entry.get('meta') or {}
+            changes = entry.get('changes') or []
+            box = str(meta.get('logistics_box_no') or '').strip() or '-'
+            bl = str(meta.get('bill_of_lading_no') or '').strip()
             bl_text = f' · 提单 {bl}' if bl else ''
-            line = f'**{box}**{bl_text} · {wh} · {label} **{old_date} → {new_date}**'
-            lines.append(f'- {self._dingtalk_markdown_colored_text(line, self.DINGTALK_COLOR_NEGATIVE)}')
-        return lines
+            header = f'**{box}**{bl_text}'
+            detail_parts = []
+            seen_fields = set()
+            for row in changes:
+                field = str(row.get('field') or '').strip()
+                if field and field in seen_fields:
+                    continue
+                if field:
+                    seen_fields.add(field)
+                label = self._transit_eta_delay_detail_label(field, row.get('field_label'))
+                old_date = str(row.get('previous_date') or '').strip() or '-'
+                new_date = str(row.get('new_date') or '').strip() or '-'
+                detail_parts.append(f'{label} {old_date} → {new_date}')
+            if not detail_parts:
+                continue
+            detail_block = '<br/>'.join(detail_parts)
+            block_lines = [
+                f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_NEGATIVE)}',
+                self._dingtalk_markdown_muted_text(f'  {detail_block}'),
+            ]
+            blocks.append('\n'.join(block_lines))
+        return blocks
 
     def _format_transit_listed_available_lines(self, items):
         blocks = []
         for row in items or []:
             if not isinstance(row, dict):
                 continue
+            event_kind = str(row.get('event_kind') or 'registered').strip()
+            if event_kind != 'registered':
+                continue
             box = str(row.get('logistics_box_no') or '').strip() or '-'
             wh = str(row.get('warehouse_name') or '').strip() or '-'
-            listed_date = str(row.get('listed_date') or '').strip()
-            sku_details = self._format_transit_sku_detail_lines(row.get('sku_lines'))
-            if not sku_details:
+            sku_block = self._format_transit_listed_sku_block_text(row.get('sku_lines'))
+            if not sku_block:
                 continue
-            event_kind = str(row.get('event_kind') or 'registered').strip()
-            if event_kind == 'stock_applied':
-                action = '上架可售入仓'
-            else:
-                action = '物流上架可售'
-            date_text = f' · 上架日 **{listed_date}**' if listed_date else ''
-            header = f'**{box}** · {wh} · **{action}**{date_text}'
+            header = f'**{box}** · {wh}'
             block_lines = [
                 f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_POSITIVE)}',
+                self._dingtalk_markdown_muted_text(f'  {sku_block}'),
             ]
-            block_lines.extend(
-                self._dingtalk_markdown_muted_text(f'  {line}')
-                for line in sku_details
-            )
             blocks.append('\n'.join(block_lines))
         return blocks
 
@@ -506,13 +561,13 @@ class DingTalkNotifyMixin:
             '账户健康提醒', lines, notify_key=key, user_id=user_id, title_tone='negative',
         )
 
-    def _send_dingtalk_transit_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None):
+    def _send_dingtalk_transit_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None, include_summary_line=True):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
             return False, '没有可发送的记录'
         delivery_cfg, _err = self._resolve_dingtalk_delivery_config(notify_key=notify_key)
         markdown_text = self._build_dingtalk_markdown_message(
-            title, formatted, user_id=user_id, title_tone=title_tone,
+            title, formatted, user_id=user_id, title_tone=title_tone, include_summary_line=include_summary_line,
         )
         text = self._prepare_dingtalk_text(markdown_text, delivery_cfg=delivery_cfg)
         payload = {
@@ -527,15 +582,23 @@ class DingTalkNotifyMixin:
     def _send_dingtalk_transit_eta_delay(self, items, notify_key=None, user_id=None):
         key = notify_key or 'transit_eta_delay'
         lines = self._format_transit_eta_delay_lines(items)
+        if not lines:
+            return False, '没有可发送的记录'
+        count = len(lines)
+        title = f'在途物流到货延迟提醒（{count}条）'
         return self._send_dingtalk_transit_markdown(
-            '在途物流到货延迟提醒', lines, notify_key=key, user_id=user_id, title_tone='negative',
+            title, lines, notify_key=key, user_id=user_id, title_tone='negative', include_summary_line=False,
         )
 
     def _send_dingtalk_transit_listed_available(self, items, notify_key=None, user_id=None):
         key = notify_key or 'transit_listed_available'
         lines = self._format_transit_listed_available_lines(items)
+        if not lines:
+            return False, '没有可发送的记录'
+        count = len(lines)
+        title = f'在途物流上架可售提醒（{count}条）'
         return self._send_dingtalk_transit_markdown(
-            '在途物流上架可售提醒', lines, notify_key=key, user_id=user_id, title_tone='positive',
+            title, lines, notify_key=key, user_id=user_id, title_tone='positive', include_summary_line=False,
         )
 
     def _send_dingtalk_overseas_stockout(self, items, notify_key=None, user_id=None):
