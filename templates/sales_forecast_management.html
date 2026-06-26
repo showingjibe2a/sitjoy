@@ -1531,6 +1531,10 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 0.78rem;
+            table-layout: fixed;
+        }
+        table.sf-inv-section-table th {
+            position: relative;
         }
         table.sf-inv-section-table th,
         table.sf-inv-section-table td {
@@ -1538,6 +1542,8 @@
             border-top: 1px solid rgba(42, 36, 32, 0.08);
             text-align: left;
             vertical-align: top;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         table.sf-inv-section-table th {
             font-weight: 600;
@@ -2123,7 +2129,7 @@
             return SF_TURNOVER_COLS + SF_STOCK_COLS + getSfShipPlanColCount() + SF_REMARK_COLS;
         }
         const SF_TURNOVER_HEADERS = [
-            { label: '海外仓', tip: '动销月 = 仅海外仓可用量 ÷ 历史月销量区间最后三个月月均销量。规格/平台行：取所链接各下单 SKU（按替代发货方案折算库存后单独成套）在该列动销月的最小值。' },
+            { label: '海外仓', tip: '动销月 = 仅海外仓可用量 ÷ 近30天销量。近30天 = 全局最新表现 record_date 为终点、向前30个自然日（含首尾）；销量按下单 SKU 维度汇总（链接变体×BOM）。规格/平台行：取所链接各下单 SKU 动销月的最小值。' },
             { label: '海外仓+在途', tip: '动销月 =（海外仓 + 在途）÷ 同上。规格/平台行：各下单 SKU 含替代方案折算后分别计算，再取最小值。' },
             { label: '全部', tip: '动销月 =（海外仓 + 在途 + 在库 + 在制）÷ 同上。规格/平台行：各下单 SKU 含替代方案折算后分别计算，再取最小值。' },
         ];
@@ -4577,6 +4583,8 @@
             }
             state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
             state.historyRange = data.history_range || { start: '', end: '' };
+            state.turnoverSalesWindow = (data && data.turnover_sales_window && typeof data.turnover_sales_window === 'object')
+                ? data.turnover_sales_window : null;
             state.mtdContext = (data && data.mtd && typeof data.mtd === 'object') ? data.mtd : {};
             state.shops = Array.isArray(data.shops) ? data.shops.slice() : [];
             renderSfShopFilterPanel();
@@ -6998,18 +7006,98 @@
             return (SF_STOCK_HEADERS[i] && SF_STOCK_HEADERS[i].label) || '库存';
         }
 
-        function rowHistorySalesAvgTail(row, tail) {
-            const months = state.historyMonths || [];
-            if (!months.length) return null;
-            const keys = months.length > (tail || 3) ? months.slice(-(tail || 3)) : months.slice();
-            if (!keys.length) return null;
-            let total = 0;
-            keys.forEach((k) => {
-                const h = (row.history || {})[k] || {};
-                total += Number(h.sales_qty || 0);
+        function sfTurnoverWindowNote(inv) {
+            const w = (inv && inv.turnover_sales_window) || state.turnoverSalesWindow || {};
+            const ws = String(w.window_start || '').slice(0, 10);
+            const we = String(w.window_end || w.anchor_date || '').slice(0, 10);
+            if (ws && we) return ws + ' ~ ' + we + '（近30天）';
+            const anchor = (state.mtdContext && state.mtdContext.perf_max_record_date)
+                ? String(state.mtdContext.perf_max_record_date).slice(0, 10) : '';
+            return anchor ? ('锚点 ' + anchor) : '—';
+        }
+
+        function sfTurnoverDenominatorForCol(inv, kind, idx, num, mc) {
+            const direct = Number(inv && inv.turnover_window_sales_qty);
+            if (Number.isFinite(direct) && direct > 1e-9 && Number(idx) === 0) {
+                const breakdown = (inv && inv.turnover_bom_breakdown) || [];
+                if (!breakdown.length || breakdown.length === 1) return direct;
+            }
+            const mcNum = Number(mc);
+            const numVal = Number(num);
+            if (Number.isFinite(mcNum) && mcNum > 1e-9 && Number.isFinite(numVal) && numVal > 0) {
+                return Math.round((numVal / mcNum) * 100) / 100;
+            }
+            return null;
+        }
+
+        function sfTurnoverBomBreakdownRows(inv, idx) {
+            const breakdown = (inv && inv.turnover_bom_breakdown) || [];
+            if (!breakdown.length) return [];
+            const mcKeys = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
+            const mcKey = mcKeys[Number(idx) || 0] || mcKeys[0];
+            const tierIdx = Number(idx) || 0;
+            return breakdown.map((item) => {
+                let stock = Number(item.overseas_qty) || 0;
+                if (tierIdx === 1) stock = (Number(item.overseas_qty) || 0) + (Number(item.transit_qty) || 0);
+                else if (tierIdx === 2) {
+                    stock = (Number(item.overseas_qty) || 0) + (Number(item.transit_qty) || 0)
+                        + (Number(item.factory_stock_qty) || 0) + (Number(item.wip_qty) || 0);
+                }
+                const mc = item[mcKey];
+                const denom = (Number.isFinite(Number(mc)) && Number(mc) > 1e-9 && stock > 0)
+                    ? Math.round((stock / Number(mc)) * 100) / 100
+                    : (Number(item.window_sales_qty) || null);
+                return {
+                    sku: item.sku || ('#' + String(item.order_product_id || '')),
+                    bom: '×' + formatNumber(Number(item.quantity) || 1),
+                    stock: formatNumber(stock),
+                    sales: denom != null ? formatNumber(denom) : '—',
+                    mc: mc != null ? String(mc) : '—',
+                };
             });
-            const avg = total / keys.length;
-            return avg > 1e-9 ? avg : null;
+        }
+
+        function attachSfInvSectionTableColResize(root) {
+            if (!root) return;
+            root.querySelectorAll('.sf-inv-detail-section-table-wrap table.sf-inv-section-table').forEach((table) => {
+                const thead = table.querySelector('thead');
+                if (!thead) return;
+                const ths = Array.from(thead.querySelectorAll('th'));
+                if (!ths.length) return;
+                table.style.tableLayout = 'fixed';
+                thead.querySelectorAll('.sf-col-resize-handle').forEach((el) => el.remove());
+                ths.forEach((th, colIdx) => {
+                    th.style.position = 'relative';
+                    if (!th.style.width) {
+                        th.style.width = Math.max(72, Math.floor(100 / ths.length)) + '%';
+                    }
+                    if (colIdx >= ths.length - 1) return;
+                    const handle = document.createElement('span');
+                    handle.className = 'sf-col-resize-handle';
+                    handle.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    });
+                    handle.addEventListener('mousedown', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const startX = event.clientX;
+                        const startW = th.offsetWidth;
+                        const minW = 48;
+                        const onMove = (moveEvent) => {
+                            const nextW = Math.max(minW, startW + (moveEvent.clientX - startX));
+                            th.style.width = nextW + 'px';
+                        };
+                        const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                        };
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup', onUp);
+                    });
+                    th.appendChild(handle);
+                });
+            });
         }
 
         function sfInvNumeratorForCol(inv, kind, idx) {
@@ -7265,16 +7353,32 @@
             ];
 
             if (kind === 'T') {
-                const avg = rowHistorySalesAvgTail(row, 3);
                 const num = sfInvNumeratorForCol(inv, kind, idx);
                 const mcKeys = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
-                const mc = inv[mcKeys[Number(idx) || 0]]
-                    ?? (avg && num > 0 ? (num / avg).toFixed(2) : null);
+                const mc = inv[mcKeys[Number(idx) || 0]];
+                const denom = sfTurnoverDenominatorForCol(inv, kind, idx, num, mc);
+                const windowNote = sfTurnoverWindowNote(inv);
                 dimensions.push(sfInvDimDef('turnover', '动销月', calcCols, [
                     { item: '动销月', value: mc != null ? String(mc) : '—', note: skuLabel || '—' },
                     { item: '分子（库存量）', value: formatNumber(num), note: '当前列对应库存合计' },
-                    { item: '分母（历史尾部三月均销量）', value: avg != null ? formatNumber(Math.round(avg * 100) / 100) : '—', note: (state.mtdContext && state.mtdContext.perf_max_record_date) ? ('日表最新 ' + state.mtdContext.perf_max_record_date) : '—' },
-                ], { title: '动销月 · ' + colLabel, note: '动销月 = 分子 ÷ 分母' }));
+                    { item: '分母（近30天销量）', value: denom != null ? formatNumber(denom) : '—', note: windowNote },
+                ], {
+                    title: '动销月 · ' + colLabel,
+                    note: '动销月 = 分子 ÷ 分母。分母为全局最新表现日起向前30天（含首尾）销量；规格/平台行含多下单SKU时取各链接折算后的最小值。',
+                }));
+                const bomRows = sfTurnoverBomBreakdownRows(inv, idx);
+                if (bomRows.length > 1) {
+                    dimensions.push(sfInvDimDef('turnover_bom', '下单SKU', [
+                        { key: 'sku', label: '下单SKU' },
+                        { key: 'bom', label: 'BOM' },
+                        { key: 'stock', label: '库存' },
+                        { key: 'sales', label: '近30天销量' },
+                        { key: 'mc', label: colLabel },
+                    ], bomRows, {
+                        title: '下单SKU · ' + colLabel,
+                        note: '动销月取下列各行「' + colLabel + '」列的最小值',
+                    }));
+                }
             }
             if (tierFilter.has('overseas_qty')) {
                 const rows = buildSfInvOverseasBySkuRows(row, comp).map((r) => ({
@@ -7404,6 +7508,7 @@
             }
             root.innerHTML = '<p class="sf-inv-dim-panel-title">' + escapeHtml(dim.title || dim.label) + '</p>'
                 + renderSfInvDimTable(dim);
+            attachSfInvSectionTableColResize(root);
             if (foot) foot.textContent = dim.footnote || model?.globalFootnote || SF_INV_GLOBAL_FOOTNOTE;
         }
 
@@ -7511,6 +7616,7 @@
                 + escapeHtml(formatNumber(model.cell_sales_qty)) + ' · 来源合计 '
                 + escapeHtml(formatNumber(model.total_sales_qty)) + '</p>'
                 + (dim ? renderSfHistSourceDimTable(dim) : '<p class="sf-inv-dim-panel-note">—</p>');
+            attachSfInvSectionTableColResize(root);
         }
 
         function renderSfHistSourcePanel(model) {

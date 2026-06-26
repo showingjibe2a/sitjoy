@@ -581,6 +581,9 @@
                             <th data-manage-col-key="UPC" data-sort-key="upc">UPC</th>
                             <th data-manage-col-key="下单SKU">下单SKU</th>
                             <th data-manage-col-key="海外仓可售" data-sort-key="overseas_sellable_qty" style="width:100px;">海外仓可售</th>
+                            <th data-manage-col-key="动销月(海外仓)" data-sort-key="months_cover_overseas" style="width:90px;"><span class="label-help">动销月(海外仓)<span class="help-dot" data-tip="海外仓可售 ÷ 近30天销量。近30天=全局最新表现 record_date 为终点、向前30个自然日（含首尾）；销量按下单SKU汇总（同销量预测）。"></span></span></th>
+                            <th data-manage-col-key="动销月(海外仓+在途)" data-sort-key="months_cover_overseas_transit" style="width:110px;"><span class="label-help">动销月(仓+途)<span class="help-dot" data-tip="（海外仓+在途）÷ 前月销量，口径同上。"></span></span></th>
+                            <th data-manage-col-key="动销月(全部)" data-sort-key="months_cover_total" style="width:90px;"><span class="label-help">动销月(全部)<span class="help-dot" data-tip="（海外仓+在途+在库+在制）÷ 前月销量，口径同上。"></span></span></th>
                             <th data-manage-col-key="售价" data-sort-key="sale_price_usd">售价</th>
                             <th data-manage-col-key="活动形式" data-sort-key="promotion_activity_type">活动形式</th>
                             <th data-manage-col-key="折扣形式" data-sort-key="discount_form_type">折扣形式</th>
@@ -598,7 +601,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="27" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="30" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -2635,6 +2638,17 @@
             return String(Math.max(0, Math.floor(n)));
         }
 
+        function formatSalesTurnoverMonths(val) {
+            const n = Number(val);
+            if (val == null || val === '' || !Number.isFinite(n)) return '—';
+            return n.toFixed(2);
+        }
+
+        function salesTurnoverSortValue(val) {
+            const n = Number(val);
+            return Number.isFinite(n) ? String(n) : '';
+        }
+
         function salesComputeRowEconomics(item) {
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
@@ -2908,6 +2922,9 @@
                     <td class="preview-edit-cell" data-field-wrap="upc"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="upc" type="text" value="${escapeAttr(upcText)}"></td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
                     <td class="cell-center" data-manage-col-key="海外仓可售" data-display-value="${escapeAttr(sellableSortVal)}">${sellableQty}</td>
+                    <td class="cell-center" data-manage-col-key="动销月(海外仓)" data-display-value="${escapeAttr(salesTurnoverSortValue(item.months_cover_overseas))}">${formatSalesTurnoverMonths(item.months_cover_overseas)}</td>
+                    <td class="cell-center" data-manage-col-key="动销月(海外仓+在途)" data-display-value="${escapeAttr(salesTurnoverSortValue(item.months_cover_overseas_transit))}">${formatSalesTurnoverMonths(item.months_cover_overseas_transit)}</td>
+                    <td class="cell-center" data-manage-col-key="动销月(全部)" data-display-value="${escapeAttr(salesTurnoverSortValue(item.months_cover_total))}">${formatSalesTurnoverMonths(item.months_cover_total)}</td>
                     <td class="preview-edit-cell ${salePriceLow ? 'danger-note' : ''}" data-field-wrap="sale_price_usd"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="sale_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(salePriceInputVal)}"></td>
                     ${renderSalesPromotionActivityCell(item)}
                     ${renderSalesDiscountFormCell(item)}

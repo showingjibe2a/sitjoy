@@ -5316,6 +5316,7 @@ class SalesProductMixin:
                         # Reuse same DB connection for performance (must be inside conn context)
                         metrics_map = self._load_sales_variant_metrics(conn, variant_ids)
                         sellable_map = self._load_variant_overseas_sellable_map(conn, variant_ids)
+                    self._turnover_attach_to_sales_product_rows(conn, rows)
 
                     for row in rows:
                         variant_id = int(row.get('variant_id') or 0)
@@ -5347,8 +5348,16 @@ class SalesProductMixin:
                             r['preview_image_b64'] = ''
 
                 if item_id:
-                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
+                    return self.send_json({
+                        'status': 'success',
+                        'item': rows[0] if rows else None,
+                        'turnover_sales_window': self._turnover_sales_window(conn),
+                    }, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'items': rows,
+                    'turnover_sales_window': self._turnover_sales_window(conn),
+                }, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
@@ -9576,6 +9585,82 @@ class SalesProductMixin:
 
         # per-period commits done above
 
+        try:
+            self._refresh_sales_perf_rolling_30d(conn, sales_product_ids=ids if ids else None)
+        except Exception:
+            pass
+
+    def _refresh_sales_perf_rolling_30d(self, conn, sales_product_ids=None):
+        """刷新动销月分母：全局最新 record_date 向前 30 天（含首尾）销量快照。"""
+        if not conn:
+            return
+        if not self._table_exists_simple(conn, 'sales_perf_rolling_30d'):
+            return
+        window = self._turnover_sales_window(conn)
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        anchor = str(window.get('anchor_date') or '')[:10]
+        if not ws or not we or not anchor:
+            return
+
+        id_list = None
+        if sales_product_ids is not None:
+            id_list = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+            if not id_list:
+                return
+
+        id_chunk_size = 300
+        id_chunks = [None] if id_list is None else [
+            id_list[i:i + id_chunk_size] for i in range(0, len(id_list), id_chunk_size)
+        ]
+
+        with conn.cursor() as cur:
+            cur.execute('SELECT anchor_date FROM sales_perf_rolling_30d LIMIT 1')
+            anchor_row = cur.fetchone() or {}
+            old_anchor = str(anchor_row.get('anchor_date') or '')[:10]
+            full_refresh = (not old_anchor) or (old_anchor != anchor) or (id_list is None)
+            if full_refresh and old_anchor and old_anchor != anchor:
+                cur.execute('DELETE FROM sales_perf_rolling_30d')
+
+            for chunk in id_chunks:
+                if chunk:
+                    ph = ','.join(['%s'] * len(chunk))
+                    cur.execute(
+                        f'DELETE FROM sales_perf_rolling_30d WHERE sales_product_id IN ({ph})',
+                        tuple(chunk),
+                    )
+                    id_filter_sql = f' AND spp.sales_product_id IN ({ph}) '
+                    params = [anchor, ws, we, ws, we] + list(chunk)
+                else:
+                    cur.execute('DELETE FROM sales_perf_rolling_30d')
+                    id_filter_sql = ''
+                    params = [anchor, ws, we, ws, we]
+                cur.execute(
+                    f"""
+                    INSERT INTO sales_perf_rolling_30d
+                        (sales_product_id, anchor_date, window_start, window_end, sales_qty, net_sales_amount)
+                    SELECT spp.sales_product_id,
+                           %s AS anchor_date,
+                           %s AS window_start,
+                           %s AS window_end,
+                           SUM(COALESCE(spp.sales_qty, 0)) AS sales_qty,
+                           SUM(COALESCE(spp.net_sales_amount, 0)) AS net_sales_amount
+                    FROM sales_product_performances spp
+                    WHERE spp.record_date >= %s
+                      AND spp.record_date <= %s
+                      {id_filter_sql}
+                    GROUP BY spp.sales_product_id
+                    ON DUPLICATE KEY UPDATE
+                        anchor_date = VALUES(anchor_date),
+                        window_start = VALUES(window_start),
+                        window_end = VALUES(window_end),
+                        sales_qty = VALUES(sales_qty),
+                        net_sales_amount = VALUES(net_sales_amount)
+                    """,
+                    tuple(params),
+                )
+        conn.commit()
+
     def _refresh_sales_perf_agg_for_deleted_records(self, conn, affected_rows):
         """按被删记录所在的精确月/周桶刷新聚合，避免 min~max 日期区间全量扫描。"""
         if not conn or not affected_rows:
@@ -9704,6 +9789,13 @@ class SalesProductMixin:
                         ] + id_chunk),
                     )
                 conn.commit()
+
+        touched_spids = sorted({int(x) for s in (by_month or {}).values() for x in s})
+        if touched_spids:
+            try:
+                self._refresh_sales_perf_rolling_30d(conn, sales_product_ids=touched_spids)
+            except Exception:
+                pass
 
     def handle_sales_product_performance_api(self, environ, method, start_response):
         try:

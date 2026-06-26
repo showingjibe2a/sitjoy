@@ -3841,6 +3841,11 @@ class LogisticsWarehouseMixin:
                 item['iteration_children'] = sorted(item.get('iteration_children') or [], key=lambda x: str(x.get('sku') or ''))
                 rows.append(item)
 
+            # 动销月需查库：必须在独立连接中计算（上方 with conn 在 cursor 结束后已关闭）
+            with self._get_db_connection() as turnover_conn:
+                turnover_attach_error = self._turnover_attach_to_warehouse_dashboard_rows_safe(turnover_conn, rows)
+                turnover_sales_window = self._turnover_sales_window(turnover_conn)
+
             ordered_region_names = [
                 str((rr or {}).get('region_name') or '').strip()
                 for rr in (destination_region_rows or [])
@@ -3859,6 +3864,7 @@ class LogisticsWarehouseMixin:
                     + [w['warehouse_short_name'] or w['warehouse_name'] for w in warehouses]
                     + [f'工厂在库-{fn}' for fn in factory_headers]
                     + [f'工厂在制-{fn}' for fn in factory_headers]
+                    + ['动销月(海外仓)', '动销月(海外仓+在途)', '动销月(全部)']
                 )
                 for idx, title in enumerate(headers, start=1):
                     ws.cell(row=1, column=idx, value=title)
@@ -3878,14 +3884,29 @@ class LogisticsWarehouseMixin:
                     for f in factories:
                         wip_val = fwip_bf.get(str(f['id'])) or {}
                         data_line.append(wip_val.get('quantity', 0))
+                    data_line.extend([
+                        item.get('months_cover_overseas') if item.get('months_cover_overseas') is not None else '',
+                        item.get('months_cover_overseas_transit') if item.get('months_cover_overseas_transit') is not None else '',
+                        item.get('months_cover_total') if item.get('months_cover_total') is not None else '',
+                    ])
                     for col, value in enumerate(data_line, start=1):
                         ws.cell(row=line, column=col, value=value)
                     line += 1
                 return self._send_excel_workbook(wb, '仓储看板导出.xlsx', start_response)
 
-            return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'region_order': ordered_region_names, 'items': rows}, start_response)
+            return self.send_json({
+                'status': 'success',
+                'warehouses': warehouses,
+                'factories': factories,
+                'region_order': ordered_region_names,
+                'turnover_sales_window': turnover_sales_window,
+                'turnover_attach_error': turnover_attach_error,
+                'items': rows,
+            }, start_response)
         except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+            print(f'Warehouse dashboard API error: {type(e).__name__}: {e!r}')
+            msg = str(e).strip() if str(e).strip() else repr(e)
+            return self.send_json({'status': 'error', 'message': msg or type(e).__name__}, start_response)
 
 
 

@@ -602,6 +602,7 @@ const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
 const BOARD_SKU_KIND_KEY = 'sitjoy:warehouse-dashboard-sku-kind';
 let boardSkuKind = 'all';
 const BOARD_COL_WIDTHS_KEY = 'sitjoy:warehouse-dashboard-col-widths-v1';
+const TURNOVER_TIP = '动销月=库存÷近30天销量。近30天=全局最新表现 record_date 为终点、向前30个自然日（含首尾）；销量按下单SKU汇总（同销量预测）。';
 let boardColKeys = [];
 let boardColWidths = [];
 let suppressHeaderToggleUntil = 0;
@@ -1102,6 +1103,7 @@ function initColumnWidths(totalCols){
 function ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColspan, overseasExpanded, factoryStockExpanded, totalCols){
   const overseasIndex = fixedCols;
   const factoryIndex = fixedCols + overseasColspan;
+  const turnoverIndex = fixedCols + overseasColspan + stockColspan;
 
   const applyRangeMinTotal = (startIdx, span, minTotal) => {
     if(span <= 0 || startIdx >= totalCols) return;
@@ -1130,6 +1132,7 @@ function ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColsp
   if(!factoryStockExpanded && stockColspan === 1 && factoryIndex < totalCols){
     boardColWidths[factoryIndex] = Math.max(Number(boardColWidths[factoryIndex] || 0), 180);
   }
+  applyRangeMinTotal(turnoverIndex, 3, 210);
 }
 
 function applyColWidths(){
@@ -1442,6 +1445,16 @@ function buildTogglePanel(){
   });
 }
 
+function fmtTurnoverMonths(val) {
+  const n = Number(val);
+  if (val == null || val === '' || !Number.isFinite(n)) return '—';
+  return n.toFixed(2);
+}
+function buildTurnoverCells(row) {
+  return `<td class="inv-col turnover-col" title="${TURNOVER_TIP}">${fmtTurnoverMonths(row.months_cover_overseas)}</td>`
+    + `<td class="inv-col turnover-col" title="${TURNOVER_TIP}">${fmtTurnoverMonths(row.months_cover_overseas_transit)}</td>`
+    + `<td class="inv-col turnover-col" title="${TURNOVER_TIP}">${fmtTurnoverMonths(row.months_cover_total)}</td>`;
+}
 function renderBoard(){
   const thead = $('#boardHeadTable thead');
   const tbody = $('#boardBodyTable tbody');
@@ -1453,8 +1466,9 @@ function renderBoard(){
 
   const overseasColspan = overseasExpanded ? Math.max(1, leafColumns.length) : 1;
   const stockColspan = factoryStockExpanded ? Math.max(1, boardFactories.length) : 1;
+  const turnoverCols = 3;
   const fixedCols = 3;
-  const totalCols = fixedCols + overseasColspan + stockColspan;
+  const totalCols = fixedCols + overseasColspan + stockColspan + turnoverCols;
   // Build stable column keys for width persistence.
   boardColKeys = [];
   boardColKeys.push('fixed:family');
@@ -1473,6 +1487,9 @@ function renderBoard(){
   } else {
     boardColKeys.push('factory:total');
   }
+  boardColKeys.push('fixed:turnover-overseas');
+  boardColKeys.push('fixed:turnover-overseas-transit');
+  boardColKeys.push('fixed:turnover-total');
   initColumnWidths(totalCols);
   ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColspan, overseasExpanded, factoryStockExpanded, totalCols);
   applyColWidths();
@@ -1492,6 +1509,7 @@ function renderBoard(){
   row1 += `<th rowspan="${headerRowsCount}" class="sortable-th" data-sort-key="fabric">面料${fabricSortOrder === 'asc' ? ' ↑' : (fabricSortOrder === 'desc' ? ' ↓' : '')}</th>`;
   row1 += `<th colspan="${overseasColspan}" class="section-th" data-toggle="overseas"><div class="wh-group-toggle"><span class="wh-group-label">海外仓在库在途</span><span class="wh-group-line"></span><span class="wh-group-circle">${overseasExpanded ? '\u2212' : '+'}</span></div></th>`;
   row1 += `<th colspan="${stockColspan}" class="section-th" data-toggle="factory-stock"><div class="wh-group-toggle"><span class="wh-group-label">工厂在库</span><span class="wh-group-line"></span><span class="wh-group-circle">${factoryStockExpanded ? '\u2212' : '+'}</span></div></th>`;
+  row1 += `<th colspan="${turnoverCols}" class="section-th inv-col turnover-col" title="${TURNOVER_TIP}"><div class="wh-group-toggle is-static"><span class="wh-group-label">动销月</span></div></th>`;
 
   if (overseasExpanded) {
     regionGroups.forEach((region, regionIndex) => {
@@ -1534,6 +1552,12 @@ function renderBoard(){
     });
   } else {
     if(headerSubRows > 0) row2 += `<th rowspan="${headerSubRows}" class="inv-col factory-col"></th>`;
+  }
+
+  if (headerSubRows > 0) {
+    row2 += `<th rowspan="${headerSubRows}" class="inv-col turnover-col" title="${TURNOVER_TIP}">海外仓</th>`;
+    row2 += `<th rowspan="${headerSubRows}" class="inv-col turnover-col" title="${TURNOVER_TIP}">仓+途</th>`;
+    row2 += `<th rowspan="${headerSubRows}" class="inv-col turnover-col" title="${TURNOVER_TIP}">全部</th>`;
   }
 
   row1 = row1.replace(
@@ -1748,6 +1772,7 @@ function renderBoard(){
       const mainDot = mainColor ? `<span class="fabric-dot" style="background:${mainColor};" title="${esc(row.fabric_name_en || '')}"></span>` : '';
       html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${mainDot}</span></td>`;
       html += buildCellsForRow(row, false);
+      html += buildTurnoverCells(row);
       html += `</tr>`;
 
       // Expanded iteration breakdown: show origin SKU itself + each iteration SKU.
@@ -1761,6 +1786,7 @@ function renderBoard(){
           html += `<td class="sku-cell"><span class="derived-sku is-origin">${originRow.sku || ''}</span></td>`;
           html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${originDot}</span></td>`;
           html += buildCellsForRow(originRow, true);
+          html += buildTurnoverCells(originRow);
           html += `</tr>`;
         }
       }
@@ -1773,6 +1799,7 @@ function renderBoard(){
         html += `<td class="sku-cell"><span class="derived-sku">${child.sku || ''}</span></td>`;
         html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${childDot}</span></td>`;
         html += buildCellsForRow(child, true);
+        html += buildTurnoverCells(child);
         html += `</tr>`;
       });
       });

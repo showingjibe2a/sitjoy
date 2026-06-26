@@ -2827,10 +2827,11 @@ class SalesManagementMixin:
                 bucket[oid] = int(bucket.get(oid) or 0) + qp
         return {vid: sorted(links.items(), key=lambda x: x[0]) for vid, links in out.items()}
 
-    def _load_variant_overseas_sellable_map(self, conn, variant_ids):
-        """variant_id -> 海外仓可售套数（仅海外仓；BOM 各件 floor 后取 min）。"""
+    def _load_variant_tier_sellable_map(self, conn, variant_ids):
+        """variant_id -> {overseas, transit, factory_stock, wip} 成套瓶颈（BOM floor 后取 min）。"""
         ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
-        out = {i: 0 for i in ids}
+        empty = {'overseas': 0, 'transit': 0, 'factory_stock': 0, 'wip': 0}
+        out = {i: dict(empty) for i in ids}
         if not ids:
             return out
         links_by_vid = self._forecast_load_variant_order_links_for_inventory(conn, ids)
@@ -2841,19 +2842,34 @@ class SalesManagementMixin:
             if self._parse_int(oid)
         })
         inv_by_op = self._forecast_load_inventory_by_order_product(conn, op_ids) if op_ids else {}
+        tier_keys = (
+            ('overseas', 'overseas_qty'),
+            ('transit', 'transit_qty'),
+            ('factory_stock', 'factory_stock_qty'),
+            ('wip', 'wip_qty'),
+        )
         for vid in ids:
             links = links_by_vid.get(vid) or []
             if not links:
                 continue
-            parts = []
+            tier_parts = {k: [] for k, _ in tier_keys}
             for oid, qp in links:
                 oid = int(oid)
                 qp = max(1, int(qp or 1))
-                overseas = int((inv_by_op.get(oid) or {}).get('overseas_qty') or 0)
-                parts.append(overseas // qp)
-            if parts:
-                out[vid] = min(parts)
+                inv = inv_by_op.get(oid) or {}
+                for tier_k, inv_k in tier_keys:
+                    tier_parts[tier_k].append(int(int(inv.get(inv_k) or 0) // qp))
+            for tier_k, _ in tier_keys:
+                parts = tier_parts.get(tier_k) or []
+                if parts:
+                    out[vid][tier_k] = min(parts)
         return out
+
+    def _load_variant_overseas_sellable_map(self, conn, variant_ids):
+        """variant_id -> 海外仓可售套数（仅海外仓；BOM 各件 floor 后取 min）。"""
+        tier_map = self._load_variant_tier_sellable_map(conn, variant_ids)
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        return {vid: int((tier_map.get(vid) or {}).get('overseas') or 0) for vid in ids}
 
     def _forecast_load_all_substitute_plans_by_owner(self, conn, owner_order_product_ids):
         """owner -> [{plan_id, plan_name, items: [(substitute_order_product_id, qty), ...]}, ...]
@@ -3377,6 +3393,605 @@ class SalesManagementMixin:
         avg = total / float(len(keys))
         return avg if avg > 1e-9 else None
 
+    def _turnover_sales_window(self, conn):
+        """动销月分母窗口：全局最新 record_date 为终点，向前 30 个自然日（含首尾）。"""
+        anchor_raw = self._forecast_perf_max_record_date(conn)
+        if anchor_raw is not None:
+            anchor_text = self._forecast_format_date_only(anchor_raw)
+            try:
+                anchor_dt = datetime.strptime(anchor_text, '%Y-%m-%d').date()
+            except Exception:
+                anchor_dt = datetime.now().date()
+        else:
+            anchor_dt = datetime.now().date()
+        window_end = anchor_dt
+        window_start = window_end - timedelta(days=29)
+        return {
+            'anchor_date': window_end.strftime('%Y-%m-%d'),
+            'window_start': window_start.strftime('%Y-%m-%d'),
+            'window_end': window_end.strftime('%Y-%m-%d'),
+            'days': 30,
+        }
+
+    def _turnover_coverage(self, numerator, denominator_sales):
+        if denominator_sales is None or float(denominator_sales) <= 1e-9:
+            return None
+        num = int(numerator or 0)
+        if num <= 0:
+            return None
+        return round(float(num) / float(denominator_sales), 2)
+
+    def _turnover_shop_filter_sql(self, shop_ids, sp_alias='sp'):
+        if not shop_ids:
+            return '', []
+        ids = [int(x) for x in shop_ids if self._parse_int(x)]
+        if not ids:
+            return '', []
+        ph = ','.join(['%s'] * len(ids))
+        return f' AND {sp_alias}.shop_id IN ({ph}) ', ids
+
+    def _turnover_load_variant_window_sales_from_rolling(self, conn, variant_ids, window, shop_ids=None):
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids or not window:
+            return out
+        if not self._table_exists_simple(conn, 'sales_perf_rolling_30d'):
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk) + shop_params
+                cur.execute(
+                    f"""
+                    SELECT sp.variant_id AS variant_id,
+                           SUM(COALESCE(r.sales_qty, 0)) AS sales_qty
+                    FROM sales_products sp
+                    INNER JOIN sales_perf_rolling_30d r
+                        ON r.sales_product_id = sp.id
+                       AND r.window_start = %s
+                       AND r.window_end = %s
+                    WHERE sp.variant_id IN ({ph})
+                    {shop_frag}
+                    GROUP BY sp.variant_id
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    vid = self._parse_int(row.get('variant_id'))
+                    if vid:
+                        out[vid] = float(row.get('sales_qty') or 0)
+        return out
+
+    def _turnover_load_variant_window_sales_from_daily(self, conn, variant_ids, window, shop_ids=None):
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids or not window:
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk) + shop_params
+                cur.execute(
+                    f"""
+                    SELECT sp.variant_id AS variant_id,
+                           SUM(COALESCE(spp.sales_qty, 0)) AS sales_qty
+                    FROM sales_products sp
+                    INNER JOIN sales_product_performances spp
+                        ON spp.sales_product_id = sp.id
+                       AND spp.record_date >= %s
+                       AND spp.record_date <= %s
+                    WHERE sp.variant_id IN ({ph})
+                    {shop_frag}
+                    GROUP BY sp.variant_id
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    vid = self._parse_int(row.get('variant_id'))
+                    if vid:
+                        out[vid] = float(row.get('sales_qty') or 0)
+        return out
+
+    def _turnover_load_variant_window_sales_map(self, conn, variant_ids, window=None, shop_ids=None):
+        """变体在动销月窗口内的 sales_qty 汇总（优先 rolling_30d 快照，日表兜底）。"""
+        window = window or self._turnover_sales_window(conn)
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = self._turnover_load_variant_window_sales_from_rolling(conn, ids, window, shop_ids=shop_ids)
+        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if missing:
+            daily = self._turnover_load_variant_window_sales_from_daily(
+                conn, missing, window, shop_ids=shop_ids,
+            )
+            for vid, sales in (daily or {}).items():
+                if float(sales or 0) > 1e-9:
+                    out[int(vid)] = float(sales)
+        return out
+
+    def _turnover_load_op_window_sales_from_daily(self, conn, order_product_ids, window, shop_ids=None):
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: 0.0 for i in ids}
+        if not ids or not window:
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk) + shop_params
+                cur.execute(
+                    f"""
+                    SELECT l.order_product_id,
+                           SUM(COALESCE(spp.sales_qty, 0) * GREATEST(1, COALESCE(l.quantity, 1))) AS sales_qty
+                    FROM sales_variant_order_links l
+                    INNER JOIN sales_products sp ON sp.variant_id = l.variant_id
+                    INNER JOIN sales_product_performances spp
+                        ON spp.sales_product_id = sp.id
+                       AND spp.record_date >= %s
+                       AND spp.record_date <= %s
+                    WHERE l.order_product_id IN ({ph})
+                    {shop_frag}
+                    GROUP BY l.order_product_id
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    op_id = self._parse_int(row.get('order_product_id'))
+                    if op_id:
+                        out[int(op_id)] = float(row.get('sales_qty') or 0)
+        return out
+
+    def _turnover_op_sales_via_variant_links(self, conn, order_product_ids, window, shop_ids=None):
+        """下单 SKU 窗口销量：变体窗口销量 × BOM 件数累加。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: 0.0 for i in ids}
+        if not ids or not window:
+            return out
+        links_by_op = self._forecast_load_order_variant_links_by_order_product_ids(conn, ids)
+        all_vids = sorted({
+            self._parse_int(vl.get('variant_id'))
+            for links in links_by_op.values()
+            for vl in (links or [])
+            if self._parse_int(vl.get('variant_id'))
+        })
+        if not all_vids:
+            return out
+        variant_sales = self._turnover_load_variant_window_sales_map(
+            conn, all_vids, window=window, shop_ids=shop_ids,
+        )
+        for op_id in ids:
+            total = 0.0
+            for vl in links_by_op.get(op_id) or []:
+                vid = self._parse_int(vl.get('variant_id'))
+                q = max(1, self._parse_int(vl.get('quantity')) or 1)
+                if vid:
+                    total += float(variant_sales.get(vid) or 0) * float(q)
+            if total > 1e-9:
+                out[int(op_id)] = total
+        return out
+
+    def _turnover_load_sales_product_window_sales_from_rolling(self, conn, sales_product_ids, window, shop_ids=None):
+        ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids or not window:
+            return out
+        if not self._table_exists_simple(conn, 'sales_perf_rolling_30d'):
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk) + shop_params
+                cur.execute(
+                    f"""
+                    SELECT sp.id AS sales_product_id,
+                           SUM(COALESCE(r.sales_qty, 0)) AS sales_qty
+                    FROM sales_products sp
+                    INNER JOIN sales_perf_rolling_30d r
+                        ON r.sales_product_id = sp.id
+                       AND r.window_start = %s
+                       AND r.window_end = %s
+                    WHERE sp.id IN ({ph})
+                    {shop_frag}
+                    GROUP BY sp.id
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    spid = self._parse_int(row.get('sales_product_id'))
+                    if spid:
+                        out[spid] = float(row.get('sales_qty') or 0)
+        return out
+
+    def _turnover_load_sales_product_window_sales_from_daily(self, conn, sales_product_ids, window, shop_ids=None):
+        ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids or not window:
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk) + shop_params
+                cur.execute(
+                    f"""
+                    SELECT sp.id AS sales_product_id,
+                           SUM(COALESCE(spp.sales_qty, 0)) AS sales_qty
+                    FROM sales_products sp
+                    INNER JOIN sales_product_performances spp
+                        ON spp.sales_product_id = sp.id
+                       AND spp.record_date >= %s
+                       AND spp.record_date <= %s
+                    WHERE sp.id IN ({ph})
+                    {shop_frag}
+                    GROUP BY sp.id
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    spid = self._parse_int(row.get('sales_product_id'))
+                    if spid:
+                        out[spid] = float(row.get('sales_qty') or 0)
+        return out
+
+    def _turnover_load_sales_product_window_sales_map(self, conn, sales_product_ids, window=None, shop_ids=None):
+        window = window or self._turnover_sales_window(conn)
+        ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+        out = self._turnover_load_sales_product_window_sales_from_rolling(conn, ids, window, shop_ids=shop_ids)
+        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if missing:
+            daily = self._turnover_load_sales_product_window_sales_from_daily(
+                conn, missing, window, shop_ids=shop_ids,
+            )
+            for spid, sales in (daily or {}).items():
+                if float(sales or 0) > 1e-9:
+                    out[int(spid)] = float(sales)
+        return out
+
+    def _turnover_load_op_window_sales_map(self, conn, order_product_ids, window=None, shop_ids=None):
+        """下单 SKU -> 窗口 sales_qty（链接变体×BOM；日表与变体链接兜底）。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        window = window or self._turnover_sales_window(conn)
+        out = self._turnover_load_op_window_sales_from_daily(conn, ids, window, shop_ids=shop_ids)
+        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if missing:
+            link_sales = self._turnover_op_sales_via_variant_links(
+                conn, missing, window, shop_ids=shop_ids,
+            )
+            for op_id, sales in (link_sales or {}).items():
+                if float(sales or 0) > 1e-9:
+                    out[int(op_id)] = float(sales)
+        return out
+
+    def _turnover_spec_coverage_from_bom_pairs(self, pairs, op_sales_map, inv_by_op, substitute_plans_by_owner):
+        """规格行动销月三列：各下单 SKU（含替代方案库存）取最小值。"""
+        vals_o, vals_ot, vals_tot = [], [], []
+        for oid, qp in pairs or []:
+            oid = int(oid)
+            qp = max(1, int(qp or 1))
+            if not oid:
+                continue
+            avg_op = float(op_sales_map.get(oid) or 0)
+            if avg_op <= 1e-9:
+                continue
+            plans = (substitute_plans_by_owner or {}).get(oid) or []
+            ai = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans)
+            inv = inv_by_op.get(oid) or {}
+            ai_sum = sum(int(ai.get(k) or 0) for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'))
+            raw_sum = sum(int(inv.get(k) or 0) for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'))
+            if ai_sum <= 0 and raw_sum > 0:
+                ai = {
+                    'overseas_qty': int(inv.get('overseas_qty') or 0),
+                    'transit_qty': int(inv.get('transit_qty') or 0),
+                    'factory_stock_qty': int(inv.get('factory_stock_qty') or 0),
+                    'wip_qty': int(inv.get('wip_qty') or 0),
+                }
+            oi = int(int(ai.get('overseas_qty') or 0) // qp)
+            ti = int(int(ai.get('transit_qty') or 0) // qp)
+            sti = int(int(ai.get('factory_stock_qty') or 0) // qp)
+            wpi = int(int(ai.get('wip_qty') or 0) // qp)
+            if oi > 0:
+                vals_o.append(round(float(oi) / avg_op, 2))
+            if oi + ti > 0:
+                vals_ot.append(round(float(oi + ti) / avg_op, 2))
+            if oi + ti + sti + wpi > 0:
+                vals_tot.append(round(float(oi + ti + sti + wpi) / avg_op, 2))
+        return {
+            'months_cover_overseas': min(vals_o) if vals_o else None,
+            'months_cover_overseas_transit': min(vals_ot) if vals_ot else None,
+            'months_cover_total': min(vals_tot) if vals_tot else None,
+        }
+
+    def _turnover_spec_coverage_from_bom_pairs_raw(self, pairs, op_sales_map, inv_by_op):
+        """规格行动销月三列：本体库存（不含替代方案），与海外仓可售口径一致。"""
+        vals_o, vals_ot, vals_tot = [], [], []
+        for oid, qp in pairs or []:
+            oid = int(oid)
+            qp = max(1, int(qp or 1))
+            if not oid:
+                continue
+            avg_op = float(op_sales_map.get(oid) or 0)
+            if avg_op <= 1e-9:
+                continue
+            inv = inv_by_op.get(oid) or {}
+            oi = int(int(inv.get('overseas_qty') or 0) // qp)
+            ti = int(int(inv.get('transit_qty') or 0) // qp)
+            sti = int(int(inv.get('factory_stock_qty') or 0) // qp)
+            wpi = int(int(inv.get('wip_qty') or 0) // qp)
+            if oi > 0:
+                vals_o.append(round(float(oi) / avg_op, 2))
+            if oi + ti > 0:
+                vals_ot.append(round(float(oi + ti) / avg_op, 2))
+            if oi + ti + sti + wpi > 0:
+                vals_tot.append(round(float(oi + ti + sti + wpi) / avg_op, 2))
+        return {
+            'months_cover_overseas': min(vals_o) if vals_o else None,
+            'months_cover_overseas_transit': min(vals_ot) if vals_ot else None,
+            'months_cover_total': min(vals_tot) if vals_tot else None,
+        }
+
+    def _turnover_cov_all_none(self, cov):
+        return all((cov or {}).get(k) is None for k in (
+            'months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total',
+        ))
+
+    def _turnover_compute_order_turnover_map(self, conn, order_product_ids, shop_ids=None):
+        """下单 SKU -> 动销月三列（库存口径与销量预测下单行一致）。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        window = self._turnover_sales_window(conn)
+        empty = {
+            'turnover_sales_window': window,
+            'months_cover_overseas': None,
+            'months_cover_overseas_transit': None,
+            'months_cover_total': None,
+        }
+        out = {i: dict(empty) for i in ids}
+        if not ids:
+            return out
+        sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window, shop_ids=shop_ids)
+        substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
+        extra_subs = []
+        for oid in ids:
+            for sid in self._forecast_substitute_ids_from_plan_groups(substitute_plans.get(oid) or []):
+                extra_subs.append(sid)
+        load_ids = sorted(set(ids).union(int(x) for x in extra_subs if self._parse_int(x)))
+        brief_by_op = self._forecast_load_order_product_brief_map(conn, load_ids)
+        inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
+        for op_id in ids:
+            brief = brief_by_op.get(op_id) or {}
+            is_on = self._parse_int(brief.get('is_on_market')) or 0
+            plans = substitute_plans.get(op_id) or []
+            agg, _ = self._forecast_order_row_inventory_aggregate(
+                inv_by_op, op_id, is_on, plans, brief_by_op, plans,
+            )
+            sales = sales_map.get(op_id)
+            if sales is None:
+                sales = 0.0
+            o = int(agg.get('overseas_qty') or 0)
+            t = int(agg.get('transit_qty') or 0)
+            st = int(agg.get('factory_stock_qty') or 0)
+            wp = int(agg.get('wip_qty') or 0)
+            out[op_id] = {
+                'turnover_sales_window': window,
+                'months_cover_overseas': self._turnover_coverage(o, sales),
+                'months_cover_overseas_transit': self._turnover_coverage(o + t, sales),
+                'months_cover_total': self._turnover_coverage(o + t + st + wp, sales),
+            }
+        return out
+
+    def _turnover_apply_map_to_row(self, item, turnover_map):
+        op_id = self._parse_int(item.get('order_product_id'))
+        t = turnover_map.get(int(op_id)) if op_id else {}
+        if not t:
+            t = {}
+        item['turnover_sales_window'] = t.get('turnover_sales_window')
+        item['months_cover_overseas'] = t.get('months_cover_overseas')
+        item['months_cover_overseas_transit'] = t.get('months_cover_overseas_transit')
+        item['months_cover_total'] = t.get('months_cover_total')
+
+    def _turnover_resolve_dashboard_row_sales(self, item, sales_map):
+        """合并展示行：父行库存含迭代子 SKU 时，分母累加同族各下单 SKU 窗口销量。"""
+        op_id = self._parse_int(item.get('order_product_id'))
+        total = 0.0
+        if op_id is not None:
+            total += float(sales_map.get(op_id) or 0)
+        for ch in item.get('iteration_children') or []:
+            cid = self._parse_int(ch.get('order_product_id'))
+            if cid is not None:
+                total += float(sales_map.get(cid) or 0)
+        return total if total > 1e-9 else None
+
+    def _turnover_fill_warehouse_dashboard_row(self, item, sales_map, window, inv_override=None):
+        sales = self._turnover_resolve_dashboard_row_sales(item, sales_map)
+        if inv_override:
+            o, t, st, wp = inv_override
+        else:
+            o = int(item.get('available_total') or 0)
+            t = int(item.get('in_transit_total') or 0)
+            st = int(item.get('factory_stock_total') or 0)
+            wp = int(item.get('factory_wip_total') or 0)
+        item['turnover_sales_window'] = window
+        item['months_cover_overseas'] = self._turnover_coverage(o, sales)
+        item['months_cover_overseas_transit'] = self._turnover_coverage(o + t, sales)
+        item['months_cover_total'] = self._turnover_coverage(o + t + st + wp, sales)
+
+    def _turnover_compute_variant_turnover_map(self, conn, variant_ids, shop_ids=None):
+        """variant_id -> 动销月三列 + turnover_sales_window（与销量预测规格行逻辑一致）。"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        window = self._turnover_sales_window(conn)
+        empty = {
+            'turnover_sales_window': window,
+            'months_cover_overseas': None,
+            'months_cover_overseas_transit': None,
+            'months_cover_total': None,
+        }
+        out = {i: dict(empty) for i in ids}
+        if not ids:
+            return out
+        variant_sales = self._turnover_load_variant_window_sales_map(conn, ids, window=window, shop_ids=shop_ids)
+        tier_map = self._load_variant_tier_sellable_map(conn, ids)
+        links_by_vid = self._forecast_load_variant_order_links_for_inventory(conn, ids)
+        all_ops = sorted({
+            int(o)
+            for pairs in links_by_vid.values()
+            for o, _q in (pairs or [])
+            if self._parse_int(o)
+        })
+
+        def _fill_from_variant_sales(vid):
+            vs = float(variant_sales.get(vid) or 0)
+            if vs <= 1e-9:
+                return None
+            tiers = tier_map.get(vid) or {}
+            o = int(tiers.get('overseas') or 0)
+            t = int(tiers.get('transit') or 0)
+            st = int(tiers.get('factory_stock') or 0)
+            wp = int(tiers.get('wip') or 0)
+            return {
+                'turnover_sales_window': window,
+                'months_cover_overseas': self._turnover_coverage(o, vs),
+                'months_cover_overseas_transit': self._turnover_coverage(o + t, vs),
+                'months_cover_total': self._turnover_coverage(o + t + st + wp, vs),
+            }
+
+        if not all_ops:
+            for vid in ids:
+                filled = _fill_from_variant_sales(vid)
+                if filled:
+                    out[vid] = filled
+                else:
+                    out[vid]['turnover_sales_window'] = window
+            return out
+        op_sales = self._turnover_load_op_window_sales_map(conn, all_ops, window=window, shop_ids=shop_ids)
+        substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, all_ops)
+        extra_subs = []
+        for oid in all_ops:
+            for sid in self._forecast_substitute_ids_from_plan_groups(substitute_plans.get(oid) or []):
+                extra_subs.append(sid)
+        load_ids = sorted(set(all_ops).union(int(x) for x in extra_subs if self._parse_int(x)))
+        inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
+        for vid in ids:
+            pairs = links_by_vid.get(vid) or []
+            cov = self._turnover_spec_coverage_from_bom_pairs(
+                pairs, op_sales, inv_by_op, substitute_plans,
+            )
+            if self._turnover_cov_all_none(cov) and pairs:
+                cov = self._turnover_spec_coverage_from_bom_pairs_raw(pairs, op_sales, inv_by_op)
+            if self._turnover_cov_all_none(cov):
+                filled = _fill_from_variant_sales(vid)
+                if filled:
+                    out[vid] = filled
+                    continue
+            out[vid] = {
+                'turnover_sales_window': window,
+                'months_cover_overseas': cov.get('months_cover_overseas'),
+                'months_cover_overseas_transit': cov.get('months_cover_overseas_transit'),
+                'months_cover_total': cov.get('months_cover_total'),
+            }
+        return out
+
+    def _turnover_attach_to_sales_product_rows(self, conn, rows, shop_ids=None):
+        variant_ids = sorted({int(r.get('variant_id') or 0) for r in (rows or []) if int(r.get('variant_id') or 0) > 0})
+        try:
+            turnover_map = self._turnover_compute_variant_turnover_map(conn, variant_ids, shop_ids=shop_ids)
+        except Exception as e:
+            print(f'Sales product turnover attach error: {type(e).__name__}: {e!r}')
+            window = None
+            try:
+                window = self._turnover_sales_window(conn)
+            except Exception:
+                pass
+            turnover_map = {
+                vid: {
+                    'turnover_sales_window': window,
+                    'months_cover_overseas': None,
+                    'months_cover_overseas_transit': None,
+                    'months_cover_total': None,
+                }
+                for vid in variant_ids
+            }
+        for row in rows or []:
+            vid = int(row.get('variant_id') or 0)
+            t = turnover_map.get(vid) or {}
+            row['turnover_sales_window'] = t.get('turnover_sales_window')
+            row['months_cover_overseas'] = t.get('months_cover_overseas')
+            row['months_cover_overseas_transit'] = t.get('months_cover_overseas_transit')
+            row['months_cover_total'] = t.get('months_cover_total')
+
+    def _turnover_attach_to_warehouse_dashboard_rows(self, conn, rows, shop_ids=None):
+        op_ids = []
+        for item in rows or []:
+            oid = self._parse_int(item.get('order_product_id'))
+            if oid:
+                op_ids.append(oid)
+            for child in item.get('iteration_children') or []:
+                cid = self._parse_int(child.get('order_product_id'))
+                if cid:
+                    op_ids.append(cid)
+        window = self._turnover_sales_window(conn)
+        sales_map = self._turnover_load_op_window_sales_map(conn, op_ids, window=window, shop_ids=shop_ids)
+        for item in rows or []:
+            self._turnover_fill_warehouse_dashboard_row(item, sales_map, window)
+            for child in item.get('iteration_children') or []:
+                self._turnover_fill_warehouse_dashboard_row(child, sales_map, window)
+
+    def _turnover_attach_to_warehouse_dashboard_rows_safe(self, conn, rows, shop_ids=None):
+        """仓储看板动销月：失败时不阻断整页加载。返回 None 或错误信息。"""
+        try:
+            self._turnover_attach_to_warehouse_dashboard_rows(conn, rows, shop_ids=shop_ids)
+            return None
+        except Exception as e:
+            err = f'{type(e).__name__}: {e}'
+            print(f'Warehouse dashboard turnover attach error: {err!r}')
+            window = None
+            try:
+                window = self._turnover_sales_window(conn)
+            except Exception:
+                pass
+            for item in rows or []:
+                item.setdefault('turnover_sales_window', window)
+                item.setdefault('months_cover_overseas', None)
+                item.setdefault('months_cover_overseas_transit', None)
+                item.setdefault('months_cover_total', None)
+                for child in item.get('iteration_children') or []:
+                    child.setdefault('turnover_sales_window', window)
+                    child.setdefault('months_cover_overseas', None)
+                    child.setdefault('months_cover_overseas_transit', None)
+                    child.setdefault('months_cover_total', None)
+            return err
+
     def _forecast_grow_linked_orders_variants_bidir(self, conn, touch_orders, touch_variants):
         """沿 sales_variant_order_links 双向扩闭包：与当前订单/变体通过任一边相连的 order_product_id、variant_id。
 
@@ -3713,9 +4328,10 @@ class SalesManagementMixin:
     def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months, hist_start=None, hist_end=None, shop_ids=None):
         """按各下单 SKU：本体库存 + 全部替代发货方案替代 SKU 库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。
         规格/平台维度下：库存为变体整套瓶颈；动销月三列 = 所链接各下单 SKU（按替代方案展开后单独成套）的动销月再取最小值；
-        每个下单 SKU 的动销月分母为其自身「下单 SKU 维度」历史销量尾部月均（与下单 SKU 行一致），不得使用规格/平台行的变体汇总销量。"""
+        每个下单 SKU 的动销月分母为其自身窗口销量（全局最新 record_date 向前 30 天，含首尾）。"""
         if not rows:
             return
+        window = self._turnover_sales_window(conn)
         hm_list = list(history_months or [])
         if hist_start is None and hm_list:
             hist_start = hm_list[0]
@@ -3778,32 +4394,50 @@ class SalesManagementMixin:
             brief_by_op = self._forecast_load_order_product_brief_map(conn, load_spec_ids)
             inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_spec_ids)
 
-        op_avg_sales_by_op = {}
-        if forecast_mode != 'order' and variant_expanded and hist_start and hist_end:
-            all_op_ids_flat = sorted({
-                int(o)
-                for pairs in variant_expanded.values()
-                for o, _q in pairs
-                if self._parse_int(o)
-            })
-            if all_op_ids_flat:
-                links_by_op = self._forecast_load_order_variant_links_by_order_product_ids(conn, all_op_ids_flat)
-                all_v_for_hist = sorted({
-                    self._parse_int(vl.get('variant_id'))
-                    for ls in links_by_op.values()
-                    for vl in (ls or [])
-                    if self._parse_int(vl.get('variant_id'))
+        op_window_sales_by_op = {}
+        variant_window_sales = {}
+        sp_window_sales = {}
+        if window:
+            if forecast_mode == 'order':
+                order_op_ids = sorted({
+                    self._parse_int((r.get('labels') or {}).get('order_product_id'))
+                    for r in rows
+                    if self._parse_int((r.get('labels') or {}).get('order_product_id'))
                 })
-                hist_keys = list(self._forecast_iter_months(hist_start, hist_end))
-                hist_by_v = (
-                    self._forecast_load_history_by_variant(conn, all_v_for_hist, hist_start, hist_end, shop_ids=shop_ids)
-                    if all_v_for_hist else {}
-                )
-                wsum = self._forecast_variant_hist_weight_sum_for_variants(conn, all_v_for_hist)
-                for opx in all_op_ids_flat:
-                    lk = links_by_op.get(opx) or []
-                    hist_op = self._forecast_build_order_like_history_for_links(lk, hist_by_v, wsum, hist_keys)
-                    op_avg_sales_by_op[opx] = self._forecast_row_history_sales_avg_tail({'history': hist_op}, history_months, tail=3)
+                if order_op_ids:
+                    op_window_sales_by_op = self._turnover_load_op_window_sales_map(
+                        conn, order_op_ids, window=window, shop_ids=shop_ids,
+                    )
+            elif forecast_mode == 'platform':
+                sp_ids = sorted({
+                    self._parse_int((r.get('labels') or {}).get('sales_product_id'))
+                    for r in rows
+                    if self._parse_int((r.get('labels') or {}).get('sales_product_id'))
+                })
+                if sp_ids:
+                    sp_window_sales = self._turnover_load_sales_product_window_sales_map(
+                        conn, sp_ids, window=window, shop_ids=shop_ids,
+                    )
+            elif variant_expanded:
+                all_op_ids_flat = sorted({
+                    int(o)
+                    for pairs in variant_expanded.values()
+                    for o, _q in pairs
+                    if self._parse_int(o)
+                })
+                if all_op_ids_flat:
+                    op_window_sales_by_op = self._turnover_load_op_window_sales_map(
+                        conn, all_op_ids_flat, window=window, shop_ids=shop_ids,
+                    )
+                spec_vids = sorted({
+                    self._parse_int((r.get('labels') or {}).get('variant_id'))
+                    for r in rows
+                    if self._parse_int((r.get('labels') or {}).get('variant_id'))
+                })
+                if spec_vids:
+                    variant_window_sales = self._turnover_load_variant_window_sales_map(
+                        conn, spec_vids, window=window, shop_ids=shop_ids,
+                    )
 
         for row in rows:
             labels = row.get('labels') or {}
@@ -3857,29 +4491,58 @@ class SalesManagementMixin:
             t = int(agg['transit_qty'])
             st = int(agg['factory_stock_qty'])
             wp = int(agg['wip_qty'])
-            avg_sales = self._forecast_row_history_sales_avg_tail(row, history_months, tail=3)
+            vid = self._parse_int(labels.get('variant_id'))
+            spid = self._parse_int(labels.get('sales_product_id'))
+            if forecast_mode == 'platform' and spid:
+                avg_sales = float(sp_window_sales.get(spid) or 0)
+            elif vid:
+                avg_sales = float(variant_window_sales.get(vid) or 0)
+            else:
+                avg_sales = 0.0
 
-            def _cov(num):
-                if not avg_sales or int(num) <= 0:
+            def _cov(num, denom):
+                d = float(denom or 0)
+                if d <= 1e-9 or int(num) <= 0:
                     return None
-                return round(float(num) / float(avg_sales), 2)
+                return round(float(num) / d, 2)
 
             if forecast_mode == 'order':
-                mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+                oid = self._parse_int(labels.get('order_product_id'))
+                order_sales = float(op_window_sales_by_op.get(oid) or 0) if oid else 0.0
+                mo = _cov(o, order_sales)
+                mot = _cov(o + t, order_sales)
+                mtot = _cov(o + t + st + wp, order_sales)
+                effective_sales = order_sales
+                turnover_bom_breakdown = []
             elif pairs:
                 vals_o, vals_ot, vals_tot = [], [], []
+                turnover_bom_breakdown = []
                 for oid, qp in pairs:
                     oid = int(oid)
                     qp = max(1, int(qp or 1))
                     if not oid:
                         continue
-                    avg_op = op_avg_sales_by_op.get(oid)
-                    if not avg_op or float(avg_op) <= 1e-9:
-                        continue
+                    avg_op = op_window_sales_by_op.get(oid)
+                    if avg_op is None or float(avg_op) <= 1e-9:
+                        if avg_sales and len(pairs) == 1 and qp == 1:
+                            avg_op = avg_sales
+                        else:
+                            continue
+                    avg_op = float(avg_op)
                     bref = brief_by_op.get(oid) or {}
                     is_on_op = self._parse_int(bref.get('is_on_market')) or 0
                     owner_plans = substitute_plans_by_owner.get(oid) or []
                     ai = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, owner_plans)
+                    inv_raw = inv_by_op.get(oid) or {}
+                    ai_sum = sum(int(ai.get(k) or 0) for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'))
+                    raw_sum = sum(int(inv_raw.get(k) or 0) for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'))
+                    if ai_sum <= 0 and raw_sum > 0:
+                        ai = {
+                            'overseas_qty': int(inv_raw.get('overseas_qty') or 0),
+                            'transit_qty': int(inv_raw.get('transit_qty') or 0),
+                            'factory_stock_qty': int(inv_raw.get('factory_stock_qty') or 0),
+                            'wip_qty': int(inv_raw.get('wip_qty') or 0),
+                        }
                     for tier_k in ai:
                         ai[tier_k] = int(int(ai[tier_k] or 0) // max(1, qp))
                     oi = int(ai['overseas_qty'])
@@ -3892,13 +4555,33 @@ class SalesManagementMixin:
                         vals_ot.append(round(float(oi + ti) / float(avg_op), 2))
                     if oi + ti + sti + wpi > 0:
                         vals_tot.append(round(float(oi + ti + sti + wpi) / float(avg_op), 2))
+                    turnover_bom_breakdown.append({
+                        'order_product_id': oid,
+                        'sku': (brief.get('sku') or '').strip(),
+                        'quantity': qp,
+                        'overseas_qty': oi,
+                        'transit_qty': ti,
+                        'factory_stock_qty': sti,
+                        'wip_qty': wpi,
+                        'window_sales_qty': round(float(avg_op), 2),
+                        'months_cover_overseas': round(float(oi) / float(avg_op), 2) if oi > 0 else None,
+                        'months_cover_overseas_transit': round(float(oi + ti) / float(avg_op), 2) if oi + ti > 0 else None,
+                        'months_cover_total': round(float(oi + ti + sti + wpi) / float(avg_op), 2) if oi + ti + sti + wpi > 0 else None,
+                    })
                 mo = min(vals_o) if vals_o else None
                 mot = min(vals_ot) if vals_ot else None
                 mtot = min(vals_tot) if vals_tot else None
+                effective_sales = float(avg_sales or 0)
                 if mo is None and mot is None and mtot is None and avg_sales and float(avg_sales) > 1e-9:
-                    mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+                    mo = _cov(o, avg_sales)
+                    mot = _cov(o + t, avg_sales)
+                    mtot = _cov(o + t + st + wp, avg_sales)
             else:
-                mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+                mo = _cov(o, avg_sales)
+                mot = _cov(o + t, avg_sales)
+                mtot = _cov(o + t + st + wp, avg_sales)
+                effective_sales = float(avg_sales or 0)
+                turnover_bom_breakdown = []
 
             row['inventory'] = {
                 'months_cover_overseas': mo,
@@ -3908,6 +4591,9 @@ class SalesManagementMixin:
                 'transit_qty': t,
                 'in_stock_qty': st,
                 'wip_qty': wp,
+                'turnover_sales_window': window,
+                'turnover_window_sales_qty': effective_sales if effective_sales > 1e-9 else None,
+                'turnover_bom_breakdown': turnover_bom_breakdown,
             }
             if forecast_mode != 'order':
                 pairs_comp = [
@@ -4497,6 +5183,7 @@ class SalesManagementMixin:
                 'months': months,
                 'history_months': history_months,
                 'history_range': {'start': hist_start, 'end': hist_end},
+                'turnover_sales_window': self._turnover_sales_window(conn),
                 'mtd': mtd_payload,
                 'rows': rows,
                 'shops': shops_list,
