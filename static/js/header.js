@@ -1119,14 +1119,18 @@
                 items: stockoutBatch,
                 silent: true,
             });
-            if(result && result.ok) sentStockout = stockoutBatch.length;
+            if(result && result.ok){
+                sentStockout = groupOverseasNotifyItemsBySku(stockoutBatch).length;
+            }
         }
         if(restockBatch.length){
             const result = await sendAppDingtalkNotify('overseas_restock', {
                 items: restockBatch,
                 silent: true,
             });
-            if(result && result.ok) sentRestock = restockBatch.length;
+            if(result && result.ok){
+                sentRestock = groupOverseasNotifyItemsBySku(restockBatch).length;
+            }
         }
         if(opt.silent === true) return { sentStockout, sentRestock };
         if(sentStockout || sentRestock){
@@ -1435,44 +1439,70 @@
         return { ok: true, data };
     }
 
-    function formatOverseasStockoutPreviewLines(items, maxLines){
-        const list = Array.isArray(items) ? items : [];
-        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
-        const lines = list.slice(0, limit).map(item => {
-            const sku = String(item && item.sku || '').trim() || '-';
-            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
-            return `${sku} 在 ${warehouseName} 缺货`;
+    function groupOverseasNotifyItemsBySku(items){
+        const grouped = new Map();
+        const order = [];
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const sku = String(item && item.sku || '').trim();
+            if(!sku) return;
+            if(!grouped.has(sku)){
+                grouped.set(sku, { rows: [], us_remaining_qty: null });
+                order.push(sku);
+            }
+            const entry = grouped.get(sku);
+            entry.rows.push(item);
+            const us = Number(item && item.us_remaining_qty);
+            if(Number.isFinite(us) && entry.us_remaining_qty === null){
+                entry.us_remaining_qty = us;
+            }
         });
-        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
-        return lines;
+        return order.map((sku) => {
+            const entry = grouped.get(sku) || { rows: [], us_remaining_qty: null };
+            return {
+                sku,
+                rows: entry.rows,
+                us_remaining_qty: entry.us_remaining_qty,
+            };
+        });
     }
 
-    function formatOverseasRestockPreviewLines(items, maxLines){
-        const list = Array.isArray(items) ? items : [];
+    function buildOverseasInventoryPreviewHtml(items, eventKind, maxLines){
+        const groups = groupOverseasNotifyItemsBySku(items);
         const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
-        const lines = list.slice(0, limit).map(item => {
-            const sku = String(item && item.sku || '').trim() || '-';
-            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
-            const qty = Number(item && item.available_qty);
-            const qtyText = Number.isFinite(qty) && qty > 0 ? `，在库 ${qty}` : '';
-            return `${sku} 在 ${warehouseName} 重新上架${qtyText}`;
+        const headClass = eventKind === 'stockout'
+            ? 'app-dingtalk-notify-block-head--negative'
+            : 'app-dingtalk-notify-block-head--positive';
+        const blocks = groups.slice(0, limit).map((group) => {
+            const sku = escapeAppNotifyHtml(String(group.sku || '').trim() || '-');
+            const usTotal = Number.isFinite(Number(group.us_remaining_qty)) ? Number(group.us_remaining_qty) : 0;
+            const detailHtml = (group.rows || []).map((row) => {
+                const wh = escapeAppNotifyHtml(String(row && row.warehouse_name || '').trim() || '-');
+                if(eventKind === 'stockout'){
+                    const prevQty = Number(row && row.previous_qty);
+                    const prev = Number.isFinite(prevQty) ? prevQty : 0;
+                    return `<div class="app-dingtalk-notify-sku-line"><strong>${wh}：</strong>${escapeAppNotifyHtml(String(prev))} → 0</div>`;
+                }
+                const newQty = Number(row && row.available_qty);
+                const qty = Number.isFinite(newQty) ? newQty : 0;
+                return `<div class="app-dingtalk-notify-sku-line"><strong>${wh}：</strong>0 → ${escapeAppNotifyHtml(String(qty))}</div>`;
+            }).join('');
+            return '<div class="app-dingtalk-notify-block">'
+                + `<div class="app-dingtalk-notify-block-head ${headClass}">• ${sku}（美国剩余：${escapeAppNotifyHtml(String(usTotal))}）</div>`
+                + (detailHtml ? `<div class="app-dingtalk-notify-block-skus">${detailHtml}</div>` : '')
+                + '</div>';
         });
-        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
-        return lines;
+        if(groups.length > limit){
+            blocks.push(`<div class="app-dingtalk-notify-block-more">…等共 ${groups.length} 条</div>`);
+        }
+        return blocks.join('');
     }
 
-    function formatOverseasRestockPreviewLines(items, maxLines){
-        const list = Array.isArray(items) ? items : [];
-        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
-        const lines = list.slice(0, limit).map(item => {
-            const sku = String(item && item.sku || '').trim() || '-';
-            const warehouseName = String(item && item.warehouse_name || '').trim() || '-';
-            const qty = Number(item && item.available_qty);
-            const qtyText = Number.isFinite(qty) && qty > 0 ? `，在库 ${qty}` : '';
-            return `${sku} 在 ${warehouseName} 重新上架${qtyText}`;
-        });
-        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
-        return lines;
+    function buildOverseasStockoutPreviewHtml(items, maxLines){
+        return buildOverseasInventoryPreviewHtml(items, 'stockout', maxLines);
+    }
+
+    function buildOverseasRestockPreviewHtml(items, maxLines){
+        return buildOverseasInventoryPreviewHtml(items, 'restock', maxLines);
     }
 
     function formatTransitSkuDetailHtmlLines(skuLines){
@@ -1715,15 +1745,16 @@
         if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
         showAppDingtalkNotifyPrompt({
             title: String(opt.title || '钉钉缺货通知').trim() || '钉钉缺货通知',
-            previewLines: formatOverseasStockoutPreviewLines(merged, opt.maxPreviewLines),
+            previewHtml: buildOverseasStockoutPreviewHtml(merged, opt.maxPreviewLines),
             confirmText: opt.confirmText,
             cancelText: opt.cancelText,
             onConfirm: async () => {
                 const batch = appDingtalkPendingOverseasStockoutItems.slice();
+                const groupCount = groupOverseasNotifyItemsBySku(batch).length;
                 const result = await sendAppDingtalkNotify('overseas_stockout', {
                     items: batch,
-                    successMessage: batch.length > 1
-                        ? `已发送 ${batch.length} 条缺货通知到钉钉群`
+                    successMessage: groupCount > 1
+                        ? `已发送 ${groupCount} 条缺货通知到钉钉群`
                         : '已发送缺货通知到钉钉群',
                 });
                 if(result && result.ok){
@@ -1743,15 +1774,16 @@
         if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
         showAppDingtalkNotifyPrompt({
             title: String(opt.title || '钉钉重新上架通知').trim() || '钉钉重新上架通知',
-            previewLines: formatOverseasRestockPreviewLines(merged, opt.maxPreviewLines),
+            previewHtml: buildOverseasRestockPreviewHtml(merged, opt.maxPreviewLines),
             confirmText: opt.confirmText,
             cancelText: opt.cancelText,
             onConfirm: async () => {
                 const batch = appDingtalkPendingOverseasRestockItems.slice();
+                const groupCount = groupOverseasNotifyItemsBySku(batch).length;
                 const result = await sendAppDingtalkNotify('overseas_restock', {
                     items: batch,
-                    successMessage: batch.length > 1
-                        ? `已发送 ${batch.length} 条重新上架通知到钉钉群`
+                    successMessage: groupCount > 1
+                        ? `已发送 ${groupCount} 条重新上架通知到钉钉群`
                         : '已发送重新上架通知到钉钉群',
                 });
                 if(result && result.ok){

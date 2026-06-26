@@ -2790,6 +2790,53 @@ class LogisticsWarehouseMixin:
             }
         return snapshot
 
+    def _load_us_remaining_qty_by_skus(self, cur, skus):
+        sku_list = []
+        seen = set()
+        for raw in skus or []:
+            sku = str(raw or '').strip()
+            if not sku or sku in seen:
+                continue
+            seen.add(sku)
+            sku_list.append(sku)
+        if not sku_list:
+            return {}
+        placeholders = ','.join(['%s'] * len(sku_list))
+        cur.execute(
+            f"""
+            SELECT op.sku, COALESCE(SUM(GREATEST(i.available_qty, 0)), 0) AS us_qty
+            FROM logistics_overseas_inventory i
+            JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+            JOIN order_products op ON op.id = i.order_product_id
+            LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
+            WHERE COALESCE(w.is_enabled, 1) = 1
+              AND (
+                    COALESCE(dr.region_name, w.region) LIKE %s
+                 OR COALESCE(dr.region_name, w.region) LIKE %s
+              )
+              AND op.sku IN ({placeholders})
+            GROUP BY op.sku
+            """,
+            ('%美国%', '%US%') + tuple(sku_list),
+        )
+        out = {}
+        for row in cur.fetchall() or []:
+            sku = str(row.get('sku') or '').strip()
+            if not sku:
+                continue
+            out[sku] = max(0, self._parse_int(row.get('us_qty')) or 0)
+        return out
+
+    def _enrich_overseas_notify_items(self, cur, items):
+        rows = [dict(item) for item in (items or []) if isinstance(item, dict)]
+        if not rows:
+            return rows
+        totals = self._load_us_remaining_qty_by_skus(cur, [item.get('sku') for item in rows])
+        for item in rows:
+            sku = str(item.get('sku') or '').strip()
+            item['us_remaining_qty'] = totals.get(sku, 0)
+        return rows
+
     def _stockout_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial'):
         mode = (import_mode or 'partial').strip().lower()
         items = []
@@ -3053,6 +3100,7 @@ class LogisticsWarehouseMixin:
                                     'warehouse_name': warehouse_name,
                                     'available_qty': int(available_qty),
                                 })
+                restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                 return self.send_json({
                     'status': 'success',
                     'restock_items': restock_items if available_qty > 0 else [],
@@ -3154,6 +3202,8 @@ class LogisticsWarehouseMixin:
 
                     stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                     restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
+                    stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
+                    restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                     return self.send_json({
                         'status': 'success',
                         'updated': len(parsed_items),
@@ -3198,26 +3248,28 @@ class LogisticsWarehouseMixin:
                             """,
                             (warehouse_id, order_product_id, available_qty, item_id),
                         )
-                stockout_items = []
-                restock_items = []
-                if old_qty > 0 and available_qty == 0:
-                    sku = str(before_row.get('sku') or '').strip()
-                    warehouse_name = str(before_row.get('warehouse_name') or '').strip()
-                    if sku and warehouse_name:
-                        stockout_items.append({
-                            'sku': sku,
-                            'warehouse_name': warehouse_name,
-                            'previous_qty': int(old_qty),
-                        })
-                elif old_qty == 0 and available_qty > 0:
-                    sku = str(before_row.get('sku') or '').strip()
-                    warehouse_name = str(before_row.get('warehouse_name') or '').strip()
-                    if sku and warehouse_name:
-                        restock_items.append({
-                            'sku': sku,
-                            'warehouse_name': warehouse_name,
-                            'available_qty': int(available_qty),
-                        })
+                        stockout_items = []
+                        restock_items = []
+                        if old_qty > 0 and available_qty == 0:
+                            sku = str(before_row.get('sku') or '').strip()
+                            warehouse_name = str(before_row.get('warehouse_name') or '').strip()
+                            if sku and warehouse_name:
+                                stockout_items.append({
+                                    'sku': sku,
+                                    'warehouse_name': warehouse_name,
+                                    'previous_qty': int(old_qty),
+                                })
+                        elif old_qty == 0 and available_qty > 0:
+                            sku = str(before_row.get('sku') or '').strip()
+                            warehouse_name = str(before_row.get('warehouse_name') or '').strip()
+                            if sku and warehouse_name:
+                                restock_items.append({
+                                    'sku': sku,
+                                    'warehouse_name': warehouse_name,
+                                    'available_qty': int(available_qty),
+                                })
+                        stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
+                        restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                 return self.send_json({
                     'status': 'success',
                     'stockout_items': stockout_items,
@@ -3456,6 +3508,8 @@ class LogisticsWarehouseMixin:
                         import_mode=import_mode,
                         label_by_key=label_by_key,
                     )
+                    stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
+                    restock_items = self._enrich_overseas_notify_items(cur, restock_items)
 
             return self.send_json({
                 'status': 'success',
