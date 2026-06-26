@@ -393,7 +393,7 @@
                             <th>有效追踪率</th>
                             <th>准时交货率</th>
                             <th>备注</th>
-                            <th style="width:160px;">操作</th>
+                            <th style="width:240px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1104,6 +1104,59 @@
             return params.toString() ? `/api/amazon-account-health?${params.toString()}` : '/api/amazon-account-health';
         }
 
+        function formatMetricDisplayValue(row, field) {
+            const conf = metricConfig[field];
+            if (!conf) return '';
+            return conf.type === 'percent' ? formatPercent(row[field]) : formatInt(row[field]);
+        }
+
+        function buildAccountHealthAlertItem(item, warnMap) {
+            const breaches = [];
+            const worses = [];
+            Object.keys(metricConfig).forEach((field) => {
+                const conf = metricConfig[field];
+                const warnInfo = warnMap[item.id] && warnMap[item.id][field] ? warnMap[item.id][field] : null;
+                if (!warnInfo || !warnInfo.hasWarning) return;
+                const metric = {
+                    label: conf.label,
+                    value: formatMetricDisplayValue(item, field),
+                };
+                if (warnInfo.byTarget) breaches.push(metric);
+                else if (warnInfo.byTrend) worses.push(metric);
+            });
+            return {
+                shop_name: item.shop_name || '',
+                record_datetime: item.record_datetime || '',
+                remark: item.remark || '',
+                breaches,
+                worses,
+            };
+        }
+
+        function pushAccountHealthAlert(id) {
+            const rowId = Number(id);
+            const item = (latestListItems || []).find((row) => Number(row.id) === rowId);
+            if (!item) {
+                setImportStatus('未找到该记录，请刷新列表后重试', 'error');
+                return;
+            }
+            if (typeof window.sendAppDingtalkNotify !== 'function') {
+                setImportStatus('钉钉通知组件未加载，请刷新页面后重试', 'error');
+                return;
+            }
+            const warnMap = buildWarnMap(latestListItems || []);
+            const payload = buildAccountHealthAlertItem(item, warnMap);
+            window.sendAppDingtalkNotify('amazon_account_health_alert', {
+                items: [payload],
+                successMessage: '账户健康提醒已发送到钉钉群',
+            }).catch((err) => {
+                console.error('pushAccountHealthAlert failed', err);
+                if (window.showAppToast) {
+                    window.showAppToast('推送失败，请稍后重试', true, 3200);
+                }
+            });
+        }
+
         function renderTable(items) {
             const tbody = document.querySelector('#healthTable tbody');
             if (!items.length) {
@@ -1140,6 +1193,7 @@
                         <td>
                             <div class="pm-actions">
                                 <button type="button" class="btn-secondary" onclick="openEditModalById(${Number(item.id) || 0})">编辑</button>
+                                <button type="button" class="btn-secondary" onclick="pushAccountHealthAlert(${Number(item.id) || 0})">一键推送</button>
                                 <button type="button" class="btn-danger" onclick="deleteItem(${Number(item.id) || 0})">删除</button>
                             </div>
                         </td>

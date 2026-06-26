@@ -41,6 +41,11 @@ class DingTalkNotifyMixin:
             'label': '在途物流上架可售',
             'page_key': 'logistics_in_transit_management',
         },
+        {
+            'notify_key': 'amazon_account_health_alert',
+            'label': 'Amazon账户健康提醒',
+            'page_key': 'amazon_account_health_management',
+        },
     )
 
     def _dingtalk_table_missing(self, exc):
@@ -444,6 +449,63 @@ class DingTalkNotifyMixin:
             blocks.append('\n'.join(block_lines))
         return blocks
 
+    def _format_account_health_alert_datetime(self, value):
+        text = ('' if value is None else str(value)).strip()
+        if not text:
+            return ''
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M'):
+            try:
+                return datetime.strptime(text, fmt).strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                continue
+        return text[:16]
+
+    def _format_amazon_account_health_alert_lines(self, items):
+        blocks = []
+        for row in items or []:
+            if not isinstance(row, dict):
+                continue
+            shop = str(row.get('shop_name') or '').strip() or '-'
+            dt = self._format_account_health_alert_datetime(row.get('record_datetime')) or '-'
+            breaches = row.get('breaches') if isinstance(row.get('breaches'), list) else []
+            worses = row.get('worses') if isinstance(row.get('worses'), list) else []
+            header = f'**{shop}** · {dt}'
+            block_lines = [
+                f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_NEGATIVE)}',
+            ]
+            detail_lines = []
+            for metric in breaches:
+                if not isinstance(metric, dict):
+                    continue
+                label = str(metric.get('label') or '').strip()
+                if not label:
+                    continue
+                value = str(metric.get('value') or '').strip()
+                detail_lines.append(f'异常 · {label} · {value}' if value else f'异常 · {label}')
+            for metric in worses:
+                if not isinstance(metric, dict):
+                    continue
+                label = str(metric.get('label') or '').strip()
+                if not label:
+                    continue
+                value = str(metric.get('value') or '').strip()
+                detail_lines.append(f'变差 · {label} · {value}' if value else f'变差 · {label}')
+            if not detail_lines:
+                detail_lines.append('指标 · 当前无异常或变差')
+            block_lines.extend(self._dingtalk_markdown_muted_text(line) for line in detail_lines)
+            remark = str(row.get('remark') or '').strip()
+            if remark:
+                block_lines.append(self._dingtalk_markdown_muted_text(f'备注 · {remark}'))
+            blocks.append('\n'.join(block_lines))
+        return blocks
+
+    def _send_dingtalk_amazon_account_health_alert(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'amazon_account_health_alert'
+        lines = self._format_amazon_account_health_alert_lines(items)
+        return self._send_dingtalk_transit_markdown(
+            '账户健康提醒', lines, notify_key=key, user_id=user_id, title_tone='negative',
+        )
+
     def _send_dingtalk_transit_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
@@ -814,6 +876,19 @@ class DingTalkNotifyMixin:
                 return self.send_json({
                     'status': 'success',
                     'sent_count': len(self._format_transit_listed_available_lines(items)),
+                }, start_response)
+
+            if action == 'amazon_account_health_alert':
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                ok, err = self._send_dingtalk_amazon_account_health_alert(items, notify_key=notify_key, user_id=user_id)
+                if not ok:
+                    return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'sent_count': len(self._format_amazon_account_health_alert_lines(items)),
                 }, start_response)
 
             return self.send_json({'status': 'error', 'message': '未知 action'}, start_response)
