@@ -1303,6 +1303,14 @@
         }
     }
 
+    function escapeAppNotifyHtml(text){
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     function ensureAppDingtalkNotifyPrompt(){
         if(appDingtalkNotifyPromptPanel && document.body.contains(appDingtalkNotifyPromptPanel)){
             return appDingtalkNotifyPromptPanel;
@@ -1366,20 +1374,27 @@
         const opt = options && typeof options === 'object' ? options : {};
         const title = String(opt.title || '钉钉通知').trim() || '钉钉通知';
         const intro = String(opt.intro || '是否将通知发送到钉钉群中？').trim() || '是否将通知发送到钉钉群中？';
-        let body = String(opt.body || '').trim();
-        if(!body){
-            const previewLines = Array.isArray(opt.previewLines)
-                ? opt.previewLines.map(line => String(line || '').trim()).filter(Boolean)
-                : [];
-            body = previewLines.length ? `${intro}\n\n${previewLines.join('\n')}` : intro;
-        }
         const panel = ensureAppDingtalkNotifyPrompt();
         const titleEl = panel.querySelector('.app-dingtalk-notify-prompt-title');
         const bodyEl = panel.querySelector('.app-dingtalk-notify-prompt-body');
         const cancelBtn = panel.querySelector('[data-role="cancel"]');
         const confirmBtn = panel.querySelector('[data-role="confirm"]');
         if(titleEl) titleEl.textContent = title;
-        if(bodyEl) bodyEl.textContent = body;
+        if(bodyEl){
+            const previewHtml = String(opt.previewHtml || '').trim();
+            if(previewHtml){
+                bodyEl.innerHTML = `<div class="app-dingtalk-notify-intro">${escapeAppNotifyHtml(intro)}</div>${previewHtml}`;
+            } else {
+                let body = String(opt.body || '').trim();
+                if(!body){
+                    const previewLines = Array.isArray(opt.previewLines)
+                        ? opt.previewLines.map(line => String(line || '').trim()).filter(Boolean)
+                        : [];
+                    body = previewLines.length ? `${intro}\n\n${previewLines.join('\n')}` : intro;
+                }
+                bodyEl.textContent = body;
+            }
+        }
         if(cancelBtn) cancelBtn.textContent = String(opt.cancelText || '暂不发送').trim() || '暂不发送';
         if(confirmBtn){
             confirmBtn.textContent = String(opt.confirmText || '发送到钉钉群').trim() || '发送到钉钉群';
@@ -1460,16 +1475,37 @@
         return lines;
     }
 
-    function formatTransitSkuPreviewSummary(skuLines, maxItems){
-        const rows = Array.isArray(skuLines) ? skuLines : [];
-        const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : 4;
-        const parts = rows.slice(0, limit).map((row) => {
+    function formatTransitSkuDetailLines(skuLines){
+        return (Array.isArray(skuLines) ? skuLines : []).map((row) => {
             const sku = String(row && row.sku || '').trim() || '-';
             const qty = Number(row && row.qty);
-            return Number.isFinite(qty) && qty > 0 ? `${sku}×${qty}` : sku;
+            return Number.isFinite(qty) && qty > 0 ? `${sku} · ${qty}` : sku;
+        }).filter(Boolean);
+    }
+
+    function buildTransitListedPreviewHtml(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const blocks = list.slice(0, limit).map((item) => {
+            const box = escapeAppNotifyHtml(String(item && item.logistics_box_no || '').trim() || '-');
+            const wh = escapeAppNotifyHtml(String(item && item.warehouse_name || '').trim() || '-');
+            const action = String(item && item.event_kind || '') === 'stock_applied' ? '上架可售入仓' : '物流上架可售';
+            const listedDate = String(item && item.listed_date || '').trim();
+            let header = `${box} · ${wh} · ${escapeAppNotifyHtml(action)}`;
+            if(listedDate) header += ` · 上架日 ${escapeAppNotifyHtml(listedDate)}`;
+            const skuLines = formatTransitSkuDetailLines(item && item.sku_lines);
+            const skuHtml = skuLines.map((line) => (
+                `<div class="app-dingtalk-notify-sku-line">${escapeAppNotifyHtml(line)}</div>`
+            )).join('');
+            return '<div class="app-dingtalk-notify-block">'
+                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--positive">• ${header}</div>`
+                + (skuHtml ? `<div class="app-dingtalk-notify-block-skus">${skuHtml}</div>` : '')
+                + '</div>';
         });
-        if(rows.length > limit) parts.push(`…等 ${rows.length} 个 SKU`);
-        return parts.join('、');
+        if(list.length > limit){
+            blocks.push(`<div class="app-dingtalk-notify-block-more">…等共 ${list.length} 条</div>`);
+        }
+        return blocks.join('');
     }
 
     function formatTransitEtaDelayPreviewLines(items, maxLines){
@@ -1482,20 +1518,6 @@
             const oldDate = String(item && item.previous_date || '').trim() || '-';
             const newDate = String(item && item.new_date || '').trim() || '-';
             return `${box} @ ${wh}：${label} ${oldDate} → ${newDate}`;
-        });
-        if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
-        return lines;
-    }
-
-    function formatTransitListedPreviewLines(items, maxLines){
-        const list = Array.isArray(items) ? items : [];
-        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
-        const lines = list.slice(0, limit).map((item) => {
-            const box = String(item && item.logistics_box_no || '').trim() || '-';
-            const wh = String(item && item.warehouse_name || '').trim() || '-';
-            const action = String(item && item.event_kind || '') === 'stock_applied' ? '上架可售入仓' : '物流上架可售';
-            const skuText = formatTransitSkuPreviewSummary(item && item.sku_lines);
-            return `${box} @ ${wh}：${action}${skuText ? `（${skuText}）` : ''}`;
         });
         if(list.length > limit) lines.push(`…等共 ${list.length} 条`);
         return lines;
@@ -1540,7 +1562,7 @@
         if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
         showAppDingtalkNotifyPrompt({
             title: String(opt.title || '钉钉在途上架可售通知').trim() || '钉钉在途上架可售通知',
-            previewLines: formatTransitListedPreviewLines(merged, opt.maxPreviewLines),
+            previewHtml: buildTransitListedPreviewHtml(merged, opt.maxPreviewLines),
             confirmText: opt.confirmText,
             cancelText: opt.cancelText,
             onConfirm: async () => {

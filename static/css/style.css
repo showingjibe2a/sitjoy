@@ -3892,6 +3892,47 @@ button:hover {
     margin-bottom: 0.65rem;
 }
 
+.app-dingtalk-notify-intro {
+    margin-bottom: 0.55rem;
+}
+
+.app-dingtalk-notify-block + .app-dingtalk-notify-block {
+    margin-top: 0.65rem;
+}
+
+.app-dingtalk-notify-block-head {
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.app-dingtalk-notify-block-head--positive {
+    color: #2d7d4a;
+}
+
+.app-dingtalk-notify-block-head--negative {
+    color: #c91d1d;
+}
+
+.app-dingtalk-notify-block-skus {
+    margin-top: 0.2rem;
+    padding-left: 0.85rem;
+}
+
+.app-dingtalk-notify-sku-line {
+    font-size: 0.76rem;
+    color: rgba(42, 36, 32, 0.58);
+    line-height: 1.45;
+    margin-top: 0.1rem;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.app-dingtalk-notify-block-more {
+    margin-top: 0.55rem;
+    font-size: 0.82rem;
+    color: rgba(42, 36, 32, 0.62);
+}
+
 .app-dingtalk-notify-prompt-actions {
     display: flex;
     justify-content: flex-end;

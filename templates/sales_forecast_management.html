@@ -946,6 +946,17 @@
             background: rgba(245, 241, 235, 0.9);
             font-weight: 600;
             color: #4a433c;
+            position: relative;
+        }
+        .sf-leadtime-table-wrap table.sf-leadtime-table {
+            table-layout: fixed;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix thead th {
+            position: relative;
+        }
+        #sfPerfFloatingPanel .pm-col-resizer,
+        .sf-perf-float-panel .sf-col-resize-handle {
+            z-index: 40;
         }
         .sf-leadtime-table td:first-child,
         .sf-leadtime-table th:first-child {
@@ -2847,6 +2858,7 @@
             if (window.SitjoyColorSwatchPicker && typeof window.SitjoyColorSwatchPicker.init === 'function') {
                 window.SitjoyColorSwatchPicker.init(overlay);
             }
+            attachSfPopupTableColResize(overlay);
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
@@ -3573,6 +3585,7 @@
             renderSfRegionRatioTableBody();
             const ov = document.getElementById('sfRegionRatioModalOverlay');
             if (ov) {
+                attachSfPopupTableColResize(ov);
                 ov.classList.add('is-open');
                 ov.setAttribute('aria-hidden', 'false');
             }
@@ -4004,6 +4017,7 @@
             const overlay = document.getElementById('sfLeadtimeModalOverlay');
             if (!overlay) return;
             renderSfLeadtimeTableBody();
+            attachSfPopupTableColResize(overlay);
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
@@ -6790,6 +6804,7 @@
             } else if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
                 window.SitjoyManagedPmTable.enhance(document.getElementById('sfPerfFloatingPanel') || document.body);
             }
+            attachSfPopupTableColResize(table);
         }
 
         function getFirstSelectedHistoryTd() {
@@ -7057,47 +7072,121 @@
             });
         }
 
-        function attachSfInvSectionTableColResize(root) {
-            if (!root) return;
-            root.querySelectorAll('.sf-inv-detail-section-table-wrap table.sf-inv-section-table').forEach((table) => {
-                const thead = table.querySelector('thead');
-                if (!thead) return;
-                const ths = Array.from(thead.querySelectorAll('th'));
-                if (!ths.length) return;
-                table.style.tableLayout = 'fixed';
-                thead.querySelectorAll('.sf-col-resize-handle').forEach((el) => el.remove());
-                ths.forEach((th, colIdx) => {
-                    th.style.position = 'relative';
-                    if (!th.style.width) {
-                        th.style.width = Math.max(72, Math.floor(100 / ths.length)) + '%';
+        function sfPopupTableColCount(table) {
+            const colgroup = table.querySelector('colgroup');
+            if (colgroup) {
+                const n = colgroup.querySelectorAll('col').length;
+                if (n > 0) return n;
+            }
+            const tbody = table.tBodies && table.tBodies[0];
+            const row = tbody && tbody.rows[0];
+            if (row && row.cells.length) return row.cells.length;
+            const thead = table.querySelector('thead');
+            const headerRow = thead && thead.rows[thead.rows.length - 1];
+            if (headerRow && headerRow.cells.length) return headerRow.cells.length;
+            return 0;
+        }
+
+        function sfPopupTableHeaderColOwners(thead, colCount) {
+            const rows = Array.from(thead.querySelectorAll('tr'));
+            if (!rows.length || !colCount) return [];
+            const grid = rows.map(() => []);
+            rows.forEach((tr, rIdx) => {
+                let cIdx = 0;
+                Array.from(tr.cells).forEach((cell) => {
+                    while (cIdx < colCount && grid[rIdx][cIdx]) cIdx += 1;
+                    const cs = Math.max(1, Number(cell.colSpan) || 1);
+                    const rs = Math.max(1, Number(cell.rowSpan) || 1);
+                    for (let r = 0; r < rs; r += 1) {
+                        for (let c = 0; c < cs; c += 1) {
+                            const ri = rIdx + r;
+                            if (ri >= rows.length) continue;
+                            if (!grid[ri]) grid[ri] = [];
+                            if (cIdx + c < colCount) grid[ri][cIdx + c] = cell;
+                        }
                     }
-                    if (colIdx >= ths.length - 1) return;
-                    const handle = document.createElement('span');
-                    handle.className = 'sf-col-resize-handle';
-                    handle.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                    });
-                    handle.addEventListener('mousedown', (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const startX = event.clientX;
-                        const startW = th.offsetWidth;
-                        const minW = 48;
-                        const onMove = (moveEvent) => {
-                            const nextW = Math.max(minW, startW + (moveEvent.clientX - startX));
-                            th.style.width = nextW + 'px';
-                        };
-                        const onUp = () => {
-                            document.removeEventListener('mousemove', onMove);
-                            document.removeEventListener('mouseup', onUp);
-                        };
-                        document.addEventListener('mousemove', onMove);
-                        document.addEventListener('mouseup', onUp);
-                    });
-                    th.appendChild(handle);
+                    cIdx += cs;
                 });
             });
+            const owners = [];
+            for (let i = 0; i < colCount; i += 1) {
+                let cell = null;
+                for (let r = rows.length - 1; r >= 0; r -= 1) {
+                    if (grid[r] && grid[r][i]) { cell = grid[r][i]; break; }
+                }
+                owners.push(cell);
+            }
+            return owners;
+        }
+
+        function attachSfSimpleTableColResize(table) {
+            if (!table) return;
+            const thead = table.querySelector('thead');
+            if (!thead) return;
+            const colCount = sfPopupTableColCount(table);
+            if (!colCount) return;
+            table.style.tableLayout = 'fixed';
+            let colgroup = table.querySelector('colgroup');
+            if (!colgroup) {
+                colgroup = document.createElement('colgroup');
+                table.insertBefore(colgroup, thead);
+            }
+            while (colgroup.querySelectorAll('col').length < colCount) {
+                colgroup.appendChild(document.createElement('col'));
+            }
+            const cols = Array.from(colgroup.querySelectorAll('col')).slice(0, colCount);
+            const owners = sfPopupTableHeaderColOwners(thead, colCount);
+            table.querySelectorAll('.sf-col-resize-handle, thead .pm-col-resizer').forEach((el) => el.remove());
+            owners.forEach((th, colIdx) => {
+                if (!th) return;
+                th.style.position = 'relative';
+                const col = cols[colIdx];
+                const handle = document.createElement('span');
+                handle.className = 'sf-col-resize-handle';
+                handle.setAttribute('role', 'separator');
+                handle.setAttribute('aria-orientation', 'vertical');
+                handle.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+                handle.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const startX = event.clientX;
+                    const startW = th.offsetWidth;
+                    const minW = 48;
+                    const onMove = (moveEvent) => {
+                        const nextW = Math.max(minW, startW + (moveEvent.clientX - startX));
+                        th.style.width = nextW + 'px';
+                        if (col) col.style.width = nextW + 'px';
+                    };
+                    const onUp = () => {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                    };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+                th.appendChild(handle);
+            });
+        }
+
+        function attachSfPopupTableColResize(root) {
+            if (!root) return;
+            const selector = 'table.sf-inv-section-table, table.sf-leadtime-table, table.sf-perf-pm-matrix';
+            let tables = [];
+            if (root.matches && root.matches(selector)) {
+                tables = [root];
+            } else if (root.querySelectorAll) {
+                tables = Array.from(root.querySelectorAll(selector));
+            }
+            tables.forEach((table) => {
+                attachSfSimpleTableColResize(table);
+            });
+        }
+
+        function attachSfInvSectionTableColResize(root) {
+            attachSfPopupTableColResize(root);
         }
 
         function sfInvNumeratorForCol(inv, kind, idx) {
@@ -7659,6 +7748,7 @@
             return !!el.closest(
                 '.modal-close, .status-pill, .status-segment, .pm-table-columns, .pm-table-columns-trigger, '
                 + '#sfInvDimSegment, #sfHistSourceDimSegment, #sfPerfFieldsDropdown, #sfPerfPanelAttachSeg, '
+                + '.sf-col-resize-handle, .pm-col-resizer, '
                 + 'input, button, label, a, select, textarea'
             );
         }

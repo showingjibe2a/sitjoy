@@ -17,6 +17,7 @@ class DingTalkNotifyMixin:
     DINGTALK_KEYWORD = '【SITJOY】'
     DINGTALK_COLOR_NEGATIVE = '#c91d1d'
     DINGTALK_COLOR_POSITIVE = '#2d7d4a'
+    DINGTALK_COLOR_MUTED = '#9aa0a6'
 
     # 新增通知功能时在此注册，配置页会自动出现对应绑定项
     DINGTALK_NOTIFY_FEATURES = (
@@ -298,6 +299,12 @@ class DingTalkNotifyMixin:
             hex_color = f'#{hex_color}'
         return f'<font color="{hex_color}">{body}</font>'
 
+    def _dingtalk_markdown_muted_text(self, text):
+        body = (text or '').strip()
+        if not body:
+            return body
+        return f'<font color="{self.DINGTALK_COLOR_MUTED}" size="2">{body}</font>'
+
     def _dingtalk_notify_tone_color(self, tone):
         if tone == 'positive':
             return self.DINGTALK_COLOR_POSITIVE
@@ -377,21 +384,21 @@ class DingTalkNotifyMixin:
         }
         return self._post_dingtalk_payload(payload, notify_key=notify_key)
 
-    def _format_transit_sku_summary(self, sku_lines, max_items=6):
+    def _format_transit_sku_detail_lines(self, sku_lines):
         rows = sku_lines if isinstance(sku_lines, list) else []
-        parts = []
-        for row in rows[:max_items]:
+        lines = []
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             sku = str(row.get('sku') or '').strip()
             if not sku:
                 continue
             qty = self._parse_int(row.get('qty'))
-            qty_text = f'×**{qty}**' if qty is not None and qty > 0 else ''
-            parts.append(f'{sku}{qty_text}')
-        if len(rows) > max_items:
-            parts.append(f'…等 {len(rows)} 个 SKU')
-        return '、'.join(parts)
+            if qty is not None and qty > 0:
+                lines.append(f'{sku} · {qty}')
+            else:
+                lines.append(sku)
+        return lines
 
     def _format_transit_eta_delay_lines(self, items):
         lines = []
@@ -410,15 +417,15 @@ class DingTalkNotifyMixin:
         return lines
 
     def _format_transit_listed_available_lines(self, items):
-        lines = []
+        blocks = []
         for row in items or []:
             if not isinstance(row, dict):
                 continue
             box = str(row.get('logistics_box_no') or '').strip() or '-'
             wh = str(row.get('warehouse_name') or '').strip() or '-'
             listed_date = str(row.get('listed_date') or '').strip()
-            sku_summary = self._format_transit_sku_summary(row.get('sku_lines'))
-            if not sku_summary:
+            sku_details = self._format_transit_sku_detail_lines(row.get('sku_lines'))
+            if not sku_details:
                 continue
             event_kind = str(row.get('event_kind') or 'registered').strip()
             if event_kind == 'stock_applied':
@@ -426,9 +433,16 @@ class DingTalkNotifyMixin:
             else:
                 action = '物流上架可售'
             date_text = f' · 上架日 **{listed_date}**' if listed_date else ''
-            line = f'**{box}** · {wh} · **{action}**{date_text} · {sku_summary}'
-            lines.append(f'- {self._dingtalk_markdown_colored_text(line, self.DINGTALK_COLOR_POSITIVE)}')
-        return lines
+            header = f'**{box}** · {wh} · **{action}**{date_text}'
+            block_lines = [
+                f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_POSITIVE)}',
+            ]
+            block_lines.extend(
+                self._dingtalk_markdown_muted_text(f'  {line}')
+                for line in sku_details
+            )
+            blocks.append('\n'.join(block_lines))
+        return blocks
 
     def _send_dingtalk_transit_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None):
         formatted = [line for line in (lines or []) if line]
