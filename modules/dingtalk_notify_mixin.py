@@ -572,11 +572,13 @@ class DingTalkNotifyMixin:
             if event_kind != 'registered':
                 continue
             box = str(row.get('logistics_box_no') or '').strip() or '-'
-            wh = str(row.get('warehouse_name') or '').strip() or '-'
+            wh = str(
+                row.get('destination_warehouse_name') or row.get('warehouse_name') or ''
+            ).strip() or '-'
             sku_block = self._format_transit_listed_sku_block_text(row.get('sku_lines'))
             if not sku_block:
                 continue
-            header = f'**{box}** · {wh}'
+            header = f'**海外仓 {wh} · （{box}）**'
             block_lines = [
                 f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_POSITIVE)}',
                 self._dingtalk_markdown_muted_text(f'  {sku_block}'),

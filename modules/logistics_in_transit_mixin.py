@@ -474,6 +474,7 @@ class LogisticsInTransitMixin:
             'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
             'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
             'warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
+            'destination_warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
             'listed_date': self._transit_notify_date_text(meta.get('listed_date')),
             'event_kind': str(event_kind or 'registered').strip() or 'registered',
             'sku_lines': sku_lines,

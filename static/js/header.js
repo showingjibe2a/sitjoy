@@ -1608,12 +1608,14 @@
         const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
         const blocks = list.slice(0, limit).map((item) => {
             const box = escapeAppNotifyHtml(String(item && item.logistics_box_no || '').trim() || '-');
-            const wh = escapeAppNotifyHtml(String(item && item.warehouse_name || '').trim() || '-');
+            const wh = escapeAppNotifyHtml(String(
+                (item && (item.destination_warehouse_name || item.warehouse_name)) || ''
+            ).trim() || '-');
             const skuHtml = formatTransitSkuDetailHtmlLines(item && item.sku_lines).map((line) => (
                 `<div class="app-dingtalk-notify-sku-line">${line}</div>`
             )).join('');
             return '<div class="app-dingtalk-notify-block">'
-                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--positive">• ${box} · ${wh}</div>`
+                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--positive">• ${box}<br>海外仓 ${wh}</div>`
                 + (skuHtml ? `<div class="app-dingtalk-notify-block-skus">${skuHtml}</div>` : '')
                 + '</div>';
         });
