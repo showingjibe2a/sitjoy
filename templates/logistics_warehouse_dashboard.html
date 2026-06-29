@@ -583,6 +583,7 @@
 </div>
 
 <script>
+/** 仓储看板：海外仓/在途/在库/在制矩阵、货号折叠、列宽与格选 */
 let boardWarehouses = [];
 let boardFactories = [];
 let boardRows = [];
@@ -620,6 +621,10 @@ let boardPinnedTipTarget = null;
 let boardHoveredTipTarget = null;
 
 let REGION_ORDER = ['美西', '美中', '美东南', '美东'];
+
+// -------------------------------------------------------------------------
+// 悬停提示与格选高亮
+// -------------------------------------------------------------------------
 
 function $(s){ return document.querySelector(s); }
 
@@ -1080,6 +1085,10 @@ function toggleFilterPanel(){
   if(btn) btn.textContent = filterPanelCollapsed ? '展开筛选' : '收起筛选';
 }
 
+// -------------------------------------------------------------------------
+// 列宽记忆与表头布局
+// -------------------------------------------------------------------------
+
 function initColumnWidths(totalCols){
   const want = Number(totalCols || 0);
   if(want <= 0) return;
@@ -1455,6 +1464,11 @@ function buildTurnoverCells(row) {
     + `<td class="inv-col turnover-col" title="${TURNOVER_TIP}">${fmtTurnoverMonths(row.months_cover_overseas_transit)}</td>`
     + `<td class="inv-col turnover-col" title="${TURNOVER_TIP}">${fmtTurnoverMonths(row.months_cover_total)}</td>`;
 }
+
+// -------------------------------------------------------------------------
+// 看板表格渲染
+// -------------------------------------------------------------------------
+
 function renderBoard(){
   const thead = $('#boardHeadTable thead');
   const tbody = $('#boardBodyTable tbody');
@@ -1859,6 +1873,10 @@ function syncTopScrollbar(){
     window.syncSitjoyPageFillScrollLayout();
   }
 }
+
+// -------------------------------------------------------------------------
+// 数据加载与筛选事件
+// -------------------------------------------------------------------------
 
 function loadBoard(){
   const qs = new URLSearchParams();

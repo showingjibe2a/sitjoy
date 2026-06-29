@@ -201,6 +201,7 @@
 </style>
 
 <script>
+/** 工厂在制：列表、分组聚合、行内编辑、合同/下单 SKU 联动 */
 let editId = null;
 let optionsLoaded = false;
 let optionFactories = [];
@@ -601,6 +602,10 @@ function toggleActualDateGroup(){
   if(isCompleted && !input.value) input.value = todayStr();
   if(!isCompleted) input.value = '';
 }
+
+// -------------------------------------------------------------------------
+// 选项加载与弹窗联动
+// -------------------------------------------------------------------------
 
 function loadOptions(){
   return fetch(withFetchBust('/api/factory-wip?action=options'))
@@ -1211,6 +1216,10 @@ function handleFactoryWipBatchDelete(ids){
       if(window.showAppToast){ window.showAppToast(err.message || '批量删除失败', true, 3200); }
     });
 }
+
+// -------------------------------------------------------------------------
+// 列表加载与表格渲染
+// -------------------------------------------------------------------------
 
 function loadList(){
   const q = ($('#searchInput').value || '').trim();

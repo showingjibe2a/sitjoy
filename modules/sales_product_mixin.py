@@ -455,6 +455,10 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # Gallery 图片关联与 picker API
+    # -------------------------------------------------------------------------
+
     def handle_gallery_image_links_api(self, environ, method, start_response):
         """按图片路径（base64 bytes）查该图片已关联的规格列表（用于 gallery 预填）。"""
         try:
@@ -4628,6 +4632,9 @@ class SalesProductMixin:
                 pass
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 销售产品 Excel 批量导入
+    # -------------------------------------------------------------------------
 
     def handle_sales_product_import_api(self, environ, method, start_response):
         """销售产品批量导入"""
@@ -9911,6 +9918,10 @@ class SalesProductMixin:
             except Exception:
                 pass
 
+    # -------------------------------------------------------------------------
+    # 产品表现 CRUD / 导入 / rolling 刷新
+    # -------------------------------------------------------------------------
+
     def handle_sales_product_performance_api(self, environ, method, start_response):
         """产品表现 CRUD / 导入；写入后触发周月聚合与 rolling 快照刷新。"""
         try:
@@ -11725,6 +11736,10 @@ class SalesProductMixin:
                 'message': str(e)[:200],
                 'detail': tb.split('\n')[-3:-1] if check_only else None
             }, start_response)
+
+    # -------------------------------------------------------------------------
+    # 产品表现看板（货号分组、图表、佣金/成本估算）
+    # -------------------------------------------------------------------------
 
     def handle_sales_product_performance_dashboard_api(self, environ, method, start_response):
         try:

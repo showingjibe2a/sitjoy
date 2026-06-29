@@ -1,4 +1,7 @@
-// 在页面加载时动态注入顶部导航，保持各模板统一
+/**
+ * 全站公共脚本：顶栏导航、Universal 下拉、托管表格、Toast/确认框、钉钉通知链、数值格式化等。
+ * 各业务页通过 header.js 挂载；勿在页面内重复实现同类能力。
+ */
 (function(){
     (function ensureSitjoyThemeScript() {
         if (window.SitjoyTheme || document.querySelector('script[data-sitjoy-theme="1"]')) return;
@@ -29,6 +32,10 @@
     let suppressSortUntil = 0;
 
     const SITJOY_PIN_ICON_SVG = '<svg class="sj-pin-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><circle cx="8" cy="3.2" r="2" fill="currentColor"/><path fill="currentColor" d="M5.8 5.35h4.4l.55 1.65 1.35.98c.21.15.09.47-.16.47H4.26c-.25 0-.37-.32-.16-.47l1.35-.98.55-1.65z"/><path fill="currentColor" d="M7.25 8.55h1.5v5.1a.75.75 0 0 1-.75.75h0a.75.75 0 0 1-.75-.75v-5.1z"/></svg>';
+
+    // -------------------------------------------------------------------------
+    // Universal 单选下拉（searchable select）
+    // -------------------------------------------------------------------------
 
     function isElementVisibleForEnhance(el){
         if(!el) return false;
@@ -438,6 +445,10 @@
         }, 400);
     }
 
+    // -------------------------------------------------------------------------
+    // Toast、页面状态与文件下载
+    // -------------------------------------------------------------------------
+
     function ensureToastStack(){
         if(toastStack && document.body.contains(toastStack)) return toastStack;
         toastStack = document.createElement('div');
@@ -659,6 +670,10 @@
      * 调试：刷新前执行 window.__SITJOY_DEBUG_MODAL_BACKDROP = true 或 localStorage.setItem('sj.debug.modalBackdrop','1')（setItem 返回 undefined 属正常），
      * 再点弹窗区域，控制台过滤 [modalBackdrop] 可见 insidePanel / primDownOutside 等日志。
      */
+    // -------------------------------------------------------------------------
+    // 弹窗遮罩关闭与自动绑定
+    // -------------------------------------------------------------------------
+
     function bindPmModalBackdropClose(modalEl, onClose){
         if(!modalEl || typeof onClose !== 'function') return;
 
@@ -870,6 +885,10 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 全局确认框（showAppConfirm / showAppConfirmAsync）
+    // -------------------------------------------------------------------------
+
     function ensureAppConfirmModal(){
         let modal = document.getElementById('app-confirm-modal');
         if(modal && document.body.contains(modal)) return modal;
@@ -1054,6 +1073,10 @@
             confirmCheckText: checkText,
         }).then((result) => result === true);
     }
+
+    // -------------------------------------------------------------------------
+    // 钉钉通知：海外仓缺货/上架/低库存、在途 ETA、自动发送
+    // -------------------------------------------------------------------------
 
     let appDingtalkNotifyPromptPanel = null;
     let appDingtalkNotifyPromptState = null;
@@ -2790,6 +2813,10 @@
         });
         return meta;
     }
+
+    // -------------------------------------------------------------------------
+    // 全站数值展示（formatSitjoyNumber、列对齐推断）
+    // -------------------------------------------------------------------------
 
     /** 全站数值展示：需显示小数时统一两位；百分数亦保留两位小数 */
     const SITJOY_PERCENT_COLUMN_KEY_RE = /(?:^|_)(?:acos|acoas|ctr|cvr|a_to_z|defect|negative_feedback|chargeback|late_shipment|cancel|tracking|delivery|discount_rate|refund_rate|commission_rate|net_margin_rate|pct|percent)(?:_|$)|_rate$/i;
@@ -9420,6 +9447,10 @@
         }
     }
 
+    // -------------------------------------------------------------------------
+    // 托管表格（列宽/冻结/格选/批量勾选）
+    // -------------------------------------------------------------------------
+
     function createManagedTable(table, index){
         if(managedTableState.has(table) || !shouldManageTable(table)) return;
 
@@ -10550,6 +10581,10 @@
         state.panel.style.display = 'block';
         state.panel.classList.add('open');
     }
+
+    // -------------------------------------------------------------------------
+    // 日期 / 日期时间输入增强
+    // -------------------------------------------------------------------------
 
     function enhanceCustomDateInputs(root){
         const scope = root && root.querySelectorAll ? root : document;
@@ -12439,6 +12474,10 @@
             return false;
         }
     }
+
+    // -------------------------------------------------------------------------
+    // 顶栏加载与页面启动
+    // -------------------------------------------------------------------------
 
     function loadHeader(){
         paintCachedHeaderShell();

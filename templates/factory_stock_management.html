@@ -126,6 +126,7 @@
 </div>
 
 <script>
+/** 工厂在库：列表、行内编辑、批量保存、Excel 导入导出 */
 let editId = null;
 let optionsLoaded = false;
 let optionFactories = [];
@@ -241,6 +242,10 @@ function safeColorValue(value){
   if(/^hsla?\(\s*\d{1,3}(?:deg|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(?:,\s*(?:0|1|0?\.\d+))?\s*\)$/.test(text)) return text;
   return '';
 }
+
+// -------------------------------------------------------------------------
+// 选项加载与列表
+// -------------------------------------------------------------------------
 
 function loadOptions(){
   return fetch(withFetchBust('/api/factory-stock?action=options'))
@@ -649,6 +654,10 @@ async function removeItem(id){
     })
     .catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '删除失败', true, 3200); } });
 }
+
+// -------------------------------------------------------------------------
+// 列表 CRUD 与统一保存
+// -------------------------------------------------------------------------
 
 function loadList(){
   const q = ($('#searchInput').value || '').trim();

@@ -1,11 +1,7 @@
 /**
-
  * 销售产品管理：Amazon / Wayfair 库存导出弹窗与选项记忆。
-
  */
-
 (function (global) {
-
   const LS_KEYS = {
 
     amazon: 'sj.salesPlatformInventoryExport.amazon.v4',

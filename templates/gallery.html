@@ -61,7 +61,7 @@
     </footer>
 
     <script>
-        // gallery：单击卡片勾选；双击文件夹进入目录；双击图片打开共享编辑弹窗（含 sha256 重复提示）；右下角批量栏可取消选择。
+        /** 图库：目录浏览、批量选择、上传、关联规格/面料（双击图片打开编辑弹窗） */
 
         let currentPath = '';
         const selectedItems = new Map();
@@ -152,6 +152,10 @@
             }
             syncGalleryBatchBar();
         });
+
+        // -------------------------------------------------------------------------
+        // 目录浏览与上传
+        // -------------------------------------------------------------------------
 
         function browse(path) {
             currentPath = String(path || '');
@@ -334,6 +338,10 @@
                 window.hideAppUploadProgress && window.hideAppUploadProgress();
             }
         }
+
+        // -------------------------------------------------------------------------
+        // 卡片渲染与选择
+        // -------------------------------------------------------------------------
 
         function displayItems(folders, images) {
             const grid = document.getElementById('browser-grid');
