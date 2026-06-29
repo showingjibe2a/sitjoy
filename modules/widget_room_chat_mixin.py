@@ -12,6 +12,10 @@ WRC_STREAM_PING_SEC = 12
 class WidgetRoomChatMixin:
     """房间 JSON 内嵌 chat_messages / chat_seq 的通用读写。"""
 
+    # -------------------------------------------------------------------------
+    # 聊天消息：查询参数 / 列表 / 追加
+    # -------------------------------------------------------------------------
+
     def _wrc_query_int(self, query, key, default=0):
         try:
             return int((query.get(key) or [str(default)])[0] or default)
@@ -92,6 +96,10 @@ class WidgetRoomChatMixin:
             'chat_messages': [new_msg] if new_msg else [],
         }
         return payload
+
+    # -------------------------------------------------------------------------
+    # 长轮询 / SSE 增量推送
+    # -------------------------------------------------------------------------
 
     def _wrc_wait_for_update(
         self,

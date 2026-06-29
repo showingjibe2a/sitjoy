@@ -3445,7 +3445,7 @@ class SalesManagementMixin:
             return None
         num = int(numerator or 0)
         if num <= 0:
-            return None
+            return 0
         return round(float(num) / float(denominator_sales), 2)
 
     def _turnover_shop_filter_sql(self, shop_ids, sp_alias='sp'):

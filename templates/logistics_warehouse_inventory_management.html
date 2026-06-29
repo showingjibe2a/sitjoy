@@ -162,6 +162,12 @@
             if(stockout.length && typeof window.promptAppDingtalkOverseasStockout === 'function'){
                 window.promptAppDingtalkOverseasStockout(stockout);
             }
+            if(restock.length && typeof window.promptAppDingtalkOverseasRestock === 'function'){
+                window.promptAppDingtalkOverseasRestock(restock);
+            }
+            if(lowStock.length && typeof window.promptAppDingtalkOverseasLowStock === 'function'){
+                window.promptAppDingtalkOverseasLowStock(lowStock);
+            }
         }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
         function getInventorySelectAllCheckboxes(){ return Array.from(document.querySelectorAll('input#inventorySelectAll')); }

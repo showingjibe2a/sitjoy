@@ -91,6 +91,10 @@ def _mj_unregister_waiter(room_code, ev):
 class MahjongPlayMixin(WidgetRoomChatMixin):
     """麻将 API 与房间状态（简化平胡）。"""
 
+    # -------------------------------------------------------------------------
+    # 房间文件：路径 / 锁 / 读写
+    # -------------------------------------------------------------------------
+
     def _mj_rooms_dir(self):
         base = getattr(self, 'base_path', None) or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         path = os.path.join(base, 'var', 'mahjong_rooms')
@@ -386,6 +390,10 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 room[key] = arr[:MJ_SEATS]
         return True
 
+    # -------------------------------------------------------------------------
+    # 房间号 / 过期清理
+    # -------------------------------------------------------------------------
+
     def _mj_new_room_code(self):
         alphabet = string.ascii_uppercase + string.digits
         for _ in range(200):
@@ -410,6 +418,10 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     os.remove(path)
             except Exception:
                 pass
+
+    # -------------------------------------------------------------------------
+    # 牌墙 / 牌型排序
+    # -------------------------------------------------------------------------
 
     def _mj_build_wall(self):
         wall = []
@@ -1703,6 +1715,10 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'chat_messages': chat,
             'chat_seq': chat_seq,
         }
+
+    # -------------------------------------------------------------------------
+    # API：大厅 / 摸打 / 胡牌 / 长轮询 / SSE
+    # -------------------------------------------------------------------------
 
     def handle_mahjong_play_api(self, environ, method, start_response):
         user_id = self._get_session_user(environ)

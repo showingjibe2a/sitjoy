@@ -9,6 +9,10 @@ from urllib.parse import parse_qs
 class ImagePickerMixin:
     """image-picker API：浏览允许目录下、未被当前实体绑定的图片。"""
 
+    # -------------------------------------------------------------------------
+    # 路径编码 / 白名单根目录
+    # -------------------------------------------------------------------------
+
     def _b64_rel_path(self, rel_text):
         if isinstance(rel_text, bytes):
             rel_bytes = rel_text
@@ -34,6 +38,10 @@ class ImagePickerMixin:
             if rel_b == root_b or rel_b.startswith(root_b + b'/'):
                 return True
         return False
+
+    # -------------------------------------------------------------------------
+    # 已绑定 image_asset 收集
+    # -------------------------------------------------------------------------
 
     def _image_picker_bound_asset_ids(self, conn, context, fabric_id=None, variant_id=None, order_product_id=None):
         bound = set()
@@ -257,7 +265,12 @@ class ImagePickerMixin:
         items.sort(key=lambda x: (x.get('display') or '').lower())
         return folders, items
 
+    # -------------------------------------------------------------------------
+    # API：按 context 列出可选图片
+    # -------------------------------------------------------------------------
+
     def handle_image_picker_api(self, environ, method, start_response):
+        """GET：按面料/销售规格/下单 SKU 等上下文浏览未绑定图片。"""
         try:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)

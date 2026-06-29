@@ -9,7 +9,11 @@ from datetime import datetime
 import cgi
 
 class FileUtilsMixin:
-    """文件系统和文件操作工具"""
+    """文件系统路径、面料命名与通用上传。"""
+
+    # -------------------------------------------------------------------------
+    # 面料图片命名 / 序号
+    # -------------------------------------------------------------------------
 
     def _fabric_filename_part(self, text, default='文字卖点图'):
         value = str(text or '').strip() or default
@@ -44,6 +48,10 @@ class FileUtilsMixin:
                     except Exception:
                         pass
         return max_idx + 1
+
+    # -------------------------------------------------------------------------
+    # 上架资源路径 / 面料与认证目录
+    # -------------------------------------------------------------------------
 
     def _join_resources(self, rel_path):
         """拼接资源目录（返回 bytes 路径）"""
@@ -97,6 +105,10 @@ class FileUtilsMixin:
         except Exception:
             pass
         return existing
+
+    # -------------------------------------------------------------------------
+    # 面料目录内绑定 / 外部路径导入
+    # -------------------------------------------------------------------------
 
     def _fabric_allocate_bind_target(self, existing, fabric_code, image_type, ext):
         """绑定/导入时分配下一个目标文件名（编码-类型-序号.ext）。"""
@@ -185,6 +197,10 @@ class FileUtilsMixin:
             results.append(self._fabric_bind_result_item(target_name, remark=image_type))
 
         return {'status': 'success', 'items': results, 'image_names': [r['new_name'] for r in results]}
+
+    # -------------------------------------------------------------------------
+    # API：通用图片上传
+    # -------------------------------------------------------------------------
 
     def handle_upload_api(self, environ, start_response):
         """处理图片上传（multipart/form-data）"""

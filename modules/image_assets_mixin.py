@@ -13,6 +13,10 @@ import os
 class ImageAssetsMixin:
     """image_assets 与 fabric_image_mappings 等映射表的统一操作。"""
 
+    # -------------------------------------------------------------------------
+    # image_assets 表结构探测 / 批量 upsert
+    # -------------------------------------------------------------------------
+
     def _image_assets_table_flags(self, conn):
         return {
             'has_tid': self._table_has_column(conn, 'image_assets', 'image_type_id'),
@@ -139,6 +143,10 @@ class ImageAssetsMixin:
                 cur.executemany(update_sql, update_rows)
 
         return existing_by_sha
+
+    # -------------------------------------------------------------------------
+    # 面料图片：payload 解析 / UI 行 / 映射同步
+    # -------------------------------------------------------------------------
 
     def _image_payload_rows_for_fabric(self, images, sort_base=0, append_after=None):
         """面料保存/绑定 payload → 标准行。"""

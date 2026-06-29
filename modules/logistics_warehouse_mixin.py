@@ -2932,13 +2932,19 @@ class LogisticsWarehouseMixin:
         except Exception:
             return []
 
-    def _prepare_overseas_inventory_notify_payload(self, cur, conn, stockout_items, restock_items, order_product_ids):
-        """富化缺货/上架通知项，并按受影响 order_product 计算低库存预警。"""
-        stockout = self._enrich_overseas_notify_items(cur, stockout_items or [])
-        restock = self._enrich_overseas_notify_items(cur, restock_items or [])
+    def _prepare_overseas_inventory_notify_payload(self, cur, stockout_items, restock_items):
+        """富化缺货/上架通知项（在外层 cursor 上执行）。"""
+        return (
+            self._enrich_overseas_notify_items(cur, stockout_items or []),
+            self._enrich_overseas_notify_items(cur, restock_items or []),
+        )
+
+    def _overseas_low_stock_alerts_for_order_products(self, conn, order_product_ids):
+        """低库存预警：须在主 conn.cursor() 关闭后调用（forecast/动销内部会再开 cursor，避免 PyMySQL 嵌套 cursor 异常）。"""
         op_ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
-        low_stock = self._attach_overseas_low_stock_alerts(conn, op_ids) if op_ids else []
-        return stockout, restock, low_stock
+        if not op_ids:
+            return []
+        return self._attach_overseas_low_stock_alerts(conn, op_ids)
 
     def _overseas_qty_change_notify_pair(self, old_qty, new_qty, sku, warehouse_name):
         """单次数量变更 → (缺货项列表, 上架项列表)。"""
@@ -3229,9 +3235,12 @@ class LogisticsWarehouseMixin:
                                     'warehouse_name': warehouse_name,
                                     'available_qty': int(available_qty),
                                 })
-                        _, restock_items, low_stock_alert_items = self._prepare_overseas_inventory_notify_payload(
-                            cur, conn, [], restock_items, [order_product_id],
+                        _, restock_items = self._prepare_overseas_inventory_notify_payload(
+                            cur, [], restock_items,
                         )
+                    low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
+                        conn, [order_product_id],
+                    )
                 return self.send_json({
                     'status': 'success',
                     'restock_items': restock_items if available_qty > 0 else [],
@@ -3330,11 +3339,12 @@ class LogisticsWarehouseMixin:
 
                             stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                             restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
-                            stockout_items, restock_items, low_stock_alert_items = (
-                                self._prepare_overseas_inventory_notify_payload(
-                                    cur, conn, stockout_items, restock_items, affected_order_product_ids,
-                                )
+                            stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
+                                cur, stockout_items, restock_items,
                             )
+                        low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
+                            conn, affected_order_product_ids,
+                        )
                     return self.send_json({
                         'status': 'success',
                         'updated': len(parsed_items),
@@ -3387,11 +3397,12 @@ class LogisticsWarehouseMixin:
                             old_qty, available_qty,
                             before_row.get('sku'), before_row.get('warehouse_name'),
                         )
-                        stockout_items, restock_items, low_stock_alert_items = (
-                            self._prepare_overseas_inventory_notify_payload(
-                                cur, conn, stockout_items, restock_items, [order_product_id],
-                            )
+                        stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
+                            cur, stockout_items, restock_items,
                         )
+                    low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
+                        conn, [order_product_id],
+                    )
                 return self.send_json({
                     'status': 'success',
                     'stockout_items': stockout_items,
@@ -3642,11 +3653,12 @@ class LogisticsWarehouseMixin:
                             op_id = self._parse_int(key[1] if isinstance(key, tuple) and len(key) >= 2 else None)
                             if op_id:
                                 affected_order_product_ids.add(int(op_id))
-                    stockout_items, restock_items, low_stock_alert_items = (
-                        self._prepare_overseas_inventory_notify_payload(
-                            cur, conn, stockout_items, restock_items, affected_order_product_ids,
-                        )
+                    stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
+                        cur, stockout_items, restock_items,
                     )
+                low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
+                    conn, affected_order_product_ids,
+                )
 
             return self.send_json({
                 'status': 'success',

@@ -7,7 +7,11 @@ import math
 from urllib.parse import parse_qs
 
 class ImageProcessingMixin:
-    """图片处理和列表API"""
+    """图片列表 API 与文件名判定。"""
+
+    # -------------------------------------------------------------------------
+    # 文件名 / 上架资源图片列表
+    # -------------------------------------------------------------------------
 
     def _is_image_name(self, name):
         """判断是否为图片文件名（兼容 bytes/str）"""
@@ -117,6 +121,10 @@ class ImageProcessingMixin:
                 'status': 'error', 
                 'message': f'Error: {type(e).__name__}'
             }, start_response)
+
+    # -------------------------------------------------------------------------
+    # 认证文件夹图片列表
+    # -------------------------------------------------------------------------
 
     def handle_certification_images_api(self, environ, start_response):
         """列出认证文件夹内图片"""

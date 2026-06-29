@@ -1,4 +1,7 @@
-﻿import io
+﻿# -*- coding: utf-8 -*-
+"""Excel 工具 Mixin：模板下载、xlsx 布尔格修复与 XML 兜底解析。"""
+
+import io
 import re
 import zipfile
 import xml.etree.ElementTree as ET
@@ -11,6 +14,12 @@ except Exception:
 
 
 class ExcelToolsMixin:
+    """Excel 读写辅助：发送工作簿、修复非法布尔格、无 openpyxl 时 XML 重建。"""
+
+    # -------------------------------------------------------------------------
+    # 工作簿下载
+    # -------------------------------------------------------------------------
+
     def _send_excel_workbook(self, workbook, filename, start_response):
         output = io.BytesIO()
         workbook.save(output)
@@ -24,6 +33,9 @@ class ExcelToolsMixin:
         ])
         return [data]
 
+    # -------------------------------------------------------------------------
+    # xlsx 布尔格：扫描 / 修复
+    # -------------------------------------------------------------------------
 
     def _sanitize_xlsx_bool_cells(self, file_bytes):
         if not file_bytes:
@@ -110,6 +122,9 @@ class ExcelToolsMixin:
 
         return {'count': count, 'samples': samples}
 
+    # -------------------------------------------------------------------------
+    # xlsx XML 解析：单元格坐标 / 共享字符串 / 重建 Workbook
+    # -------------------------------------------------------------------------
 
     def _xlsx_cell_ref_to_rc(self, ref):
         ref_text = (ref or '').strip().upper()

@@ -1,11 +1,14 @@
-﻿import json
+﻿# -*- coding: utf-8 -*-
+"""WSGI 应用入口：请求路径规范化与 page/api 分发。"""
+
+import json
 import traceback
 from datetime import datetime
 from urllib.parse import parse_qs
 
 
 class AppEntryMixin:
-    """WSGI 入口相关能力。"""
+    """WSGI 入口：权限校验 → 页面 → API。"""
 
     @staticmethod
     def _normalize_request_path(path):
@@ -17,6 +20,7 @@ class AppEntryMixin:
         return p
 
     def __call__(self, environ, start_response):
+        """WSGI 主入口。"""
         try:
             path = self._normalize_request_path(environ.get('PATH_INFO'))
             environ['PATH_INFO'] = path

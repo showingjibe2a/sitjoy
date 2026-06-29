@@ -70,6 +70,10 @@ def _go_unregister_waiter(room_code, ev):
 class GoPlayMixin(WidgetRoomChatMixin):
     """围棋对弈 API 与房间状态。"""
 
+    # -------------------------------------------------------------------------
+    # 房间文件：路径 / 锁 / 读写
+    # -------------------------------------------------------------------------
+
     def _go_rooms_dir(self):
         base = getattr(self, 'base_path', None) or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         path = os.path.join(base, 'var', 'go_play_rooms')
@@ -191,6 +195,10 @@ class GoPlayMixin(WidgetRoomChatMixin):
         if mutated and room is not None:
             with _go_file_lock:
                 self._go_write_room_file_unlocked(room, durable=persist_durable)
+
+    # -------------------------------------------------------------------------
+    # 棋盘规则：落子 / 提子 / 打劫
+    # -------------------------------------------------------------------------
 
     def _go_empty_board(self):
         return [[GO_EMPTY for _ in range(GO_BOARD_SIZE)] for _ in range(GO_BOARD_SIZE)]
@@ -326,6 +334,10 @@ class GoPlayMixin(WidgetRoomChatMixin):
         if room.get('moves'):
             return False
         return True
+
+    # -------------------------------------------------------------------------
+    # 房间生命周期：过期清理 / 房间号 / 悔棋与练习
+    # -------------------------------------------------------------------------
 
     def _go_cleanup_rooms(self):
         now = time.time()
@@ -585,6 +597,10 @@ class GoPlayMixin(WidgetRoomChatMixin):
             self._parse_int(room.get('black_user_id')),
             self._parse_int(room.get('white_user_id')),
         )
+
+    # -------------------------------------------------------------------------
+    # API：创建房间 / 落子 / 长轮询 / SSE
+    # -------------------------------------------------------------------------
 
     def handle_go_play_api(self, environ, method, start_response):
         user_id = self._get_session_user(environ)
