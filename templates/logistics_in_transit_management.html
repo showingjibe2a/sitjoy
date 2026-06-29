@@ -469,6 +469,7 @@
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script>
+/* 在途物流页：表格预览编辑、状态快捷切换、导入导出、钉钉延迟/上架通知 */
 let editId=null, forwarderEditId=null, activeForwarderFilterId=null, optionFactories=[], optionForwarders=[], optionDestinationRegions=[], optionWarehouses=[], optionOrderProducts=[], optionLinks=[], currentUploadDocType=null, currentUploadTransitId=null;
 let transitSkuFactoryMap = new Map();
 let optionsReadyPromise = null;
@@ -870,6 +871,7 @@ function quickUpdateStatus(id,field,value,extra){
   return fetch('/api/logistics-in-transit?action=quick_status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json())
 }
 
+/** 保存/核对/快捷状态后：到货延迟 → 上架可售，交由 header.js 统一调度钉钉 */
 function handleTransitNotifyAfterSave(data){
   const payload = data && typeof data === 'object' ? data : {};
   const etaDelay = Array.isArray(payload.transit_eta_delay_items) ? payload.transit_eta_delay_items : [];

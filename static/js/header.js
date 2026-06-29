@@ -1803,6 +1803,7 @@
         }
         const opt = options && typeof options === 'object' ? options : {};
         const panelOpen = !!(appDingtalkNotifyPromptPanel && appDingtalkNotifyPromptPanel.classList.contains('show'));
+        /** 延迟通知确认后再弹上架可售（followUp 链） */
         const scheduleListed = () => {
             if(!listed.length) return;
             if(typeof promptAppDingtalkTransitListedAvailable === 'function'){

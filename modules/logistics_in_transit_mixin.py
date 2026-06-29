@@ -1,4 +1,6 @@
-﻿import ast
+﻿# -*- coding: utf-8 -*-
+"""在途物流：主数据 CRUD、SKU 明细、资料文件、钉钉到货延迟/上架可售通知。"""
+import ast
 import csv
 import cgi
 import io
@@ -29,7 +31,7 @@ except Exception as _e:
 
 
 class LogisticsInTransitMixin:
-    pass
+    """在途物流 Mixin：箱号/提单、SKU 明细、状态快捷更新与钉钉通知辅助。"""
 
     def _get_logistics_link_root_bytes(self):
         resources_root = self._join_resources('')
@@ -75,14 +77,25 @@ class LogisticsInTransitMixin:
         return folder
 
     def _calc_qty_consistent_from_items(self, items):
-        if not isinstance(items, list) or not items:
+        return self._transit_items_qty_consistent(items)
+
+    def _transit_item_listed_qty(self, shipped_qty, listed_raw):
+        """listed_qty 为空时默认等于 shipped_qty。"""
+        shipped = self._parse_int(shipped_qty) or 0
+        if listed_raw in (None, ''):
+            return shipped
+        listed = self._parse_int(listed_raw)
+        return shipped if listed is None else int(listed)
+
+    def _transit_items_qty_consistent(self, entries):
+        """所有 SKU 行发货量=上架量时返回 1，否则 0。"""
+        if not isinstance(entries, list) or not entries:
             return 0
-        for entry in items:
+        for entry in entries:
             if not isinstance(entry, dict):
                 continue
             shipped_qty = self._parse_int(entry.get('shipped_qty')) or 0
-            listed_raw = entry.get('listed_qty')
-            listed_qty = shipped_qty if listed_raw in (None, '') else (self._parse_int(listed_raw) or 0)
+            listed_qty = self._transit_item_listed_qty(shipped_qty, entry.get('listed_qty'))
             if shipped_qty != listed_qty:
                 return 0
         return 1
@@ -369,18 +382,12 @@ class LogisticsInTransitMixin:
                     (transit_id,)
                 )
                 rows = cur.fetchall() or []
-                qty_consistent = 1
-                if not rows:
-                    qty_consistent = 0
-                else:
-                    for row in rows:
-                        shipped_qty = self._parse_int((row or {}).get('shipped_qty')) or 0
-                        listed_qty = self._parse_int((row or {}).get('listed_qty'))
-                        listed_qty = shipped_qty if listed_qty is None else listed_qty
-                        if shipped_qty != listed_qty:
-                            qty_consistent = 0
-                            break
+                qty_consistent = self._transit_items_qty_consistent(rows)
                 cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (qty_consistent, transit_id))
+
+    # -------------------------------------------------------------------------
+    # 钉钉通知：日期格式化、延迟检测、上架可售项组装
+    # -------------------------------------------------------------------------
 
     def _transit_notify_date_text(self, value):
         text = ('' if value is None else str(value)).strip()
@@ -401,6 +408,7 @@ class LogisticsInTransitMixin:
         return new_s > old_s
 
     def _fetch_transit_notify_meta(self, cur, transit_id):
+        """读取钉钉通知所需的箱号/提单/仓库/区域/工厂等元数据。"""
         cur.execute(
             """
             SELECT t.id, t.logistics_box_no, t.bill_of_lading_no, t.listed_date,
@@ -417,6 +425,7 @@ class LogisticsInTransitMixin:
         return cur.fetchone() or {}
 
     def _fetch_transit_sku_lines(self, cur, transit_id, qty_by_order_product=None):
+        """读取在途 SKU 行；qty_by_order_product 可覆盖上架数量（核对上架场景）。"""
         cur.execute(
             """
             SELECT li.order_product_id, op.sku, li.shipped_qty, li.listed_qty
@@ -448,6 +457,7 @@ class LogisticsInTransitMixin:
         return lines
 
     def _build_transit_eta_delay_item(self, meta, field_key, field_label, old_date, new_date):
+        """组装单条「到货延迟」钉钉通知项。"""
         if not meta:
             return None
         return {
@@ -462,6 +472,7 @@ class LogisticsInTransitMixin:
         }
 
     def _build_transit_listed_available_item(self, cur, transit_id, event_kind='registered', sku_lines=None, qty_by_order_product=None):
+        """组装「上架可售」钉钉通知项（含 SKU 行与海外仓名）。"""
         meta = self._fetch_transit_notify_meta(cur, transit_id)
         if not meta or not int(meta.get('id') or 0):
             return None
@@ -487,7 +498,28 @@ class LogisticsInTransitMixin:
         if item and item.get('transit_id'):
             bucket.append(item)
 
+    def _append_transit_eta_delays_from_changes(self, bucket, meta, existing, updated, field_specs):
+        """批量检测日期字段延后（field_specs: [(field_key, field_label), ...]）。"""
+        existing = existing or {}
+        updated = updated or {}
+        for field_key, field_label in field_specs:
+            if field_key not in updated:
+                continue
+            self._append_transit_eta_delay_if_needed(
+                bucket, meta, field_key, field_label,
+                existing.get(field_key), updated.get(field_key),
+            )
+
+    def _maybe_append_transit_listed_registered(self, cur, bucket, transit_id, prev_registered, new_registered):
+        """已登记上架 0→1 时追加「上架可售」钉钉通知项。"""
+        if not self._parse_int(new_registered) or self._parse_int(prev_registered):
+            return
+        item = self._build_transit_listed_available_item(cur, transit_id, event_kind='registered')
+        if item:
+            bucket.append(item)
+
     def handle_logistics_in_transit_api(self, environ, method, start_response):
+        """在途物流主 API：列表/详情、CRUD、快捷状态、数量核对。"""
         perf_ctx = self._perf_begin('logistics_in_transit_api', environ, {'entry_method': method})
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -1098,9 +1130,10 @@ class LogisticsInTransitMixin:
                                     (item_id,)
                                 )
                                 if prev_inventory_registered == 0:
-                                    item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
-                                    if item:
-                                        transit_listed_available_items.append(item)
+                                    self._maybe_append_transit_listed_registered(
+                                        cur, transit_listed_available_items, item_id,
+                                        prev_inventory_registered, 1,
+                                    )
                             else:
                                 cur.execute(
                                     "UPDATE logistics_in_transit SET inventory_registered=0, listed_date=NULL WHERE id=%s",
@@ -1301,14 +1334,6 @@ class LogisticsInTransitMixin:
                             params = []
 
                             if 'expected_listed_date_latest' in payload:
-                                self._append_transit_eta_delay_if_needed(
-                                    transit_eta_delay_items,
-                                    meta,
-                                    'expected_listed_date_latest',
-                                    '预计上架时间',
-                                    existing.get('expected_listed_date_latest'),
-                                    payload.get('expected_listed_date_latest'),
-                                )
                                 sets.append('expected_listed_date_latest=%s')
                                 params.append(payload.get('expected_listed_date_latest'))
 
@@ -1349,14 +1374,6 @@ class LogisticsInTransitMixin:
                             if 'eta_latest' in payload:
                                 eta_latest = payload.get('eta_latest')
                                 old_eta_latest = existing.get('eta_latest')
-                                self._append_transit_eta_delay_if_needed(
-                                    transit_eta_delay_items,
-                                    meta,
-                                    'eta_latest',
-                                    'ETA（预计到港）',
-                                    old_eta_latest,
-                                    eta_latest,
-                                )
                                 sets.append('eta_latest=%s')
                                 params.append(eta_latest)
                                 if eta_latest and not existing.get('eta_initial'):
@@ -1365,6 +1382,14 @@ class LogisticsInTransitMixin:
                                 if eta_latest and old_eta_latest and str(old_eta_latest) != str(eta_latest):
                                     sets.append('eta_previous=%s')
                                     params.append(old_eta_latest)
+
+                            self._append_transit_eta_delays_from_changes(
+                                transit_eta_delay_items, meta, existing, payload,
+                                [
+                                    ('expected_listed_date_latest', '预计上架时间'),
+                                    ('eta_latest', 'ETA（预计到港）'),
+                                ],
+                            )
 
                             if 'remark' in payload:
                                 sets.append('remark=%s')
@@ -1653,26 +1678,17 @@ class LogisticsInTransitMixin:
                                 )
                         if method == 'PUT' and existing:
                             meta = self._fetch_transit_notify_meta(cur, item_id)
-                            self._append_transit_eta_delay_if_needed(
-                                transit_eta_delay_items,
-                                meta,
-                                'eta_latest',
-                                'ETA（预计到港）',
-                                existing.get('eta_latest'),
-                                payload.get('eta_latest'),
+                            self._append_transit_eta_delays_from_changes(
+                                transit_eta_delay_items, meta, existing, payload,
+                                [
+                                    ('eta_latest', 'ETA（预计到港）'),
+                                    ('expected_listed_date_latest', '预计上架时间'),
+                                ],
                             )
-                            self._append_transit_eta_delay_if_needed(
-                                transit_eta_delay_items,
-                                meta,
-                                'expected_listed_date_latest',
-                                '预计上架时间',
-                                existing.get('expected_listed_date_latest'),
-                                payload.get('expected_listed_date_latest'),
+                            self._maybe_append_transit_listed_registered(
+                                cur, transit_listed_available_items, item_id,
+                                prev_inventory_registered, payload.get('inventory_registered'),
                             )
-                            if self._parse_int(payload.get('inventory_registered')) and prev_inventory_registered == 0:
-                                item = self._build_transit_listed_available_item(cur, item_id, event_kind='registered')
-                                if item:
-                                    transit_listed_available_items.append(item)
                     self._perf_mark(perf_ctx, 'create_or_update_write')
 
                 new_bl = (payload.get('bill_of_lading_no') or '').strip()
@@ -2023,8 +2039,7 @@ class LogisticsInTransitMixin:
                 ws_items.cell(row=item_row, column=1, value=row.get('logistics_box_no') or '')
                 ws_items.cell(row=item_row, column=2, value=row.get('sku') or '')
                 shipped_qty = self._parse_int(row.get('shipped_qty')) or 0
-                listed_qty = self._parse_int(row.get('listed_qty'))
-                listed_qty = shipped_qty if listed_qty is None else listed_qty
+                listed_qty = self._transit_item_listed_qty(shipped_qty, row.get('listed_qty'))
                 ws_items.cell(row=item_row, column=3, value=shipped_qty)
                 ws_items.cell(row=item_row, column=4, value=listed_qty)
                 item_row += 1
