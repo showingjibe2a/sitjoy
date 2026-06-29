@@ -2381,22 +2381,54 @@ class SalesManagementMixin:
             ') est_unit_cost ON est_unit_cost.variant_id = sp.variant_id'
         )
 
-    def _forecast_finalize_history_perf_payload(self, raw):
-        """将 sales_perf_agg_month 一行（或按变体汇总）规范为与看板货号分组内层 SKU 行一致的指标集合。"""
+    def _forecast_finalize_history_perf_payload(
+        self, raw, *, platform_type_id=None, product_category=None, rules_cache=None, conn=None,
+    ):
+        """将 sales_perf_agg_month 一行规范为看板货号分组内层 SKU 行指标；佣金按平台+细分类目规则计算。"""
         net = float(raw.get('net_sales_amount') or 0)
         gross = float(raw.get('gross_sales_amount') or 0)
         ref = float(raw.get('refund_amount') or 0)
         ad_spend = float(raw.get('ad_spend') or 0)
         bom = round(float(raw.get('estimated_product_cost_usd') or 0), 2)
         lm = round(float(raw.get('estimated_last_mile_freight_usd') or 0), 2)
-        comm = round(min(net, 200.0) * 0.15 + max(net - 200.0, 0.0) * 0.10, 2)
         total_cost = round(bom + lm, 2)
-        profit = round(net - comm - total_cost - ad_spend - ref, 2)
         discount_rate = round((gross - net) / gross, 6) if gross > 1e-12 else 0.0
         refund_rate = round(ref / net, 6) if net > 1e-12 else 0.0
-        commission_rate = round(comm / net, 6) if net > 1e-12 else 0.0
-        net_margin_rate = round(profit / gross, 6) if gross > 1e-12 else 0.0
-        return {
+
+        comm_result = None
+        if conn is not None and platform_type_id and product_category:
+            cache = rules_cache if rules_cache is not None else self._commission_load_rules_cache(conn)
+            comm_result = self._commission_compute_for_context(
+                cache, platform_type_id, product_category, net, mode='period',
+            )
+        elif conn is not None and rules_cache is not None:
+            comm_result = {
+                'commission_status': 'unavailable',
+                'commission_message': self.COMMISSION_UNAVAILABLE_LABEL,
+                'est_referral_commission_usd': None,
+                'commission_rate': None,
+            }
+
+        if comm_result:
+            comm = comm_result.get('est_referral_commission_usd')
+            commission_rate = comm_result.get('commission_rate')
+            if comm_result.get('commission_status') == 'ok' and comm is not None:
+                profit = round(net - float(comm) - total_cost - ad_spend - ref, 2)
+                net_margin_rate = round(profit / gross, 6) if gross > 1e-12 else 0.0
+            else:
+                profit = None
+                net_margin_rate = None
+        else:
+            comm = round(min(net, 200.0) * 0.15 + max(net - 200.0, 0.0) * 0.10, 2)
+            commission_rate = round(comm / net, 6) if net > 1e-12 else 0.0
+            profit = round(net - comm - total_cost - ad_spend - ref, 2)
+            net_margin_rate = round(profit / gross, 6) if gross > 1e-12 else 0.0
+            comm_result = {
+                'commission_status': 'legacy',
+                'commission_message': None,
+            }
+
+        payload = {
             'rows': int(self._parse_int(raw.get('source_rows')) or 0),
             'sales_qty': float(raw.get('sales_qty') or 0),
             'net_sales_amount': round(net, 2),
@@ -2414,11 +2446,16 @@ class SalesManagementMixin:
             'estimated_product_cost_usd': bom,
             'estimated_last_mile_freight_usd': lm,
             'estimated_total_cost_usd': total_cost,
-            'est_referral_commission_usd': comm,
+            'est_referral_commission_usd': round(float(comm), 2) if comm is not None else None,
             'commission_rate': commission_rate,
             'estimated_net_profit_usd': profit,
             'net_margin_rate': net_margin_rate,
+            'commission_status': (comm_result or {}).get('commission_status'),
+            'commission_message': (comm_result or {}).get('commission_message'),
+            'commission_group': (comm_result or {}).get('commission_group'),
+            'commission_rule_label': (comm_result or {}).get('commission_rule_label'),
         }
+        return payload
 
     def _forecast_empty_history_perf_payload(self):
         return self._forecast_finalize_history_perf_payload({
@@ -2496,6 +2533,8 @@ class SalesManagementMixin:
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
         shop_joins = self._forecast_perf_history_shop_joins_sql()
         lm_factor = self._shop_handles_last_mile_factor_sql(conn, 'sh', 'pt')
+        rules_cache = self._commission_load_rules_cache(conn)
+        sp_ctx = self._commission_load_sp_context_map(conn, sales_product_ids)
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -2531,7 +2570,14 @@ class SalesManagementMixin:
                 month_str = self._forecast_month_to_str(row.get('month_start'))
                 if not spid or not month_str:
                     continue
-                out[(spid, month_str)] = self._forecast_finalize_history_perf_payload(dict(row))
+                ctx = sp_ctx.get(int(spid)) or {}
+                out[(spid, month_str)] = self._forecast_finalize_history_perf_payload(
+                    dict(row),
+                    platform_type_id=ctx.get('platform_type_id'),
+                    product_category=ctx.get('product_category'),
+                    rules_cache=rules_cache,
+                    conn=conn,
+                )
         return out
 
     def _forecast_load_history_by_variant(self, conn, variant_ids, start_month, end_month, shop_ids=None):
@@ -2552,6 +2598,10 @@ class SalesManagementMixin:
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
         shop_joins = self._forecast_perf_history_shop_joins_sql()
         lm_factor = self._shop_handles_last_mile_factor_sql(conn, 'sh', 'pt')
+        rules_cache = (
+            self._commission_load_rules_cache(conn)
+            if self._commission_rules_tables_ready(conn) else None
+        )
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -2588,7 +2638,11 @@ class SalesManagementMixin:
                 month_str = self._forecast_month_to_str(row.get('month_start'))
                 if not vid or not month_str:
                     continue
-                out[(vid, month_str)] = self._forecast_finalize_history_perf_payload(dict(row))
+                out[(vid, month_str)] = self._forecast_finalize_history_perf_payload(
+                    dict(row),
+                    rules_cache=rules_cache if self._commission_rules_tables_ready(conn) else None,
+                    conn=conn,
+                )
         return out
 
     def _forecast_current_month_key(self):

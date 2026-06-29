@@ -1223,7 +1223,7 @@
             { key: 'estimated_product_cost_usd', label: '预估产品成本(至海外仓, USD)', color: '#5a5a72', isGroupOnly: true },
             { key: 'estimated_last_mile_freight_usd', label: '预估尾程运费(USD)', color: '#4d6b7a', isGroupOnly: true },
             { key: 'estimated_total_cost_usd', label: '预估成本(USD)', color: '#4a5568', isGroupOnly: true },
-            { key: 'est_referral_commission_usd', label: '预估销售佣金(家具, USD)', color: '#8a6b5a', isGroupOnly: true },
+            { key: 'est_referral_commission_usd', label: '预估销售佣金(USD)', color: '#8a6b5a', isGroupOnly: true },
             { key: 'commission_rate', label: '佣金费率', color: '#7a5c6e', isGroupOnly: true },
             { key: 'estimated_net_profit_usd', label: '预估净利润(USD)', color: '#3d6b55', isGroupOnly: true },
             { key: 'net_margin_rate', label: '净利率', color: '#4d6a7a', isGroupOnly: true }
@@ -1235,7 +1235,7 @@
             refund_rate: '退款率：退款金额÷净销售额；净销售额为0时按0。',
             estimated_product_cost_usd: '预估产品成本（至海外仓）：下单产品中 cost_usd 表示产品到海外仓的 BOM 成本；按销售变体关联的下单链接，对 cost_usd×链接数量 求和得到加权单位值(USD)，再×本周期销量。无链接时为0。',
             estimated_last_mile_freight_usd: '预估尾程运费：下单产品中 last_mile_avg_freight_usd 为预估尾程平均运费；与产品成本同一套销售变体–下单链接，对 last_mile_avg_freight_usd×链接数量 求和后再×本周期销量。仅当店铺勾选「负责尾程」时计入；无链接或字段缺失时为0。',
-            est_referral_commission_usd: '预估销售佣金：默认采用亚马逊家具类目的分段费率估算（不校验货号类目）。对该 SKU 周期净销售额 S：min(S,200)×15% + max(S−200,0)×10%。',
+            est_referral_commission_usd: '预估销售佣金：按平台+货号细分类目映射到佣金大类后计算。Amazon/Walmart 家具为分段费率 min(S,200)×15%+max(S−200,0)×10%；Wayfair 全品类固定 4%。未维护映射或规则时显示「无法计算」。',
             estimated_total_cost_usd: '预估成本：预估产品成本(至海外仓)+预估尾程运费；与下方两项之和一致。',
             commission_rate: '佣金费率：预估销售佣金÷净销售额；净销售额为0时按0。父货号行为各子 SKU 佣金合计÷净销售额合计。',
             estimated_net_profit_usd: '预估净利润：净销售额−预估销售佣金−预估成本−广告花费−退款金额。父货号行为各子 SKU 该项求和。',
@@ -1256,6 +1256,9 @@
             'estimated_product_cost_usd', 'estimated_last_mile_freight_usd', 'estimated_total_cost_usd',
             'est_referral_commission_usd', 'estimated_net_profit_usd'
         ];
+        const COMMISSION_DERIVED_KEYS = new Set([
+            'est_referral_commission_usd', 'commission_rate', 'estimated_net_profit_usd', 'net_margin_rate'
+        ]);
 
         const PERF_NON_NUMERIC_COL_KEYS = new Set([
             '__toggle', '__sku', '__fabric', '__spec', '__perf_chk__', '__perf_op__',
@@ -1274,14 +1277,23 @@
         }
 
         function emptyPerfGroupSum() {
-            const sum = { rows: 0 };
+            const sum = { rows: 0, _commission_unavailable: 0 };
             PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] = 0; });
             return sum;
         }
 
         function accumulatePerfGroupItemIntoSum(sum, it) {
             sum.rows += Number(it.rows || 0);
-            PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] += Number(it[k] || 0); });
+            if (it.commission_status && it.commission_status !== 'ok') {
+                sum._commission_unavailable = (sum._commission_unavailable || 0) + 1;
+            }
+            PERF_GROUP_ITEM_SUM_KEYS.forEach(k => {
+                if (it.commission_status && it.commission_status !== 'ok'
+                    && COMMISSION_DERIVED_KEYS.has(k)) {
+                    return;
+                }
+                sum[k] += Number(it[k] || 0);
+            });
         }
 
         function finalizePerfGroupAggregateSum(sum) {
@@ -1290,12 +1302,21 @@
             const grf = Number(sum.refund_amount || 0);
             sum.discount_rate = (gg > 0) ? (gg - gn) / gg : 0;
             sum.refund_rate = (gn > 0) ? grf / gn : 0;
-            const gcomm = Number(sum.est_referral_commission_usd || 0);
-            sum.commission_rate = (gn > 0) ? gcomm / gn : 0;
-            sum.estimated_total_cost_usd = Math.round(Number(sum.estimated_total_cost_usd || 0) * 100) / 100;
-            sum.estimated_net_profit_usd = Math.round(Number(sum.estimated_net_profit_usd || 0) * 100) / 100;
-            const gprofit = Number(sum.estimated_net_profit_usd || 0);
-            sum.net_margin_rate = (gg > 0) ? Math.round((gprofit / gg) * 1e6) / 1e6 : 0;
+            if ((sum._commission_unavailable || 0) > 0) {
+                sum.est_referral_commission_usd = null;
+                sum.commission_rate = null;
+                sum.estimated_net_profit_usd = null;
+                sum.net_margin_rate = null;
+                sum.commission_status = 'unavailable';
+            } else {
+                const gcomm = Number(sum.est_referral_commission_usd || 0);
+                sum.commission_rate = (gn > 0) ? gcomm / gn : 0;
+                sum.estimated_total_cost_usd = Math.round(Number(sum.estimated_total_cost_usd || 0) * 100) / 100;
+                sum.estimated_net_profit_usd = Math.round(Number(sum.estimated_net_profit_usd || 0) * 100) / 100;
+                const gprofit = Number(sum.estimated_net_profit_usd || 0);
+                sum.net_margin_rate = (gg > 0) ? Math.round((gprofit / gg) * 1e6) / 1e6 : 0;
+                sum.commission_status = 'ok';
+            }
             return sum;
         }
 
@@ -1571,6 +1592,10 @@
         }
 
         function formatMetricValue(v, key) {
+            const k = String(key || '');
+            if (COMMISSION_DERIVED_KEYS.has(k) && (v == null || v === '')) {
+                return '无法计算';
+            }
             const n = Number(v || 0);
             if (!Number.isFinite(n)) return '-';
             if (typeof window.formatSitjoyNumber === 'function') {
@@ -1806,6 +1831,10 @@
             if (key === 'ctr') return safeDiv(row.ad_clicks, row.ad_impressions);
             if (key === 'cvr') return safeDiv(row.ad_orders, row.ad_clicks);
             if (key === 'cpc') return safeDiv(row.ad_spend, row.ad_clicks);
+            if (COMMISSION_DERIVED_KEYS.has(String(key || ''))
+                && row && row.commission_status && row.commission_status !== 'ok') {
+                return null;
+            }
             const n = Number(row[key]);
             return Number.isFinite(n) ? n : 0;
         }

@@ -34,6 +34,7 @@ from modules.page_permission_mixin import PagePermissionMixin
 from modules.product_mgmt_mixin import ProductManagementMixin
 from modules.request_routing_mixin import API_PERMISSION_MAP, PAGE_TEMPLATE_MAP, RequestRoutingMixin
 from modules.aplus_mixin import AplusMixin
+from modules.commission_calc_mixin import CommissionCalcMixin
 from modules.sales_management_mixin import SalesManagementMixin
 from modules.fabric_inventory_share_mixin import FabricInventoryShareMixin
 from modules.platform_inventory_export_mixin import PlatformInventoryExportMixin
@@ -80,6 +81,7 @@ class WSGIApp(
     SalesProductMixin,        # 销售产品
     ImageAssetsMixin,         # 图片资产中心（image_assets + mapping 统一入库）
     AplusMixin,               # A+ 页面
+    CommissionCalcMixin,      # 销售佣金规则与计算
     SalesManagementMixin,     # 销售管理
     FabricInventoryShareMixin,  # 面料库存展示比例
     PlatformInventoryExportMixin,  # 平台库存导出

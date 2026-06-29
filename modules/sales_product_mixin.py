@@ -5277,7 +5277,9 @@ class SalesProductMixin:
                                 sp.created_at,
                                 sp.updated_at,
                                 s.shop_name,
+                                s.platform_type_id,
                                 pt.name AS platform_type_name,
+                                TRIM(COALESCE(pf.category, '')) AS product_category,
                                 b.name AS brand_name,
                                 {handles_last_mile_select},
                                 p.parent_code,
@@ -12234,10 +12236,9 @@ class SalesProductMixin:
                     fabric_expr = "fm.fabric_code"
                 else:
                     fabric_expr = ("v.fabric" if has_fabric_text else "''")
-                # --- 货号分组明细：预估成本（销售变体→下单SKU 链接表加权）；佣金统一按家具类目分段费率估算 ---
+                # --- 货号分组明细：预估成本（销售变体→下单SKU 链接表加权）；佣金按平台+细分类目映射规则在 Python 侧计算 ---
                 # estimated_product_cost_usd：下单产品 cost_usd 表示「产品至海外仓」成本（BOM），按链接数量加权汇总后再×周期销量。
                 # estimated_last_mile_freight_usd：下单产品 last_mile_avg_freight_usd 预估尾程，同样按链接数量加权汇总后再×周期销量；仅当店铺 handles_last_mile=1 时计入。
-                # 佣金：统一按「家具类目」分段费率估算（不校验货号类目）。
                 has_op_reship = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
                 has_op_last_mile = self._table_has_column(conn, 'order_products', 'last_mile_avg_freight_usd')
                 reship_clause = ' AND COALESCE(op.is_reship_accessory,0)=0 ' if has_op_reship else ''
@@ -12262,16 +12263,7 @@ class SalesProductMixin:
                     " GROUP BY v.id"
                     ") est_unit_cost ON est_unit_cost.variant_id = sp.variant_id"
                 )
-                commission_sql_day = (
-                    "LEAST(SUM(COALESCE(spp.net_sales_amount,0)), 200) * 0.15 "
-                    "+ GREATEST(SUM(COALESCE(spp.net_sales_amount,0)) - 200, 0) * 0.10 "
-                    "AS est_referral_commission_usd"
-                )
-                commission_sql_week = (
-                    "LEAST(SUM(COALESCE(a.net_sales_amount,0)), 200) * 0.15 "
-                    "+ GREATEST(SUM(COALESCE(a.net_sales_amount,0)) - 200, 0) * 0.10 "
-                    "AS est_referral_commission_usd"
-                )
+                comm_rules_cache = self._commission_load_rules_cache(conn)
                 # 销售额 = 销售产品售价(USD)×周期销量；折扣率=(销售额−净销售额)/销售额；退款率=退款金额/净销售额
                 gross_expr_day = "SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(spp.sales_qty, 0))"
                 gross_sales_sql_day = f"({gross_expr_day}) AS gross_sales_amount"
@@ -12308,6 +12300,8 @@ class SalesProductMixin:
                     "v.spec_name",
                     "v.sku_family_id",
                     "pf.sku_family",
+                    "TRIM(COALESCE(pf.category, '')) AS product_category",
+                    "sh.platform_type_id AS platform_type_id",
                     "MIN(DATE(spp.record_date)) AS min_date",
                     "MAX(DATE(spp.record_date)) AS max_date",
                     "COUNT(1) AS `rows`",
@@ -12326,7 +12320,6 @@ class SalesProductMixin:
                     refund_rate_sql_day,
                     "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
                     f"{lm_est_sql} AS estimated_last_mile_freight_usd",
-                    commission_sql_day,
                 ]
 
                 sql = [
@@ -12367,31 +12360,33 @@ class SalesProductMixin:
                 if platform_type_ids:
                     sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                     params.extend(platform_type_ids)
-                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.category, sh.platform_type_id')
                 sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
 
                 with conn.cursor() as cur:
                     cur.execute(''.join(sql), tuple(params))
                     rows = cur.fetchall() or []
 
-                def _perf_group_item_derived_fields(bom, lm, net, comm, ad_spend, refund_amt, gross_sales):
-                    bom_f = float(bom or 0)
-                    lm_f = float(lm or 0)
-                    net_f = float(net or 0)
-                    comm_f = float(comm or 0)
-                    ad_f = float(ad_spend or 0)
-                    ref_f = float(refund_amt or 0)
-                    gross_f = float(gross_sales or 0)
-                    total = round(bom_f + lm_f, 2)
-                    rate = round((comm_f / net_f), 6) if net_f else 0.0
-                    profit = round(net_f - comm_f - total - ad_f - ref_f, 2)
-                    nmr = round((profit / gross_f), 6) if gross_f else 0.0
-                    return {
-                        'estimated_total_cost_usd': total,
-                        'commission_rate': rate,
-                        'estimated_net_profit_usd': profit,
-                        'net_margin_rate': nmr,
-                    }
+                def _perf_group_item_commission_extras(row, bom_u, lm_u):
+                    pt_id = self._parse_int(row.get('platform_type_id'))
+                    cat = str(row.get('product_category') or '').strip()
+                    net = float(row.get('net_sales_amount') or 0)
+                    if comm_rules_cache.get('ready'):
+                        comm_result = self._commission_compute_for_context(
+                            comm_rules_cache, pt_id, cat, net, mode='period',
+                        )
+                    else:
+                        comm_result = {
+                            'commission_status': 'unavailable',
+                            'commission_message': self.COMMISSION_UNAVAILABLE_LABEL,
+                            'est_referral_commission_usd': None,
+                            'commission_rate': None,
+                        }
+                    return self._commission_perf_derived_with_commission(
+                        bom_u, lm_u, net,
+                        row.get('ad_spend'), row.get('refund_amount'),
+                        row.get('gross_sales_amount'), comm_result,
+                    )
 
                 group_map = {}
                 for row in rows:
@@ -12407,12 +12402,13 @@ class SalesProductMixin:
                     })
                     bom_u = round(float(row.get('estimated_product_cost_usd') or 0), 2)
                     lm_u = round(float(row.get('estimated_last_mile_freight_usd') or 0), 2)
-                    comm_u = round(float(row.get('est_referral_commission_usd') or 0), 2)
                     item_row = {
                         'sales_product_id': sp_id,
                         'platform_sku': sku,
                         'fabric': row.get('fabric') or '',
                         'spec_name': row.get('spec_name') or '',
+                        'product_category': str(row.get('product_category') or '').strip(),
+                        'platform_type_id': self._parse_int(row.get('platform_type_id')),
                         'min_date': str(row.get('min_date') or ''),
                         'max_date': str(row.get('max_date') or ''),
                         'rows': self._parse_int(row.get('rows')) or 0,
@@ -12431,12 +12427,8 @@ class SalesProductMixin:
                         'refund_rate': round(float(row.get('refund_rate') or 0), 6),
                         'estimated_product_cost_usd': bom_u,
                         'estimated_last_mile_freight_usd': lm_u,
-                        'est_referral_commission_usd': comm_u,
                     }
-                    item_row.update(_perf_group_item_derived_fields(
-                        bom_u, lm_u, row.get('net_sales_amount'), comm_u,
-                        row.get('ad_spend'), row.get('refund_amount'),
-                        item_row.get('gross_sales_amount')))
+                    item_row.update(_perf_group_item_commission_extras(row, bom_u, lm_u))
                     group['items'].append(item_row)
 
                 groups = list(group_map.values())
@@ -12472,6 +12464,8 @@ class SalesProductMixin:
                                 "v.spec_name",
                                 "v.sku_family_id",
                                 "pf.sku_family",
+                                "TRIM(COALESCE(pf.category, '')) AS product_category",
+                                "sh.platform_type_id AS platform_type_id",
                                 "MIN(DATE(spp.record_date)) AS min_date",
                                 "MAX(DATE(spp.record_date)) AS max_date",
                                 "COUNT(1) AS `rows`",
@@ -12490,7 +12484,6 @@ class SalesProductMixin:
                                 refund_rate_sql_day,
                                 "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
                                 f"{lm_est_sql} AS estimated_last_mile_freight_usd",
-                                commission_sql_day,
                             ]
                             local_sql = [
                                 f"""
@@ -12530,7 +12523,7 @@ class SalesProductMixin:
                             if platform_type_ids:
                                 local_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                                 local_params.extend(platform_type_ids)
-                            local_sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                            local_sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.category, sh.platform_type_id')
                             local_sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
                             with conn.cursor() as cur2:
                                 cur2.execute(''.join(local_sql), tuple(local_params))
@@ -12550,12 +12543,13 @@ class SalesProductMixin:
                                 })
                                 bom_r = round(float(r.get('estimated_product_cost_usd') or 0), 2)
                                 lm_r = round(float(r.get('estimated_last_mile_freight_usd') or 0), 2)
-                                comm_r = round(float(r.get('est_referral_commission_usd') or 0), 2)
                                 item_r = {
                                     'sales_product_id': sp_id,
                                     'platform_sku': sku,
                                     'fabric': r.get('fabric') or '',
                                     'spec_name': r.get('spec_name') or '',
+                                    'product_category': str(r.get('product_category') or '').strip(),
+                                    'platform_type_id': self._parse_int(r.get('platform_type_id')),
                                     'min_date': str(r.get('min_date') or ''),
                                     'max_date': str(r.get('max_date') or ''),
                                     'rows': self._parse_int(r.get('rows')) or 0,
@@ -12574,12 +12568,8 @@ class SalesProductMixin:
                                     'refund_rate': round(float(r.get('refund_rate') or 0), 6),
                                     'estimated_product_cost_usd': bom_r,
                                     'estimated_last_mile_freight_usd': lm_r,
-                                    'est_referral_commission_usd': comm_r,
                                 }
-                                item_r.update(_perf_group_item_derived_fields(
-                                    bom_r, lm_r, r.get('net_sales_amount'), comm_r,
-                                    r.get('ad_spend'), r.get('refund_amount'),
-                                    item_r.get('gross_sales_amount')))
+                                item_r.update(_perf_group_item_commission_extras(r, bom_r, lm_r))
                                 grp['items'].append(item_r)
                             local_groups = list(local_group_map.values())
                             for gg in local_groups:

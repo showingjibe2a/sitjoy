@@ -2323,17 +2323,35 @@
             return `${bits.join(' ｜ ')}（${n}）`;
         }
 
-        /** 促销/折扣与经济测算（Amazon 佣金、折后价） */
-        function salesEstFurnitureCommissionUsd(salePriceUsd) {
-            const s = Math.max(0, Number(salePriceUsd) || 0);
-            if (s <= 0) return 0;
-            return Math.round((Math.min(s, 200) * 0.15 + Math.max(s - 200, 0) * 0.10) * 100) / 100;
+        /** 促销/折扣与经济测算（平台佣金规则、折后价） */
+        function salesResolvePlatformTypeId(item) {
+            const direct = Number(item && item.platform_type_id);
+            if (Number.isFinite(direct) && direct > 0) return direct;
+            const shop = (shopOptions || []).find(s => String(s.id) === String((item && item.shop_id) || ''));
+            const fromShop = Number(shop && shop.platform_type_id);
+            return Number.isFinite(fromShop) && fromShop > 0 ? fromShop : 0;
         }
 
-        function salesEstFurnitureCommissionRate(netSalesUsd) {
-            const net = Math.max(0, Number(netSalesUsd) || 0);
-            if (net <= 0) return 0;
-            return Math.round((salesEstFurnitureCommissionUsd(net) / net) * 1e6) / 1e6;
+        function salesResolveProductCategory(item) {
+            return String((item && item.product_category) || '').trim();
+        }
+
+        function salesComputeUnitCommission(item, netSalesUsd) {
+            const C = window.SitjoyCommission;
+            if (!C || typeof C.computeForContext !== 'function') {
+                return {
+                    commission_status: 'unavailable',
+                    commission_message: '无法计算',
+                    est_referral_commission_usd: null,
+                    commission_rate: null,
+                };
+            }
+            return C.computeForContext(
+                salesResolvePlatformTypeId(item),
+                salesResolveProductCategory(item),
+                netSalesUsd,
+                'unit'
+            );
         }
 
         function salesFormatParentRateFieldValue(raw) {
@@ -2386,8 +2404,28 @@
         }
 
         function salesFormatEconCommission(econ) {
-            if (!econ || !econ.commissionApplicable || econ.salePrice <= 0) return '-';
+            if (!econ || econ.salePrice <= 0) return '-';
+            if (econ.commission_status === 'unavailable') {
+                return String(econ.commission_message || '无法计算');
+            }
+            if (!econ.commissionApplicable) return '-';
             return formatSalesEconomicsUsd(econ.commission, false);
+        }
+
+        function salesFormatEconNetProfit(econ) {
+            if (!econ || econ.salePrice <= 0) return '-';
+            if (econ.commission_status === 'unavailable') {
+                return String(econ.commission_message || '无法计算');
+            }
+            return formatSalesEconomicsUsd(econ.netProfit, false);
+        }
+
+        function salesFormatEconNetMargin(econ) {
+            if (!econ || econ.salePrice <= 0) return '-';
+            if (econ.commission_status === 'unavailable') {
+                return String(econ.commission_message || '无法计算');
+            }
+            return formatSalesEconomicsRate(econ.netMarginRate);
         }
 
         function salesHasPromotionActivity(item) {
@@ -2659,7 +2697,6 @@
             const bom = Number(item.warehouse_cost_usd || 0);
             const lastMileRaw = Number(item.last_mile_cost_usd || 0);
             const handlesLastMile = salesShopHandlesLastMile(item);
-            const amazon = salesUsesAmazonEconomics(item);
             const lastMile = handlesLastMile ? lastMileRaw : 0;
             const totalCost = Math.round((bom + lastMile) * 100) / 100;
             const discountRate = salesResolveDiscountRateRatio(item);
@@ -2667,21 +2704,28 @@
             const acoas = salesNormalizeParentRateRatio(item && item.estimated_acoas);
             const gross = salePrice;
             const netSales = salesComputeDiscountedPrice(item);
-            const commission = amazon ? salesEstFurnitureCommissionUsd(netSales) : 0;
-            const commissionRate = amazon ? salesEstFurnitureCommissionRate(netSales) : 0;
+            const commResult = salesComputeUnitCommission(item, netSales);
+            const commissionOk = commResult && commResult.commission_status === 'ok';
+            const commission = commissionOk ? Number(commResult.est_referral_commission_usd || 0) : null;
+            const commissionRate = commissionOk ? Number(commResult.commission_rate || 0) : null;
             const revenueAfterDiscountRefund = gross > 0
                 ? Math.round(gross * (1 - refundRate) * (1 - discountRate) * 100) / 100
                 : 0;
-            const netProfit = Math.round((
-                revenueAfterDiscountRefund * (1 - acoas - commissionRate) - totalCost
-            ) * 100) / 100;
-            const netMarginRate = gross > 0 ? Math.round((netProfit / gross) * 1e6) / 1e6 : 0;
+            const netProfit = commissionOk
+                ? Math.round((revenueAfterDiscountRefund * (1 - acoas - commissionRate) - totalCost) * 100) / 100
+                : null;
+            const netMarginRate = (commissionOk && gross > 0)
+                ? Math.round((netProfit / gross) * 1e6) / 1e6
+                : null;
             return {
                 salePrice,
                 bom,
                 lastMile,
                 lastMileApplicable: handlesLastMile,
-                commissionApplicable: amazon,
+                commissionApplicable: commissionOk,
+                commission_status: commResult ? commResult.commission_status : 'unavailable',
+                commission_message: commResult ? commResult.commission_message : '无法计算',
+                commission_group: commResult ? commResult.commission_group : null,
                 totalCost,
                 commission,
                 commissionRate,
@@ -2745,8 +2789,8 @@
             setCell('last_mile', salesFormatEconLastMile(econ));
             setCell('total_cost', formatSalesEconomicsUsd(econ.totalCost, true));
             setCell('commission', salesFormatEconCommission(econ));
-            setCell('net_profit', econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.netProfit, false) : '-', econ.salePrice > 0 && econ.netProfit < 0);
-            setCell('net_margin_rate', econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-', econ.salePrice > 0 && econ.netMarginRate < 0);
+            setCell('net_profit', salesFormatEconNetProfit(econ), econ.commissionApplicable && econ.salePrice > 0 && econ.netProfit < 0);
+            setCell('net_margin_rate', salesFormatEconNetMargin(econ), econ.commissionApplicable && econ.salePrice > 0 && econ.netMarginRate < 0);
 
             if (skipField !== 'discounted_price_usd') {
                 const priceInput = row.querySelector('input.preview-edit-field[data-field="discounted_price_usd"]');
@@ -2907,8 +2951,8 @@
             const sellableSortVal = Number.isFinite(Number(item.overseas_sellable_qty))
                 ? String(Math.max(0, Math.floor(Number(item.overseas_sellable_qty))))
                 : '';
-            const netProfitLow = econ.salePrice > 0 && econ.netProfit < 0;
-            const netMarginRateLow = econ.salePrice > 0 && econ.netMarginRate < 0;
+            const netProfitLow = econ.commissionApplicable && econ.salePrice > 0 && econ.netProfit < 0;
+            const netMarginRateLow = econ.commissionApplicable && econ.salePrice > 0 && econ.netMarginRate < 0;
             const gk = escapeSalesGroupKeyAttr(groupKey);
             const rowCls = hidden ? 'sales-row-hidden' : '';
             return `
@@ -2940,8 +2984,8 @@
                     <td class="sales-econ-cell" data-manage-col-key="尾程" data-sales-econ-col="last_mile">${salesFormatEconLastMile(econ)}</td>
                     <td class="sales-econ-cell" data-manage-col-key="成本总计" data-sales-econ-col="total_cost">${formatSalesEconomicsUsd(econ.totalCost, true)}</td>
                     <td class="sales-econ-cell" data-manage-col-key="佣金" data-sales-econ-col="commission">${salesFormatEconCommission(econ)}</td>
-                    <td class="sales-econ-cell ${netProfitLow ? 'danger-note' : ''}" data-manage-col-key="单件净利" data-sales-econ-col="net_profit">${econ.salePrice > 0 ? formatSalesEconomicsUsd(econ.netProfit, false) : '-'}</td>
-                    <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate" data-display-value="${econ.salePrice > 0 ? String(econ.netMarginRate) : ''}">${econ.salePrice > 0 ? formatSalesEconomicsRate(econ.netMarginRate) : '-'}</td>
+                    <td class="sales-econ-cell ${netProfitLow ? 'danger-note' : ''}" data-manage-col-key="单件净利" data-sales-econ-col="net_profit">${salesFormatEconNetProfit(econ)}</td>
+                    <td class="sales-econ-cell ${netMarginRateLow ? 'danger-note' : ''}" data-manage-col-key="净利率" data-sales-econ-col="net_margin_rate" data-display-value="${econ.commissionApplicable && econ.salePrice > 0 ? String(econ.netMarginRate) : ''}">${salesFormatEconNetMargin(econ)}</td>
                     <td class="preview-edit-cell sales-notes-cell" data-manage-col-key="备注" data-field-wrap="notes"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="notes" type="text" maxlength="512" value="${escapeAttr(notesText)}" placeholder="备注"></td>
                     <td data-display-value="${escapeAttr(createdDateStr)}">${createdDateStr}</td>
                     <td>
@@ -6363,19 +6407,22 @@
             bindSalesAggregateSegment();
             initSalesTableInteractionDelegation();
             initSalesGroupedAggregateHelpers();
-            const M = window.SitjoyManagedPmTable;
-            if (M && typeof M.whenReady === 'function') {
-                M.whenReady('#salesProductTable', () => { loadSalesProductList(); });
-            } else {
-                loadSalesProductList();
-            }
-            Promise.all([
+            const bootstrap = Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
                 loadFabricOptions(),
                 loadParentOptions(),
-                loadSalesImageTypeOptions()
+                loadSalesImageTypeOptions(),
+                (window.SitjoyCommission && typeof window.SitjoyCommission.loadCommissionRules === 'function')
+                    ? window.SitjoyCommission.loadCommissionRules()
+                    : Promise.resolve()
             ]);
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.whenReady === 'function') {
+                M.whenReady('#salesProductTable', () => { bootstrap.then(() => loadSalesProductList()); });
+            } else {
+                bootstrap.then(() => loadSalesProductList());
+            }
             mainImagePromptDuplicate = readBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, true);
             mainImageShowFabric = readBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, true);
             renderMainImageSettingsToggles();
@@ -6409,6 +6456,7 @@
 
         window.addEventListener('load', initPage);
     </script>
+    <script src="/static/js/sitjoy_commission.js"></script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/sitjoy_nas_browse_modal.js"></script>
