@@ -28,7 +28,7 @@
         { id: 'toast', dataAttr: 'sjToast', label: '提示条', variants: { default: '默认' } },
         {
             id: 'statusSegment',
-            dataAttr: 'sjStatusSegment',
+            dataAttr: 'sjStatusSegmentVariant',
             label: '状态分段',
             variants: { default: '默认', compact: '紧凑' }
         },
@@ -309,6 +309,8 @@
             if (!val || val === 'default') delete root.dataset[dsKey];
             else root.dataset[dsKey] = val;
         });
+        // 旧版主题曾把分段变体写在 data-sj-status-segment，会与页面绑定标记冲突
+        delete root.dataset.sjStatusSegment;
         applyCustomColors(root, p);
         global.__sitjoyThemePrefs = p;
         document.dispatchEvent(new CustomEvent('sitjoy:theme-change', { detail: p }));

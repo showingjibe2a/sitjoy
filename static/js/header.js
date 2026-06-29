@@ -12894,7 +12894,7 @@
         initColorSwatchPickers(document);
         startUniversalSelectValueSync();
         if (window.SitjoyPageUI && typeof window.SitjoyPageUI.bindStatusSegments === 'function') {
-            window.SitjoyPageUI.bindStatusSegments('[data-sj-status-segment]');
+            window.SitjoyPageUI.bindStatusSegments('.status-segment[data-sj-status-segment]');
         }
 
         window.SitjoyPageUI = window.SitjoyPageUI || null;

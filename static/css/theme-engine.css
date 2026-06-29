@@ -7,7 +7,7 @@
  */
 
 /* 示例变体（可按需删除或扩展；默认外观由 tokens.css 决定） */
-html[data-sj-status-segment="compact"] {
+html[data-sj-status-segment-variant="compact"] {
     --sj-cmp-status-segment-radius: 10px;
     --sj-cmp-status-segment-gap: 0.2rem;
     --sj-cmp-status-segment-inline-scale: 0.88;

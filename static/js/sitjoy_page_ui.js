@@ -13,6 +13,7 @@
     const OPTION_ADD = 'sj-option-add';
     const OPTION_RADIO = 'sj-option-radio';
     const OPTION_PILL = 'sj-option-pill';
+    const STATUS_SEGMENT_BIND_SELECTOR = '.status-segment[data-sj-status-segment]';
 
     function el(root, selector) {
         const base = root && root.querySelector ? root : document;
@@ -59,6 +60,7 @@
     function bindStatusSegment(segment, options) {
         const seg = el(document, segment);
         if (!seg || seg.dataset.sjStatusBound === '1') return seg;
+        if (!seg.classList.contains('status-segment')) return seg;
         const opts = options && typeof options === 'object' ? options : {};
         seg.dataset.sjStatusBound = '1';
         seg.querySelectorAll('button[data-value], .status-pill[data-value]').forEach((btn) => {
@@ -79,7 +81,7 @@
         } else if (typeof targets === 'string') {
             document.querySelectorAll(targets).forEach((node) => list.push(node));
         } else {
-            document.querySelectorAll('[data-sj-status-segment]').forEach((node) => list.push(node));
+            document.querySelectorAll(STATUS_SEGMENT_BIND_SELECTOR).forEach((node) => list.push(node));
         }
         list.filter(Boolean).forEach((seg) => bindStatusSegment(seg, options));
     }

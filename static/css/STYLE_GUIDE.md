@@ -28,7 +28,7 @@
 SitjoyPageUI.init({
     selects: true,                    // 增强所有原生 <select>
     tables: '#myTable',               // 或 true = 全部 .pm-table
-    statusSegments: true,             // 绑定 [data-sj-status-segment]
+    statusSegments: true,             // 绑定 .status-segment[data-sj-status-segment]
     modals: [{ el: '#my-modal', onClose: closeModal }],
     onReady() { /* 本页数据加载 */ },
 });
@@ -94,6 +94,7 @@ SitjoyPageUI.enhanceSelects(document);
 HTML 状态分段示例：
 
 ```html
+<!-- data-sj-status-segment 仅标在 .status-segment 上；勿与主题变体混用（html 上用 data-sj-status-segment-variant） -->
 <div class="status-segment status-segment--inline" id="seg" data-sj-status-segment data-value="1">
     <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
     <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
