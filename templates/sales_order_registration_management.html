@@ -538,6 +538,7 @@
     </div>
 
     <script>
+        /* 销售订单登记：平台 SKU、发货拆解、物流跟踪、列表快捷编辑 */
         let editId = null;
         let listCache = [];
         let shopOptions = [];
@@ -553,7 +554,7 @@
         let logisticsLines = [];
         let shipmentAutoMode = true;
         let shipmentPreviewTimer = null;
-            let shipmentPreviewMode = 'edit';
+        let shipmentPreviewMode = 'edit';
         let listRequestToken = 0;
         let listPage = 1;
         const listPageSize = 50;
@@ -631,6 +632,7 @@
             }
         }
 
+        /** 平台 SKU 行与发货拆解（含替换 SKU 预览） */
         function renderPlatformLines() {
             const wrap = document.getElementById('platformLines');
             if (!platformLines.length) {
@@ -950,6 +952,7 @@
             requestShipmentPreviewFromPlatform();
         }
 
+        /** 物流跟踪号（承运商:单号 或纯单号） */
         function _formatLogisticsLineText(line) {
             const carrier = String(line && line.shipping_carrier ? line.shipping_carrier : '').trim();
             const tracking = String(line && line.tracking_no ? line.tracking_no : '').trim();
@@ -1073,6 +1076,7 @@
             return registrationOptionsPromise;
         }
 
+        /** 新建/编辑模态框 */
         async function openCreateModal() {
             try {
                 await ensureRegistrationOptionsLoaded();
@@ -1256,6 +1260,7 @@
             };
         }
 
+        /** 保存登记（整单 PUT / 列表字段 PATCH） */
         function saveFromModal() {
             const payload = collectPayload();
             if (!payload.order_no) {
@@ -1495,6 +1500,7 @@
                 .catch(() => {});
         }
 
+        /** 分页列表与异步汇总 */
         function loadList() {
             const currentToken = ++listRequestToken;
             const q = document.getElementById('searchInput').value.trim();
@@ -1583,47 +1589,46 @@
             });
         }
 
-        window.addEventListener('load', loadList);
-        window.addEventListener('load', initOptionalFieldListeners);
-        window.addEventListener('load', function() {
+        function initPage() {
+            loadList();
+            initOptionalFieldListeners();
             setShipmentSectionCollapsed(true);
-        });
-        window.addEventListener('load', function() {
             bindSegment('modalShippingStatusSegment');
             bindSegment('modalIsReviewInvitedSegment');
             bindSegment('modalIsLogisticsEmailedSegment');
-        });
-
-        document.getElementById('searchInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                listPage = 1;
+            document.getElementById('searchInput').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    listPage = 1;
+                    loadList();
+                }
+            });
+            document.getElementById('prevPageBtn').addEventListener('click', function() {
+                if (listPage <= 1) return;
+                listPage -= 1;
                 loadList();
-            }
-        });
-        document.getElementById('prevPageBtn').addEventListener('click', function() {
-            if (listPage <= 1) return;
-            listPage -= 1;
-            loadList();
-        });
-        document.getElementById('nextPageBtn').addEventListener('click', function() {
-            const totalPages = Math.max(1, Math.ceil((Number(listTotal) || 0) / listPageSize));
-            if (listPage >= totalPages) return;
-            listPage += 1;
-            loadList();
-        });
-        window.setTimeout(function() {
-            var b = window.bindPmModalBackdropClose;
-            if (typeof b !== 'function') return;
-            var pm = document.getElementById('pm-modal');
-            if (pm) b(pm, closeModal);
-            var dm = document.getElementById('dialogModal');
-            if (dm) b(dm, function() { dm.classList.remove('active'); });
-        }, 0);
-        document.getElementById('uploadInput').addEventListener('change', function() {
-            const file = this.files && this.files[0];
-            if (file) uploadTemplate(file);
-            this.value = '';
-        });
+            });
+            document.getElementById('nextPageBtn').addEventListener('click', function() {
+                const totalPages = Math.max(1, Math.ceil((Number(listTotal) || 0) / listPageSize));
+                if (listPage >= totalPages) return;
+                listPage += 1;
+                loadList();
+            });
+            window.setTimeout(function() {
+                var b = window.bindPmModalBackdropClose;
+                if (typeof b !== 'function') return;
+                var pm = document.getElementById('pm-modal');
+                if (pm) b(pm, closeModal);
+                var dm = document.getElementById('dialogModal');
+                if (dm) b(dm, function() { dm.classList.remove('active'); });
+            }, 0);
+            document.getElementById('uploadInput').addEventListener('change', function() {
+                const file = this.files && this.files[0];
+                if (file) uploadTemplate(file);
+                this.value = '';
+            });
+        }
+
+        window.addEventListener('load', initPage);
     </script>
 </body>
 <script src="/static/js/header.js"></script>

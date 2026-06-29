@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """首页个人信息与头像（data/user_avatars，与上架资源目录分离）。"""
 
 import cgi
@@ -13,6 +14,12 @@ _AVATAR_MAX_BYTES = 2 * 1024 * 1024
 
 
 class ProfileMixin:
+    """个人资料 API：基本信息、改密、头像上传/删除。"""
+
+    # -------------------------------------------------------------------------
+    # 头像存储路径
+    # -------------------------------------------------------------------------
+
     def _user_avatars_abs_dir(self):
         path = USER_AVATARS_ABS_DIR
         os.makedirs(path, exist_ok=True)
@@ -52,6 +59,10 @@ class ProfileMixin:
             'image/gif': '.gif',
         }
         return mapping.get(ct, '')
+
+    # -------------------------------------------------------------------------
+    # 资料序列化与 DB 读取
+    # -------------------------------------------------------------------------
 
     def _format_profile_date(self, value):
         if value is None:
@@ -156,14 +167,14 @@ class ProfileMixin:
     def _parse_profile_multipart_avatar(self, environ):
         content_type = str(environ.get('CONTENT_TYPE') or '')
         if 'multipart/form-data' not in content_type.lower():
-            return None, None
+            return None
         try:
             form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
         except Exception:
-            return None, None
+            return None
         item = form['avatar'] if 'avatar' in form else None
         if item is None or not getattr(item, 'file', None) or not getattr(item, 'filename', None):
-            return None, None
+            return None
         filename = item.filename
         file_bytes = item.file.read()
         if not file_bytes:
@@ -176,6 +187,7 @@ class ProfileMixin:
         return filename, file_bytes, ext
 
     def handle_profile_api(self, environ, method, start_response):
+        """GET 资料 / PUT 更新 / 改密 / 头像上传与删除。"""
         try:
             user_id = self._get_session_user(environ)
             if not user_id:

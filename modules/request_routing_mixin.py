@@ -1,4 +1,5 @@
-﻿# 请求路由分发 Mixin：集中管理 API/页面路由与权限检查。
+﻿# -*- coding: utf-8 -*-
+# 请求路由分发 Mixin：集中管理 API/页面路由与权限检查。
 
 API_PERMISSION_MAP = {
     '/api/profile': 'home',
@@ -326,55 +327,47 @@ API_ROUTE_MAP = {
 class RequestRoutingMixin:
     """请求路由相关能力：API 权限检查 + 页面分发 + API 分发。"""
 
+    def _invoke_api_handler(self, path, handler, handler_mode, environ, method, start_response):
+        try:
+            if handler_mode == 'start':
+                return handler(environ, start_response)
+            return handler(environ, method, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
+
+    def _dispatch_named_api_handler(self, path, environ, method, start_response, handler_name, *, handler_mode='method'):
+        handler = getattr(self, handler_name, None)
+        if handler is None:
+            return self.send_json({'status': 'error', 'message': f'Handler not found: {handler_name}', 'path': path}, start_response)
+        return self._invoke_api_handler(path, handler, handler_mode, environ, method, start_response)
+
     def _dispatch_api_request(self, path, environ, method, start_response):
         """统一 API 路由分发，减少主入口分支数量。"""
         if path.startswith('/api/auth'):
             return self.handle_auth_api(environ, method, start_response)
         if path == '/api/profile' or path.startswith('/api/profile/'):
-            handler = getattr(self, 'handle_profile_api', None)
-            if handler is None:
-                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_profile_api', 'path': path}, start_response)
-            try:
-                return handler(environ, method, start_response)
-            except Exception as e:
-                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
+            return self._dispatch_named_api_handler(path, environ, method, start_response, 'handle_profile_api')
         if path.startswith('/api/hello'):
             return self.handle_hello_api(environ, path, method, start_response)
         if path == '/status':
             return self.handle_status(start_response)
 
         if path == '/api/go-play' or path.startswith('/api/go-play/'):
-            handler = getattr(self, 'handle_go_play_api', None)
-            if handler is None:
-                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_go_play_api', 'path': path}, start_response)
-            try:
-                return handler(environ, method, start_response)
-            except Exception as e:
-                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
-
+            return self._dispatch_named_api_handler(path, environ, method, start_response, 'handle_go_play_api')
         if path == '/api/mahjong-play' or path.startswith('/api/mahjong-play/'):
-            handler = getattr(self, 'handle_mahjong_play_api', None)
-            if handler is None:
-                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_mahjong_play_api', 'path': path}, start_response)
-            try:
-                return handler(environ, method, start_response)
-            except Exception as e:
-                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
+            return self._dispatch_named_api_handler(path, environ, method, start_response, 'handle_mahjong_play_api')
 
         route = API_ROUTE_MAP.get(path)
         if not route:
             return None
-        mode, handler_name = route
-        handler = getattr(self, handler_name, None)
-        if handler is None:
-            return self.send_json({'status': 'error', 'message': f'Handler not found: {handler_name}', 'path': path}, start_response)
-        try:
-            if mode == 'start':
-                return handler(environ, start_response)
-            return handler(environ, method, start_response)
-        except Exception as e:
-            # API 路由层兜底：避免未捕获异常直接冒泡成 Apache 500 页面
-            return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
+        handler_mode, handler_name = route
+        return self._dispatch_named_api_handler(
+            path, environ, method, start_response, handler_name, handler_mode=handler_mode
+        )
+
+    # -------------------------------------------------------------------------
+    # API 权限校验
+    # -------------------------------------------------------------------------
 
     def _validate_api_permission(self, path, environ, start_response):
         """统一 API 权限校验：返回错误响应或 None。"""
@@ -466,6 +459,10 @@ class RequestRoutingMixin:
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
         return None
+
+    # -------------------------------------------------------------------------
+    # 页面路由分发
+    # -------------------------------------------------------------------------
 
     def _dispatch_page_request(self, path, environ, start_response):
         """统一页面路由分发：返回页面响应或 None。"""

@@ -1,8 +1,21 @@
-﻿import json
+﻿# -*- coding: utf-8 -*-
+"""页面权限：解析 page_permissions、访问校验、受保护页面与工厂数据范围。"""
+
+import json
 
 
 class PagePermissionMixin:
     """页面权限辅助能力。"""
+
+    _PAGE_PERMISSION_LEGACY_ALIASES = {
+        'amazon_ad_delivery_management': ('amazon_ad_target_management',),
+        'amazon_ad_target_management': ('amazon_ad_delivery_management',),
+        'spec_main_image_management': ('gallery',),
+    }
+
+    # -------------------------------------------------------------------------
+    # 权限字典：解析 / 序列化 / 管理员默认授权
+    # -------------------------------------------------------------------------
 
     def _permission_keys(self):
         keys = getattr(self, 'PAGE_PERMISSION_KEYS', None)
@@ -106,7 +119,7 @@ class PagePermissionMixin:
                     FROM users
                     WHERE id=%s
                     """,
-                    (user_id,)
+                    (user_id,),
                 )
                 row = cur.fetchone()
         if not row:
@@ -122,11 +135,9 @@ class PagePermissionMixin:
             return True
         return bool(actor_record.get('is_admin')) and bool(actor_record.get('can_grant_admin'))
 
-    _PAGE_PERMISSION_LEGACY_ALIASES = {
-        'amazon_ad_delivery_management': ('amazon_ad_target_management',),
-        'amazon_ad_target_management': ('amazon_ad_delivery_management',),
-        'spec_main_image_management': ('gallery',),
-    }
+    # -------------------------------------------------------------------------
+    # 页面 / API 访问校验
+    # -------------------------------------------------------------------------
 
     def _user_has_page_access(self, user_id, permission_key):
         if not user_id:
@@ -162,6 +173,19 @@ class PagePermissionMixin:
             log_page(environ, user_id, page_path, permission_key)
         return self.serve_file(template_path, 'text/html', start_response)
 
+    # -------------------------------------------------------------------------
+    # 工厂范围 / 下单产品关联
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _is_missing_table_error(exc):
+        message = str(exc or '').lower()
+        return (
+            "doesn't exist" in message
+            or 'does not exist' in message
+            or 'unknown table' in message
+        )
+
     def _get_user_factory_scope_ids(self, user_id):
         """Return allowed factory ids for a user.
 
@@ -179,22 +203,18 @@ class PagePermissionMixin:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT factory_id FROM user_factory_scopes WHERE user_id=%s ORDER BY factory_id ASC",
-                        (user_id,)
+                        (user_id,),
                     )
                     rows = cur.fetchall() or []
         except Exception as e:
-            message = str(e).lower()
-            if "doesn't exist" in message or 'does not exist' in message or 'unknown table' in message:
+            if self._is_missing_table_error(e):
                 return None
             raise
         ids = []
         for row in rows:
-            try:
-                value = int(row.get('factory_id') or 0)
-            except Exception:
-                value = 0
-            if value > 0:
-                ids.append(value)
+            n = self._parse_int(row.get('factory_id'))
+            if n and n > 0:
+                ids.append(n)
         scoped = sorted(set(ids))
         return scoped if scoped else None
 
@@ -211,11 +231,8 @@ class PagePermissionMixin:
         scope_ids = self._get_user_factory_scope_ids(user_id)
         if scope_ids is None:
             return True
-        try:
-            target = int(factory_id or 0)
-        except Exception:
-            target = 0
-        return target > 0 and target in set(scope_ids)
+        target = self._parse_int(factory_id)
+        return target and target in set(scope_ids)
 
     def _get_linked_order_product_ids(self, factory_ids=None):
         """Return order_product ids linked to factories via mapping table.
@@ -241,33 +258,24 @@ class PagePermissionMixin:
                         placeholders = ','.join(['%s'] * len(valid_ids))
                         cur.execute(
                             f"SELECT DISTINCT order_product_id FROM order_product_factory_links WHERE factory_id IN ({placeholders})",
-                            tuple(valid_ids)
+                            tuple(valid_ids),
                         )
                     rows = cur.fetchall() or []
         except Exception as e:
-            message = str(e).lower()
-            if "doesn't exist" in message or 'does not exist' in message or 'unknown table' in message:
+            if self._is_missing_table_error(e):
                 return None
             raise
         ids = []
         for row in rows:
-            try:
-                value = int(row.get('order_product_id') or 0)
-            except Exception:
-                value = 0
-            if value > 0:
-                ids.append(value)
+            n = self._parse_int(row.get('order_product_id'))
+            if n and n > 0:
+                ids.append(n)
         return sorted(set(ids))
 
     def _order_product_allowed_for_factory(self, order_product_id, factory_id):
         linked = self._get_linked_order_product_ids([factory_id])
         if linked is None:
             return True
-        try:
-            target = int(order_product_id or 0)
-        except Exception:
-            target = 0
-        return target > 0 and target in set(linked)
-
-
+        target = self._parse_int(order_product_id)
+        return target and target in set(linked)
 
