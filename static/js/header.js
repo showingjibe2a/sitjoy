@@ -12847,6 +12847,24 @@
         wrap: wrapColorInputAsSwatchPicker
     };
 
+    function loadSitjoyPageUi(callback) {
+        const done = typeof callback === 'function' ? callback : function () {};
+        if (window.SitjoyPageUI) {
+            done();
+            return;
+        }
+        if (document.querySelector('script[data-sj-page-ui="1"]')) {
+            document.addEventListener('sitjoy:page-ui-ready', done, { once: true });
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = '/static/js/sitjoy_page_ui.js';
+        script.dataset.sjPageUi = '1';
+        script.onload = done;
+        script.onerror = done;
+        document.head.appendChild(script);
+    }
+
     function loadSitjoyCellSelectionStats(){
         if(window.SitjoyCellSelectionStats) return;
         if(document.querySelector('script[data-sj-cell-stats="1"]')) return;
@@ -12858,6 +12876,7 @@
     }
 
     const boot = () => {
+        loadSitjoyPageUi(() => {
         loadHeader();
         loadSitjoyCellSelectionStats();
         initGlobalTableCheckboxCellToggle();
@@ -12874,6 +12893,11 @@
         bridgeLegacyResponseToToast(document);
         initColorSwatchPickers(document);
         startUniversalSelectValueSync();
+        if (window.SitjoyPageUI && typeof window.SitjoyPageUI.bindStatusSegments === 'function') {
+            window.SitjoyPageUI.bindStatusSegments('[data-sj-status-segment]');
+        }
+
+        window.SitjoyPageUI = window.SitjoyPageUI || null;
 
         window.showAppToast = function(message, isError, duration){
             showAppToast(message, !!isError, duration);
@@ -12948,6 +12972,7 @@
         bodyObserver.observe(document.body, {
             childList: true,
             subtree: true
+        });
         });
     };
 

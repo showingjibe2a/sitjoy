@@ -560,6 +560,10 @@
         const listPageSize = 50;
         let listTotal = 0;
 
+        // -------------------------------------------------------------------------
+        // 通用对话框与状态条
+        // -------------------------------------------------------------------------
+
         function showDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null }) {
             const modal = document.getElementById('dialogModal');
             const titleEl = document.getElementById('dialogTitle');
@@ -600,6 +604,10 @@
             loadList();
         }
 
+        // -------------------------------------------------------------------------
+        // 列表分页与店铺下拉
+        // -------------------------------------------------------------------------
+
         function renderPager() {
             const bar = document.getElementById('pagerBar');
             const info = document.getElementById('pagerInfo');
@@ -632,7 +640,10 @@
             }
         }
 
-        /** 平台 SKU 行与发货拆解（含替换 SKU 预览） */
+        // -------------------------------------------------------------------------
+        // 平台 SKU 行与发货拆解（含替换 SKU 预览）
+        // -------------------------------------------------------------------------
+
         function renderPlatformLines() {
             const wrap = document.getElementById('platformLines');
             if (!platformLines.length) {
@@ -952,7 +963,10 @@
             requestShipmentPreviewFromPlatform();
         }
 
-        /** 物流跟踪号（承运商:单号 或纯单号） */
+        // -------------------------------------------------------------------------
+        // 物流跟踪号（承运商:单号 或纯单号）
+        // -------------------------------------------------------------------------
+
         function _formatLogisticsLineText(line) {
             const carrier = String(line && line.shipping_carrier ? line.shipping_carrier : '').trim();
             const tracking = String(line && line.tracking_no ? line.tracking_no : '').trim();
@@ -1045,6 +1059,10 @@
             setShipmentSectionCollapsed(!shipmentSectionCollapsed);
         }
 
+        // -------------------------------------------------------------------------
+        // 下拉选项与登记模态框
+        // -------------------------------------------------------------------------
+
         function loadShopOptions() {
             return fetch('/api/sales-order-registration?action=options&scope=shops&limit=300')
                 .then(r => r.json())
@@ -1076,7 +1094,10 @@
             return registrationOptionsPromise;
         }
 
-        /** 新建/编辑模态框 */
+        // -------------------------------------------------------------------------
+        // 新建/编辑模态框
+        // -------------------------------------------------------------------------
+
         async function openCreateModal() {
             try {
                 await ensureRegistrationOptionsLoaded();
@@ -1260,7 +1281,10 @@
             };
         }
 
-        /** 保存登记（整单 PUT / 列表字段 PATCH） */
+        // -------------------------------------------------------------------------
+        // 保存登记（整单 PUT / 列表字段 PATCH）
+        // -------------------------------------------------------------------------
+
         function saveFromModal() {
             const payload = collectPayload();
             if (!payload.order_no) {
@@ -1500,7 +1524,10 @@
                 .catch(() => {});
         }
 
-        /** 分页列表与异步汇总 */
+        // -------------------------------------------------------------------------
+        // 分页列表与异步汇总
+        // -------------------------------------------------------------------------
+
         function loadList() {
             const currentToken = ++listRequestToken;
             const q = document.getElementById('searchInput').value.trim();
@@ -1543,6 +1570,10 @@
                     renderPager();
                 });
         }
+
+        // -------------------------------------------------------------------------
+        // Excel 模板与页面启动
+        // -------------------------------------------------------------------------
 
         function downloadTemplate() {
             window.location.href = '/api/sales-order-registration-template';

@@ -6,31 +6,6 @@
     <title>品类/货号管理</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        .pm-form-full { grid-column: 1 / -1; }
-        .feature-category-create {
-            height: 34px;
-            margin-right: 0.45rem;
-            border-radius: 8px;
-            border: 1px solid rgba(127, 168, 139, 0.35);
-            background: #7fa88b;
-            color: #fff;
-            font-size: 0.82rem;
-            font-weight: 600;
-            line-height: 1;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0 0.7rem;
-            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        .feature-category-create:hover { background: #6f9a7c; }
-        .market-status-segment .status-pill--yes.is-active { background: #6f9d7d; color: #fff; }
-        .market-status-segment .status-pill--no.is-active { background: #ad6f6f; color: #fff; }
-        .sku-market-off { color: #a33; }
-    </style>
 </head>
 <body>
     <div id="site-header"></div>
@@ -59,9 +34,7 @@
                 <div class="pm-card-rail" aria-label="品类筛选">
                     <div class="pm-card-sub">
                         <span class="pm-card-sub__title" title="品类管理">品类</span>
-                        <div class="material-type-bar" id="categoryTypeBar">
-                            <button class="material-type-add" type="button" aria-label="新增品类" onclick="openCategoryCreateModal()">+</button>
-                        </div>
+                        <div class="sj-option-bar material-type-bar" id="categoryTypeBar"></div>
                     </div>
                 </div>
             </div>
@@ -105,17 +78,17 @@
                 </div>
                 <div class="form-group">
                     <label>在市状态</label>
-                    <div class="status-segment status-segment--inline market-status-segment" id="modalSkuMarketSegment" data-value="1">
+                    <div class="status-segment status-segment--inline market-status-segment" id="modalSkuMarketSegment" data-sj-status-segment data-value="1">
                         <button type="button" class="status-pill status-pill--yes is-active" data-value="1">在市</button>
                         <button type="button" class="status-pill status-pill--no" data-value="0">下市</button>
                     </div>
                 </div>
-                <div class="form-group pm-form-full">
+                <div class="form-group sj-form-grid-full pm-form-full">
                     <label>关联面料（可多选）</label>
                     <div class="feature-category-picker" id="fabricPicker">
                         <div class="feature-category-chips" id="fabricChips"></div>
                         <div class="feature-category-dropdown" id="fabricDropdown">
-                            <button type="button" class="feature-category-create" id="fabricCreate" title="完全新增面料">新增</button>
+                            <button type="button" class="sj-chip-picker-create feature-category-create" id="fabricCreate" title="完全新增面料">新增</button>
                             <button type="button" class="feature-category-add" id="fabricAdd">
                                 <span class="feature-category-add-icon">+</span>
                                 <span class="feature-category-add-text">添加面料</span>
@@ -166,6 +139,7 @@
     </footer>
 
     <script>
+        /* 品类/货号管理：品类字典、货号 CRUD、面料关联、佣金大类 */
         let editId = null;
         let categoryEditId = null;
         let categoryOptions = [];
@@ -173,6 +147,10 @@
         let commissionGroupOptions = [];
         const COMMISSION_GROUP_DEFAULT = '家具';
         let selectedFabricIds = [];
+
+        // -------------------------------------------------------------------------
+        // 状态提示与搜索
+        // -------------------------------------------------------------------------
 
         function showModalStatus(message, isError) {
             const text = String(message || '').trim();
@@ -204,31 +182,20 @@
         }
 
         function getModalSkuMarketValue() {
-            const seg = document.getElementById('modalSkuMarketSegment');
-            return String(seg?.dataset?.value || '1') === '0' ? 0 : 1;
+            return Number(SitjoyPageUI.getStatusSegmentValue('#modalSkuMarketSegment')) ? 1 : 0;
         }
 
         function setModalSkuMarketValue(value) {
-            const onMarket = Number(value) ? 1 : 0;
-            const seg = document.getElementById('modalSkuMarketSegment');
-            if (!seg) return;
-            seg.dataset.value = String(onMarket);
-            seg.querySelectorAll('button[data-value]').forEach(btn => {
-                const active = String(btn.getAttribute('data-value')) === String(onMarket);
-                btn.classList.toggle('is-active', active);
-            });
+            SitjoyPageUI.setStatusSegmentValue('#modalSkuMarketSegment', Number(value) ? '1' : '0');
         }
 
         function bindModalSkuMarketSegment() {
-            const seg = document.getElementById('modalSkuMarketSegment');
-            if (!seg || seg.dataset.bound === '1') return;
-            seg.dataset.bound = '1';
-            seg.querySelectorAll('button[data-value]').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    setModalSkuMarketValue(this.getAttribute('data-value'));
-                });
-            });
+            SitjoyPageUI.bindStatusSegment('#modalSkuMarketSegment');
         }
+
+        // -------------------------------------------------------------------------
+        // 货号模态框 CRUD
+        // -------------------------------------------------------------------------
 
         function openCreateModal() {
             editId = null;
@@ -348,6 +315,10 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 货号列表与面料选择器
+        // -------------------------------------------------------------------------
+
         function loadSkuList() {
             const q = document.getElementById('searchInput').value.trim();
             const base = q ? `/api/sku?q=${encodeURIComponent(q)}` : '/api/sku';
@@ -368,7 +339,7 @@
                     tbody.innerHTML = items.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
                         const onMarket = Number(item.is_on_market) ? 1 : 0;
-                        const marketText = onMarket ? '在市' : '<span class="sku-market-off">下市</span>';
+                        const marketText = onMarket ? '在市' : '<span class="sj-text-negative sku-market-off">下市</span>';
                         return `
                             <tr>
                                 <td>${item.sku_family}</td>
@@ -510,6 +481,10 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 品类与佣金大类选项
+        // -------------------------------------------------------------------------
+
         function renderCommissionGroupSelect(selectedValue) {
             const select = document.getElementById('modalCommissionGroupSelect');
             if (!select) return;
@@ -608,26 +583,24 @@
             renderCategorySelect(value || '');
         }
 
+        // -------------------------------------------------------------------------
+        // 品类 CRUD 与页面启动
+        // -------------------------------------------------------------------------
+
         function renderCategoryTypeBar() {
-            const bar = document.getElementById('categoryTypeBar');
-            if (!bar) return;
-            bar.innerHTML = '';
-
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'material-type-add';
-            addBtn.setAttribute('aria-label', '新增品类');
-            addBtn.textContent = '+';
-            addBtn.addEventListener('click', openCategoryCreateModal);
-            bar.appendChild(addBtn);
-
-            categoryOptions.forEach(item => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'material-type-pill';
-                btn.textContent = `${item.category_cn} / ${item.category_en}`;
-                btn.addEventListener('click', () => openCategoryEditModalById(item.id));
-                bar.appendChild(btn);
+            const UI = window.SitjoyPageUI;
+            if (!UI) return;
+            UI.renderOptionBar('#categoryTypeBar', {
+                mode: 'pill',
+                showAdd: true,
+                addAriaLabel: '新增品类',
+                onAdd: openCategoryCreateModal,
+                items: (categoryOptions || []).map(item => ({
+                    id: item.id,
+                    label: `${item.category_cn} / ${item.category_en}`,
+                    raw: item,
+                })),
+                onItemClick: (item) => openCategoryEditModalById(item.id),
             });
         }
 
@@ -696,20 +669,30 @@
             .catch(err => showCategoryStatus('请求失败: ' + err, true));
         }
 
-        window.addEventListener('load', loadSkuList);
-        window.addEventListener('load', loadCategories);
-        window.addEventListener('load', loadCommissionGroups);
-        window.addEventListener('load', loadFabrics);
-        window.addEventListener('load', bindModalSkuMarketSegment);
+        function bootProductManagementPage() {
+            const run = () => {
+                SitjoyPageUI.init({
+                    selects: true,
+                    tables: '#skuTable',
+                    statusSegments: true,
+                    modals: [
+                        { el: '#pm-modal', onClose: closeModal },
+                        { el: '#category-modal', onClose: closeCategoryModal },
+                    ],
+                    onReady: () => {
+                        loadSkuList();
+                        loadCategories();
+                        loadCommissionGroups();
+                        loadFabrics();
+                        bindModalSkuMarketSegment();
+                    },
+                });
+            };
+            if (window.SitjoyPageUI) run();
+            else document.addEventListener('sitjoy:page-ui-ready', run, { once: true });
+        }
 
-        window.setTimeout(function() {
-            var b = window.bindPmModalBackdropClose;
-            if (typeof b !== 'function') return;
-            var pm = document.getElementById('pm-modal');
-            if (pm) b(pm, closeModal);
-            var cm = document.getElementById('category-modal');
-            if (cm) b(cm, closeCategoryModal);
-        }, 0);
+        window.addEventListener('load', bootProductManagementPage);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadSkuList();

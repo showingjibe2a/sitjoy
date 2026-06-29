@@ -29,6 +29,10 @@ except Exception as _e:
 class LogisticsWarehouseMixin:
     """物流仓储 Mixin：工厂库存、海外仓、库存导入与缺货/低库存钉钉通知。"""
 
+    # -------------------------------------------------------------------------
+    # 工厂下单 SKU 关联与主图预览
+    # -------------------------------------------------------------------------
+
     def _normalize_id_list_local(self, value):
         if value is None:
             return []
@@ -172,6 +176,10 @@ class LogisticsWarehouseMixin:
             if b64:
                 out[int(opid)] = b64
         return out
+
+    # -------------------------------------------------------------------------
+    # 工厂在库 API
+    # -------------------------------------------------------------------------
 
     def handle_factory_stock_api(self, environ, method, start_response):
         """工厂在库库存 CRUD"""
@@ -552,6 +560,10 @@ class LogisticsWarehouseMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 工厂在制 API
+    # -------------------------------------------------------------------------
 
     def handle_factory_wip_api(self, environ, method, start_response):
         """工厂在制库存 CRUD"""
@@ -1313,6 +1325,10 @@ class LogisticsWarehouseMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # Excel 模板与批量导入（工厂在库 / 在制）
+    # -------------------------------------------------------------------------
 
     def handle_factory_stock_template_api(self, environ, method, start_response):
         try:
@@ -2092,6 +2108,10 @@ class LogisticsWarehouseMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 物流主数据 API（工厂 / 货代 / 供应商 / 目的区域）
+    # -------------------------------------------------------------------------
+
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -2367,6 +2387,10 @@ class LogisticsWarehouseMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 海外仓主数据 API
+    # -------------------------------------------------------------------------
+
     def handle_logistics_warehouse_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -2548,6 +2572,10 @@ class LogisticsWarehouseMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 海外仓库存 Excel 模板与导入
+    # -------------------------------------------------------------------------
 
     def handle_logistics_warehouse_template_api(self, environ, method, start_response):
         try:
@@ -3712,6 +3740,10 @@ class LogisticsWarehouseMixin:
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 仓储看板 API（只读聚合）
+    # -------------------------------------------------------------------------
 
     def handle_logistics_warehouse_dashboard_api(self, environ, method, start_response):
         """仓储看板：SKU库存聚合 + 仓库分列 + 在途角标（只读，工厂库存从独立表读取）"""

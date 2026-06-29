@@ -1260,6 +1260,10 @@
             'est_referral_commission_usd', 'commission_rate', 'estimated_net_profit_usd', 'net_margin_rate'
         ]);
 
+        // -------------------------------------------------------------------------
+        // 货号分组汇总计算
+        // -------------------------------------------------------------------------
+
         const PERF_NON_NUMERIC_COL_KEYS = new Set([
             '__toggle', '__sku', '__fabric', '__spec', '__perf_chk__', '__perf_op__',
             'record_date', 'shop_name', 'platform_sku'
@@ -1375,7 +1379,10 @@
             recordManageShopFilterReady: false
         };
 
-        /** localStorage：分页、图表粒度、指标顺序、分组排序 */
+        // -------------------------------------------------------------------------
+        // 本地偏好与排序持久化
+        // -------------------------------------------------------------------------
+
         function loadPerfPageSizeFromStorage() {
             try {
                 const n = Number(localStorage.getItem(PERF_PAGE_SIZE_KEY) || '50');
@@ -1452,7 +1459,10 @@
             _savePerfGroupSortPersist(PERF_GROUP_INNER_SORT_KEY, key, dir);
         }
 
-        /** 日期桶、图表聚合与数值格式化 */
+        // -------------------------------------------------------------------------
+        // 图表时间桶、聚合与数值格式化
+        // -------------------------------------------------------------------------
+
         function toYmd(dateObj) {
             const y = dateObj.getFullYear();
             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -1692,6 +1702,10 @@
             return Array.from(new Set(keys));
         }
 
+        // -------------------------------------------------------------------------
+        // 筛选面板与指标映射
+        // -------------------------------------------------------------------------
+
         function filterSelectPanel(host) {
             if (!host) return null;
             if (typeof window.floatingOverlayPanel === 'function') return window.floatingOverlayPanel(host);
@@ -1927,6 +1941,10 @@
             renderMetricCheckboxBar();
             renderPercentMetricBar();
         }
+
+        // -------------------------------------------------------------------------
+        // 趋势图查询、图例与渲染
+        // -------------------------------------------------------------------------
 
         function buildDashboardQuery() {
             const q = new URLSearchParams();
@@ -2321,6 +2339,10 @@
             if (r && r.start && r.end) return `${r.start} ~ ${r.end}`;
             return formatBucketRangeLabel(dateText, granularity);
         }
+
+        // -------------------------------------------------------------------------
+        // 图表交互与货号分组明细渲染
+        // -------------------------------------------------------------------------
 
         function getNearestDateByChartX(x) {
             const geom = state.chartGeom;
@@ -2872,6 +2894,10 @@
             return 50;
         }
 
+        // -------------------------------------------------------------------------
+        // 看板数据加载与展示
+        // -------------------------------------------------------------------------
+
         function renderDashboardPayload(data) {
             const payload = data || {};
             state.lastDashboardPayload = {
@@ -2924,6 +2950,10 @@
                 renderChart([], []);
             }
         }
+
+        // -------------------------------------------------------------------------
+        // 对话框、导入进度与 Toast
+        // -------------------------------------------------------------------------
 
         function showPerformanceStatus(message, isError) {
             // 统一使用全局 toast 样式（绿色成功/红色错误）
@@ -3453,6 +3483,10 @@
             syncPerfManagedBatchBar();
         }
 
+        // -------------------------------------------------------------------------
+        // 原始记录列表、批量选择与分页加载
+        // -------------------------------------------------------------------------
+
         function renderSalesProductPerformanceTable(items) {
             const tbody = document.querySelector('#salesProductPerformanceTable tbody');
             const availableIdSet = new Set((items || []).map(x => String(x.id || '')).filter(Boolean));
@@ -3630,6 +3664,10 @@
             document.getElementById('performanceAdSales').value = item.ad_sales_amount ?? '';
             document.getElementById('performanceRefundAmount').value = item.refund_amount ?? '';
         }
+
+        // -------------------------------------------------------------------------
+        // 记录 CRUD 模态框
+        // -------------------------------------------------------------------------
 
         function openCreatePerformanceModal() {
             state.performanceEditId = null;
@@ -3883,6 +3921,10 @@
             return true;
         }
 
+        // -------------------------------------------------------------------------
+        // 事件绑定
+        // -------------------------------------------------------------------------
+
         function bindEvents() {
             if (!pageDomReady()) return;
             const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';
@@ -3970,7 +4012,10 @@
             })();
         }
 
-        /** 页面初始化 */
+        // -------------------------------------------------------------------------
+        // 页面启动
+        // -------------------------------------------------------------------------
+
         async function initPage() {
             if (!pageDomReady()) return;
             const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';

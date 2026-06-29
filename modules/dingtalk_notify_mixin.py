@@ -56,6 +56,10 @@ class DingTalkNotifyMixin:
         },
     )
 
+    # -------------------------------------------------------------------------
+    # 表检测与群聊字段解析
+    # -------------------------------------------------------------------------
+
     def _dingtalk_table_missing(self, exc):
         """判断异常是否因钉钉配置表尚未迁移导致。"""
         message = str(exc or '').lower()
@@ -122,6 +126,10 @@ class DingTalkNotifyMixin:
         if len(text) <= 24:
             return text[:8] + '...'
         return f"{text[:20]}...{text[-8:]}"
+
+    # -------------------------------------------------------------------------
+    # 通知功能注册与投递配置解析
+    # -------------------------------------------------------------------------
 
     def _dingtalk_page_label(self, page_key):
         key = str(page_key or '').strip()
@@ -300,6 +308,10 @@ class DingTalkNotifyMixin:
             return body
         return self._ensure_dingtalk_keyword(body)
 
+    # -------------------------------------------------------------------------
+    # Webhook 签名与 HTTP 发送
+    # -------------------------------------------------------------------------
+
     def _post_dingtalk_payload(self, payload, notify_key=None):
         delivery_cfg, err = self._resolve_dingtalk_delivery_config(notify_key=notify_key)
         if err:
@@ -388,6 +400,10 @@ class DingTalkNotifyMixin:
             return 1
         return 1 if str(value if value is not None else default).strip().lower() not in ('0', 'false', 'no') else 0
 
+    # -------------------------------------------------------------------------
+    # Markdown 消息组装
+    # -------------------------------------------------------------------------
+
     def _dingtalk_notify_block(self, header_text, detail_content, header_color, detail_join='<br/>'):
         """单条通知块：彩色标题 + 灰色明细（明细可为字符串或行列表）。"""
         if isinstance(detail_content, list):
@@ -461,6 +477,10 @@ class DingTalkNotifyMixin:
         if title_color:
             title_text = self._dingtalk_markdown_colored_text(title_text, title_color)
         return f'### {title_text}\n\n{body}'
+
+    # -------------------------------------------------------------------------
+    # 业务通知文案（海外仓 / 在途 / 账户健康）
+    # -------------------------------------------------------------------------
 
     def _format_overseas_inventory_notify_blocks(self, items, event_kind):
         """海外仓缺货/重新上架：按 SKU 汇总，标题含全美库存，明细为各仓数量变更。"""
@@ -709,6 +729,10 @@ class DingTalkNotifyMixin:
             blocks.append('\n'.join(block_lines))
         return blocks
 
+    # -------------------------------------------------------------------------
+    # 业务通知发送入口
+    # -------------------------------------------------------------------------
+
     def _send_dingtalk_amazon_account_health_alert(self, items, notify_key=None, user_id=None):
         key = notify_key or 'amazon_account_health_alert'
         lines = self._format_amazon_account_health_alert_lines(items)
@@ -752,6 +776,10 @@ class DingTalkNotifyMixin:
             items, '海外仓低库存预警（{count}条）', self._format_overseas_low_stock_lines,
             notify_key or 'overseas_low_stock', user_id=user_id, title_tone='negative',
         )
+
+    # -------------------------------------------------------------------------
+    # 发送前权限校验
+    # -------------------------------------------------------------------------
 
     def _validate_dingtalk_notify_access(self, user_id, notify_key):
         notify_key = str(notify_key or '').strip()

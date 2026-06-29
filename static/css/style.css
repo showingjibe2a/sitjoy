@@ -1,6 +1,7 @@
 @import url('tokens.css');
 @import url('theme-engine.css');
 @import url('app-shell.css');
+@import url('sitjoy-ui-patterns.css');
 
 * {
     margin: 0;
@@ -6811,127 +6812,7 @@ select.pm-inline-compact-select,
 
 .sj-media-image-remove-icon { position: relative; top: -1px; }
 
-/* 类型/标签条：与材料管理一致，紧凑 + 宽度随内容（不占满一行）；字号与触控区略放大便于辨认 */
-.option-bar,
-.image-type-bar,
-.material-type-bar {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 0.34rem;
-    align-items: center;
-    width: max-content;
-    max-width: 100%;
-    box-sizing: border-box;
-    padding: 0.36rem 0.5rem;
-    border-radius: 8px;
-    background-color: rgba(115, 115, 120, 0.5);
-    background-image: radial-gradient(circle at 15% 15%, rgba(255,255,255,0.02) 0%, transparent 35%);
-}
-
-.material-type-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.34rem;
-    align-items: center;
-}
-
-/* 「+」与选项 pill：略大于最早一版，保证条内可读性 */
-.option-add,
-.material-type-add,
-.image-type-add,
-.supplier-add {
-    padding: 0.24rem 0.46rem;
-    min-width: 1.78rem;
-    min-height: 1.78rem;
-    border-radius: 8px;
-    border: 1px solid #5a9b5a;
-    background: #6ba86b;
-    color: #fff;
-    font-size: 1.02rem;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.option-add:hover,
-.material-type-add:hover,
-.image-type-add:hover,
-.supplier-add:hover {
-    background: #5a9b5a;
-    border-color: #4a8b4a;
-}
-
-.option-radio,
-.image-type-radio,
-.material-type-radio {
-    margin: 0;
-}
-
-.option-radio input,
-.image-type-radio input,
-.material-type-radio input {
-    display: none;
-}
-
-.option-radio span,
-.image-type-radio span,
-.material-type-radio span {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.3rem 0.54rem;
-    border-radius: 8px;
-    background: var(--morandi-mist);
-    color: var(--morandi-ink);
-    border: 1px solid var(--morandi-sand);
-    cursor: pointer;
-    font-size: 0.84rem;
-    user-select: none;
-    transition: all 0.15s ease;
-}
-
-/* 品类条等：与 radio pill 同视觉的纯按钮（无 input）；显式覆盖全局 button 高度与 padding */
-.material-type-bar button.material-type-pill {
-    margin: 0;
-    min-height: 0;
-    height: auto;
-    min-width: 0;
-    padding: 0.26rem 0.48rem;
-    border-radius: 8px;
-    border: 1px solid var(--morandi-sand);
-    background: var(--morandi-mist);
-    color: var(--morandi-ink);
-    font-size: 0.8rem;
-    font-weight: 600;
-    line-height: 1.2;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.15s ease;
-    box-shadow: none;
-}
-
-.material-type-bar button.material-type-pill:hover {
-    color: var(--morandi-ink);
-    background: rgba(207, 199, 189, 0.55);
-    border-color: var(--morandi-sand);
-}
-
-.option-radio span:hover,
-.image-type-radio span:hover,
-.material-type-radio span:hover {
-    color: var(--morandi-ink);
-    background: rgba(207, 199, 189, 0.55);
-}
-
-.option-radio input:checked + span,
-.image-type-radio input:checked + span,
-.material-type-radio input:checked + span {
-    background: #9b4a4a;
-    border-color: #9b4a4a;
-    color: #fff;
-}
+/* 筛选/标签条（sj-option-bar 等）见 sitjoy-ui-patterns.css */
 
 /* 全局：多选数字单元格时左下角求和/均值 */
 .sj-cell-stats-panel {

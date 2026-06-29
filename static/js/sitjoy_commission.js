@@ -9,6 +9,10 @@
     let cache = { ready: false, rules: {}, commission_groups: [] };
     let loadPromise = null;
 
+    // -------------------------------------------------------------------------
+    // 规则缓存加载
+    // -------------------------------------------------------------------------
+
     function parseIntId(v) {
         const n = Number(v);
         return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
@@ -57,6 +61,10 @@
             });
         return loadPromise;
     }
+
+    // -------------------------------------------------------------------------
+    // 分段 / 固定费率计算
+    // -------------------------------------------------------------------------
 
     function parseTiers(params) {
         const tiers = [];
@@ -117,6 +125,10 @@
         if (method === 'tiered') return applyTiered(amount, params);
         return null;
     }
+
+    // -------------------------------------------------------------------------
+    // 对外 API
+    // -------------------------------------------------------------------------
 
     function computeForContext(platformTypeId, commissionGroup, amount, mode) {
         const grp = String(commissionGroup || '').trim();

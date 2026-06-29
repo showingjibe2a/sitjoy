@@ -1,0 +1,189 @@
+/**
+ * SITJOY 全站 UI 模式（首选类名以 sj- 开头，见名知意）
+ *
+ * 新页面请优先使用本文件中的 sj-* 类；旧名（material-type-*、option-bar 等）仍兼容。
+ * JS 统一入口：SitjoyPageUI（sitjoy_page_ui.js，由 header.js 自动加载）
+ *
+ * @see static/css/STYLE_GUIDE.md
+ */
+
+/* -------------------------------------------------------------------------
+ * sj-option-bar — 横向筛选/标签条（+ 按钮 + 单选 chip 或 pill 按钮）
+ * 用于：品类筛选、平台/品牌筛选、货代筛选、待办类型等
+ * HTML 示例：
+ *   <div class="sj-option-bar" id="myFilterBar"></div>
+ *   SitjoyPageUI.renderOptionBar('#myFilterBar', { mode:'radio', items:[...], onSelect })
+ * 别名：.option-bar .material-type-bar .image-type-bar
+ * ------------------------------------------------------------------------- */
+
+.sj-option-bar,
+.option-bar,
+.image-type-bar,
+.material-type-bar {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    align-items: center;
+    width: max-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.36rem 0.5rem;
+    border-radius: 8px;
+    background-color: rgba(115, 115, 120, 0.5);
+    background-image: radial-gradient(circle at 15% 15%, rgba(255,255,255,0.02) 0%, transparent 35%);
+}
+
+.sj-option-add,
+.option-add,
+.material-type-add,
+.image-type-add,
+.supplier-add {
+    padding: 0.24rem 0.46rem;
+    min-width: 1.78rem;
+    min-height: 1.78rem;
+    border-radius: 8px;
+    border: 1px solid #5a9b5a;
+    background: #6ba86b;
+    color: #fff;
+    font-size: 1.02rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.sj-option-add:hover,
+.option-add:hover,
+.material-type-add:hover,
+.image-type-add:hover,
+.supplier-add:hover {
+    background: #5a9b5a;
+    border-color: #4a8b4a;
+}
+
+.sj-option-radio,
+.option-radio,
+.image-type-radio,
+.material-type-radio {
+    margin: 0;
+}
+
+.sj-option-radio input,
+.option-radio input,
+.image-type-radio input,
+.material-type-radio input {
+    display: none;
+}
+
+.sj-option-radio span,
+.option-radio span,
+.image-type-radio span,
+.material-type-radio span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.54rem;
+    border-radius: 8px;
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    border: 1px solid var(--morandi-sand);
+    cursor: pointer;
+    font-size: 0.84rem;
+    user-select: none;
+    transition: all 0.15s ease;
+}
+
+.sj-option-radio input:checked + span,
+.option-radio input:checked + span,
+.image-type-radio input:checked + span,
+.material-type-radio input:checked + span {
+    background: #9b4a4a;
+    border-color: #9b4a4a;
+    color: #fff;
+}
+
+.sj-option-radio span:hover,
+.option-radio span:hover,
+.image-type-radio span:hover,
+.material-type-radio span:hover {
+    color: var(--morandi-ink);
+    background: rgba(207, 199, 189, 0.55);
+}
+
+/* material-type-group：条内分组（少见） */
+.material-type-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    align-items: center;
+}
+
+
+.sj-option-bar button.sj-option-pill,
+.sj-option-bar button.option-pill,
+.material-type-bar button.material-type-pill,
+.material-type-bar button.sj-option-pill {
+    margin: 0;
+    min-height: 0;
+    height: auto;
+    min-width: 0;
+    padding: 0.26rem 0.48rem;
+    border-radius: 8px;
+    border: 1px solid var(--morandi-sand);
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+    box-shadow: none;
+}
+
+.sj-option-bar button.sj-option-pill:hover,
+.sj-option-bar button.option-pill:hover,
+.material-type-bar button.material-type-pill:hover {
+    color: var(--morandi-ink);
+    background: rgba(207, 199, 189, 0.55);
+    border-color: var(--morandi-sand);
+}
+
+/* sj-form-grid-full — 表单 grid 跨列 */
+.sj-form-grid-full,
+.pm-form-full {
+    grid-column: 1 / -1;
+}
+
+/* sj-text-negative — 负面状态文案 */
+.sj-text-negative,
+.sku-market-off {
+    color: #a33;
+}
+
+/* sj-chip-picker-create — chip 多选面板内「新增」绿按钮 */
+.sj-chip-picker-create,
+.feature-category-create {
+    height: 34px;
+    margin-right: 0.45rem;
+    border-radius: 8px;
+    border: 1px solid rgba(127, 168, 139, 0.35);
+    background: #7fa88b;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.7rem;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.sj-chip-picker-create:hover,
+.feature-category-create:hover {
+    background: #6f9a7c;
+}
