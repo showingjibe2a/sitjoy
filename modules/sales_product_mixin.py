@@ -1,4 +1,6 @@
-﻿import re
+﻿# -*- coding: utf-8 -*-
+"""销售产品：规格/变体、图库、产品表现导入与周月/30 天 rolling 快照刷新。"""
+import re
 import io
 import cgi
 import os
@@ -77,6 +79,8 @@ def _spp_unregister_import_waiter(task_id, ev):
 
 
 class SalesProductMixin:
+    """销售产品 Mixin：规格变体 CRUD、图库、产品表现与聚合/rolling 快照刷新。"""
+
     def _resources_root(self):
         """Return absolute resources root as bytes path."""
         return self._join_resources('')
@@ -9344,6 +9348,16 @@ class SalesProductMixin:
         except Exception:
             return False
 
+    # -------------------------------------------------------------------------
+    # 产品表现：周/月聚合与 30 天 rolling 快照（含下单 SKU op_rolling）
+    # -------------------------------------------------------------------------
+
+    def _sales_perf_optional_product_id_list(self, sales_product_ids):
+        """None=全量刷新；否则返回去重后的 sales_product_id 列表（可为空）。"""
+        if sales_product_ids is None:
+            return None
+        return sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+
     def _sales_perf_month_end(self, month_start):
         if month_start.month == 12:
             nxt = month_start.replace(year=month_start.year + 1, month=1, day=1)
@@ -9428,17 +9442,7 @@ class SalesProductMixin:
 
         ids = None
         if sales_product_ids is not None:
-            ids = []
-            if isinstance(sales_product_ids, (set, list, tuple)):
-                tmp = set()
-                for x in sales_product_ids:
-                    try:
-                        v = int(x)
-                    except Exception:
-                        continue
-                    if v > 0:
-                        tmp.add(v)
-                ids = sorted(tmp)
+            ids = self._sales_perf_optional_product_id_list(sales_product_ids)
 
         id_chunk_size = 300
         id_chunks = []
@@ -9603,11 +9607,9 @@ class SalesProductMixin:
         if not ws or not we or not anchor:
             return
 
-        id_list = None
-        if sales_product_ids is not None:
-            id_list = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
-            if not id_list:
-                return
+        id_list = self._sales_perf_optional_product_id_list(sales_product_ids)
+        if sales_product_ids is not None and not id_list:
+            return
 
         id_chunk_size = 300
         id_chunks = [None] if id_list is None else [
@@ -9679,11 +9681,9 @@ class SalesProductMixin:
         if not ws or not we or not anchor:
             return
 
-        sp_ids = None
-        if sales_product_ids is not None:
-            sp_ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
-            if not sp_ids:
-                return
+        sp_ids = self._sales_perf_optional_product_id_list(sales_product_ids)
+        if sales_product_ids is not None and not sp_ids:
+            return
 
         with conn.cursor() as cur:
             cur.execute('SELECT anchor_date FROM sales_perf_op_rolling_30d LIMIT 1')
@@ -9889,6 +9889,7 @@ class SalesProductMixin:
                 pass
 
     def handle_sales_product_performance_api(self, environ, method, start_response):
+        """产品表现 CRUD / 导入；写入后触发周月聚合与 rolling 快照刷新。"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 

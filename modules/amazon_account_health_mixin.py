@@ -16,6 +16,32 @@ except Exception as e:
 
 
 class AmazonAccountHealthMixin:
+    """Amazon 账户健康 CRUD、趋势图表、Excel 导入（钉钉健康提醒数据来源）。"""
+
+    _ACCOUNT_HEALTH_INT_FIELDS = (
+        'account_health_rating',
+        'suspected_ip_infringement',
+        'intellectual_property_complaints',
+        'authenticity_customer_complaints',
+        'condition_customer_complaints',
+        'food_safety_issues',
+        'listing_policy_violations',
+        'restricted_product_policy_violations',
+        'customer_review_policy_violations',
+        'other_policy_violations',
+        'regulatory_compliance_issues',
+    )
+    _ACCOUNT_HEALTH_PERCENT_FIELDS = (
+        'order_defect_rate',
+        'negative_feedback_rate',
+        'a_to_z_rate',
+        'chargeback_rate',
+        'late_shipment_rate',
+        'pre_fulfillment_cancel_rate',
+        'valid_tracking_rate',
+        'on_time_delivery_rate',
+    )
+
     def _normalize_datetime_text(self, value):
         text = ('' if value is None else str(value)).strip()
         if not text:
@@ -34,35 +60,59 @@ class AmazonAccountHealthMixin:
                 continue
         return None
 
+    def _parse_account_health_metrics(self, data):
+        """解析 POST/PUT 请求体中的指标字段；失败时返回 (None, None, None, error_message)。"""
+        payload = data if isinstance(data, dict) else {}
+        values = {}
+        for key in self._ACCOUNT_HEALTH_INT_FIELDS:
+            parsed = self._parse_int(payload.get(key))
+            if parsed is None:
+                return None, None, None, f'Missing or invalid {key}'
+            values[key] = parsed
+        for key in self._ACCOUNT_HEALTH_PERCENT_FIELDS:
+            parsed = self._parse_float(payload.get(key))
+            if parsed is None:
+                return None, None, None, f'Missing or invalid {key}'
+            values[key] = parsed
+        record_datetime = (
+            self._normalize_datetime_text(payload.get('record_datetime'))
+            or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        remark = (payload.get('remark') or '').strip()[:500]
+        return values, record_datetime, remark, None
+
+    def _account_health_metric_values_tuple(self, values):
+        """INSERT/UPDATE 共用的指标列顺序。"""
+        return (
+            values['account_health_rating'],
+            values['suspected_ip_infringement'], values['intellectual_property_complaints'],
+            values['authenticity_customer_complaints'], values['condition_customer_complaints'],
+            values['food_safety_issues'], values['listing_policy_violations'],
+            values['restricted_product_policy_violations'], values['customer_review_policy_violations'],
+            values['other_policy_violations'], values['regulatory_compliance_issues'],
+            values['order_defect_rate'], values['negative_feedback_rate'], values['a_to_z_rate'], values['chargeback_rate'],
+            values['late_shipment_rate'], values['pre_fulfillment_cancel_rate'],
+            values['valid_tracking_rate'], values['on_time_delivery_rate'],
+        )
+
+    def _verify_amazon_shop_id(self, cur, shop_id):
+        """确认 shop_id 属于 Amazon 平台店铺。"""
+        cur.execute(
+            """
+            SELECT s.id
+            FROM shops s
+            JOIN platform_types pt ON pt.id = s.platform_type_id
+            WHERE s.id=%s AND LOWER(TRIM(pt.name))='amazon'
+            """,
+            (shop_id,),
+        )
+        return bool(cur.fetchone())
+
     def handle_amazon_account_health_api(self, environ, method, start_response):
         """Amazon 账户健康管理 API（CRUD + 图表）"""
         try:
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
-
-            int_fields = [
-                'account_health_rating',
-                'suspected_ip_infringement',
-                'intellectual_property_complaints',
-                'authenticity_customer_complaints',
-                'condition_customer_complaints',
-                'food_safety_issues',
-                'listing_policy_violations',
-                'restricted_product_policy_violations',
-                'customer_review_policy_violations',
-                'other_policy_violations',
-                'regulatory_compliance_issues'
-            ]
-            percent_fields = [
-                'order_defect_rate',
-                'negative_feedback_rate',
-                'a_to_z_rate',
-                'chargeback_rate',
-                'late_shipment_rate',
-                'pre_fulfillment_cancel_rate',
-                'valid_tracking_rate',
-                'on_time_delivery_rate'
-            ]
 
             if method == 'GET':
                 mode = (query_params.get('mode', [''])[0] or '').strip().lower()
@@ -154,35 +204,15 @@ class AmazonAccountHealthMixin:
                 if not shop_id:
                     return self.send_json({'status': 'error', 'message': 'Missing shop_id'}, start_response)
 
-                values = {}
-                for key in int_fields:
-                    parsed = self._parse_int(data.get(key))
-                    if parsed is None:
-                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
-                    values[key] = parsed
-                for key in percent_fields:
-                    parsed = self._parse_float(data.get(key))
-                    if parsed is None:
-                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
-                    values[key] = parsed
-
-                record_datetime = self._normalize_datetime_text(data.get('record_datetime')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                remark = (data.get('remark') or '').strip()[:500]
+                values, record_datetime, remark, err = self._parse_account_health_metrics(data)
+                if err:
+                    return self.send_json({'status': 'error', 'message': err}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            SELECT s.id
-                            FROM shops s
-                            JOIN platform_types pt ON pt.id = s.platform_type_id
-                            WHERE s.id=%s AND LOWER(TRIM(pt.name))='amazon'
-                            """,
-                            (shop_id,)
-                        )
-                        allowed_shop = cur.fetchone()
-                        if not allowed_shop:
+                        if not self._verify_amazon_shop_id(cur, shop_id):
                             return self.send_json({'status': 'error', 'message': 'Only Amazon platform shop is allowed'}, start_response)
+                        metrics = self._account_health_metric_values_tuple(values)
                         cur.execute(
                             """
                             INSERT INTO amazon_account_health (
@@ -207,17 +237,7 @@ class AmazonAccountHealthMixin:
                                 %s, %s
                             )
                             """,
-                            (
-                                shop_id, values['account_health_rating'],
-                                values['suspected_ip_infringement'], values['intellectual_property_complaints'],
-                                values['authenticity_customer_complaints'], values['condition_customer_complaints'],
-                                values['food_safety_issues'], values['listing_policy_violations'],
-                                values['restricted_product_policy_violations'], values['customer_review_policy_violations'],
-                                values['other_policy_violations'], values['regulatory_compliance_issues'],
-                                values['order_defect_rate'], values['negative_feedback_rate'], values['a_to_z_rate'], values['chargeback_rate'],
-                                values['late_shipment_rate'], values['pre_fulfillment_cancel_rate'], values['valid_tracking_rate'], values['on_time_delivery_rate'],
-                                record_datetime, remark
-                            )
+                            (shop_id, *metrics, record_datetime, remark),
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -229,39 +249,18 @@ class AmazonAccountHealthMixin:
                 if not item_id or not shop_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id or shop_id'}, start_response)
 
-                values = {}
-                for key in int_fields:
-                    parsed = self._parse_int(data.get(key))
-                    if parsed is None:
-                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
-                    values[key] = parsed
-                for key in percent_fields:
-                    parsed = self._parse_float(data.get(key))
-                    if parsed is None:
-                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
-                    values[key] = parsed
-
-                record_datetime = self._normalize_datetime_text(data.get('record_datetime')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                remark = (data.get('remark') or '').strip()[:500]
+                values, record_datetime, remark, err = self._parse_account_health_metrics(data)
+                if err:
+                    return self.send_json({'status': 'error', 'message': err}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            SELECT s.id
-                            FROM shops s
-                            JOIN platform_types pt ON pt.id = s.platform_type_id
-                            WHERE s.id=%s AND LOWER(TRIM(pt.name))='amazon'
-                            """,
-                            (shop_id,)
-                        )
-                        allowed_shop = cur.fetchone()
-                        if not allowed_shop:
+                        if not self._verify_amazon_shop_id(cur, shop_id):
                             return self.send_json({'status': 'error', 'message': 'Only Amazon platform shop is allowed'}, start_response)
                         cur.execute("SELECT id FROM amazon_account_health WHERE id=%s", (item_id,))
-                        exists = cur.fetchone()
-                        if not exists:
+                        if not cur.fetchone():
                             return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+                        metrics = self._account_health_metric_values_tuple(values)
                         cur.execute(
                             """
                             UPDATE amazon_account_health
@@ -289,31 +288,7 @@ class AmazonAccountHealthMixin:
                                 remark=%s
                             WHERE id=%s
                             """,
-                            (
-                                shop_id,
-                                values['account_health_rating'],
-                                values['suspected_ip_infringement'],
-                                values['intellectual_property_complaints'],
-                                values['authenticity_customer_complaints'],
-                                values['condition_customer_complaints'],
-                                values['food_safety_issues'],
-                                values['listing_policy_violations'],
-                                values['restricted_product_policy_violations'],
-                                values['customer_review_policy_violations'],
-                                values['other_policy_violations'],
-                                values['regulatory_compliance_issues'],
-                                values['order_defect_rate'],
-                                values['negative_feedback_rate'],
-                                values['a_to_z_rate'],
-                                values['chargeback_rate'],
-                                values['late_shipment_rate'],
-                                values['pre_fulfillment_cancel_rate'],
-                                values['valid_tracking_rate'],
-                                values['on_time_delivery_rate'],
-                                record_datetime,
-                                remark,
-                                item_id
-                            )
+                            (shop_id, *metrics, record_datetime, remark, item_id),
                         )
                 return self.send_json({'status': 'success'}, start_response)
 

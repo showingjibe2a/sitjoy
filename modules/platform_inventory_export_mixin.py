@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """销售平台库存导出：Amazon txt / Wayfair csv 智能成套计算。"""
 
 import cgi
@@ -10,6 +11,8 @@ from urllib.parse import quote
 
 
 class PlatformInventoryExportMixin:
+    """Amazon / Wayfair 库存导出：成套算法、海外仓汇总、模板回填与预览。"""
+
     _WAYFAIR_HEADERS = {
         'supplier id': 'supplier_id',
         'supplier part#': 'part',
@@ -103,6 +106,10 @@ class PlatformInventoryExportMixin:
         if platform in ('amazon', 'wayfair'):
             out['platform'] = platform
         return out
+
+    # -------------------------------------------------------------------------
+    # 成套可售数量计算（strict_sets / flexible、面料比例、上限）
+    # -------------------------------------------------------------------------
 
     def _sales_product_status_exportable(self, status):
         """仅「启用」状态参与系统生成库存；留用/弃用导出为 0。"""
@@ -234,9 +241,17 @@ class PlatformInventoryExportMixin:
 
         return max(0, int(sellable)), notes
 
+    def _inventory_export_sorted_op_ids(self, order_product_ids):
+        """导出链路通用的 order_product_id 去重排序列表。"""
+        return sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+
+    # -------------------------------------------------------------------------
+    # 海外仓可用量（含替代发货方案成套叠加）
+    # -------------------------------------------------------------------------
+
     def _inventory_export_expand_op_ids_with_substitute_items(self, conn, order_product_ids):
         """展开替代发货方案中的 substitute SKU；不含迭代继承。"""
-        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        ids = self._inventory_export_sorted_op_ids(order_product_ids)
         if not ids:
             return [], {}
         plans_by_owner = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
@@ -253,7 +268,7 @@ class PlatformInventoryExportMixin:
         self, conn, order_product_ids, wayfair_id=None, wayfair_matrix=None,
     ):
         """下单 SKU 海外仓可用件数：本体库存 + 全部替代发货方案各自成套后相加（与销量预测一致，不含迭代）。"""
-        base_ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        base_ids = self._inventory_export_sorted_op_ids(order_product_ids)
         out = {i: 0 for i in base_ids}
         if not base_ids:
             return out
@@ -282,7 +297,7 @@ class PlatformInventoryExportMixin:
 
     def _load_overseas_qty_wayfair_matrix(self, conn, order_product_ids):
         """批量加载 (wayfair_id, order_product_id) -> 可用库存，供 Wayfair 导出复用。"""
-        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        ids = self._inventory_export_sorted_op_ids(order_product_ids)
         out = {}
         if not ids:
             return out
@@ -310,7 +325,7 @@ class PlatformInventoryExportMixin:
         return out
 
     def _overseas_qty_by_wayfair_id(self, order_product_ids, wayfair_id, wayfair_matrix=None):
-        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        ids = self._inventory_export_sorted_op_ids(order_product_ids)
         wid = str(wayfair_id or '').strip()
         out = {i: 0 for i in ids}
         if not ids or not wid:
@@ -327,6 +342,10 @@ class PlatformInventoryExportMixin:
 
     def _load_overseas_qty_all_warehouses(self, conn, order_product_ids):
         return self._inventory_export_effective_overseas_by_op(conn, order_product_ids)
+
+    # -------------------------------------------------------------------------
+    # 平台 SKU 索引与 Amazon / Wayfair 导出
+    # -------------------------------------------------------------------------
 
     def _parse_inventory_export_parent_ids(self, raw):
         if raw is None:
@@ -965,7 +984,12 @@ class PlatformInventoryExportMixin:
             body += '\n'
         return body.encode('utf-8'), filled
 
+    # -------------------------------------------------------------------------
+    # 导出 API
+    # -------------------------------------------------------------------------
+
     def handle_sales_product_amazon_inventory_export_api(self, environ, method, start_response):
+        """Amazon 库存 txt：系统生成或上传模板回填。"""
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -988,6 +1012,7 @@ class PlatformInventoryExportMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_sales_product_wayfair_inventory_export_api(self, environ, method, start_response):
+        """Wayfair 库存 csv：上传模板按 Wayfair ID 列回填 In Stock。"""
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -1002,6 +1027,7 @@ class PlatformInventoryExportMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_sales_product_inventory_export_preview_api(self, environ, method, start_response):
+        """导出前预览：按平台返回 SKU + 计算数量与备注。"""
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)

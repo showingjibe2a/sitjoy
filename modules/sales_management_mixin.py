@@ -1,4 +1,6 @@
-﻿import io
+﻿# -*- coding: utf-8 -*-
+"""销售管理：订单登记、销售预测/看板、动销月（30 天窗口销量与库存覆盖）。"""
+import io
 import cgi
 import re
 import calendar
@@ -52,6 +54,8 @@ except Exception as e:
 
 
 class SalesManagementMixin:
+    """销售管理 Mixin：订单登记、预测看板、动销月计算与仓储看板挂载。"""
+
     def _registration_get_replacement_options(self, conn, base_order_product_ids):
         """按基础发货 SKU 加载替代方案及方案明细。"""
         result = {}
@@ -3393,6 +3397,29 @@ class SalesManagementMixin:
         avg = total / float(len(keys))
         return avg if avg > 1e-9 else None
 
+    # -------------------------------------------------------------------------
+    # 动销月：30 天窗口销量与库存覆盖月数
+    # -------------------------------------------------------------------------
+
+    def _turnover_window_bounds(self, window):
+        """从窗口 dict 解析 window_start / window_end（YYYY-MM-DD）。"""
+        if not window:
+            return '', ''
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        return ws, we
+
+    def _turnover_merge_rolling_daily_maps(self, conn, ids, window, shop_ids, rolling_loader, daily_loader):
+        """优先 rolling 快照，零销量 id 再查日表兜底。"""
+        out = rolling_loader(conn, ids, window, shop_ids=shop_ids)
+        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if missing:
+            daily = daily_loader(conn, missing, window, shop_ids=shop_ids)
+            for entity_id, sales in (daily or {}).items():
+                if float(sales or 0) > 1e-9:
+                    out[int(entity_id)] = float(sales)
+        return out
+
     def _turnover_sales_window(self, conn):
         """动销月分母窗口：全局最新 record_date 为终点，向前 30 个自然日（含首尾）。"""
         anchor_raw = self._forecast_perf_max_record_date(conn)
@@ -3437,8 +3464,7 @@ class SalesManagementMixin:
             return out
         if not self._table_exists_simple(conn, 'sales_perf_rolling_30d'):
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
@@ -3474,8 +3500,7 @@ class SalesManagementMixin:
         out = {}
         if not ids or not window:
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
@@ -3510,24 +3535,18 @@ class SalesManagementMixin:
         """变体在动销月窗口内的 sales_qty 汇总（优先 rolling_30d 快照，日表兜底）。"""
         window = window or self._turnover_sales_window(conn)
         ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
-        out = self._turnover_load_variant_window_sales_from_rolling(conn, ids, window, shop_ids=shop_ids)
-        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
-        if missing:
-            daily = self._turnover_load_variant_window_sales_from_daily(
-                conn, missing, window, shop_ids=shop_ids,
-            )
-            for vid, sales in (daily or {}).items():
-                if float(sales or 0) > 1e-9:
-                    out[int(vid)] = float(sales)
-        return out
+        return self._turnover_merge_rolling_daily_maps(
+            conn, ids, window, shop_ids,
+            self._turnover_load_variant_window_sales_from_rolling,
+            self._turnover_load_variant_window_sales_from_daily,
+        )
 
     def _turnover_load_op_window_sales_from_daily(self, conn, order_product_ids, window, shop_ids=None):
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         out = {i: 0.0 for i in ids}
         if not ids or not window:
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
@@ -3595,8 +3614,7 @@ class SalesManagementMixin:
             return out
         if not self._table_exists_simple(conn, 'sales_perf_rolling_30d'):
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
@@ -3632,8 +3650,7 @@ class SalesManagementMixin:
         out = {}
         if not ids or not window:
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         shop_frag, shop_params = self._turnover_shop_filter_sql(shop_ids, 'sp')
@@ -3665,18 +3682,14 @@ class SalesManagementMixin:
         return out
 
     def _turnover_load_sales_product_window_sales_map(self, conn, sales_product_ids, window=None, shop_ids=None):
+        """销售产品在动销月窗口内的 sales_qty 汇总（优先 rolling_30d，日表兜底）。"""
         window = window or self._turnover_sales_window(conn)
         ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
-        out = self._turnover_load_sales_product_window_sales_from_rolling(conn, ids, window, shop_ids=shop_ids)
-        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
-        if missing:
-            daily = self._turnover_load_sales_product_window_sales_from_daily(
-                conn, missing, window, shop_ids=shop_ids,
-            )
-            for spid, sales in (daily or {}).items():
-                if float(sales or 0) > 1e-9:
-                    out[int(spid)] = float(sales)
-        return out
+        return self._turnover_merge_rolling_daily_maps(
+            conn, ids, window, shop_ids,
+            self._turnover_load_sales_product_window_sales_from_rolling,
+            self._turnover_load_sales_product_window_sales_from_daily,
+        )
 
     def _turnover_load_op_window_sales_from_rolling(self, conn, order_product_ids, window, shop_ids=None):
         """下单 SKU 窗口销量（优先 sales_perf_op_rolling_30d 快照）。"""
@@ -3688,8 +3701,7 @@ class SalesManagementMixin:
             return out
         if not self._table_exists_simple(conn, 'sales_perf_op_rolling_30d'):
             return out
-        ws = str(window.get('window_start') or '')[:10]
-        we = str(window.get('window_end') or '')[:10]
+        ws, we = self._turnover_window_bounds(window)
         if not ws or not we:
             return out
         chunk_size = 400
@@ -4014,7 +4026,7 @@ class SalesManagementMixin:
                 self._turnover_fill_warehouse_dashboard_row(child, sales_map, window)
 
     def _turnover_attach_to_warehouse_dashboard_rows_safe(self, conn, rows, shop_ids=None):
-        """仓储看板动销月：失败时不阻断整页加载。返回 None 或错误信息。"""
+        """仓储看板动销月：失败时不阻断整页加载，返回 None 或错误信息。"""
         try:
             self._turnover_attach_to_warehouse_dashboard_rows(conn, rows, shop_ids=shop_ids)
             return None
