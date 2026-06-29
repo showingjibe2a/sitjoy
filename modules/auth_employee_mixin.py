@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+"""员工认证：登录会话、无状态 token、员工账号 CRUD 与工厂数据范围。"""
 import base64
 import hashlib
 import hmac
@@ -8,7 +10,10 @@ from urllib.parse import parse_qs
 
 
 class AuthEmployeeMixin:
+    """认证与员工管理：密码哈希、Session/Token、注册审核与权限字段。"""
+
     ADMIN_RESET_PASSWORD_DEFAULT = '12345678'
+    SESSION_COOKIE_MAX_AGE = 604800  # 7 天
 
     @staticmethod
     def _hash_user_password(password):
@@ -16,15 +21,44 @@ class AuthEmployeeMixin:
             str(password or '').encode('utf-8', errors='surrogatepass')
         ).hexdigest()
 
-    def _get_session_id(self, environ):
+    # -------------------------------------------------------------------------
+    # Cookie / Session / 无状态 Token
+    # -------------------------------------------------------------------------
+
+    def _parse_request_cookies(self, environ):
+        """解析 HTTP Cookie 为 {name: value}。"""
         cookie = environ.get('HTTP_COOKIE', '')
-        pairs = [p.strip().split('=', 1) for p in cookie.split(';') if '=' in p]
-        return next((v for k, v in pairs if k == 'session_id'), None)
+        out = {}
+        for part in cookie.split(';'):
+            part = part.strip()
+            if '=' not in part:
+                continue
+            key, val = part.split('=', 1)
+            out[key.strip()] = val.strip()
+        return out
+
+    def _get_session_id(self, environ):
+        return self._parse_request_cookies(environ).get('session_id')
 
     def _get_cookie_value(self, environ, name):
-        cookie = environ.get('HTTP_COOKIE', '')
-        pairs = [p.strip().split('=', 1) for p in cookie.split(';') if '=' in p]
-        return next((v for k, v in pairs if k == name), None)
+        return self._parse_request_cookies(environ).get(name)
+
+    def _auth_session_response_headers(self, session_id=None, token=None, *, clear=False):
+        """登录/登出共用的 Set-Cookie 响应头。"""
+        if clear:
+            cookies = [
+                'session_id=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax',
+                'session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax',
+            ]
+        else:
+            age = self.SESSION_COOKIE_MAX_AGE
+            cookies = [
+                f'session_id={session_id}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax',
+                f'session_token={token}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax',
+            ]
+        return [('Content-Type', 'application/json; charset=utf-8')] + [
+            ('Set-Cookie', c) for c in cookies
+        ]
 
     def _get_auth_secret(self):
         env_secret = __import__('os').environ.get('SITJOY_AUTH_SECRET')
@@ -113,21 +147,42 @@ class AuthEmployeeMixin:
             print(f"Session DB write failed: {type(e).__name__}: {e}")
         return session_id
 
+    # -------------------------------------------------------------------------
+    # 工厂数据范围（按用户）
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _is_missing_table_error(exc):
+        message = str(exc or '').lower()
+        return (
+            "doesn't exist" in message
+            or 'does not exist' in message
+            or 'unknown table' in message
+        )
+
     def _parse_factory_scope_payload(self, data):
         mode_raw = str((data or {}).get('factory_scope_mode') or 'all').strip().lower()
         mode = 'custom' if mode_raw == 'custom' else 'all'
         ids_raw = (data or {}).get('factory_scope_ids') or []
         if not isinstance(ids_raw, list):
-            ids_raw = []
+            ids_raw = [ids_raw] if ids_raw not in (None, '') else []
         ids = []
         for value in ids_raw:
-            try:
-                number = int(value)
-            except Exception:
-                number = 0
-            if number > 0:
-                ids.append(number)
+            n = self._parse_int(value)
+            if n and n > 0:
+                ids.append(n)
         return mode, sorted(set(ids))
+
+    def _parse_optional_supervisor_id(self, raw, self_id=None):
+        """解析直属上级 ID；空值表示无上级。返回 (id|None, error_message|None)。"""
+        if raw in (None, '', 0, '0'):
+            return None, None
+        sid = self._parse_int(raw)
+        if not sid or sid <= 0:
+            return None, '直属上级无效'
+        if self_id is not None and int(sid) == int(self_id):
+            return None, '不能将自己设为直属上级'
+        return sid, None
 
     def _replace_user_factory_scopes(self, conn, user_id, scope_mode, factory_ids):
         with conn.cursor() as cur:
@@ -141,6 +196,7 @@ class AuthEmployeeMixin:
                 )
 
     def handle_auth_api(self, environ, method, start_response):
+        """登录/登出、当前用户、注册与审核。"""
         try:
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
@@ -177,11 +233,7 @@ class AuthEmployeeMixin:
 
                         session_id = self._set_session_user(row['id'])
                         token = self._make_stateless_token(row['id'])
-                        headers = [
-                            ('Content-Type', 'application/json; charset=utf-8'),
-                            ('Set-Cookie', f'session_id={session_id}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax'),
-                            ('Set-Cookie', f'session_token={token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax')
-                        ]
+                        headers = self._auth_session_response_headers(session_id, token)
                         response_body = json.dumps({
                             'status': 'success',
                             'session_id': session_id,
@@ -205,11 +257,7 @@ class AuthEmployeeMixin:
                                 cur.execute("DELETE FROM sessions WHERE session_id=%s", (session_id,))
                     except Exception as e:
                         print(f"Session DB delete failed: {type(e).__name__}: {e}")
-                headers = [
-                    ('Content-Type', 'application/json; charset=utf-8'),
-                    ('Set-Cookie', 'session_id=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax'),
-                    ('Set-Cookie', 'session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')
-                ]
+                headers = self._auth_session_response_headers(clear=True)
                 start_response('200 OK', headers)
                 return [json.dumps({'status': 'success'}).encode('utf-8', errors='surrogatepass')]
 
@@ -418,7 +466,41 @@ class AuthEmployeeMixin:
             print('Auth API error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    _EMPLOYEE_LIST_SQL = """
+        SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+               u.direct_supervisor_id,
+               u.is_admin, COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+               u.page_permissions, COALESCE(u.is_approved, 1) AS is_approved, u.created_at,
+               s.name AS supervisor_name, s.username AS supervisor_username
+        FROM users u
+        LEFT JOIN users s ON s.id = u.direct_supervisor_id
+    """
+
+    def _serialize_employee_list_item(self, row, scope_map):
+        uid = int(row.get('id') or 0)
+        factory_scope_ids = sorted(set(scope_map.get(uid, [])))
+        supervisor_id = int(row['direct_supervisor_id']) if row.get('direct_supervisor_id') else None
+        return {
+            'id': row['id'],
+            'username': row['username'],
+            'name': row.get('name') or '',
+            'phone': row.get('phone') or '',
+            'birthday': row.get('birthday'),
+            'hire_date': self._parse_date_str(row.get('hire_date')) if row.get('hire_date') else None,
+            'job_title': (row.get('job_title') or '').strip(),
+            'direct_supervisor_id': supervisor_id,
+            'direct_supervisor_label': self._format_supervisor_label(row),
+            'is_admin': int(row.get('is_admin') or 0),
+            'can_grant_admin': int(row.get('can_grant_admin') or 0),
+            'is_approved': int(row.get('is_approved') or 0),
+            'page_permissions': self._normalize_page_permissions(row.get('page_permissions')),
+            'factory_scope_mode': 'custom' if factory_scope_ids else 'all',
+            'factory_scope_ids': factory_scope_ids,
+            'created_at': row.get('created_at'),
+        }
+
     def handle_employee_api(self, environ, method, start_response):
+        """员工账号 CRUD、密码重置、工厂范围配置。"""
         try:
             user_id = self._get_session_user(environ)
             query_string = environ.get('QUERY_STRING', '')
@@ -431,33 +513,16 @@ class AuthEmployeeMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if keyword:
+                            like = f"%{keyword}%"
                             cur.execute(
-                                """
-                                SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
-                                       u.direct_supervisor_id,
-                                       u.is_admin, COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                                       u.page_permissions, COALESCE(u.is_approved, 1) AS is_approved, u.created_at,
-                                       s.name AS supervisor_name, s.username AS supervisor_username
-                                FROM users u
-                                LEFT JOIN users s ON s.id = u.direct_supervisor_id
+                                self._EMPLOYEE_LIST_SQL + """
                                 WHERE u.name LIKE %s OR u.username LIKE %s OR u.phone LIKE %s
                                 ORDER BY u.id ASC
                                 """,
-                                (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%")
+                                (like, like, like),
                             )
                         else:
-                            cur.execute(
-                                """
-                                SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
-                                       u.direct_supervisor_id,
-                                       u.is_admin, COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                                       u.page_permissions, COALESCE(u.is_approved, 1) AS is_approved, u.created_at,
-                                       s.name AS supervisor_name, s.username AS supervisor_username
-                                FROM users u
-                                LEFT JOIN users s ON s.id = u.direct_supervisor_id
-                                ORDER BY u.id ASC
-                                """
-                            )
+                            cur.execute(self._EMPLOYEE_LIST_SQL + " ORDER BY u.id ASC")
                         rows = cur.fetchall() or []
                         user_ids = [int(r.get('id')) for r in rows if r.get('id')]
                         scope_map = {}
@@ -474,32 +539,9 @@ class AuthEmployeeMixin:
                                     if uid > 0 and fid > 0:
                                         scope_map.setdefault(uid, []).append(fid)
                             except Exception as e:
-                                message = str(e).lower()
-                                if not ("doesn't exist" in message or 'does not exist' in message or 'unknown table' in message):
+                                if not self._is_missing_table_error(e):
                                     raise
-                items = []
-                for row in rows:
-                    uid = int(row.get('id') or 0)
-                    factory_scope_ids = sorted(set(scope_map.get(uid, [])))
-                    supervisor_id = int(row['direct_supervisor_id']) if row.get('direct_supervisor_id') else None
-                    items.append({
-                        'id': row['id'],
-                        'username': row['username'],
-                        'name': row.get('name') or '',
-                        'phone': row.get('phone') or '',
-                        'birthday': row.get('birthday'),
-                        'hire_date': self._parse_date_str(row.get('hire_date')) if row.get('hire_date') else None,
-                        'job_title': (row.get('job_title') or '').strip(),
-                        'direct_supervisor_id': supervisor_id,
-                        'direct_supervisor_label': self._format_supervisor_label(row),
-                        'is_admin': int(row.get('is_admin') or 0),
-                        'can_grant_admin': int(row.get('can_grant_admin') or 0),
-                        'is_approved': int(row.get('is_approved') or 0),
-                        'page_permissions': self._normalize_page_permissions(row.get('page_permissions')),
-                        'factory_scope_mode': 'custom' if factory_scope_ids else 'all',
-                        'factory_scope_ids': factory_scope_ids,
-                        'created_at': row.get('created_at')
-                    })
+                items = [self._serialize_employee_list_item(row, scope_map) for row in rows]
                 return self.send_json({'status': 'success', 'items': items}, start_response)
 
             if method == 'POST':
@@ -541,11 +583,11 @@ class AuthEmployeeMixin:
                 job_title = (data.get('job_title') or '').strip() or None
                 direct_supervisor_id = None
                 if 'direct_supervisor_id' in data:
-                    raw_supervisor = data.get('direct_supervisor_id')
-                    if raw_supervisor not in (None, '', 0, '0'):
-                        direct_supervisor_id = self._parse_int(raw_supervisor)
-                        if not direct_supervisor_id or direct_supervisor_id <= 0:
-                            return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
+                    direct_supervisor_id, sup_err = self._parse_optional_supervisor_id(
+                        data.get('direct_supervisor_id')
+                    )
+                    if sup_err:
+                        return self.send_json({'status': 'error', 'message': sup_err}, start_response)
                 target_is_admin = 1 if data.get('is_admin') else 0
                 target_can_grant_admin = 1 if data.get('can_grant_admin') else 0
                 if target_is_admin and not self._can_manage_admin_permission(actor_record):
@@ -658,15 +700,11 @@ class AuthEmployeeMixin:
                 if has_direct_supervisor_payload:
                     if not user_is_admin:
                         return self.send_json({'status': 'error', 'message': '仅管理员可修改直属上级'}, start_response)
-                    raw_supervisor = data.get('direct_supervisor_id')
-                    if raw_supervisor in (None, '', 0, '0'):
-                        supervisor_id_to_set = None
-                    else:
-                        supervisor_id_to_set = self._parse_int(raw_supervisor)
-                        if not supervisor_id_to_set or supervisor_id_to_set <= 0:
-                            return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
-                        if int(supervisor_id_to_set) == int(item_id):
-                            return self.send_json({'status': 'error', 'message': '不能将自己设为直属上级'}, start_response)
+                    supervisor_id_to_set, sup_err = self._parse_optional_supervisor_id(
+                        data.get('direct_supervisor_id'), self_id=item_id
+                    )
+                    if sup_err:
+                        return self.send_json({'status': 'error', 'message': sup_err}, start_response)
 
                 if 'page_permissions' in data:
                     if not user_is_admin:

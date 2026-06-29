@@ -1,3 +1,6 @@
+/**
+ * 系统设置：钉钉群聊 CRUD 与通知功能绑定管理。
+ */
 (function () {
     'use strict';
 
@@ -5,6 +8,10 @@
     let bindingRows = [];
     let groupOptions = [];
     let editingGroupId = null;
+
+    // -------------------------------------------------------------------------
+    // 通用 UI
+    // -------------------------------------------------------------------------
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -54,6 +61,10 @@
         return resp.json();
     }
 
+    // -------------------------------------------------------------------------
+    // 群聊列表
+    // -------------------------------------------------------------------------
+
     function renderGroupTable() {
         const tbody = document.querySelector('#dtGroupTable tbody');
         if (!tbody) return;
@@ -89,6 +100,20 @@
                 return `<option value="${id}"${sel}${disabled}>${escapeHtml(g.group_name)}${suffix}</option>`;
             }));
         return opts.join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // 通知功能绑定
+    // -------------------------------------------------------------------------
+
+    function readBindingRowState(notifyKey) {
+        const row = document.querySelector(`tr[data-notify-key="${CSS.escape(notifyKey)}"]`);
+        if (!row) return null;
+        const enabledSeg = row.querySelector('.dt-binding-enabled-seg');
+        return {
+            groupId: Number(row.querySelector('.dt-binding-group-select')?.value || 0),
+            isEnabled: enabledSeg && enabledSeg.dataset.value === '1' ? 1 : 0,
+        };
     }
 
     function renderBindingTable() {
@@ -150,6 +175,10 @@
     async function reloadAll() {
         await Promise.all([loadGroups(), loadBindings()]);
     }
+
+    // -------------------------------------------------------------------------
+    // 群聊模态框
+    // -------------------------------------------------------------------------
 
     function openGroupModal(item) {
         editingGroupId = item && item.id ? Number(item.id) : null;
@@ -227,12 +256,9 @@
     }
 
     async function saveBinding(notifyKey) {
-        const row = document.querySelector(`tr[data-notify-key="${CSS.escape(notifyKey)}"]`);
-        if (!row) return;
-        const groupId = Number(row.querySelector('.dt-binding-group-select')?.value || 0);
-        const enabledSeg = row.querySelector('.dt-binding-enabled-seg');
-        const isEnabled = enabledSeg && enabledSeg.dataset.value === '1' ? 1 : 0;
-        if (!groupId) {
+        const state = readBindingRowState(notifyKey);
+        if (!state) return;
+        if (!state.groupId) {
             if (window.showAppToast) window.showAppToast('请选择钉钉群聊', true, 0);
             return;
         }
@@ -241,8 +267,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 notify_key: notifyKey,
-                dingtalk_group_id: groupId,
-                is_enabled: isEnabled,
+                dingtalk_group_id: state.groupId,
+                is_enabled: state.isEnabled,
             }),
         });
         if (data.status !== 'success') {
@@ -270,6 +296,10 @@
         if (window.showAppSaveResult) window.showAppSaveResult({ action: 'delete' });
         await loadBindings();
     }
+
+    // -------------------------------------------------------------------------
+    // 事件绑定与初始化
+    // -------------------------------------------------------------------------
 
     function bindEvents() {
         document.getElementById('dtGroupCreateBtn')?.addEventListener('click', () => openGroupModal(null));

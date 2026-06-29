@@ -1,4 +1,6 @@
-﻿import os
+﻿# -*- coding: utf-8 -*-
+"""资源文件与图库 API：浏览、预览、上传、重命名、移动、打包下载。"""
+import os
 import io
 import cgi
 import json
@@ -145,6 +147,12 @@ RESOURCES_PATH = os.fsdecode(RESOURCES_PATH_BYTES)
 
 
 class FileManagementMixin:
+    """NAS 资源目录下的图片图库与文件操作 HTTP 处理器。"""
+
+    # -------------------------------------------------------------------------
+    # 图库列表 / 目录浏览
+    # -------------------------------------------------------------------------
+
     def handle_images_api(self, environ, start_response):
         """获取图片列表（用Base64编码路径避免编码问题）"""
         images = []
@@ -237,6 +245,10 @@ class FileManagementMixin:
                 'message': f'Error: {type(e).__name__}'
             }, start_response)
     
+
+    # -------------------------------------------------------------------------
+    # 目录浏览（按路径）
+    # -------------------------------------------------------------------------
 
     def handle_browse_api(self, environ, start_response):
         """浏览目录API：返回指定目录下的文件夹和图片"""
@@ -370,6 +382,10 @@ class FileManagementMixin:
             traceback.print_exc()
             return self.send_json({'status': 'error', 'message': f'Error: {type(e).__name__}'}, start_response)
     
+
+    # -------------------------------------------------------------------------
+    # 图片预览（缩略图 / 原图）
+    # -------------------------------------------------------------------------
 
     def handle_image_preview(self, environ, start_response):
         """获取图片预览（接受Base64编码的路径）"""
@@ -524,6 +540,10 @@ class FileManagementMixin:
         return True, '', new_fn
 
     
+
+    # -------------------------------------------------------------------------
+    # 重命名 / 移动 / 替换
+    # -------------------------------------------------------------------------
 
     def handle_rename_api(self, environ, start_response):
         """处理文件重命名（接受Base64编码路径）"""
@@ -806,6 +826,10 @@ class FileManagementMixin:
             print("Replace error: " + str(e))
             return self.send_error(500, str(e), start_response)
 
+
+    # -------------------------------------------------------------------------
+    # 上传 / 打包下载
+    # -------------------------------------------------------------------------
 
     def handle_upload_api(self, environ, start_response):
         """处理图片上传（multipart/form-data）"""
@@ -1102,6 +1126,10 @@ class FileManagementMixin:
                 'total_entries': int(total_tree_entries),
             },
         }
+
+    # -------------------------------------------------------------------------
+    # 图库批量删除 / 重复检测
+    # -------------------------------------------------------------------------
 
     def handle_gallery_batch_delete_api(self, environ, start_response):
         """gallery 批量删除：把选中项移动到『上架资源』/回收站（与产品图删除一致）。"""

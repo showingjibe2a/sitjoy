@@ -1192,6 +1192,7 @@
     </div>
 
     <script>
+        /* 销售产品管理：列表内联编辑、模态框 CRUD、主图、NAS 导入、父体分组、平台库存导出 */
         let editId = null;
         let shopOptions = [];
         let skuFamilyOptions = [];
@@ -1274,6 +1275,7 @@
         const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.nasMainImage.actionMode.v1';
         const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.nasMainImage.thumbSize.v1';
 
+        /** NAS 主图浏览：路径记忆、面包屑、缩略图尺寸 */
         function persistNasMainImageBrowseLocation() {
             try {
                 if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.persistNasBrowseLocationState === 'function') {
@@ -1304,6 +1306,7 @@
             return Number.isFinite(num) ? num : null;
         }
 
+        /** 列表内联预览编辑：草稿字段、统一保存栏 */
         function normalizeSalesPreviewFieldValue(field, rawValue) {
             if (field === 'child_code' || field === 'gtin' || field === 'upc' || field === 'notes' || field === 'product_link') {
                 return String(rawValue == null ? '' : rawValue).trim();
@@ -2109,6 +2112,7 @@
             }
         }
 
+        /** 父体分组：聚合行、组内编辑、父体信息弹窗 */
         function salesParentGroupMetaOf(item) {
             const code = String(item && item.parent_code || '').trim();
             const shop = String(item && item.shop_name || '').trim();
@@ -2319,6 +2323,7 @@
             return `${bits.join(' ｜ ')}（${n}）`;
         }
 
+        /** 促销/折扣与经济测算（Amazon 佣金、折后价） */
         function salesEstFurnitureCommissionUsd(salePriceUsd) {
             const s = Math.max(0, Number(salePriceUsd) || 0);
             if (s <= 0) return 0;
@@ -2847,6 +2852,7 @@
             return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttr(src)}" aria-hidden="true"></span>`;
         }
 
+        /** 列表行渲染：子体编号、链接、分组表格 */
         function sjSalesListThumbEmptyHtml() {
             return '<span class="sj-table-thumb-empty">暂无</span>';
         }
@@ -3537,6 +3543,7 @@
 
         let salesMainImageGrid = null;
 
+        /** 编辑模态框：主图网格、上传、类型筛选 */
         function ensureSalesMainImageGrid() {
             if (salesMainImageGrid) return salesMainImageGrid;
             if (!window.SitjoyMainImageGrid) return null;
@@ -3784,6 +3791,28 @@
             }
         }
 
+        function buildMainImageUploadFormData(files) {
+            const formData = new FormData();
+            formData.append('sales_product_id', String(editId));
+            formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
+            Array.from(files).forEach(file => formData.append('file', file));
+            return formData;
+        }
+
+        async function parseMainImageUploadJsonResponse(r, label) {
+            if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status <= 399)) {
+                return {
+                    status: 'error',
+                    message: `${label}被重定向（HTTP ${r.status}）。请检查 nginx 是否把该 API 301/302 到了另一个 URL；这类重定向可能导致 POST 被降级为 GET，从而无法携带文件。Location: ${r.headers.get('Location') || ''}`.trim()
+                };
+            }
+            if (!r.ok) {
+                const data = await parseJsonResponseSafe(r, label);
+                return Object.assign({ status: 'error' }, data || {}, { http_status: r.status });
+            }
+            return parseJsonResponseSafe(r, label);
+        }
+
         function triggerMainImageUpload() {
             if (!editId) {
                 showModalStatus('请先保存当前子体，再上传主图', true);
@@ -3799,10 +3828,7 @@
 
         function preflightMainImageUpload(files) {
             if (!editId || !files || !files.length) return Promise.resolve({ duplicate_count: 0, duplicates: [] });
-            const formData = new FormData();
-            formData.append('sales_product_id', String(editId));
-            formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
-            Array.from(files).forEach(file => formData.append('file', file));
+            const formData = buildMainImageUploadFormData(files);
             const imageType = normalizeMainImageTypeName(selectedMainImageType);
             const qs = new URLSearchParams();
             qs.set('check_only', '1');
@@ -3812,29 +3838,12 @@
                 method: 'POST',
                 body: formData,
                 redirect: 'manual'
-            }).then(async (r) => {
-                if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status <= 399)) {
-                    return {
-                        status: 'error',
-                        message: `上传预检被重定向（HTTP ${r.status}）。请检查 nginx 是否把该 API 301/302 到了另一个 URL；这类重定向可能导致 POST 被降级为 GET，从而无法携带文件。Location: ${r.headers.get('Location') || ''}`.trim()
-                    };
-                }
-                if (!r.ok) {
-                    const data = await parseJsonResponseSafe(r, '上传预检');
-                    return Object.assign({ status: 'error' }, data || {}, { http_status: r.status });
-                }
-                return parseJsonResponseSafe(r, '上传预检');
-            });
+            }).then((r) => parseMainImageUploadJsonResponse(r, '上传预检'));
         }
 
         function uploadMainImages(files, allowDuplicate = false) {
             if (!editId || !files || !files.length) return;
-            const formData = new FormData();
-            formData.append('sales_product_id', String(editId));
-            formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
-            Array.from(files).forEach(file => {
-                formData.append('file', file);
-            });
+            const formData = buildMainImageUploadFormData(files);
             const imageType = normalizeMainImageTypeName(selectedMainImageType);
             const qs = new URLSearchParams();
             qs.set('sales_product_id', String(editId));
@@ -3845,19 +3854,7 @@
                 method: 'POST',
                 body: formData,
                 redirect: 'manual'
-            }).then(async (r) => {
-                if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status <= 399)) {
-                    return {
-                        status: 'error',
-                        message: `上传被重定向（HTTP ${r.status}）。请检查 nginx 是否把该 API 301/302 到了另一个 URL；这类重定向可能导致 POST 被降级为 GET，从而无法携带文件。Location: ${r.headers.get('Location') || ''}`.trim()
-                    };
-                }
-                if (!r.ok) {
-                    const data = await parseJsonResponseSafe(r, '主图上传');
-                    return Object.assign({ status: 'error' }, data || {}, { http_status: r.status });
-                }
-                return parseJsonResponseSafe(r, '主图上传');
-            }).then(data => {
+            }).then((r) => parseMainImageUploadJsonResponse(r, '主图上传')).then(data => {
                 if (data.status === 'duplicate') {
                     const names = (data.duplicates || []).map(x => x.filename).join('、');
                     showUploadDialog({
@@ -4569,6 +4566,7 @@
             }
         }
 
+        /** NAS 主图导入弹窗：浏览 NAS 目录、批量选中导入 */
         function showNasMainImageStatus(message, isError) {
             const el = document.getElementById('nasMainImageStatus');
             if (!el) return;
@@ -5591,6 +5589,7 @@
             currentEditingMainImageName = '';
         }
 
+        /** 编辑模态框：保存/新建销售子体 */
         function saveSalesProductFromModal() {
             const normalizedLinks = selectedOrderSkus
                 .map(x => ({ order_product_id: Number(x.order_product_id) || null, quantity: Math.max(1, Number(x.quantity) || 1) }))
@@ -5901,6 +5900,7 @@
             });
         }
 
+        /** 列表加载与详情缓存 */
         function loadSalesProductList() {
             const q = document.getElementById('searchInput').value.trim();
             // Performance: list view doesn't need order_sku_links payload; fetch links only in detail API calls.
@@ -6352,6 +6352,7 @@
             }
         }
 
+        /** 页面初始化：选项数据、表格、平台库存导出入口 */
         function initPage() {
             if (!pageDomReady()) return;
             bindPageEvents();

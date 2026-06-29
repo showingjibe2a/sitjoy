@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """访问与操作审计日志：页面访问、数据库相关 API 写操作；可授权管理员可查询与清理。"""
 
 import json
@@ -60,6 +61,8 @@ _AUDIT_COMMON_FIELD_LABELS = {
     'reminder_interval_days': '提醒间隔(天)',
 }
 
+_AUDIT_MIGRATION_HINT = '审计表未初始化，请先执行 scripts/sql/20260522_01_audit_logs.sql'
+
 
 class AuditLogMixin:
     """审计日志写入与超级管理员查询 API。"""
@@ -113,11 +116,18 @@ class AuditLogMixin:
             return str(column_name).lower() in message
         return True
 
+    def _audit_table_missing_json_response(self, start_response):
+        return self.send_json({'status': 'error', 'message': _AUDIT_MIGRATION_HINT}, start_response)
+
     def _audit_page_label(self, page_key, page_path):
         labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
         if page_key and labels.get(page_key):
             return labels[page_key]
         return page_path or page_key or ''
+
+    # -------------------------------------------------------------------------
+    # 写入：页面访问 / API 写操作（异步 INSERT）
+    # -------------------------------------------------------------------------
 
     def _audit_try_log_page_access(self, environ, user_id, page_path, page_key=None):
         if not user_id:
@@ -468,6 +478,10 @@ class AuditLogMixin:
 
         threading.Thread(target=_insert, daemon=True).start()
 
+    # -------------------------------------------------------------------------
+    # 管理端 API：分页查询与按保留天数清理
+    # -------------------------------------------------------------------------
+
     def handle_audit_log_api(self, environ, method, start_response):
         try:
             user_id = self._get_session_user(environ)
@@ -614,9 +628,6 @@ class AuditLogMixin:
             }, start_response)
         except Exception as e:
             if self._audit_is_missing_table_error(e):
-                return self.send_json({
-                    'status': 'error',
-                    'message': '审计表未初始化，请先执行 scripts/sql/20260522_01_audit_logs.sql',
-                }, start_response)
+                return self._audit_table_missing_json_response(start_response)
             print('Audit log API error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

@@ -9,6 +9,10 @@ import json
 class UtilityMixin:
     """工具/仪表盘 API 处理器"""
 
+    # -------------------------------------------------------------------------
+    # 待办：日期解析
+    # -------------------------------------------------------------------------
+
     def _todo_parse_date(self, value):
         if value is None:
             return None
@@ -67,6 +71,10 @@ class UtilityMixin:
             return (dt + timedelta(days=step)).strftime('%Y-%m-%d')
         except Exception:
             return None
+
+    # -------------------------------------------------------------------------
+    # 待办：循环复位与日历有效日期
+    # -------------------------------------------------------------------------
 
     def _todo_apply_recurring_resets(self, conn, assignee_id, todo_type_id=None):
         """循环任务自动复位：
@@ -132,6 +140,10 @@ class UtilityMixin:
         if isinstance(due_date, datetime):
             return due_date.strftime('%Y-%m-%d')
         return str(due_date or '')[:10] if due_date else None
+
+    # -------------------------------------------------------------------------
+    # 待办类型 API
+    # -------------------------------------------------------------------------
 
     def handle_todo_type_api(self, environ, method, start_response):
         """待办类型管理 API（CRUD）"""
@@ -283,6 +295,10 @@ class UtilityMixin:
                 "INSERT INTO todo_platform_type_links (todo_id, platform_type_id) VALUES (%s, %s)",
                 [(todo_id, pt_id) for pt_id in new_pt_ids],
             )
+
+    # -------------------------------------------------------------------------
+    # 待办：关联销售产品 / SKU 家族 / 平台类型
+    # -------------------------------------------------------------------------
 
     @staticmethod
     def _todo_link_details_empty():
@@ -448,6 +464,10 @@ class UtilityMixin:
             r.update(details)
             r['assignees'] = ass_map.get(tid, [])
 
+    # -------------------------------------------------------------------------
+    # 待办：列表与单条查询
+    # -------------------------------------------------------------------------
+
     def _todo_list_rows(
         self,
         conn,
@@ -564,6 +584,10 @@ class UtilityMixin:
                 self._todo_attach_links_to_rows(cur, rows)
             row['effective_date'] = self._todo_effective_calendar_date(row)
             return row
+
+    # -------------------------------------------------------------------------
+    # 待办事项 API
+    # -------------------------------------------------------------------------
 
     def handle_todo_api(self, environ, method, start_response):
         """待办事项 API（CRUD）"""
@@ -913,6 +937,10 @@ class UtilityMixin:
         except Exception as e:
             print(f'Todo API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 日历 / Feature 推荐 API
+    # -------------------------------------------------------------------------
 
     def handle_calendar_api(self, environ, method, start_response):
         """日历数据 API（按月汇总待办）"""
