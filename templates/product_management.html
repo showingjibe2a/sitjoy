@@ -72,6 +72,7 @@
                         <tr>
                             <th>货号（父体）</th>
                             <th>品类</th>
+                            <th>佣金大类</th>
                             <th style="width:90px;">在市状态</th>
                             <th>关联面料</th>
                             <th style="width:160px;">创建时间</th>
@@ -79,7 +80,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -97,6 +98,10 @@
                 <div class="form-group">
                     <label for="modalCategorySelect">品类<span class="required-asterisk">*</span></label>
                     <select id="modalCategorySelect" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label for="modalCommissionGroupSelect">佣金大类<span class="required-asterisk">*</span></label>
+                    <select id="modalCommissionGroupSelect" class="required-field"></select>
                 </div>
                 <div class="form-group">
                     <label>在市状态</label>
@@ -165,6 +170,8 @@
         let categoryEditId = null;
         let categoryOptions = [];
         let fabricOptions = [];
+        let commissionGroupOptions = [];
+        const COMMISSION_GROUP_DEFAULT = '家具';
         let selectedFabricIds = [];
 
         function showModalStatus(message, isError) {
@@ -228,6 +235,7 @@
             document.getElementById('pm-modal-title').innerText = '新增货号';
             document.getElementById('modalSkuInput').value = '';
             setCategorySelect('');
+            setCommissionGroupSelect(COMMISSION_GROUP_DEFAULT);
             setFabricSelect([]);
             setModalSkuMarketValue(1);
             document.getElementById('modalSaveBtn').innerText = '保存';
@@ -241,6 +249,7 @@
             document.getElementById('pm-modal-title').innerText = '编辑货号';
             document.getElementById('modalSkuInput').value = item.sku_family;
             setCategorySelect(item.category);
+            setCommissionGroupSelect(item.commission_group || COMMISSION_GROUP_DEFAULT);
             setFabricSelect(item.fabric_ids || []);
             setModalSkuMarketValue(item.is_on_market);
             document.getElementById('modalSaveBtn').innerText = '保存';
@@ -257,14 +266,16 @@
         async function saveSkuFromModal() {
             const skuFamily = document.getElementById('modalSkuInput').value.trim();
             const category = document.getElementById('modalCategorySelect').value.trim();
-            if (!skuFamily || !category) {
-                showModalStatus('请填写货号与品类', true);
+            const commissionGroup = document.getElementById('modalCommissionGroupSelect').value.trim();
+            if (!skuFamily || !category || !commissionGroup) {
+                showModalStatus('请填写货号、品类与佣金大类', true);
                 return;
             }
 
             const payload = {
                 sku_family: skuFamily,
                 category: category,
+                commission_group: commissionGroup,
                 fabric_ids: selectedFabricIds.slice(),
                 is_on_market: getModalSkuMarketValue(),
             };
@@ -346,12 +357,12 @@
                 .then(data => {
                     const tbody = document.querySelector('#skuTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
                         return;
                     }
                     tbody.innerHTML = items.map(item => {
@@ -362,6 +373,7 @@
                             <tr>
                                 <td>${item.sku_family}</td>
                                 <td>${item.category}</td>
+                                <td>${item.commission_group || COMMISSION_GROUP_DEFAULT}</td>
                                 <td>${marketText}</td>
                                 <td>${item.fabric_codes || '-'}</td>
                                 <td>${dateText}</td>
@@ -377,7 +389,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#skuTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -496,6 +508,57 @@
                     showModalStatus('已自动加入新建面料', false);
                 }
             });
+        }
+
+        function renderCommissionGroupSelect(selectedValue) {
+            const select = document.getElementById('modalCommissionGroupSelect');
+            if (!select) return;
+            const options = (commissionGroupOptions || []).slice();
+            select.innerHTML = '';
+            if (!options.length) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = '暂无佣金大类，请先维护佣金规则';
+                select.appendChild(placeholder);
+                return;
+            }
+            options.forEach((grp) => {
+                const option = document.createElement('option');
+                option.value = grp;
+                option.textContent = grp;
+                if (selectedValue && selectedValue === grp) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            if (!selectedValue && options.includes(COMMISSION_GROUP_DEFAULT)) {
+                select.value = COMMISSION_GROUP_DEFAULT;
+            } else if (!selectedValue && options.length) {
+                select.value = options[0];
+            }
+        }
+
+        function setCommissionGroupSelect(value) {
+            renderCommissionGroupSelect(value || COMMISSION_GROUP_DEFAULT);
+        }
+
+        function loadCommissionGroups() {
+            return fetch('/api/commission-rules')
+                .then(r => r.json())
+                .then(data => {
+                    const groups = (data && data.commission_groups) || [];
+                    commissionGroupOptions = Array.isArray(groups)
+                        ? groups.map(g => String(g || '').trim()).filter(Boolean)
+                        : [];
+                    if (!commissionGroupOptions.length) {
+                        commissionGroupOptions = [COMMISSION_GROUP_DEFAULT];
+                    }
+                    renderCommissionGroupSelect(document.getElementById('modalCommissionGroupSelect')?.value || '');
+                })
+                .catch(() => {
+                    commissionGroupOptions = [COMMISSION_GROUP_DEFAULT];
+                    renderCommissionGroupSelect('');
+                });
         }
 
         function loadCategories() {
@@ -635,6 +698,7 @@
 
         window.addEventListener('load', loadSkuList);
         window.addEventListener('load', loadCategories);
+        window.addEventListener('load', loadCommissionGroups);
         window.addEventListener('load', loadFabrics);
         window.addEventListener('load', bindModalSkuMarketSegment);
 

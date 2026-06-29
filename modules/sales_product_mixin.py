@@ -5283,7 +5283,7 @@ class SalesProductMixin:
                                 s.shop_name,
                                 s.platform_type_id,
                                 pt.name AS platform_type_name,
-                                TRIM(COALESCE(pf.category, '')) AS product_category,
+                                TRIM(COALESCE(pf.commission_group, '')) AS commission_group,
                                 b.name AS brand_name,
                                 {handles_last_mile_select},
                                 p.parent_code,
@@ -12316,7 +12316,7 @@ class SalesProductMixin:
                     "v.spec_name",
                     "v.sku_family_id",
                     "pf.sku_family",
-                    "TRIM(COALESCE(pf.category, '')) AS product_category",
+                    "TRIM(COALESCE(pf.commission_group, '')) AS commission_group",
                     "sh.platform_type_id AS platform_type_id",
                     "MIN(DATE(spp.record_date)) AS min_date",
                     "MAX(DATE(spp.record_date)) AS max_date",
@@ -12376,7 +12376,7 @@ class SalesProductMixin:
                 if platform_type_ids:
                     sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                     params.extend(platform_type_ids)
-                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.category, sh.platform_type_id')
+                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.commission_group, sh.platform_type_id')
                 sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
 
                 with conn.cursor() as cur:
@@ -12385,11 +12385,11 @@ class SalesProductMixin:
 
                 def _perf_group_item_commission_extras(row, bom_u, lm_u):
                     pt_id = self._parse_int(row.get('platform_type_id'))
-                    cat = str(row.get('product_category') or '').strip()
+                    grp = str(row.get('commission_group') or '').strip()
                     net = float(row.get('net_sales_amount') or 0)
                     if comm_rules_cache.get('ready'):
                         comm_result = self._commission_compute_for_context(
-                            comm_rules_cache, pt_id, cat, net, mode='period',
+                            comm_rules_cache, pt_id, grp, net, mode='period',
                         )
                     else:
                         comm_result = {
@@ -12423,7 +12423,7 @@ class SalesProductMixin:
                         'platform_sku': sku,
                         'fabric': row.get('fabric') or '',
                         'spec_name': row.get('spec_name') or '',
-                        'product_category': str(row.get('product_category') or '').strip(),
+                        'commission_group': str(row.get('commission_group') or '').strip(),
                         'platform_type_id': self._parse_int(row.get('platform_type_id')),
                         'min_date': str(row.get('min_date') or ''),
                         'max_date': str(row.get('max_date') or ''),
@@ -12480,7 +12480,7 @@ class SalesProductMixin:
                                 "v.spec_name",
                                 "v.sku_family_id",
                                 "pf.sku_family",
-                                "TRIM(COALESCE(pf.category, '')) AS product_category",
+                                "TRIM(COALESCE(pf.commission_group, '')) AS commission_group",
                                 "sh.platform_type_id AS platform_type_id",
                                 "MIN(DATE(spp.record_date)) AS min_date",
                                 "MAX(DATE(spp.record_date)) AS max_date",
@@ -12539,7 +12539,7 @@ class SalesProductMixin:
                             if platform_type_ids:
                                 local_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                                 local_params.extend(platform_type_ids)
-                            local_sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.category, sh.platform_type_id')
+                            local_sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family, pf.commission_group, sh.platform_type_id')
                             local_sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
                             with conn.cursor() as cur2:
                                 cur2.execute(''.join(local_sql), tuple(local_params))
@@ -12564,7 +12564,7 @@ class SalesProductMixin:
                                     'platform_sku': sku,
                                     'fabric': r.get('fabric') or '',
                                     'spec_name': r.get('spec_name') or '',
-                                    'product_category': str(r.get('product_category') or '').strip(),
+                                    'commission_group': str(r.get('commission_group') or '').strip(),
                                     'platform_type_id': self._parse_int(r.get('platform_type_id')),
                                     'min_date': str(r.get('min_date') or ''),
                                     'max_date': str(r.get('max_date') or ''),

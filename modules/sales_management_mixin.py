@@ -2382,9 +2382,9 @@ class SalesManagementMixin:
         )
 
     def _forecast_finalize_history_perf_payload(
-        self, raw, *, platform_type_id=None, product_category=None, rules_cache=None, conn=None,
+        self, raw, *, platform_type_id=None, commission_group=None, rules_cache=None, conn=None,
     ):
-        """将 sales_perf_agg_month 一行规范为看板货号分组内层 SKU 行指标；佣金按平台+细分类目规则计算。"""
+        """将 sales_perf_agg_month 一行规范为看板货号分组内层 SKU 行指标；佣金按平台+货号 commission_group 计算。"""
         net = float(raw.get('net_sales_amount') or 0)
         gross = float(raw.get('gross_sales_amount') or 0)
         ref = float(raw.get('refund_amount') or 0)
@@ -2396,10 +2396,10 @@ class SalesManagementMixin:
         refund_rate = round(ref / net, 6) if net > 1e-12 else 0.0
 
         comm_result = None
-        if conn is not None and platform_type_id and product_category:
+        if conn is not None and platform_type_id and commission_group:
             cache = rules_cache if rules_cache is not None else self._commission_load_rules_cache(conn)
             comm_result = self._commission_compute_for_context(
-                cache, platform_type_id, product_category, net, mode='period',
+                cache, platform_type_id, commission_group, net, mode='period',
             )
         elif conn is not None and rules_cache is not None:
             comm_result = {
@@ -2573,7 +2573,7 @@ class SalesManagementMixin:
                 out[(spid, month_str)] = self._forecast_finalize_history_perf_payload(
                     dict(row),
                     platform_type_id=ctx.get('platform_type_id'),
-                    product_category=ctx.get('product_category'),
+                    commission_group=ctx.get('commission_group'),
                     rules_cache=rules_cache,
                     conn=conn,
                 )

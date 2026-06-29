@@ -1,12 +1,12 @@
 /**
- * 销售佣金：平台 × 细分类目映射 → 佣金大类 → 计算规则（与后端 CommissionCalcMixin 一致）。
- * 未配置映射或规则时返回 commission_status=unavailable。
+ * 销售佣金：平台 × 货号 commission_group → 计算规则（与后端 CommissionCalcMixin 一致）。
+ * 未配置规则时返回 commission_status=unavailable。
  */
 (function (global) {
     'use strict';
 
     const UNAVAILABLE_LABEL = '无法计算';
-    let cache = { ready: false, mappings: {}, rules: {} };
+    let cache = { ready: false, rules: {}, commission_groups: [] };
     let loadPromise = null;
 
     function parseIntId(v) {
@@ -15,28 +15,28 @@
     }
 
     function buildCacheFromApi(payload) {
-        const mappings = {};
         const rules = {};
+        const commissionGroups = [];
         if (!payload || payload.ready !== true) {
-            return { ready: false, mappings, rules };
+            return { ready: false, rules, commission_groups: commissionGroups };
         }
-        (payload.mappings || []).forEach((row) => {
-            const pt = parseIntId(row.platform_type_id);
-            const cat = String(row.product_category || '').trim();
-            const grp = String(row.commission_group || '').trim();
-            if (pt && cat && grp) mappings[`${pt}:${cat}`] = grp;
+        (payload.commission_groups || []).forEach((grp) => {
+            const g = String(grp || '').trim();
+            if (g && !commissionGroups.includes(g)) commissionGroups.push(g);
         });
         (payload.rules || []).forEach((row) => {
             const pt = parseIntId(row.platform_type_id);
             const grp = String(row.commission_group || '').trim();
             if (!pt || !grp) return;
+            if (!commissionGroups.includes(grp)) commissionGroups.push(grp);
             rules[`${pt}:${grp}`] = {
                 calc_method: String(row.calc_method || '').trim().toLowerCase(),
                 params_json: row.params_json && typeof row.params_json === 'object' ? row.params_json : {},
                 commission_group: grp,
             };
         });
-        return { ready: true, mappings, rules };
+        commissionGroups.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+        return { ready: true, rules, commission_groups: commissionGroups };
     }
 
     function loadCommissionRules(force) {
@@ -49,25 +49,13 @@
                 return cache;
             })
             .catch(() => {
-                cache = { ready: false, mappings: {}, rules: {} };
+                cache = { ready: false, rules: {}, commission_groups: [] };
                 return cache;
             })
             .finally(() => {
                 loadPromise = null;
             });
         return loadPromise;
-    }
-
-    function resolveGroup(platformTypeId, productCategory) {
-        const pt = parseIntId(platformTypeId);
-        if (!pt) return { group: null, error: '缺少平台类型' };
-        const cat = String(productCategory || '').trim();
-        if (!cat) return { group: null, error: '缺少货号细分类目' };
-        if (!cache.ready) return { group: null, error: '佣金规则表未就绪' };
-        let grp = cache.mappings[`${pt}:${cat}`];
-        if (!grp) grp = cache.mappings[`${pt}:*`];
-        if (!grp) return { group: null, error: `未维护类目映射（${cat}）` };
-        return { group: grp, error: null };
     }
 
     function parseTiers(params) {
@@ -130,24 +118,42 @@
         return null;
     }
 
-    function computeForContext(platformTypeId, productCategory, amount, mode) {
-        const resolved = resolveGroup(platformTypeId, productCategory);
-        if (!resolved.group) {
+    function computeForContext(platformTypeId, commissionGroup, amount, mode) {
+        const grp = String(commissionGroup || '').trim();
+        if (!grp) {
             return {
                 commission_status: 'unavailable',
-                commission_message: resolved.error || UNAVAILABLE_LABEL,
+                commission_message: '缺少货号佣金大类',
                 commission_group: null,
                 est_referral_commission_usd: null,
                 commission_rate: null,
             };
         }
         const pt = parseIntId(platformTypeId);
-        const rule = cache.rules[`${pt}:${resolved.group}`];
+        if (!pt) {
+            return {
+                commission_status: 'unavailable',
+                commission_message: '缺少平台类型',
+                commission_group: grp,
+                est_referral_commission_usd: null,
+                commission_rate: null,
+            };
+        }
+        if (!cache.ready) {
+            return {
+                commission_status: 'unavailable',
+                commission_message: '佣金规则表未就绪',
+                commission_group: grp,
+                est_referral_commission_usd: null,
+                commission_rate: null,
+            };
+        }
+        const rule = cache.rules[`${pt}:${grp}`];
         if (!rule) {
             return {
                 commission_status: 'unavailable',
-                commission_message: `未维护佣金规则（${resolved.group}）`,
-                commission_group: resolved.group,
+                commission_message: `未维护佣金规则（${grp}）`,
+                commission_group: grp,
                 est_referral_commission_usd: null,
                 commission_rate: null,
             };
@@ -157,7 +163,7 @@
             return {
                 commission_status: 'unavailable',
                 commission_message: UNAVAILABLE_LABEL,
-                commission_group: resolved.group,
+                commission_group: grp,
                 est_referral_commission_usd: null,
                 commission_rate: null,
             };
@@ -167,7 +173,7 @@
         return {
             commission_status: 'ok',
             commission_message: null,
-            commission_group: resolved.group,
+            commission_group: grp,
             est_referral_commission_usd: comm,
             commission_rate: rate,
         };
@@ -181,6 +187,7 @@
         UNAVAILABLE_LABEL,
         loadCommissionRules,
         getCache: () => cache,
+        getCommissionGroups: () => (cache.commission_groups || []).slice(),
         computeForContext,
         isCommissionOk,
     };

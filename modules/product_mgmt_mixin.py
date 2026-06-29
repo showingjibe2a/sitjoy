@@ -93,7 +93,7 @@ class ProductManagementMixin:
                 # 简要列表：仅货号基础字段，供下拉/联想
                 if brief:
                     select_sql = """
-                        SELECT id, sku_family, category, is_on_market, created_at
+                        SELECT id, sku_family, category, commission_group, is_on_market, created_at
                         FROM product_families pf
                     """
                     if keyword:
@@ -118,7 +118,7 @@ class ProductManagementMixin:
                         return self.send_json({'status': 'success', 'items': cached.get('items')}, start_response)
 
                 base_sql = f"""
-                    SELECT pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at,
+                    SELECT pf.id, pf.sku_family, pf.category, pf.commission_group, pf.is_on_market, pf.created_at,
                         GROUP_CONCAT(DISTINCT fm.id ORDER BY fm.id SEPARATOR ',') AS fabric_ids,
                         GROUP_CONCAT(DISTINCT fm.fabric_code ORDER BY fm.fabric_code SEPARATOR ' / ') AS fabric_codes
                     FROM product_families pf
@@ -132,7 +132,7 @@ class ProductManagementMixin:
                     where_sql = f" WHERE 1=1{market_clause}"
                     params = list(market_params)
                 group_order = """
-                    GROUP BY pf.id, pf.sku_family, pf.category, pf.is_on_market, pf.created_at
+                    GROUP BY pf.id, pf.sku_family, pf.category, pf.commission_group, pf.is_on_market, pf.created_at
                     ORDER BY pf.id DESC
                 """
                 with self._get_db_connection() as conn:
@@ -148,15 +148,23 @@ class ProductManagementMixin:
                 data = self._read_json_body(environ)
                 sku_family = (data.get('sku_family') or '').strip()
                 category = (data.get('category') or '').strip()
+                commission_group = (data.get('commission_group') or self.COMMISSION_GROUP_DEFAULT).strip()
                 is_on_market = 1 if self._parse_int(data.get('is_on_market')) != 0 else 0
                 fabric_ids = [v for v in (self._parse_int(x) for x in (data.get('fabric_ids') or [])) if v]
                 if not sku_family or not category:
                     return self.send_json({'status': 'error', 'message': 'Missing sku_family or category'}, start_response)
                 with self._get_db_connection() as conn:
+                    ok, commission_group_or_msg = self._commission_validate_group(conn, commission_group)
+                    if not ok:
+                        return self.send_json({'status': 'error', 'message': commission_group_or_msg}, start_response)
+                    commission_group = commission_group_or_msg
                     with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO product_families (sku_family, category, is_on_market) VALUES (%s, %s, %s)",
-                            (sku_family, category, is_on_market),
+                            """
+                            INSERT INTO product_families (sku_family, category, commission_group, is_on_market)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (sku_family, category, commission_group, is_on_market),
                         )
                         new_id = cur.lastrowid
                     self._replace_sku_family_fabric_ids(conn, new_id, fabric_ids)
@@ -169,12 +177,17 @@ class ProductManagementMixin:
                 item_id = data.get('id')
                 sku_family = (data.get('sku_family') or '').strip()
                 category = (data.get('category') or '').strip()
+                commission_group = (data.get('commission_group') or '').strip()
                 is_on_market = 1 if self._parse_int(data.get('is_on_market')) != 0 else 0
                 fabric_ids = [v for v in (self._parse_int(x) for x in (data.get('fabric_ids') or [])) if v]
-                if not item_id or not sku_family or not category:
+                if not item_id or not sku_family or not category or not commission_group:
                     return self.send_json({'status': 'error', 'message': 'Missing id or fields'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    ok, commission_group_or_msg = self._commission_validate_group(conn, commission_group)
+                    if not ok:
+                        return self.send_json({'status': 'error', 'message': commission_group_or_msg}, start_response)
+                    commission_group = commission_group_or_msg
                     with conn.cursor() as cur:
                         cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (item_id,))
                         row = cur.fetchone()
@@ -194,10 +207,10 @@ class ProductManagementMixin:
                             cur.execute(
                                 """
                                 UPDATE product_families
-                                SET sku_family=%s, category=%s, is_on_market=%s
+                                SET sku_family=%s, category=%s, commission_group=%s, is_on_market=%s
                                 WHERE id=%s
                                 """,
-                                (sku_family, category, is_on_market, item_id),
+                                (sku_family, category, commission_group, is_on_market, item_id),
                             )
                         self._replace_sku_family_fabric_ids(conn, item_id, fabric_ids)
                         db_updated = True

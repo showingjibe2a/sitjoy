@@ -2325,7 +2325,7 @@
 
         /** 促销/折扣与经济测算（平台佣金规则、折后价） */
 
-        /** 佣金：平台类型 + 货号细分类目 → sitjoy_commission.js 规则引擎 */
+        /** 佣金：平台类型 + 货号 commission_group → sitjoy_commission.js 规则引擎 */
         function salesResolvePlatformTypeId(item) {
             const direct = Number(item && item.platform_type_id);
             if (Number.isFinite(direct) && direct > 0) return direct;
@@ -2334,8 +2334,8 @@
             return Number.isFinite(fromShop) && fromShop > 0 ? fromShop : 0;
         }
 
-        function salesResolveProductCategory(item) {
-            return String((item && item.product_category) || '').trim();
+        function salesResolveCommissionGroup(item) {
+            return String((item && item.commission_group) || '').trim();
         }
 
         function salesComputeUnitCommission(item, netSalesUsd) {
@@ -2350,7 +2350,7 @@
             }
             return C.computeForContext(
                 salesResolvePlatformTypeId(item),
-                salesResolveProductCategory(item),
+                salesResolveCommissionGroup(item),
                 netSalesUsd,
                 'unit'
             );

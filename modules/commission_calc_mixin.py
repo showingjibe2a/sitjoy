@@ -1,44 +1,58 @@
 # -*- coding: utf-8 -*-
-"""销售佣金：平台 × 佣金大类规则 + 货号细分类目映射，统一 unit/period 计算。"""
+"""销售佣金：平台 × 佣金大类规则 + 货号 commission_group，统一 unit/period 计算。"""
 
 import json
 
 
 class CommissionCalcMixin:
-    """佣金规则解析与应用（无 priority：仅精确匹配或平台级 product_category='*'）。"""
+    """佣金规则解析与应用（货号 commission_group 直连规则，无 priority）。"""
 
     COMMISSION_UNAVAILABLE_LABEL = '无法计算'
+    COMMISSION_GROUP_DEFAULT = '家具'
 
     # -------------------------------------------------------------------------
     # 规则缓存与解析
     # -------------------------------------------------------------------------
 
     def _commission_rules_tables_ready(self, conn):
-        return (
-            self._table_exists_simple(conn, 'commission_calc_rules')
-            and self._table_exists_simple(conn, 'commission_product_category_mappings')
-        )
+        return self._table_exists_simple(conn, 'commission_calc_rules')
 
-    def _commission_load_rules_cache(self, conn):
-        """一次请求内复用：mappings (pt,细分类)→group；rules (pt,group)→rule。"""
-        empty = {'mappings': {}, 'rules': {}, 'ready': False}
+    def _commission_distinct_groups(self, conn):
+        """commission_calc_rules 中已有的 commission_group 去重列表（供货号下拉）。"""
         if not self._commission_rules_tables_ready(conn):
-            return empty
-        mappings = {}
-        rules = {}
+            return [self.COMMISSION_GROUP_DEFAULT]
+        groups = []
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT platform_type_id, product_category, commission_group
-                FROM commission_product_category_mappings
+                SELECT DISTINCT commission_group
+                FROM commission_calc_rules
+                WHERE TRIM(COALESCE(commission_group, '')) <> ''
+                ORDER BY commission_group ASC
                 """
             )
             for row in cur.fetchall() or []:
-                pt_id = self._parse_int(row.get('platform_type_id'))
-                cat = str(row.get('product_category') or '').strip()
                 grp = str(row.get('commission_group') or '').strip()
-                if pt_id and cat and grp:
-                    mappings[(int(pt_id), cat)] = grp
+                if grp:
+                    groups.append(grp)
+        return groups or [self.COMMISSION_GROUP_DEFAULT]
+
+    def _commission_validate_group(self, conn, commission_group):
+        grp = str(commission_group or '').strip()
+        if not grp:
+            return False, '请选择佣金大类'
+        allowed = set(self._commission_distinct_groups(conn))
+        if grp not in allowed:
+            return False, f'无效的佣金大类（{grp}）'
+        return True, grp
+
+    def _commission_load_rules_cache(self, conn):
+        """一次请求内复用：rules (pt,group)→rule。"""
+        empty = {'rules': {}, 'ready': False}
+        if not self._commission_rules_tables_ready(conn):
+            return empty
+        rules = {}
+        with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT platform_type_id, commission_group, calc_method, params_json
@@ -65,33 +79,19 @@ class CommissionCalcMixin:
                     'params_json': params,
                     'commission_group': grp,
                 }
-        return {'mappings': mappings, 'rules': rules, 'ready': True}
+        return {'rules': rules, 'ready': True}
 
-    def _commission_resolve_group(self, cache, platform_type_id, product_category):
-        """细分类→佣金大类；无映射返回 (None, reason)。"""
+    def _commission_resolve_rule(self, cache, platform_type_id, commission_group):
+        """返回 rule dict 或 None；附带 commission_group / unavailable_reason。"""
+        grp = str(commission_group or '').strip()
+        if not grp:
+            return None, None, '缺少货号佣金大类'
         pt_id = self._parse_int(platform_type_id)
         if not pt_id:
-            return None, '缺少平台类型'
-        cat = str(product_category or '').strip()
-        if not cat:
-            return None, '缺少货号细分类目'
+            return None, grp, '缺少平台类型'
         if not cache or not cache.get('ready'):
-            return None, '佣金规则表未就绪'
-        mappings = cache.get('mappings') or {}
-        grp = mappings.get((int(pt_id), cat))
-        if not grp:
-            grp = mappings.get((int(pt_id), '*'))
-        if not grp:
-            return None, f'未维护类目映射（{cat}）'
-        return str(grp).strip(), None
-
-    def _commission_resolve_rule(self, cache, platform_type_id, product_category):
-        """返回 rule dict 或 None；附带 commission_group / unavailable_reason。"""
-        grp, err = self._commission_resolve_group(cache, platform_type_id, product_category)
-        if not grp:
-            return None, None, err or self.COMMISSION_UNAVAILABLE_LABEL
-        pt_id = int(self._parse_int(platform_type_id))
-        rule = (cache.get('rules') or {}).get((pt_id, grp))
+            return None, grp, '佣金规则表未就绪'
+        rule = (cache.get('rules') or {}).get((int(pt_id), grp))
         if not rule:
             return None, grp, f'未维护佣金规则（{grp}）'
         return rule, grp, None
@@ -182,9 +182,9 @@ class CommissionCalcMixin:
         """单件折后净收入 → 佣金 USD 与费率。"""
         return self._commission_apply_period(net_price, rule)
 
-    def _commission_compute_for_context(self, cache, platform_type_id, product_category, amount, *, mode='period'):
+    def _commission_compute_for_context(self, cache, platform_type_id, commission_group, amount, *, mode='period'):
         """统一入口：成功返回 dict；失败 commission_status=unavailable。"""
-        rule, grp, err = self._commission_resolve_rule(cache, platform_type_id, product_category)
+        rule, grp, err = self._commission_resolve_rule(cache, platform_type_id, commission_group)
         if not rule:
             return {
                 'commission_status': 'unavailable',
@@ -226,7 +226,7 @@ class CommissionCalcMixin:
                 f"""
                 SELECT sp.id AS sales_product_id,
                        sh.platform_type_id,
-                       TRIM(COALESCE(pf.category, '')) AS product_category
+                       TRIM(COALESCE(pf.commission_group, '')) AS commission_group
                 FROM sales_products sp
                 LEFT JOIN shops sh ON sh.id = sp.shop_id
                 LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
@@ -241,7 +241,7 @@ class CommissionCalcMixin:
                     continue
                 out[int(spid)] = {
                     'platform_type_id': self._parse_int(row.get('platform_type_id')),
-                    'product_category': str(row.get('product_category') or '').strip(),
+                    'commission_group': str(row.get('commission_group') or '').strip(),
                 }
         return out
 
@@ -283,7 +283,7 @@ class CommissionCalcMixin:
         return base
 
     # -------------------------------------------------------------------------
-    # HTTP API：前端 bootstrap（规则 + 映射，体量小可全量下发）
+    # HTTP API：前端 bootstrap（规则 + 可选佣金大类列表）
     # -------------------------------------------------------------------------
 
     def handle_commission_rules_api(self, environ, method, start_response):
@@ -292,15 +292,15 @@ class CommissionCalcMixin:
                 return self.send_error(405, 'Method not allowed', start_response)
             with self._get_db_connection() as conn:
                 cache = self._commission_load_rules_cache(conn)
+                commission_groups = self._commission_distinct_groups(conn)
                 if not cache.get('ready'):
                     return self.send_json({
                         'status': 'success',
                         'ready': False,
                         'rules': [],
-                        'mappings': [],
+                        'commission_groups': commission_groups,
                     }, start_response)
                 rules_out = []
-                mappings_out = []
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -328,28 +328,11 @@ class CommissionCalcMixin:
                             'calc_method': row.get('calc_method') or '',
                             'params_json': params if isinstance(params, dict) else {},
                         })
-                    cur.execute(
-                        """
-                        SELECT m.id, m.platform_type_id, pt.name AS platform_type_name,
-                               m.product_category, m.commission_group
-                        FROM commission_product_category_mappings m
-                        INNER JOIN platform_types pt ON pt.id = m.platform_type_id
-                        ORDER BY pt.name ASC, m.product_category ASC
-                        """
-                    )
-                    for row in cur.fetchall() or []:
-                        mappings_out.append({
-                            'id': self._parse_int(row.get('id')),
-                            'platform_type_id': self._parse_int(row.get('platform_type_id')),
-                            'platform_type_name': row.get('platform_type_name') or '',
-                            'product_category': row.get('product_category') or '',
-                            'commission_group': row.get('commission_group') or '',
-                        })
             return self.send_json({
                 'status': 'success',
                 'ready': True,
                 'rules': rules_out,
-                'mappings': mappings_out,
+                'commission_groups': commission_groups,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
