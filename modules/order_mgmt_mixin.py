@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""订单管理 Mixin - order_product 相关 API"""
+"""订单管理：下单 SKU（order_product）、发货方案、包装归类与 Excel 导入。"""
 
 import cgi
 import io
@@ -22,7 +22,7 @@ except Exception as _openpyxl_import_error:
     DataValidation = None
 
 class OrderManagementMixin:
-    """订单/配送管理 API 处理器"""
+    """下单 SKU CRUD、替代发货方案、下市迁移、包装尺寸/FedEx 归类。"""
 
     def handle_order_product_api(self, environ, method, start_response):
         """下单产品管理 API - CRUD"""
@@ -504,6 +504,10 @@ class OrderManagementMixin:
             return self.send_json({'status': 'error', 'message': 'Unsupported target'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 下市 SKU：替代发货方案预览与迁移
+    # -------------------------------------------------------------------------
 
     def _off_market_eligible_target_plans(self, conn, owner_order_product_id):
         """归属为 owner 的方案：含至少一条替代；替代 SKU 全部在市且不得为 owner 自身（排除「直发本 SKU」）。"""
@@ -1109,23 +1113,16 @@ class OrderManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 包装尺寸 / FedEx 归类、批量更新
+    # -------------------------------------------------------------------------
+
     def _order_product_parse_id_list(self, data):
         """解析请求体中的 ids：支持 list 或逗号分隔字符串。"""
-        out = []
         raw = (data or {}).get('ids')
-        if isinstance(raw, list):
-            for x in raw:
-                pid = self._parse_int(x)
-                if pid:
-                    out.append(pid)
-        elif isinstance(raw, str):
-            for token in re.split(r'[,，;；\s]+', raw.strip()):
-                if not token:
-                    continue
-                pid = self._parse_int(token)
-                if pid:
-                    out.append(pid)
-        return sorted(set(out))
+        if raw is None:
+            return []
+        return self._normalize_id_list(raw)
 
     def _order_product_ceiling_positive_int(self, value):
         v = self._parse_float(value)
@@ -2640,7 +2637,12 @@ class OrderManagementMixin:
 
 
 
+    # -------------------------------------------------------------------------
+    # 下单 SKU 查询与关联表（材料/功能/认证/工厂）
+    # -------------------------------------------------------------------------
+
     def _normalize_id_list(self, value):
+        """解析 id 列表：支持 list 或逗号/空白分隔字符串，去重保序。"""
         if value is None:
             return []
         items = value if isinstance(value, list) else re.split(r'[\s,，;；]+', str(value))
@@ -2903,6 +2905,17 @@ class OrderManagementMixin:
         self._replace_order_product_feature_ids(conn, order_product_id, feature_ids)
         self._replace_order_product_certification_ids(conn, order_product_id, certification_ids)
 
+    def _replace_order_product_link_ids(self, conn, order_product_id, table, fk_column, ids):
+        """通用 order_product 多对多关联：先删后插。"""
+        valid_ids = self._normalize_id_list(ids)
+        with conn.cursor() as cur:
+            cur.execute(f"DELETE FROM {table} WHERE order_product_id=%s", (order_product_id,))
+            if valid_ids:
+                cur.executemany(
+                    f"INSERT INTO {table} (order_product_id, {fk_column}) VALUES (%s, %s)",
+                    [(order_product_id, item_id) for item_id in valid_ids],
+                )
+
     def _replace_order_product_material_ids(self, conn, order_product_id, filling_material_ids, frame_material_ids):
         merged = []
         seen = set()
@@ -2922,58 +2935,19 @@ class OrderManagementMixin:
                 )
 
     def _replace_order_product_feature_ids(self, conn, order_product_id, feature_ids):
-        valid_ids = []
-        seen = set()
-        for raw_id in (feature_ids or []):
-            feature_id = self._parse_int(raw_id)
-            if not feature_id or feature_id in seen:
-                continue
-            seen.add(feature_id)
-            valid_ids.append(feature_id)
-
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM order_product_features WHERE order_product_id=%s", (order_product_id,))
-            if valid_ids:
-                cur.executemany(
-                    "INSERT INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
-                    [(order_product_id, feature_id) for feature_id in valid_ids]
-                )
+        self._replace_order_product_link_ids(
+            conn, order_product_id, 'order_product_features', 'feature_id', feature_ids,
+        )
 
     def _replace_order_product_certification_ids(self, conn, order_product_id, certification_ids):
-        valid_ids = []
-        seen = set()
-        for raw_id in (certification_ids or []):
-            certification_id = self._parse_int(raw_id)
-            if not certification_id or certification_id in seen:
-                continue
-            seen.add(certification_id)
-            valid_ids.append(certification_id)
-
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM order_product_certifications WHERE order_product_id=%s", (order_product_id,))
-            if valid_ids:
-                cur.executemany(
-                    "INSERT INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
-                    [(order_product_id, certification_id) for certification_id in valid_ids]
-                )
+        self._replace_order_product_link_ids(
+            conn, order_product_id, 'order_product_certifications', 'certification_id', certification_ids,
+        )
 
     def _replace_order_product_factory_links(self, conn, order_product_id, factory_ids):
-        valid_ids = []
-        seen = set()
-        for raw_id in (factory_ids or []):
-            factory_id = self._parse_int(raw_id)
-            if not factory_id or factory_id in seen:
-                continue
-            seen.add(factory_id)
-            valid_ids.append(factory_id)
-
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM order_product_factory_links WHERE order_product_id=%s", (order_product_id,))
-            if valid_ids:
-                cur.executemany(
-                    "INSERT INTO order_product_factory_links (order_product_id, factory_id) VALUES (%s, %s)",
-                    [(order_product_id, factory_id) for factory_id in valid_ids]
-                )
+        self._replace_order_product_link_ids(
+            conn, order_product_id, 'order_product_factory_links', 'factory_id', factory_ids,
+        )
 
     def _handle_order_product_factory_links_template(self, environ, method, start_response):
         try:
@@ -3140,7 +3114,9 @@ class OrderManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-        return rows
+    # -------------------------------------------------------------------------
+    # 替代发货方案（shipping plans）
+    # -------------------------------------------------------------------------
 
     def _get_or_create_shipping_plan(self, conn, order_product_id, plan_name):
         with conn.cursor() as cur:

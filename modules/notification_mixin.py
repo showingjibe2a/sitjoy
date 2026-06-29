@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """站内通知：列表、未读数、标记已读；业务侧通过辅助方法写入。"""
 
 import threading
@@ -6,13 +7,29 @@ from urllib.parse import parse_qs
 
 
 class NotificationMixin:
+    """站内通知 Mixin：用户通知 CRUD、管理员广播与业务事件写入。"""
+
+    _NOTIFICATIONS_MIGRATION_HINT = 'scripts/sql/20260529_01_user_notifications.sql'
+
     def _notification_is_missing_table_error(self, exc):
+        """判断异常是否因 user_notifications 表尚未迁移导致。"""
         message = str(exc or '').lower()
         return (
             "doesn't exist" in message
             or 'does not exist' in message
             or 'unknown table' in message
         )
+
+    def _notification_table_missing_json_response(self, exc, start_response):
+        if not self._notification_is_missing_table_error(exc):
+            return None
+        return self.send_json({
+            'status': 'error',
+            'message': f'通知表未初始化，请先执行 {self._NOTIFICATIONS_MIGRATION_HINT}',
+        }, start_response)
+
+    def _notification_now_text(self):
+        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     def _serialize_notification_row(self, row):
         if not row:
@@ -31,6 +48,10 @@ class NotificationMixin:
             'read_at': str(read_at) if read_at is not None else '',
             'created_at': str(created) if created is not None else '',
         }
+
+    # -------------------------------------------------------------------------
+    # 业务侧写入（异步 INSERT，表缺失时静默跳过）
+    # -------------------------------------------------------------------------
 
     def _create_user_notification(
         self,
@@ -163,7 +184,27 @@ class NotificationMixin:
                 link_label=link_label,
             )
 
+    # -------------------------------------------------------------------------
+    # 用户通知 API
+    # -------------------------------------------------------------------------
+
+    def _notification_parse_mark_read_ids(self, data):
+        """解析 mark_read 请求的 id / ids 列表。"""
+        payload = data if isinstance(data, dict) else {}
+        ids = []
+        raw = payload.get('ids')
+        if isinstance(raw, list):
+            for x in raw:
+                nid = self._parse_int(x)
+                if nid:
+                    ids.append(int(nid))
+        single = self._parse_int(payload.get('id'))
+        if single:
+            ids.append(int(single))
+        return sorted(set(ids))
+
     def handle_notification_api(self, environ, method, start_response):
+        """当前用户通知：列表、未读数、单条/全部标记已读。"""
         try:
             user_id = self._get_session_user(environ)
             if not user_id:
@@ -174,13 +215,7 @@ class NotificationMixin:
 
             if method == 'POST' and action == 'mark_read':
                 data = self._read_json_body(environ)
-                ids = []
-                if isinstance(data.get('ids'), list):
-                    ids = [self._parse_int(x) for x in data.get('ids') if self._parse_int(x)]
-                single = self._parse_int(data.get('id'))
-                if single:
-                    ids.append(single)
-                ids = sorted(set(ids))
+                ids = self._notification_parse_mark_read_ids(data)
                 if not ids:
                     return self.send_json({'status': 'error', 'message': '缺少通知 ID'}, start_response)
                 placeholders = ','.join(['%s'] * len(ids))
@@ -192,7 +227,7 @@ class NotificationMixin:
                             SET is_read=1, read_at=COALESCE(read_at, %s)
                             WHERE user_id=%s AND id IN ({placeholders})
                             """,
-                            (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), int(user_id)) + tuple(ids),
+                            (self._notification_now_text(), int(user_id)) + tuple(ids),
                         )
                 return self.send_json({'status': 'success', 'updated': len(ids)}, start_response)
 
@@ -205,7 +240,7 @@ class NotificationMixin:
                             SET is_read=1, read_at=COALESCE(read_at, %s)
                             WHERE user_id=%s AND is_read=0
                             """,
-                            (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), int(user_id)),
+                            (self._notification_now_text(), int(user_id)),
                         )
                         updated = int(cur.rowcount or 0)
                 return self.send_json({'status': 'success', 'updated': updated}, start_response)
@@ -274,10 +309,8 @@ class NotificationMixin:
                 'unread_count': int(unread_row.get('cnt') or 0),
             }, start_response)
         except Exception as e:
-            if self._notification_is_missing_table_error(e):
-                return self.send_json({
-                    'status': 'error',
-                    'message': '通知表未初始化，请先执行 scripts/sql/20260529_01_user_notifications.sql',
-                }, start_response)
+            missing = self._notification_table_missing_json_response(e, start_response)
+            if missing:
+                return missing
             print('Notification API error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

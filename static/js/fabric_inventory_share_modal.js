@@ -10,6 +10,8 @@
     return document.getElementById(id);
   }
 
+  /* --- 状态与比例输入 --- */
+
   function setStatus(msg, isError) {
     const node = el('fisStatus');
     if (!node) return;
@@ -79,6 +81,8 @@
     input.value = pctText(items[i].inventory_share_ratio);
     syncRatioInputState(input, i);
   }
+
+  /* --- 弹窗挂载与表格 --- */
 
   async function ensureMounted() {
     if (mounted && el('fabricInventoryShareModal')) return;
@@ -162,6 +166,8 @@
   function histMonths() {
     return Math.max(1, Math.min(36, Number(el('fisHistMonths')?.value || 12)));
   }
+
+  /* --- API：加载 / 重算 / 保存 --- */
 
   function applyPayload(data) {
     items = (data && data.items) ? data.items.map(normalizeRow) : [];

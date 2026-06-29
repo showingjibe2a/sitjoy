@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """面料库存展示比例：按货号关联历史销量统计与维护。"""
 
 from datetime import datetime
@@ -5,11 +6,25 @@ from urllib.parse import parse_qs
 
 
 class FabricInventoryShareMixin:
-    def _fabric_share_hist_month_range(self, months):
+    """面料库存比例 Mixin：按货号×面料统计历史销量并维护 inventory_share_ratio。"""
+
+    def _fabric_share_parse_months(self, raw, default=12):
+        """历史统计月数：1–36，默认 12。"""
         try:
-            n = max(1, min(36, int(months or 12)))
+            return max(1, min(36, int(raw if raw is not None else default)))
         except Exception:
-            n = 12
+            return default
+
+    def _fabric_share_clamp_ratio(self, value):
+        """比例限制在 [0, 1]，保留 6 位小数；无效时返回 None。"""
+        try:
+            return round(max(0.0, min(1.0, float(value))), 6)
+        except Exception:
+            return None
+
+    def _fabric_share_hist_month_range(self, months):
+        """返回 (start_month, end_month, end_exclusive, months) 供 agg_month 查询。"""
+        n = self._fabric_share_parse_months(months)
         today = datetime.now()
         y, m = today.year, today.month
         end_month = f'{y:04d}-{m:02d}-01'
@@ -23,6 +38,7 @@ class FabricInventoryShareMixin:
         return start_month, end_month, end_exclusive, n
 
     def _fabric_share_rows_for_family(self, conn, sku_family_id, start_month, end_exclusive):
+        """货号下各面料的历史销量与已存比例。"""
         sfid = self._parse_int(sku_family_id)
         if not sfid:
             return []
@@ -52,6 +68,7 @@ class FabricInventoryShareMixin:
             return cur.fetchall() or []
 
     def _fabric_share_apply_computed_ratios(self, rows):
+        """按历史销量计算 suggested_ratio，并与已存比例合并。"""
         items = []
         max_sales = 0.0
         for row in rows or []:
@@ -73,17 +90,60 @@ class FabricInventoryShareMixin:
                 item['suggested_ratio'] = 1.0
             stored = item.get('inventory_share_ratio')
             ratio_persisted = stored is not None and str(stored).strip() != ''
-            saved_ratio = None
-            if ratio_persisted:
-                try:
-                    saved_ratio = round(max(0.0, min(1.0, float(stored))), 6)
-                except Exception:
-                    ratio_persisted = False
-                    saved_ratio = None
+            saved_ratio = self._fabric_share_clamp_ratio(stored) if ratio_persisted else None
+            if ratio_persisted and saved_ratio is None:
+                ratio_persisted = False
             item['ratio_persisted'] = bool(ratio_persisted)
             item['saved_ratio'] = saved_ratio
             item['inventory_share_ratio'] = saved_ratio if ratio_persisted else item['suggested_ratio']
         return items, max_sales
+
+    def _fabric_share_items_as_suggested(self, items):
+        """重算模式：展示 suggested_ratio，不沿用已存值。"""
+        out = []
+        for item in items or []:
+            row = dict(item)
+            row['inventory_share_ratio'] = row.get('suggested_ratio')
+            row['ratio_persisted'] = False
+            row['saved_ratio'] = None
+            out.append(row)
+        return out
+
+    def _fabric_share_json_payload(
+        self, sku_family_id, family, months, start_month, end_month, items, max_sales,
+    ):
+        payload = {
+            'status': 'success',
+            'sku_family_id': sku_family_id,
+            'history_months': months,
+            'history_start_month': start_month,
+            'history_end_month': end_month,
+            'max_history_sales_qty': int(max_sales),
+            'items': items,
+        }
+        if family:
+            payload['sku_family'] = family.get('sku_family')
+            payload['category'] = family.get('category')
+        return payload
+
+    def _fabric_share_load_family_calculate(
+        self, conn, sku_family_id, months, *, use_suggested_only=False,
+    ):
+        """加载货号、查询历史销量并计算比例项。"""
+        start_month, end_month, end_exclusive, months = self._fabric_share_hist_month_range(months)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, sku_family, category FROM product_families WHERE id=%s LIMIT 1",
+                (sku_family_id,),
+            )
+            family = cur.fetchone()
+        if not family:
+            return None, None, None, None, None, None
+        rows = self._fabric_share_rows_for_family(conn, sku_family_id, start_month, end_exclusive)
+        items, max_sales = self._fabric_share_apply_computed_ratios(rows)
+        if use_suggested_only:
+            items = self._fabric_share_items_as_suggested(items)
+        return family, items, max_sales, start_month, end_month, months
 
     def _fabric_share_save_items(self, conn, sku_family_id, items):
         sfid = self._parse_int(sku_family_id)
@@ -95,11 +155,9 @@ class FabricInventoryShareMixin:
                 fid = self._parse_int((raw or {}).get('fabric_id'))
                 if not fid:
                     continue
-                try:
-                    ratio = float((raw or {}).get('inventory_share_ratio'))
-                except Exception:
+                ratio = self._fabric_share_clamp_ratio((raw or {}).get('inventory_share_ratio'))
+                if ratio is None:
                     continue
-                ratio = round(max(0.0, min(1.0, ratio)), 6)
                 cur.execute(
                     """
                     UPDATE fabric_product_families
@@ -112,6 +170,7 @@ class FabricInventoryShareMixin:
         return saved
 
     def _fabric_share_map_for_variants(self, conn, variant_ids):
+        """变体 id → 面料库存展示比例（平台库存导出读取）。"""
         ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
         if not ids:
             return {}
@@ -134,47 +193,33 @@ class FabricInventoryShareMixin:
                 vid = self._parse_int(row.get('variant_id'))
                 if not vid:
                     continue
-                try:
-                    ratio = float(row.get('share_ratio') or 1.0)
-                except Exception:
-                    ratio = 1.0
-                out[vid] = max(0.0, min(1.0, ratio))
+                ratio = self._fabric_share_clamp_ratio(row.get('share_ratio'))
+                out[vid] = ratio if ratio is not None else 1.0
         return out
 
     def handle_fabric_inventory_share_api(self, environ, method, start_response):
+        """面料库存比例：GET 加载 / POST calculate 重算 / POST save 保存。"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 sku_family_id = self._parse_int(query_params.get('sku_family_id', [''])[0])
                 if not sku_family_id:
                     return self.send_json({'status': 'error', 'message': '请选择货号'}, start_response)
-                try:
-                    months = max(1, min(36, int(query_params.get('months', ['12'])[0] or 12)))
-                except Exception:
-                    months = 12
-                start_month, end_month, end_exclusive, months = self._fabric_share_hist_month_range(months)
+                months = self._fabric_share_parse_months(query_params.get('months', ['12'])[0])
                 with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT id, sku_family, category FROM product_families WHERE id=%s LIMIT 1",
-                            (sku_family_id,),
+                    family, items, max_sales, start_month, end_month, months = (
+                        self._fabric_share_load_family_calculate(
+                            conn, sku_family_id, months, use_suggested_only=False,
                         )
-                        family = cur.fetchone()
-                    if not family:
-                        return self.send_json({'status': 'error', 'message': '货号不存在'}, start_response)
-                    rows = self._fabric_share_rows_for_family(conn, sku_family_id, start_month, end_exclusive)
-                items, max_sales = self._fabric_share_apply_computed_ratios(rows)
-                return self.send_json({
-                    'status': 'success',
-                    'sku_family_id': sku_family_id,
-                    'sku_family': family.get('sku_family'),
-                    'category': family.get('category'),
-                    'history_months': months,
-                    'history_start_month': start_month,
-                    'history_end_month': end_month,
-                    'max_history_sales_qty': int(max_sales),
-                    'items': items,
-                }, start_response)
+                    )
+                if not family:
+                    return self.send_json({'status': 'error', 'message': '货号不存在'}, start_response)
+                return self.send_json(
+                    self._fabric_share_json_payload(
+                        sku_family_id, family, months, start_month, end_month, items, max_sales,
+                    ),
+                    start_response,
+                )
 
             if method == 'POST':
                 data = self._read_json_body(environ) or {}
@@ -182,33 +227,27 @@ class FabricInventoryShareMixin:
                 sku_family_id = self._parse_int(data.get('sku_family_id'))
                 if not sku_family_id:
                     return self.send_json({'status': 'error', 'message': '请选择货号'}, start_response)
-                try:
-                    months = max(1, min(36, int(data.get('months') or 12)))
-                except Exception:
-                    months = 12
+                months = self._fabric_share_parse_months(data.get('months'))
 
                 if action == 'save':
                     with self._get_db_connection() as conn:
                         saved = self._fabric_share_save_items(conn, sku_family_id, data.get('items') or [])
                     return self.send_json({'status': 'success', 'saved': saved}, start_response)
 
-                start_month, end_month, end_exclusive, months = self._fabric_share_hist_month_range(months)
                 with self._get_db_connection() as conn:
-                    rows = self._fabric_share_rows_for_family(conn, sku_family_id, start_month, end_exclusive)
-                items, max_sales = self._fabric_share_apply_computed_ratios(rows)
-                for item in items:
-                    item['inventory_share_ratio'] = item.get('suggested_ratio')
-                    item['ratio_persisted'] = False
-                    item['saved_ratio'] = None
-                return self.send_json({
-                    'status': 'success',
-                    'sku_family_id': sku_family_id,
-                    'history_months': months,
-                    'history_start_month': start_month,
-                    'history_end_month': end_month,
-                    'max_history_sales_qty': int(max_sales),
-                    'items': items,
-                }, start_response)
+                    family, items, max_sales, start_month, end_month, months = (
+                        self._fabric_share_load_family_calculate(
+                            conn, sku_family_id, months, use_suggested_only=True,
+                        )
+                    )
+                if not family:
+                    return self.send_json({'status': 'error', 'message': '货号不存在'}, start_response)
+                return self.send_json(
+                    self._fabric_share_json_payload(
+                        sku_family_id, family, months, start_month, end_month, items, max_sales,
+                    ),
+                    start_response,
+                )
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
