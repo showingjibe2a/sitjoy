@@ -1197,6 +1197,7 @@
 
     <script src="/static/js/sitjoy_task_progress_sse.js"></script>
     <script>
+        /* 销售产品表现：看板趋势图、货号分组明细、原始记录列表与导入 */
         let uploadProcessingTimer = null;
         let uploadProgressPollingTimer = null;
         const PERF_PAGE_SIZE_KEY = 'sales_perf_list_page_size_v1';
@@ -1353,6 +1354,7 @@
             recordManageShopFilterReady: false
         };
 
+        /** localStorage：分页、图表粒度、指标顺序、分组排序 */
         function loadPerfPageSizeFromStorage() {
             try {
                 const n = Number(localStorage.getItem(PERF_PAGE_SIZE_KEY) || '50');
@@ -1429,6 +1431,7 @@
             _savePerfGroupSortPersist(PERF_GROUP_INNER_SORT_KEY, key, dir);
         }
 
+        /** 日期桶、图表聚合与数值格式化 */
         function toYmd(dateObj) {
             const y = dateObj.getFullYear();
             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -1853,6 +1856,7 @@
             });
         }
 
+        /** 筛选项与看板数据 API */
         async function loadFilters() {
             const resp = await fetch('/api/sales-product-performance-dashboard?mode=filters', { credentials: 'include' });
             const data = await resp.json();
@@ -3468,6 +3472,8 @@
         }
 
         let perfManagedTableReady = false;
+
+        /** 原始表现记录：托管表分页列表 */
         function initPerfManagedTable() {
             if (perfManagedTableReady) return;
             perfManagedTableReady = true;
@@ -3935,6 +3941,7 @@
             })();
         }
 
+        /** 页面初始化 */
         async function initPage() {
             if (!pageDomReady()) return;
             const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';

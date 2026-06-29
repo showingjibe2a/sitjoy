@@ -20,6 +20,10 @@ class FabricManagementMixin:
     文件绑定命名委托 FileUtilsMixin（_fabric_bind_* / _fabric_import_*）。
     """
 
+    # -------------------------------------------------------------------------
+    # 路径解析与保存前图片校验
+    # -------------------------------------------------------------------------
+
     def _fabric_folder_candidates(self):
         # Historical folders used by different implementations
         return [
@@ -119,6 +123,44 @@ class FabricManagementMixin:
         if not_ready:
             raise ValueError('图片文件尚未就绪: ' + '、'.join(not_ready[:5]))
         return planned_images
+
+    @staticmethod
+    def _infer_image_ext_from_bytes(content):
+        b = content or b''
+        if len(b) < 4:
+            return ''
+        if b.startswith(b"\xff\xd8\xff"):
+            return '.jpg'
+        if b.startswith(b"\x89PNG"):
+            return '.png'
+        if b.startswith(b"GIF8"):
+            return '.gif'
+        if len(b) >= 4 and (b.startswith(b"II*\x00") or b.startswith(b"MM\x00*")):
+            return '.tif'
+        return ''
+
+    def _fabric_folder_filename_set(self, folder):
+        """『面料』目录内已有文件名集合（用于上传去重）。"""
+        names = set()
+        try:
+            with os.scandir(folder) as it:
+                for entry in it:
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    name = entry.name
+                    if isinstance(name, (bytes, bytearray)):
+                        try:
+                            name = os.fsdecode(name)
+                        except Exception:
+                            name = name.decode('utf-8', errors='ignore')
+                    names.add(str(name))
+        except Exception:
+            pass
+        return names
+
+    # -------------------------------------------------------------------------
+    # API：图库列表 / 上传 / 按路径导入 / 删除
+    # -------------------------------------------------------------------------
 
     def handle_fabric_images_api(self, environ, start_response):
         """列出面料文件夹内图片"""
@@ -259,20 +301,7 @@ class FabricManagementMixin:
                 return self.send_json({'status': 'error', 'message': 'No valid images uploaded'}, start_response)
 
             folder = self._ensure_fabric_folder()
-            existing = set()
-            try:
-                with os.scandir(folder) as it:
-                    for entry in it:
-                        if entry.is_file(follow_symlinks=False):
-                            name = entry.name
-                            if isinstance(name, (bytes, bytearray)):
-                                try:
-                                    name = os.fsdecode(name)
-                                except Exception:
-                                    name = name.decode('utf-8', errors='ignore')
-                            existing.add(str(name))
-            except Exception:
-                existing = set()
+            existing = self._fabric_folder_filename_set(folder)
 
             saved_names = []
             for item in uploads:
@@ -283,25 +312,11 @@ class FabricManagementMixin:
                     if len(content) == 0:
                         continue
 
-                    def infer_ext_from_bytes(b):
-                        if not b or len(b) < 4:
-                            return ''
-                        if b.startswith(b"\xff\xd8\xff"):
-                            return '.jpg'
-                        if b.startswith(b"\x89PNG"):
-                            return '.png'
-                        if b.startswith(b"GIF8"):
-                            return '.gif'
-                        # TIFF: little-endian II*\0 or big-endian MM\0*
-                        if len(b) >= 4 and (b.startswith(b"II*\x00") or b.startswith(b"MM\x00*")):
-                            return '.tif'
-                        return ''
-
                     ext = ''
                     if orig_filename and self._is_image_name(orig_filename):
                         ext = os.path.splitext(orig_filename)[1]
                     if not ext:
-                        ext = infer_ext_from_bytes(content)
+                        ext = self._infer_image_ext_from_bytes(content)
                     if not ext:
                         continue
 
@@ -524,6 +539,10 @@ class FabricManagementMixin:
 
     def _append_fabric_image_mappings(self, conn, fabric_id, images):
         return self._sync_fabric_image_mappings_append(conn, fabric_id, images)
+
+    # -------------------------------------------------------------------------
+    # API：绑定图片 / 面料 CRUD / 映射维护
+    # -------------------------------------------------------------------------
 
     def handle_fabric_attach_api(self, environ, start_response):
         """『面料』目录内图片：重命名 + 可选立即写入 fabric_image_mappings。"""
@@ -845,6 +864,10 @@ class FabricManagementMixin:
                     "INSERT IGNORE INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
                     rows
                 )
+
+    # -------------------------------------------------------------------------
+    # API：历史 image_assets 迁移
+    # -------------------------------------------------------------------------
 
     def handle_fabric_image_migrate_api(self, environ, method, start_response):
         """

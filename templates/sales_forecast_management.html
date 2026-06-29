@@ -2089,6 +2089,7 @@
     </div>
 
     <script>
+        /* 销售预测：多维度矩阵、库存/表现侧栏、出货计划与批量保存 */
         const FORECAST_MODES = ['platform', 'spec', 'order'];
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
         const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
@@ -2122,6 +2123,7 @@
         const SF_REMARK_COLS = 1;
         const SF_QTY_SUGGEST_COLS = 2;
 
+        /** 列宽与月份工具（按预测维度 mode 分 key 存储） */
         function getSfQtySuggestColCount() {
             if (state.forecastMode !== 'order' || !(state.sfShipPlan && state.sfShipPlan.active)) return 0;
             return SF_QTY_SUGGEST_COLS;
@@ -4700,6 +4702,7 @@
             return String(row.labels.sku_family || '-').trim() || '-';
         }
 
+        /** 预测矩阵渲染、表头与单元格交互 */
         function buildGroups(rows) {
             if (state.lazyForecast && Array.isArray(state.forecastGroups)) {
                 const cols = getColumnsForMode(state.forecastMode);
@@ -9180,6 +9183,7 @@
             });
         }
 
+        /** 批量保存未提交的单元格修改 */
         async function saveAllChanges() {
             if (state.dirty.size <= 0) {
                 showToast('没有可保存的修改');

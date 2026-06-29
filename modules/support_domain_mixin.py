@@ -3,27 +3,36 @@
 
 from urllib.parse import parse_qs
 
+_SUPPORT_DOMAIN_NAME_TABLES = frozenset({'platform_types', 'brands', 'certifications'})
+
+
 class SupportDomainMixin:
     """支持域 API 处理器（平台类型、品牌、店铺、认证等）。"""
 
-    def handle_platform_type_api(self, environ, method, start_response):
-        """平台类型管理 API（CRUD）。"""
-        try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
+    # -------------------------------------------------------------------------
+    # 简单名称表 CRUD（平台类型 / 品牌 / 认证）
+    # -------------------------------------------------------------------------
 
+    def _support_domain_select_name_rows(self, cur, table, keyword):
+        if keyword:
+            cur.execute(
+                f"SELECT id, name, created_at FROM {table} WHERE name LIKE %s ORDER BY id DESC",
+                (f"%{keyword}%",),
+            )
+        else:
+            cur.execute(f"SELECT id, name, created_at FROM {table} ORDER BY id ASC")
+        return cur.fetchall() or []
+
+    def _handle_support_domain_name_api(self, environ, method, start_response, *, table, log_label):
+        if table not in _SUPPORT_DOMAIN_NAME_TABLES:
+            return self.send_json({'status': 'error', 'message': 'invalid table'}, start_response)
+        try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        if keyword:
-                            cur.execute(
-                                "SELECT id, name, created_at FROM platform_types WHERE name LIKE %s ORDER BY id DESC",
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute("SELECT id, name, created_at FROM platform_types ORDER BY id ASC")
-                        rows = cur.fetchall() or []
+                        rows = self._support_domain_select_name_rows(cur, table, keyword)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -31,10 +40,9 @@ class SupportDomainMixin:
                 name = (data.get('name') or '').strip()
                 if not name:
                     return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
-
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO platform_types (name) VALUES (%s)", (name,))
+                        cur.execute(f"INSERT INTO {table} (name) VALUES (%s)", (name,))
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -44,10 +52,9 @@ class SupportDomainMixin:
                 name = (data.get('name') or '').strip()
                 if not item_id or not name:
                     return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
-
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE platform_types SET name=%s WHERE id=%s", (name, item_id))
+                        cur.execute(f"UPDATE {table} SET name=%s WHERE id=%s", (name, item_id))
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -55,76 +62,37 @@ class SupportDomainMixin:
                 item_id = data.get('id')
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
-
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM platform_types WHERE id=%s", (item_id,))
+                        cur.execute(f"DELETE FROM {table} WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
-            print(f'Platform Type API error: {str(e)}')
+            print(f'{log_label} API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_platform_type_api(self, environ, method, start_response):
+        """平台类型管理 API（CRUD）。"""
+        return self._handle_support_domain_name_api(
+            environ, method, start_response, table='platform_types', log_label='Platform Type'
+        )
 
     def handle_brand_api(self, environ, method, start_response):
         """品牌管理 API（CRUD）。"""
-        try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
+        return self._handle_support_domain_name_api(
+            environ, method, start_response, table='brands', log_label='Brand'
+        )
 
-            if method == 'GET':
-                keyword = query_params.get('q', [''])[0].strip()
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        if keyword:
-                            cur.execute(
-                                "SELECT id, name, created_at FROM brands WHERE name LIKE %s ORDER BY id DESC",
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute("SELECT id, name, created_at FROM brands ORDER BY id ASC")
-                        rows = cur.fetchall() or []
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
+    def handle_certification_api(self, environ, method, start_response):
+        """认证管理 API（CRUD）。"""
+        return self._handle_support_domain_name_api(
+            environ, method, start_response, table='certifications', log_label='Certification'
+        )
 
-            if method == 'POST':
-                data = self._read_json_body(environ)
-                name = (data.get('name') or '').strip()
-                if not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("INSERT INTO brands (name) VALUES (%s)", (name,))
-                        new_id = cur.lastrowid
-                return self.send_json({'status': 'success', 'id': new_id}, start_response)
-
-            if method == 'PUT':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
-                name = (data.get('name') or '').strip()
-                if not item_id or not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("UPDATE brands SET name=%s WHERE id=%s", (name, item_id))
-                return self.send_json({'status': 'success'}, start_response)
-
-            if method == 'DELETE':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
-                if not item_id:
-                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM brands WHERE id=%s", (item_id,))
-                return self.send_json({'status': 'success'}, start_response)
-
-            return self.send_error(405, 'Method not allowed', start_response)
-        except Exception as e:
-            print(f'Brand API error: {str(e)}')
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+    # -------------------------------------------------------------------------
+    # 店铺 API
+    # -------------------------------------------------------------------------
 
     def handle_shop_api(self, environ, method, start_response):
         """店铺管理 API（CRUD）。"""
@@ -180,7 +148,7 @@ class SupportDomainMixin:
                 platform_type_id = self._parse_int(data.get('platform_type_id'))
                 brand_id = self._parse_int(data.get('brand_id'))
                 handles_last_mile = 1 if data.get('handles_last_mile') in (True, 1, '1', 'true', 'yes') else 0
-                
+
                 if not shop_name or not platform_type_id or not brand_id:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
@@ -206,7 +174,7 @@ class SupportDomainMixin:
                 platform_type_id = self._parse_int(data.get('platform_type_id'))
                 brand_id = self._parse_int(data.get('brand_id'))
                 handles_last_mile = 1 if data.get('handles_last_mile') in (True, 1, '1', 'true', 'yes') else 0
-                
+
                 if not item_id or not shop_name or not platform_type_id or not brand_id:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
@@ -239,66 +207,4 @@ class SupportDomainMixin:
         except Exception as e:
             print(f'Shop API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-    def handle_certification_api(self, environ, method, start_response):
-        """认证管理 API（CRUD）。"""
-        try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
-
-            if method == 'GET':
-                keyword = query_params.get('q', [''])[0].strip()
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        if keyword:
-                            cur.execute(
-                                "SELECT id, name, created_at FROM certifications WHERE name LIKE %s ORDER BY id DESC",
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute("SELECT id, name, created_at FROM certifications ORDER BY id ASC")
-                        rows = cur.fetchall() or []
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
-
-            if method == 'POST':
-                data = self._read_json_body(environ)
-                name = (data.get('name') or '').strip()
-                if not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("INSERT INTO certifications (name) VALUES (%s)", (name,))
-                        new_id = cur.lastrowid
-                return self.send_json({'status': 'success', 'id': new_id}, start_response)
-
-            if method == 'PUT':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
-                name = (data.get('name') or '').strip()
-                if not item_id or not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("UPDATE certifications SET name=%s WHERE id=%s", (name, item_id))
-                return self.send_json({'status': 'success'}, start_response)
-
-            if method == 'DELETE':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
-                if not item_id:
-                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM certifications WHERE id=%s", (item_id,))
-                return self.send_json({'status': 'success'}, start_response)
-
-            return self.send_error(405, 'Method not allowed', start_response)
-        except Exception as e:
-            print(f'Certification API error: {str(e)}')
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-
 
