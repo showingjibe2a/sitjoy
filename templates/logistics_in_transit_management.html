@@ -763,6 +763,7 @@ function initTransitSkuDetailColLayout(){
 let transitActiveConfirmDone = null;
 const $=(s)=>document.querySelector(s);
 
+/* --- 通用 UI：状态条、确认框、分段选择 --- */
 function showStatus(m,e){if(window.showPageStatus)window.showPageStatus(m,e)}
 function showDialog(o){const m=$('#confirm-modal'),t=$('#confirmTitle'),b=$('#confirmBody'),i=$('#confirmInput'),ok=$('#confirmOkBtn'),ca=$('#confirmCancelBtn');t.textContent=o.title||'提示';b.textContent=o.message||'';ok.textContent=o.okText||'确定';ca.textContent=o.cancelText||'取消';const ask=!!o.withInput;i.classList.toggle('hidden',!ask);if(ask){i.value=o.inputValue||'';i.placeholder=o.inputPlaceholder||''}ca.style.display=o.showCancel===false?'none':'';m.classList.toggle('is-danger',String(o.variant||'').toLowerCase()==='danger');m.classList.add('active');return new Promise(r=>{let bdArm=false;function onBdDown(e){bdArm=(e.target===m)}function onBdR(){bdArm=false}function onBdUp(e){if(bdArm&&e.target===m&&o.showCancel!==false)done({ok:false,value:''});bdArm=false}function done(v){transitActiveConfirmDone=null;m.classList.remove('active');m.classList.remove('is-danger');ok.onclick=null;ca.onclick=null;m.removeEventListener('pointerdown',onBdDown);m.removeEventListener('pointerup',onBdUp);m.removeEventListener('pointerleave',onBdR);m.removeEventListener('pointercancel',onBdR);r(v)}transitActiveConfirmDone=done;ok.onclick=()=>done({ok:true,value:ask?i.value:''});ca.onclick=()=>done({ok:false,value:''});m.addEventListener('pointerdown',onBdDown);m.addEventListener('pointerup',onBdUp);m.addEventListener('pointerleave',onBdR);m.addEventListener('pointercancel',onBdR);if(ask)i.focus()})}
 function setSeg(id,v){const s=$('#'+id);s.dataset.value=String(v||'0');s.querySelectorAll('.status-pill').forEach(b=>b.classList.toggle('is-active',String(b.dataset.value)===String(v||'0')))}
@@ -788,6 +789,7 @@ function bindModalExpectedListedAutoSync(){const pairs=[['etaLatest',10],['arriv
 let confirmedDeductOnSave = 0;
 let suppressConfirmToggleAutoSave = false;
 let stayOnModalAfterSave = false;
+/* --- 弹窗表单：目的仓、SKU 行、表格粘贴 --- */
 function syncDocs(){$('#declarationTools').classList.toggle('hidden',getSeg('declarationDocsSegment')!=='1');$('#clearanceTools').classList.toggle('hidden',getSeg('clearanceDocsSegment')!=='1')}
 function transitItemRowSelector(){return '#transitItems tr.transit-item-row'}
 function syncQtyConsistentByCurrentRows(){let allMatch=true;document.querySelectorAll(transitItemRowSelector()).forEach(r=>{const shipped=Number(r.querySelector('.transit-item-shipped')?.value||0);const listed=Number(r.querySelector('.transit-item-listed')?.value||0);if(shipped!==listed)allMatch=false});setSeg('qtyConsistentSegment',allMatch?'1':'0')}
@@ -891,6 +893,7 @@ function handleTransitNotifyAfterSave(data){
   }
 }
 
+/* --- 记录弹窗 CRUD、上架核对、导出 --- */
 function saveTransitStatusRealtime(field,value){
   if(!editId)return;
   window.showAppToast&&window.showAppToast('正在保存状态...',false,900);
@@ -912,6 +915,7 @@ function openQtyVerifyModal(){qtyVerifyTargetId=null;qtyVerifyFactoryId=0;qtyVer
 function transitListRowIsVisible(tr){if(!tr)return false;if(String(tr.dataset.pmFilterHidden||'0')==='1')return false;if(tr.style&&tr.style.display==='none')return false;return true}
 function syncSelectAllState(){const all=$('#transitSelectAll');const boxes=Array.from(document.querySelectorAll('#mainTable tbody .transit-row-check')).filter(cb=>transitListRowIsVisible(cb.closest('tr')));all.checked=boxes.length>0&&boxes.every(x=>x.checked)}
 function toggleTransitSelectAll(checked){document.querySelectorAll('#mainTable tbody .transit-row-check').forEach(cb=>{const tr=cb.closest('tr');if(!tr||!transitListRowIsVisible(tr))return;cb.checked=!!checked;const id=Number(cb.dataset.id||0);if(id){if(checked)selectedTransitIds.add(id);else selectedTransitIds.delete(id)}});syncSelectAllState()}
+/* --- 明细导出字段选择 --- */
 function getTransitExportDefaultFields(){
   try{const raw=localStorage.getItem(transitExportFieldStorageKey)||'';const arr=JSON.parse(raw||'[]');if(Array.isArray(arr)&&arr.length)return arr.filter(k=>transitExportFieldDefs.some(f=>f.key===k));}catch(_e){}
   return ['logistics_box_no','bill_of_lading_no','factory_name','forwarder_name','destination_region_name','destination_warehouse_name','expected_listed_date_latest','sku','shipped_qty','listed_qty','remark'];
@@ -983,6 +987,7 @@ function reloadTransitDocModalFiles(){
     })
     .catch(e=>{tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#a33;">加载失败</td></tr>`;showTransitDocModalStatus(String(e),true)});
 }
+/* --- 报关/清关资料文件管理 --- */
 function openTransitDocModal(type,targetTransitId){
   const transitId=Number(targetTransitId||editId||0);
   const docType=String(type||'').trim().toLowerCase();
@@ -1136,6 +1141,7 @@ function validateTransitPayloadForSave(p){if(!p.factory_id||!p.destination_regio
 function saveFromModal(){const p={factory_id:$('#factoryId').value,consolidation_factory_ids:getTransitConsolidationFactoryIds(),forwarder_id:$('#forwarderId').value,destination_region_id:$('#destinationRegionId').value,logistics_box_no:$('#logisticsBoxNo').value.trim(),bill_of_lading_no:$('#billOfLadingNo').value.trim(),destination_warehouse_id:$('#destinationWarehouseId').value,factory_ship_date_latest:$('#factoryShipDateLatest').value,expected_listed_date_latest:$('#expectedListedDateLatest').value,listed_date:$('#listedDate').value,etd_latest:$('#etdLatest').value,eta_latest:$('#etaLatest').value,arrival_port_date:$('#arrivalPortDate').value,expected_warehouse_date:$('#expectedWarehouseDate').value,shipping_company:$('#shippingCompany').value.trim(),vessel_voyage:$('#vesselVoyage').value.trim(),declaration_docs_provided:getSeg('declarationDocsSegment'),inventory_registered:getSeg('inventoryRegisteredSegment'),clearance_docs_provided:getSeg('clearanceDocsSegment'),qty_verified:getSeg('qtyCheckedSegment'),financial_verified:getSeg('financialVerifiedSegment'),confirmed_boxed_qty:getSeg('confirmedBoxedSegment'),port_of_loading:$('#portOfLoading').value.trim(),port_of_destination:$('#portOfDestination').value.trim(),inbound_order_no:$('#inboundOrderNo').value.trim(),remark:$('#remark').value.trim(),items:collectItems()};if(String(p.inventory_registered)==='1'&&!p.listed_date){p.listed_date=todayDateText();const listedEl=$('#listedDate');if(listedEl)listedEl.value=p.listed_date;}if(String(p.inventory_registered)!=='1'){p.listed_date='';const listedEl2=$('#listedDate');if(listedEl2)listedEl2.value='';}const msg=validateTransitPayloadForSave(p);if(msg){showStatus(msg,true);return}const proceed=()=>{const m=editId?'PUT':'POST';if(editId)p.id=editId;if(String(p.confirmed_boxed_qty)==='1'&&confirmedDeductOnSave===1)p.apply_deduct_factory_stock=1;fetch('/api/logistics-in-transit',{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json()).then(d=>{if(d.status==='success'){confirmedDeductOnSave=0;showStatus('保存成功',false);window.showAppToast&&window.showAppToast('保存成功',false,1500);handleTransitNotifyAfterSave(d);if(stayOnModalAfterSave){stayOnModalAfterSave=false;loadList();return}setTimeout(()=>{closeModal();loadList()},280)}else{stayOnModalAfterSave=false;showStatus(d.message||'操作失败',true)}}).catch(()=>{stayOnModalAfterSave=false;showStatus('操作失败',true)})};proceed();}
 function removeItem(id){showDialog({title:'确认删除',message:'确认删除该在途物流库存记录？',okText:'删除',cancelText:'取消',variant:'danger'}).then(x=>{if(!x.ok)return;fetch('/api/logistics-in-transit',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>{if(d.status==='success')loadList();else showDialog({title:'删除失败',message:d.message||'删除失败',showCancel:false})})})}
 
+/* --- 列表行预览编辑与批量保存 --- */
 const pendingTransitInlineEdits=new Map();
 function syncTransitPreviewSaveBar(){
   const bar=document.querySelector('#transitPreviewSaveBar');
@@ -1414,6 +1420,7 @@ function finishTransitTableBodyRefresh(){
   const mt=document.querySelector('#mainTable');
   if(mt&&M&&typeof M.endBodyUpdate==='function')M.endBodyUpdate(mt);
 }
+/* --- 列表加载与渲染 --- */
 function loadList(page,options){
   initTransitManagedTable();
   const M=window.SitjoyManagedPmTable;
@@ -1564,6 +1571,7 @@ function resetColumnWidthAndSort(){
   // 重新加载列表
   loadList();
 }
+/* --- 页面事件绑定与启动 --- */
 bindSeg('inventoryRegisteredSegment',v=>{if(String(v)==='1'&&!$('#listedDate').value){$('#listedDate').value=todayDateText()}if(String(v)!=='1'){$('#listedDate').value=''}saveTransitStatusRealtime('inventory_registered',Number(v));syncListedQtyEditable()});
 bindSeg('qtyCheckedSegment',v=>{saveTransitStatusRealtime('qty_verified',Number(v));if(String(v)!=='1'){syncListedQtyDefaultRule();}});
 bindSeg('clearanceDocsSegment',v=>{syncDocs();saveTransitStatusRealtime('clearance_docs_provided',Number(v))});

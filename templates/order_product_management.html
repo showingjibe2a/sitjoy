@@ -1136,6 +1136,7 @@
 
     <script src="/static/js/package_class_calculator.js"></script>
     <script>
+        /* 下单产品管理：列表预览编辑、主图/NAS 导入、替代发货方案、批量测算与 Excel 导入 */
         let editId = null;
         let skuOptions = [];
         let fabricOptions = [];
@@ -1197,6 +1198,9 @@
         let shippingPlanUsageExpandedIds = new Set();
         let shippingPlanEditorDraft = null;
 
+        // -------------------------------------------------------------------------
+        // 上传对话框、Toast 与模态状态
+        // -------------------------------------------------------------------------
         function renderUploadErrorDetails(errors) {
             const wrap = document.getElementById('uploadDialogDetails');
             const body = document.getElementById('uploadDialogDetailsBody');
@@ -1270,6 +1274,9 @@
             el.innerText = '';
         }
 
+        // -------------------------------------------------------------------------
+        // NAS 主图浏览弹窗与按路径导入
+        // -------------------------------------------------------------------------
         function decodeB64Utf8(b64) {
             try {
                 const binary = atob(String(b64 || '').trim());
@@ -2057,6 +2064,9 @@
 
         let orderMainImageGrid = null;
 
+        // -------------------------------------------------------------------------
+        // 编辑模态框：主图网格与本地上传
+        // -------------------------------------------------------------------------
         function ensureOrderMainImageGrid() {
             if (orderMainImageGrid) return orderMainImageGrid;
             if (!window.SitjoyMainImageGrid) return null;
@@ -2343,6 +2353,9 @@
                 .catch(err => showUploadDialog({ title: '复制失败', message: '加载详情失败: ' + err }));
         }
 
+        // -------------------------------------------------------------------------
+        // 新增/编辑模态框：表单、复制、保存
+        // -------------------------------------------------------------------------
         function openCreateModal() {
             editId = null;
             editOriginalItem = null;
@@ -2850,6 +2863,9 @@
             return Object.keys(previewEditDraft).length;
         }
 
+        // -------------------------------------------------------------------------
+        // 列表预览编辑：草稿、统一保存栏
+        // -------------------------------------------------------------------------
         function syncPreviewSaveBar() {
             const bar = document.getElementById('orderPreviewSaveBar');
             const text = document.getElementById('orderPreviewSaveText');
@@ -4097,6 +4113,9 @@
             return `<span class="op-color-dot-wrap"><span class="op-color-dot" data-color-chip="1" data-color="${escapeHtml(color)}" style="background:${escapeHtml(color)};"></span></span>`;
         }
 
+        // -------------------------------------------------------------------------
+        // 替代发货方案（分拆 SKU 组合）
+        // -------------------------------------------------------------------------
         function openShippingPlanModal(item) {
             if (!item || !item.id) return;
             shippingPlanCurrentOrder = item;
@@ -4533,6 +4552,9 @@
 
         const ORDER_PRODUCT_TABLE_COLSPAN = 28;
 
+        // -------------------------------------------------------------------------
+        // 列表渲染、加载与批量操作
+        // -------------------------------------------------------------------------
         function renderOrderProductTable(items) {
             const tbody = document.querySelector('#orderProductTable tbody');
             const safeItems = Array.isArray(items) ? items : [];
@@ -5387,6 +5409,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 下拉选项：货号、面料、工厂、认证等
+        // -------------------------------------------------------------------------
         function loadSkuFamilies() {
             fetch('/api/sku')
                 .then(r => r.json())
@@ -6044,6 +6069,9 @@
         });
         window.addEventListener('load', loadFactoryLinkOptions);
         
+        // -------------------------------------------------------------------------
+        // 可选字段样式与页面启动
+        // -------------------------------------------------------------------------
         // 为所有 optional-field 添加值变化检测
         function updateOptionalFieldStyle(el) {
             if (el.value.trim()) {

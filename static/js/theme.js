@@ -7,6 +7,10 @@
 
     const STORAGE_KEY = 'sitjoy_theme_prefs_v2';
 
+    // -------------------------------------------------------------------------
+    // 组件注册表与配色元数据
+    // -------------------------------------------------------------------------
+
     const COMPONENT_REGISTRY = [
         { id: 'palette', dataAttr: 'sjPalette', label: '基础色板', variants: { default: '默认' } },
         { id: 'pageBody', dataAttr: 'sjPageBody', label: '页面底纹', variants: { default: '默认' } },
@@ -192,6 +196,10 @@
 
     let studioRootEl = null;
 
+    // -------------------------------------------------------------------------
+    // 偏好读写、规范化与 DOM 应用
+    // -------------------------------------------------------------------------
+
     function registryById() {
         const map = Object.create(null);
         COMPONENT_REGISTRY.forEach(def => { map[def.id] = def; });
@@ -354,6 +362,10 @@
         savePrefs(prefs);
         return true;
     }
+
+    // -------------------------------------------------------------------------
+    // 主题工作室：预览 HTML、配色行与挂载
+    // -------------------------------------------------------------------------
 
     function buildPreviewHtml(componentId) {
         switch (componentId) {
@@ -628,6 +640,10 @@
         </div>`;
         bindStudioTable(root);
     }
+
+    // -------------------------------------------------------------------------
+    // 启动与对外 API
+    // -------------------------------------------------------------------------
 
     function init() {
         const prefs = loadPrefs();

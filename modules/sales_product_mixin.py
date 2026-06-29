@@ -4026,6 +4026,10 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 规格建议、变体预填与父体关联工具
+    # -------------------------------------------------------------------------
+
     def handle_sales_product_spec_suggest_api(self, environ, method, start_response):
         """GET /api/sales-product-spec-suggest — 当前货号下已有规格名称联想（模糊匹配已输入片段）。"""
         try:
@@ -6229,6 +6233,10 @@ class SalesProductMixin:
 
 
 
+    # -------------------------------------------------------------------------
+    # 销售主图：NAS 路径导入
+    # -------------------------------------------------------------------------
+
     def handle_sales_product_main_images_import_by_path_api(self, environ, method, start_response):
         """
         从 NAS 路径导入销售产品主图。自动检测文件位置，优先移动以优化性能。
@@ -6986,6 +6994,10 @@ class SalesProductMixin:
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
                 return self.send_json({'status': 'error', 'message': '图片类型已存在'}, start_response)
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 图片类型 API（销售/通用复用）
+    # -------------------------------------------------------------------------
 
     def handle_image_type_api(self, environ, method, start_response):
         """通用图片类型 API：支持按 usage 过滤和适用范围开关管理。"""
@@ -8268,6 +8280,10 @@ class SalesProductMixin:
             )
             row = cur.fetchone() or {}
         return max(0, self._parse_int(row.get('max_sort')) or 0)
+
+    # -------------------------------------------------------------------------
+    # 下单产品主图 API（列表/上传/导入/替换）
+    # -------------------------------------------------------------------------
 
     def handle_order_product_main_images_api(self, environ, method, start_response):
         try:

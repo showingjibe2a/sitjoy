@@ -2324,6 +2324,8 @@
         }
 
         /** 促销/折扣与经济测算（平台佣金规则、折后价） */
+
+        /** 佣金：平台类型 + 货号细分类目 → sitjoy_commission.js 规则引擎 */
         function salesResolvePlatformTypeId(item) {
             const direct = Number(item && item.platform_type_id);
             if (Number.isFinite(direct) && direct > 0) return direct;
@@ -2409,9 +2411,10 @@
                 return String(econ.commission_message || '无法计算');
             }
             if (!econ.commissionApplicable) return '-';
-            return formatSalesEconomicsUsd(econ.commission, false);
+            return formatSalesEconomicsUsd(econ.commission, false            );
         }
 
+        /** 单件净利/净利率展示（佣金不可算时显示原因） */
         function salesFormatEconNetProfit(econ) {
             if (!econ || econ.salePrice <= 0) return '-';
             if (econ.commission_status === 'unavailable') {
@@ -2692,6 +2695,7 @@
             return Number.isFinite(n) ? String(n) : '';
         }
 
+        /** 行经济测算汇总：成本、佣金、净利、净利率 */
         function salesComputeRowEconomics(item) {
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
