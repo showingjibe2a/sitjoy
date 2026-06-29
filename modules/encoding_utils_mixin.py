@@ -8,7 +8,11 @@ import shutil
 import time
 
 class EncodingUtilsMixin:
-    """编码、转换和Unicode处理工具"""
+    """编码、转换和 Unicode 处理工具。"""
+
+    # -------------------------------------------------------------------------
+    # Base64 ↔ 文件系统路径 / UTF-8 展示名
+    # -------------------------------------------------------------------------
 
     def _b64_from_fs(self, value):
         """将文件系统路径/名称转为 Base64（保留原始字节）"""
@@ -69,6 +73,10 @@ class EncodingUtilsMixin:
                 return raw.decode('latin-1')
             except Exception:
                 return ''
+
+    # -------------------------------------------------------------------------
+    # 上架资源路径等价判断 / 回收站
+    # -------------------------------------------------------------------------
 
     def _listing_paths_equivalent(self, p1, p2):
         """
@@ -194,6 +202,10 @@ class EncodingUtilsMixin:
                 return False, None, str(e)
         return False, None, 'rename_exhausted'
 
+    # -------------------------------------------------------------------------
+    # URL-safe Base64 / 面料文件名多编码变体
+    # -------------------------------------------------------------------------
+
     def _b64url_encode(self, raw):
         """URL安全的Base64编码"""
         return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
@@ -268,6 +280,10 @@ class EncodingUtilsMixin:
                         bound_b64_map[b64].add(int(fabric_id))
                 except Exception:
                     continue
+
+    # -------------------------------------------------------------------------
+    # 目录内按 Base64 文件名定位 / 资源相对路径
+    # -------------------------------------------------------------------------
 
     def _entry_name_bytes(self, entry):
         raw = entry.name
@@ -359,6 +375,10 @@ class EncodingUtilsMixin:
             rel_b = rel_b + b'/' + b
         rel_str = self._safe_fsdecode(rel_b).replace('\\', '/')
         return rel_str, base64.b64encode(rel_b).decode('ascii')
+
+    # -------------------------------------------------------------------------
+    # 面料备注标准化 / 安全整数转换
+    # -------------------------------------------------------------------------
 
     def _normalize_fabric_remark(self, remark):
         """标准化面料图片备注"""

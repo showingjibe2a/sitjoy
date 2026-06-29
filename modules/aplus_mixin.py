@@ -12,6 +12,12 @@ from urllib.parse import parse_qs
 
 
 class AplusMixin:
+    """A+ 页面：版本目录、素材绑定与上传。"""
+
+    # -------------------------------------------------------------------------
+    # 版本目录与图片类型校验
+    # -------------------------------------------------------------------------
+
     def _sanitize_folder_component(self, text, max_len=80):
         s = str(text or '').strip()
         if not s:
@@ -117,7 +123,21 @@ class AplusMixin:
 
         return tid
 
+    def _aplus_validate_version_name(self, raw):
+        """返回 (version_name, error_message|None)。"""
+        name = str(raw or '').strip()
+        if not name:
+            return None, '版本名称不能为空'
+        if len(name) > 128:
+            return None, '版本名称过长'
+        return name, None
+
+    # -------------------------------------------------------------------------
+    # API：版本 / 素材 / 上传
+    # -------------------------------------------------------------------------
+
     def handle_aplus_version_api(self, environ, method, start_response):
+        """A+ 版本 CRUD。"""
         try:
             if method == 'GET':
                 query = parse_qs(environ.get('QUERY_STRING', '') or '')
@@ -158,13 +178,13 @@ class AplusMixin:
 
             if method == 'POST':
                 data = self._read_json_body(environ)
-                version_name = str(data.get('version_name') or '').strip()
+                version_name, ver_err = self._aplus_validate_version_name(data.get('version_name'))
                 platform_type_id = self._parse_int(data.get('platform_type_id'))
                 sku_family_id = self._parse_int(data.get('sku_family_id'))
-                if not version_name or not platform_type_id or not sku_family_id:
+                if ver_err:
+                    return self.send_json({'status': 'error', 'message': ver_err}, start_response)
+                if not platform_type_id or not sku_family_id:
                     return self.send_json({'status': 'error', 'message': 'Missing version_name/platform_type_id/sku_family_id'}, start_response)
-                if len(version_name) > 128:
-                    return self.send_json({'status': 'error', 'message': '版本名称过长'}, start_response)
                 user_id = None
                 try:
                     user_id = self._get_session_user(environ)
@@ -191,13 +211,11 @@ class AplusMixin:
                 sets = []
                 vals = []
                 if 'version_name' in data:
-                    name = str(data.get('version_name') or '').strip()
-                    if not name:
-                        return self.send_json({'status': 'error', 'message': '版本名称不能为空'}, start_response)
-                    if len(name) > 128:
-                        return self.send_json({'status': 'error', 'message': '版本名称过长'}, start_response)
+                    version_name, ver_err = self._aplus_validate_version_name(data.get('version_name'))
+                    if ver_err:
+                        return self.send_json({'status': 'error', 'message': ver_err}, start_response)
                     sets.append("version_name=%s")
-                    vals.append(name)
+                    vals.append(version_name)
                 if not sets:
                     return self.send_json({'status': 'error', 'message': 'No updatable fields'}, start_response)
                 with self._get_db_connection() as conn:
@@ -221,10 +239,12 @@ class AplusMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_aplus_version_layout_api(self, environ, method, start_response):
+        """已废弃：布局 JSON 改由 image_types 表字段维护。"""
         # Deprecated route: layout JSON now lives on image_types.aplus_layout_json_{mobile,desktop}
         return self.send_json({'status': 'error', 'message': 'Deprecated: use /api/image-type to read/write A+ layout JSON'}, start_response)
 
     def handle_aplus_version_assets_api(self, environ, method, start_response):
+        """A+ 版本素材列表与绑定（GET/POST/DELETE）。"""
         try:
             if method == 'GET':
                 query = parse_qs(environ.get('QUERY_STRING', '') or '')

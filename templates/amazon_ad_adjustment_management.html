@@ -1257,6 +1257,10 @@
     </footer>
 
     <script>
+        /**
+         * 广告调整页：左侧广告搜索/列表、中间调整表单、右侧观察期指标卡片。
+         * 页面状态与搜索偏好持久化到 localStorage；观察字段联动 AaObserveInterval。
+         */
         let adItems = [];
         let adItemsRaw = [];
         let selectedAd = null;
@@ -1302,6 +1306,10 @@
         const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
         const AA_SEARCH_LS_EXACT = 'sj.amazonAdAdjustment.exactMatch';
         const AA_PAGE_STATE_LS = 'sj.amazonAdAdjustment.pageState.v1';
+
+        // ---------------------------------------------------------------------
+        // 页面状态（localStorage）
+        // ---------------------------------------------------------------------
 
         function readPageState() {
             try {
@@ -1350,6 +1358,10 @@
             }
             return url;
         }
+
+        // ---------------------------------------------------------------------
+        // 观察字段（下次观察时间 / 可见性）
+        // ---------------------------------------------------------------------
 
         function isTargetObjectObserveOp(op) {
             return isModifyProductOp(op) || isModifyDeliveryTargetOp(op) || isModifyPlacementOp(op);
@@ -1474,6 +1486,10 @@
                 savePageState();
             });
         }
+
+        // ---------------------------------------------------------------------
+        // 广告搜索偏好与层级筛选
+        // ---------------------------------------------------------------------
 
         function readAdSearchBool(key, defaultValue) {
             try {
@@ -1801,6 +1817,10 @@
             const disp = formatComputedRatioMetricDisplay(raw);
             return disp === '-' ? '' : disp;
         }
+
+        // ---------------------------------------------------------------------
+        // 观察期列表（字段草稿 / 渲染 / 加载）
+        // ---------------------------------------------------------------------
 
         function normalizePeriodDraftValue(field, rawValue) {
             if (field === 'attribution_checked') {
@@ -3978,6 +3998,10 @@
             });
         }
 
+        // ---------------------------------------------------------------------
+        // 左侧广告列表（列宽 / 渲染 / 加载）
+        // ---------------------------------------------------------------------
+
         function bindAdListRowEvents() {
             const wrap = document.getElementById('adList');
             if (!wrap || wrap.dataset.rowBound === '1') return;
@@ -4667,6 +4691,11 @@
         });
 
         window.addEventListener('resize', () => scheduleSyncAaLeftStackWidth());
+
+        // ---------------------------------------------------------------------
+        // 页面初始化
+        // ---------------------------------------------------------------------
+
         window.addEventListener('DOMContentLoaded', () => {
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
             bindAdListRowEvents();

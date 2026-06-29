@@ -311,6 +311,10 @@ class AmazonAdMixin:
             'subtype_code': subtype_code,
         }, None
 
+    # -------------------------------------------------------------------------
+    # 细分类（subtype）
+    # -------------------------------------------------------------------------
+
     def handle_amazon_ad_subtype_api(self, environ, method, start_response):
         """Amazon 广告细分类管理 API（CRUD）"""
         try:
@@ -508,6 +512,10 @@ class AmazonAdMixin:
         cur.execute("SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM amazon_ad_operation_types")
         row = cur.fetchone() or {}
         return int(row.get('max_sort') or 0) + 10
+
+    # -------------------------------------------------------------------------
+    # 细分类 / 操作类型
+    # -------------------------------------------------------------------------
 
     def handle_amazon_ad_operation_type_api(self, environ, method, start_response):
         """Amazon 广告操作类型 API（含操作原因 CRUD）"""
@@ -1296,6 +1304,10 @@ class AmazonAdMixin:
 
         return fields, None
 
+    # -------------------------------------------------------------------------
+    # 广告信息 CRUD（amazon_ad_items）
+    # -------------------------------------------------------------------------
+
     def handle_amazon_ad_api(self, environ, method, start_response):
         """Amazon 广告 CRUD API（amazon_ad_items）"""
         try:
@@ -1911,20 +1923,36 @@ class AmazonAdMixin:
         guide.column_dimensions['E'].width = 42
         return wb
 
-    def handle_amazon_ad_template_api(self, environ, method, start_response):
-        """Amazon 广告信息批量导入模板下载"""
+    # -------------------------------------------------------------------------
+    # 广告信息（amazon_ad_items）导入 / CRUD
+    # -------------------------------------------------------------------------
+
+    def _amazon_ad_openpyxl_unavailable_response(self, start_response):
+        return self.send_json(
+            {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
+            start_response,
+        )
+
+    def _amazon_ad_send_import_template(self, environ, method, start_response, *, workbook_builder, filename):
         try:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
-                return self.send_json(
-                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
-                    start_response
-                )
-            wb = self._build_amazon_ad_items_import_workbook()
-            return self._send_excel_workbook(wb, '广告信息导入模板.xlsx', start_response)
+                return self._amazon_ad_openpyxl_unavailable_response(start_response)
+            wb = workbook_builder()
+            return self._send_excel_workbook(wb, filename, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_template_api(self, environ, method, start_response):
+        """Amazon 广告信息批量导入模板下载"""
+        return self._amazon_ad_send_import_template(
+            environ,
+            method,
+            start_response,
+            workbook_builder=self._build_amazon_ad_items_import_workbook,
+            filename='广告信息导入模板.xlsx',
+        )
 
     def handle_amazon_ad_import_api(self, environ, method, start_response):
         """Amazon 广告信息批量导入"""
@@ -3040,6 +3068,10 @@ class AmazonAdMixin:
 
         return updated, errors
 
+    # -------------------------------------------------------------------------
+    # 广告投放（target）导入 / CRUD
+    # -------------------------------------------------------------------------
+
     def handle_amazon_ad_target_api(self, environ, method, start_response):
         """Amazon 广告投放（target）API（CRUD）"""
         try:
@@ -3329,18 +3361,13 @@ class AmazonAdMixin:
 
     def handle_amazon_ad_target_template_api(self, environ, method, start_response):
         """广告投放批量导入模板下载"""
-        try:
-            if method != 'GET':
-                return self.send_error(405, 'Method not allowed', start_response)
-            if Workbook is None:
-                return self.send_json(
-                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
-                    start_response,
-                )
-            wb = self._build_amazon_ad_target_import_workbook()
-            return self._send_excel_workbook(wb, '广告投放导入模板.xlsx', start_response)
-        except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        return self._amazon_ad_send_import_template(
+            environ,
+            method,
+            start_response,
+            workbook_builder=self._build_amazon_ad_target_import_workbook,
+            filename='广告投放导入模板.xlsx',
+        )
 
     def handle_amazon_ad_target_import_api(self, environ, method, start_response):
         """广告投放批量导入（预加载索引 + 批量写入）"""
@@ -3487,20 +3514,19 @@ class AmazonAdMixin:
                 except Exception:
                     pass
 
+    # -------------------------------------------------------------------------
+    # 广告商品（product）导入 / CRUD
+    # -------------------------------------------------------------------------
+
     def handle_amazon_ad_product_template_api(self, environ, method, start_response):
         """广告商品批量导入模板下载"""
-        try:
-            if method != 'GET':
-                return self.send_error(405, 'Method not allowed', start_response)
-            if Workbook is None:
-                return self.send_json(
-                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
-                    start_response,
-                )
-            wb = self._build_amazon_ad_product_import_workbook()
-            return self._send_excel_workbook(wb, '广告商品导入模板.xlsx', start_response)
-        except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        return self._amazon_ad_send_import_template(
+            environ,
+            method,
+            start_response,
+            workbook_builder=self._build_amazon_ad_product_import_workbook,
+            filename='广告商品导入模板.xlsx',
+        )
 
     def handle_amazon_ad_product_import_api(self, environ, method, start_response):
         """广告商品批量导入（预加载索引 + 批量写入）"""
@@ -5286,6 +5312,10 @@ class AmazonAdMixin:
             'error': err_msg,
         }, None
 
+    # -------------------------------------------------------------------------
+    # 广告调整（adjustment）导入 / CRUD
+    # -------------------------------------------------------------------------
+
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
         """Amazon 广告调整 API（广告搜索 / 默认值 / 调整记录 CRUD）"""
         try:
@@ -6035,18 +6065,13 @@ class AmazonAdMixin:
 
     def handle_amazon_ad_adjustment_template_api(self, environ, method, start_response):
         """广告调整记录批量导入模板下载"""
-        try:
-            if method != 'GET':
-                return self.send_error(405, 'Method not allowed', start_response)
-            if Workbook is None:
-                return self.send_json(
-                    {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
-                    start_response,
-                )
-            wb = self._build_amazon_ad_adjustment_import_workbook()
-            return self._send_excel_workbook(wb, '广告调整记录导入模板.xlsx', start_response)
-        except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        return self._amazon_ad_send_import_template(
+            environ,
+            method,
+            start_response,
+            workbook_builder=self._build_amazon_ad_adjustment_import_workbook,
+            filename='广告调整记录导入模板.xlsx',
+        )
 
     def handle_amazon_ad_adjustment_import_api(self, environ, method, start_response):
         """广告调整记录批量导入（预加载索引 + 批量写入）"""
@@ -6244,6 +6269,10 @@ class AmazonAdMixin:
                     wb.close()
                 except Exception:
                     pass
+
+    # -------------------------------------------------------------------------
+    # 广告关键词（keyword）占位 API
+    # -------------------------------------------------------------------------
 
     def handle_amazon_ad_keyword_api(self, environ, method, start_response):
         """Amazon 广告关键词 API"""
