@@ -1065,6 +1065,41 @@
     let appDingtalkNotifyPromptFollowUp = null;
     const APP_DINGTALK_AUTO_SEND_KEY = 'sitjoy_dingtalk_auto_send';
 
+    /* =======================================================================
+     * 钉钉群通知（全站统一：左下角预览 → 确认发送 / 自动发送）
+     * ======================================================================= */
+
+    /** 合并待发送队列并弹出预览确认框（各业务通知共用） */
+    function setupAppDingtalkNotifyPrompt(cfg){
+        const opt = cfg.options && typeof cfg.options === 'object' ? cfg.options : {};
+        const incoming = (Array.isArray(cfg.items) ? cfg.items : []).filter(cfg.filterItem || (() => true));
+        const pending = typeof cfg.getPending === 'function' ? cfg.getPending() : [];
+        const merged = cfg.mergeItems(pending, incoming);
+        if(!merged.length) return;
+        if(typeof cfg.setPending === 'function') cfg.setPending(merged);
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || cfg.defaultTitle || '钉钉通知').trim() || cfg.defaultTitle,
+            previewHtml: cfg.buildPreviewHtml(merged, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const batch = (typeof cfg.getPending === 'function' ? cfg.getPending() : merged).slice();
+                const count = cfg.countItems ? cfg.countItems(batch) : batch.length;
+                const plural = cfg.successMessagePlural || `已发送 {n} 条通知到钉钉群`;
+                const single = cfg.successMessageSingle || '已发送到钉钉群';
+                const result = await sendAppDingtalkNotify(cfg.notifyAction, {
+                    items: batch,
+                    successMessage: count > 1 ? plural.replace('{n}', String(count)) : single,
+                });
+                if(result && result.ok && typeof cfg.clearPending === 'function'){
+                    cfg.clearPending();
+                }
+                return !!(result && result.ok);
+            },
+        });
+    }
+
     function isAppDingtalkAutoSendEnabled(){
         try {
             const raw = localStorage.getItem(APP_DINGTALK_AUTO_SEND_KEY);
@@ -1184,6 +1219,7 @@
         promptAppDingtalkOverseasInventoryChanges(stockout, restock, opt);
     }
 
+    /** 低库存预警：按 SKU 去重合并（后写入覆盖同 SKU 字段） */
     function mergeOverseasLowStockNotifyItems(pendingItems, newItems){
         const pending = Array.isArray(pendingItems) ? pendingItems : [];
         const incoming = Array.isArray(newItems) ? newItems : [];
@@ -1231,13 +1267,17 @@
             if(nextOn && !wasOn){
                 const pendingStockout = appDingtalkPendingOverseasStockoutItems.slice();
                 const pendingRestock = appDingtalkPendingOverseasRestockItems.slice();
-                if(pendingStockout.length || pendingRestock.length){
-                    autoSendAppDingtalkOverseasInventoryChanges(pendingStockout, pendingRestock).catch(() => {});
+                const pendingLowStock = appDingtalkPendingOverseasLowStockItems.slice();
+                if(pendingStockout.length || pendingRestock.length || pendingLowStock.length){
+                    autoSendAppDingtalkOverseasInventoryChanges(
+                        pendingStockout, pendingRestock, { lowStockItems: pendingLowStock },
+                    ).catch(() => {});
                 }
             }
         });
     }
 
+    /** 缺货/上架：按 SKU+仓库 去重，合并 extraFields 中的数量字段 */
     function mergeOverseasInventoryNotifyItems(pendingItems, newItems, extraFields){
         const pending = Array.isArray(pendingItems) ? pendingItems : [];
         const incoming = Array.isArray(newItems) ? newItems : [];
@@ -1291,6 +1331,7 @@
         appDingtalkPendingTransitListedItems = [];
     }
 
+    /** 在途通知：按 keyFields 组合键去重（同键保留先到项） */
     function mergeTransitNotifyItems(pendingItems, newItems, keyFields){
         const pending = Array.isArray(pendingItems) ? pendingItems : [];
         const incoming = Array.isArray(newItems) ? newItems : [];
@@ -1514,6 +1555,7 @@
         });
     }
 
+    /** 海外仓缺货/上架预览：按 SKU 分组，展示全美库存与各仓数量变化 */
     function buildOverseasInventoryPreviewHtml(items, eventKind, maxLines){
         const groups = groupOverseasNotifyItemsBySku(items);
         const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
@@ -1595,14 +1637,6 @@
         }).filter(Boolean);
     }
 
-    function formatTransitSkuDetailLines(skuLines){
-        return (Array.isArray(skuLines) ? skuLines : []).map((row) => {
-            const sku = String(row && row.sku || '').trim() || '-';
-            const qty = Number(row && row.qty);
-            return Number.isFinite(qty) && qty > 0 ? `${sku} × ${qty}` : sku;
-        }).filter(Boolean);
-    }
-
     function buildTransitListedPreviewHtml(items, maxLines){
         const list = Array.isArray(items) ? items : [];
         const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
@@ -1680,61 +1714,37 @@
     }
 
     function promptAppDingtalkTransitEtaDelay(items, options){
-        const opt = options && typeof options === 'object' ? options : {};
-        const incoming = (Array.isArray(items) ? items : [])
-            .filter(item => item && item.transit_id && item.new_date && item.previous_date);
-        const merged = mergeTransitEtaDelayNotifyItems(appDingtalkPendingTransitEtaDelayItems, incoming);
-        if(!merged.length) return;
-        appDingtalkPendingTransitEtaDelayItems = merged;
-        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
-        showAppDingtalkNotifyPrompt({
-            title: String(opt.title || '钉钉在途延迟通知').trim() || '钉钉在途延迟通知',
-            previewHtml: buildTransitEtaDelayPreviewHtml(merged, opt.maxPreviewLines),
-            confirmText: opt.confirmText,
-            cancelText: opt.cancelText,
-            onConfirm: async () => {
-                const batch = appDingtalkPendingTransitEtaDelayItems.slice();
-                const groupCount = groupTransitEtaDelayItems(batch).length;
-                const result = await sendAppDingtalkNotify('transit_eta_delay', {
-                    items: batch,
-                    successMessage: groupCount > 1
-                        ? `已发送 ${groupCount} 条在途延迟通知到钉钉群`
-                        : '已发送在途延迟通知到钉钉群',
-                });
-                if(result && result.ok){
-                    clearAppDingtalkPendingTransitEtaDelay();
-                }
-                return !!(result && result.ok);
-            },
+        setupAppDingtalkNotifyPrompt({
+            items,
+            options,
+            defaultTitle: '钉钉在途延迟通知',
+            notifyAction: 'transit_eta_delay',
+            filterItem: (item) => item && item.transit_id && item.new_date && item.previous_date,
+            getPending: () => appDingtalkPendingTransitEtaDelayItems,
+            setPending: (merged) => { appDingtalkPendingTransitEtaDelayItems = merged; },
+            clearPending: clearAppDingtalkPendingTransitEtaDelay,
+            mergeItems: mergeTransitEtaDelayNotifyItems,
+            buildPreviewHtml: buildTransitEtaDelayPreviewHtml,
+            countItems: (batch) => groupTransitEtaDelayItems(batch).length,
+            successMessagePlural: '已发送 {n} 条在途延迟通知到钉钉群',
+            successMessageSingle: '已发送在途延迟通知到钉钉群',
         });
     }
 
     function promptAppDingtalkTransitListedAvailable(items, options){
-        const opt = options && typeof options === 'object' ? options : {};
-        const incoming = (Array.isArray(items) ? items : [])
-            .filter(item => item && item.transit_id && Array.isArray(item.sku_lines) && item.sku_lines.length);
-        const merged = mergeTransitListedNotifyItems(appDingtalkPendingTransitListedItems, incoming);
-        if(!merged.length) return;
-        appDingtalkPendingTransitListedItems = merged;
-        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
-        showAppDingtalkNotifyPrompt({
-            title: String(opt.title || '钉钉在途上架可售通知').trim() || '钉钉在途上架可售通知',
-            previewHtml: buildTransitListedPreviewHtml(merged, opt.maxPreviewLines),
-            confirmText: opt.confirmText,
-            cancelText: opt.cancelText,
-            onConfirm: async () => {
-                const batch = appDingtalkPendingTransitListedItems.slice();
-                const result = await sendAppDingtalkNotify('transit_listed_available', {
-                    items: batch,
-                    successMessage: batch.length > 1
-                        ? `已发送 ${batch.length} 条上架可售通知到钉钉群`
-                        : '已发送上架可售通知到钉钉群',
-                });
-                if(result && result.ok){
-                    clearAppDingtalkPendingTransitListed();
-                }
-                return !!(result && result.ok);
-            },
+        setupAppDingtalkNotifyPrompt({
+            items,
+            options,
+            defaultTitle: '钉钉在途上架可售通知',
+            notifyAction: 'transit_listed_available',
+            filterItem: (item) => item && item.transit_id && Array.isArray(item.sku_lines) && item.sku_lines.length,
+            getPending: () => appDingtalkPendingTransitListedItems,
+            setPending: (merged) => { appDingtalkPendingTransitListedItems = merged; },
+            clearPending: clearAppDingtalkPendingTransitListed,
+            mergeItems: mergeTransitListedNotifyItems,
+            buildPreviewHtml: buildTransitListedPreviewHtml,
+            successMessagePlural: '已发送 {n} 条上架可售通知到钉钉群',
+            successMessageSingle: '已发送上架可售通知到钉钉群',
         });
     }
 
@@ -1818,91 +1828,59 @@
     }
 
     function promptAppDingtalkOverseasStockout(items, options){
-        const opt = options && typeof options === 'object' ? options : {};
-        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
-        const merged = mergeOverseasStockoutNotifyItems(appDingtalkPendingOverseasStockoutItems, incoming);
-        if(!merged.length) return;
-        appDingtalkPendingOverseasStockoutItems = merged;
-        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
-        showAppDingtalkNotifyPrompt({
-            title: String(opt.title || '钉钉缺货通知').trim() || '钉钉缺货通知',
-            previewHtml: buildOverseasStockoutPreviewHtml(merged, opt.maxPreviewLines),
-            confirmText: opt.confirmText,
-            cancelText: opt.cancelText,
-            onConfirm: async () => {
-                const batch = appDingtalkPendingOverseasStockoutItems.slice();
-                const groupCount = groupOverseasNotifyItemsBySku(batch).length;
-                const result = await sendAppDingtalkNotify('overseas_stockout', {
-                    items: batch,
-                    successMessage: groupCount > 1
-                        ? `已发送 ${groupCount} 条缺货通知到钉钉群`
-                        : '已发送缺货通知到钉钉群',
-                });
-                if(result && result.ok){
-                    clearAppDingtalkPendingOverseasStockout();
-                }
-                return !!(result && result.ok);
-            },
+        setupAppDingtalkNotifyPrompt({
+            items,
+            options,
+            defaultTitle: '钉钉缺货通知',
+            notifyAction: 'overseas_stockout',
+            filterItem: (item) => item && item.sku && item.warehouse_name,
+            getPending: () => appDingtalkPendingOverseasStockoutItems,
+            setPending: (merged) => { appDingtalkPendingOverseasStockoutItems = merged; },
+            clearPending: clearAppDingtalkPendingOverseasStockout,
+            mergeItems: mergeOverseasStockoutNotifyItems,
+            buildPreviewHtml: buildOverseasStockoutPreviewHtml,
+            countItems: (batch) => groupOverseasNotifyItemsBySku(batch).length,
+            successMessagePlural: '已发送 {n} 条缺货通知到钉钉群',
+            successMessageSingle: '已发送缺货通知到钉钉群',
         });
     }
 
     function promptAppDingtalkOverseasRestock(items, options){
-        const opt = options && typeof options === 'object' ? options : {};
-        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku && item.warehouse_name);
-        const merged = mergeOverseasRestockNotifyItems(appDingtalkPendingOverseasRestockItems, incoming);
-        if(!merged.length) return;
-        appDingtalkPendingOverseasRestockItems = merged;
-        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
-        showAppDingtalkNotifyPrompt({
-            title: String(opt.title || '钉钉重新上架通知').trim() || '钉钉重新上架通知',
-            previewHtml: buildOverseasRestockPreviewHtml(merged, opt.maxPreviewLines),
-            confirmText: opt.confirmText,
-            cancelText: opt.cancelText,
-            onConfirm: async () => {
-                const batch = appDingtalkPendingOverseasRestockItems.slice();
-                const groupCount = groupOverseasNotifyItemsBySku(batch).length;
-                const result = await sendAppDingtalkNotify('overseas_restock', {
-                    items: batch,
-                    successMessage: groupCount > 1
-                        ? `已发送 ${groupCount} 条重新上架通知到钉钉群`
-                        : '已发送重新上架通知到钉钉群',
-                });
-                if(result && result.ok){
-                    clearAppDingtalkPendingOverseasRestock();
-                }
-                return !!(result && result.ok);
-            },
+        setupAppDingtalkNotifyPrompt({
+            items,
+            options,
+            defaultTitle: '钉钉重新上架通知',
+            notifyAction: 'overseas_restock',
+            filterItem: (item) => item && item.sku && item.warehouse_name,
+            getPending: () => appDingtalkPendingOverseasRestockItems,
+            setPending: (merged) => { appDingtalkPendingOverseasRestockItems = merged; },
+            clearPending: clearAppDingtalkPendingOverseasRestock,
+            mergeItems: mergeOverseasRestockNotifyItems,
+            buildPreviewHtml: buildOverseasRestockPreviewHtml,
+            countItems: (batch) => groupOverseasNotifyItemsBySku(batch).length,
+            successMessagePlural: '已发送 {n} 条重新上架通知到钉钉群',
+            successMessageSingle: '已发送重新上架通知到钉钉群',
         });
     }
 
     function promptAppDingtalkOverseasLowStock(items, options){
-        const opt = options && typeof options === 'object' ? options : {};
-        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku);
-        const merged = mergeOverseasLowStockNotifyItems(appDingtalkPendingOverseasLowStockItems, incoming);
-        if(!merged.length) return;
-        appDingtalkPendingOverseasLowStockItems = merged;
-        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
-        showAppDingtalkNotifyPrompt({
-            title: String(opt.title || '钉钉低库存预警').trim() || '钉钉低库存预警',
-            previewHtml: buildOverseasLowStockPreviewHtml(merged, opt.maxPreviewLines),
-            confirmText: opt.confirmText,
-            cancelText: opt.cancelText,
-            onConfirm: async () => {
-                const batch = appDingtalkPendingOverseasLowStockItems.slice();
-                const result = await sendAppDingtalkNotify('overseas_low_stock', {
-                    items: batch,
-                    successMessage: batch.length > 1
-                        ? `已发送 ${batch.length} 条低库存预警到钉钉群`
-                        : '已发送低库存预警到钉钉群',
-                });
-                if(result && result.ok){
-                    clearAppDingtalkPendingOverseasLowStock();
-                }
-                return !!(result && result.ok);
-            },
+        setupAppDingtalkNotifyPrompt({
+            items,
+            options,
+            defaultTitle: '钉钉低库存预警',
+            notifyAction: 'overseas_low_stock',
+            filterItem: (item) => item && item.sku,
+            getPending: () => appDingtalkPendingOverseasLowStockItems,
+            setPending: (merged) => { appDingtalkPendingOverseasLowStockItems = merged; },
+            clearPending: clearAppDingtalkPendingOverseasLowStock,
+            mergeItems: mergeOverseasLowStockNotifyItems,
+            buildPreviewHtml: buildOverseasLowStockPreviewHtml,
+            successMessagePlural: '已发送 {n} 条低库存预警到钉钉群',
+            successMessageSingle: '已发送低库存预警到钉钉群',
         });
     }
 
+    /** 海外仓库存变更：缺货 → 上架 → 低库存，通过 followUp 链式弹出预览 */
     function promptAppDingtalkOverseasInventoryChanges(stockoutItems, restockItems, options){
         const stockout = (Array.isArray(stockoutItems) ? stockoutItems : []).filter(item => item && item.sku && item.warehouse_name);
         const restock = (Array.isArray(restockItems) ? restockItems : []).filter(item => item && item.sku && item.warehouse_name);

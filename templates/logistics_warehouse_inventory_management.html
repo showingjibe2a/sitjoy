@@ -126,6 +126,7 @@
     </div>
 
     <script>
+        /* 海外仓库存页：列表、预览批量改数、导入、钉钉缺货/上架/低库存通知 */
         let editId = null;
         let warehouses = [];
         let orderProducts = [];
@@ -147,6 +148,7 @@
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.innerText=msg||''; el.style.color=err?'#9b2226':'#2f6b3f'; }
+        /** 保存/导入成功后：缺货 → 上架 → 低库存，交由 header.js 统一调度钉钉通知 */
         function handleInventoryNotifyAfterSave(data){
             const payload = data && typeof data === 'object' ? data : {};
             const stockout = Array.isArray(payload.stockout_items) ? payload.stockout_items : [];
@@ -249,6 +251,7 @@
                 available_qty: normalizeInventoryDraftQty(inventoryEditDraft[id].available_qty),
             }));
         }
+        /** 表格内联改数 → bulk_update → 触发钉钉通知 */
         function saveInventoryPreviewEdits(){
             const items = collectInventoryPreviewUpdateItems();
             if(!items.length){

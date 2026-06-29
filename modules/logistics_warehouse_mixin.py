@@ -1,4 +1,6 @@
-﻿import cgi
+﻿# -*- coding: utf-8 -*-
+"""物流仓储：工厂在库/在制、海外仓主数据、海外仓库存及钉钉通知辅助逻辑。"""
+import cgi
 import csv
 import base64
 import io
@@ -25,6 +27,7 @@ except Exception as _e:
 
 
 class LogisticsWarehouseMixin:
+    """物流仓储 Mixin：工厂库存、海外仓、库存导入与缺货/低库存钉钉通知。"""
 
     def _normalize_id_list_local(self, value):
         if value is None:
@@ -2766,7 +2769,12 @@ class LogisticsWarehouseMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 海外仓库存：快照、钉钉通知项、低库存预警
+    # -------------------------------------------------------------------------
+
     def _snapshot_overseas_inventory(self, cur):
+        """读取启用仓库下的 (warehouse_id, order_product_id) → 可用量/SKU/仓库名快照。"""
         cur.execute(
             """
             SELECT i.warehouse_id, i.order_product_id, i.available_qty,
@@ -2791,6 +2799,7 @@ class LogisticsWarehouseMixin:
         return snapshot
 
     def _load_us_remaining_qty_by_skus(self, cur, skus):
+        """按 SKU 汇总全美启用海外仓在库可用量。"""
         sku_list = []
         seen = set()
         for raw in skus or []:
@@ -2823,6 +2832,7 @@ class LogisticsWarehouseMixin:
         return out
 
     def _enrich_overseas_notify_items(self, cur, items):
+        """为缺货/上架通知项附加全美在库合计（us_remaining_qty）。"""
         rows = [dict(item) for item in (items or []) if isinstance(item, dict)]
         if not rows:
             return rows
@@ -2836,6 +2846,7 @@ class LogisticsWarehouseMixin:
     OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD = 0.5
 
     def _overseas_low_stock_channel_totals(self, conn, order_product_ids):
+        """汇总各 SKU 全渠道库存（海外+在途+工厂+在制），含替代款合并。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return {}
@@ -2873,6 +2884,7 @@ class LogisticsWarehouseMixin:
         return out
 
     def _evaluate_overseas_low_stock_alerts(self, conn, order_product_ids):
+        """全渠道库存≤5 或 动销月(全部)<0.5 时生成低库存预警项。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return []
@@ -2920,10 +2932,39 @@ class LogisticsWarehouseMixin:
         except Exception:
             return []
 
-    def _stockout_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial'):
+    def _prepare_overseas_inventory_notify_payload(self, cur, conn, stockout_items, restock_items, order_product_ids):
+        """富化缺货/上架通知项，并按受影响 order_product 计算低库存预警。"""
+        stockout = self._enrich_overseas_notify_items(cur, stockout_items or [])
+        restock = self._enrich_overseas_notify_items(cur, restock_items or [])
+        op_ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        low_stock = self._attach_overseas_low_stock_alerts(conn, op_ids) if op_ids else []
+        return stockout, restock, low_stock
+
+    def _overseas_qty_change_notify_pair(self, old_qty, new_qty, sku, warehouse_name):
+        """单次数量变更 → (缺货项列表, 上架项列表)。"""
+        old_qty = self._parse_int(old_qty) or 0
+        new_qty = self._parse_int(new_qty) or 0
+        sku = str(sku or '').strip()
+        warehouse_name = str(warehouse_name or '').strip()
+        if not sku or not warehouse_name:
+            return [], []
+        if old_qty > 0 and new_qty == 0:
+            return [{
+                'sku': sku,
+                'warehouse_name': warehouse_name,
+                'previous_qty': int(old_qty),
+            }], []
+        if old_qty == 0 and new_qty > 0:
+            return [], [{
+                'sku': sku,
+                'warehouse_name': warehouse_name,
+                'available_qty': int(new_qty),
+            }]
+        return [], []
+
+    def _iter_overseas_inventory_qty_changes(self, before_snapshot, after_qty_by_key, import_mode='partial'):
+        """遍历库存变更候选键及变更前后可用量。"""
         mode = (import_mode or 'partial').strip().lower()
-        items = []
-        seen = set()
         if mode == 'replace_all':
             candidate_keys = set(before_snapshot.keys()) | set(after_qty_by_key.keys())
         else:
@@ -2937,6 +2978,15 @@ class LogisticsWarehouseMixin:
                 if key not in after_qty_by_key:
                     continue
                 new_qty = self._parse_int(after_qty_by_key.get(key)) or 0
+            yield key, before, old_qty, new_qty
+
+    def _stockout_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial'):
+        """导入/覆盖后：由正数变为 0 的仓库+SKU → 缺货通知项。"""
+        items = []
+        seen = set()
+        for key, before, old_qty, new_qty in self._iter_overseas_inventory_qty_changes(
+            before_snapshot, after_qty_by_key, import_mode=import_mode,
+        ):
             if old_qty <= 0 or new_qty != 0:
                 continue
             sku = str(before.get('sku') or '').strip()
@@ -2967,22 +3017,12 @@ class LogisticsWarehouseMixin:
         return sku, warehouse_name
 
     def _restock_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial', label_by_key=None):
-        mode = (import_mode or 'partial').strip().lower()
+        """导入/覆盖后：由 0 变为正数的仓库+SKU → 重新上架通知项。"""
         items = []
         seen = set()
-        if mode == 'replace_all':
-            candidate_keys = set(before_snapshot.keys()) | set(after_qty_by_key.keys())
-        else:
-            candidate_keys = set(after_qty_by_key.keys())
-        for key in candidate_keys:
-            before = before_snapshot.get(key) or {}
-            old_qty = self._parse_int(before.get('available_qty')) or 0
-            if mode == 'replace_all':
-                new_qty = self._parse_int(after_qty_by_key.get(key, 0)) or 0
-            else:
-                if key not in after_qty_by_key:
-                    continue
-                new_qty = self._parse_int(after_qty_by_key.get(key)) or 0
+        for key, before, old_qty, new_qty in self._iter_overseas_inventory_qty_changes(
+            before_snapshot, after_qty_by_key, import_mode=import_mode,
+        ):
             if old_qty != 0 or new_qty <= 0:
                 continue
             sku, warehouse_name = self._inventory_label_for_key(key, before_snapshot, label_by_key)
@@ -3042,7 +3082,12 @@ class LogisticsWarehouseMixin:
         warehouse_name = str(row.get('warehouse_name') or '').strip() or '该仓库'
         return f'库存记录已存在：{sku} @ {warehouse_name}，请勿重复新建'
 
+    # -------------------------------------------------------------------------
+    # 海外仓库存 API
+    # -------------------------------------------------------------------------
+
     def handle_logistics_warehouse_inventory_api(self, environ, method, start_response):
+        """海外仓库存 CRUD、批量更新、选项与在库汇总导出。"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
@@ -3164,7 +3209,6 @@ class LogisticsWarehouseMixin:
                             """,
                             (warehouse_id, order_product_id, available_qty, 0),
                         )
-                        restock_items = []
                         if available_qty > 0:
                             cur.execute(
                                 """
@@ -3185,8 +3229,9 @@ class LogisticsWarehouseMixin:
                                     'warehouse_name': warehouse_name,
                                     'available_qty': int(available_qty),
                                 })
-                        restock_items = self._enrich_overseas_notify_items(cur, restock_items)
-                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(conn, [order_product_id])
+                        _, restock_items, low_stock_alert_items = self._prepare_overseas_inventory_notify_payload(
+                            cur, conn, [], restock_items, [order_product_id],
+                        )
                 return self.send_json({
                     'status': 'success',
                     'restock_items': restock_items if available_qty > 0 else [],
@@ -3264,20 +3309,11 @@ class LogisticsWarehouseMixin:
                                     affected_order_product_ids.add(int(op_id))
                                 sku = str(before_row.get('sku') or '').strip()
                                 warehouse_name = str(before_row.get('warehouse_name') or '').strip()
-                                if not sku or not warehouse_name:
-                                    continue
-                                if old_qty > 0 and new_qty == 0:
-                                    stockout_items.append({
-                                        'sku': sku,
-                                        'warehouse_name': warehouse_name,
-                                        'previous_qty': int(old_qty),
-                                    })
-                                elif old_qty == 0 and new_qty > 0:
-                                    restock_items.append({
-                                        'sku': sku,
-                                        'warehouse_name': warehouse_name,
-                                        'available_qty': int(new_qty),
-                                    })
+                                so_items, rs_items = self._overseas_qty_change_notify_pair(
+                                    old_qty, new_qty, sku, warehouse_name,
+                                )
+                                stockout_items.extend(so_items)
+                                restock_items.extend(rs_items)
 
                             qty_case = []
                             sql_params = []
@@ -3294,12 +3330,11 @@ class LogisticsWarehouseMixin:
 
                             stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                             restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
-                            stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
-                            restock_items = self._enrich_overseas_notify_items(cur, restock_items)
-                            if affected_order_product_ids:
-                                low_stock_alert_items = self._attach_overseas_low_stock_alerts(
-                                    conn, sorted(affected_order_product_ids),
+                            stockout_items, restock_items, low_stock_alert_items = (
+                                self._prepare_overseas_inventory_notify_payload(
+                                    cur, conn, stockout_items, restock_items, affected_order_product_ids,
                                 )
+                            )
                     return self.send_json({
                         'status': 'success',
                         'updated': len(parsed_items),
@@ -3348,29 +3383,15 @@ class LogisticsWarehouseMixin:
                             """,
                             (warehouse_id, order_product_id, available_qty, item_id),
                         )
-                        stockout_items = []
-                        restock_items = []
-                        if old_qty > 0 and available_qty == 0:
-                            sku = str(before_row.get('sku') or '').strip()
-                            warehouse_name = str(before_row.get('warehouse_name') or '').strip()
-                            if sku and warehouse_name:
-                                stockout_items.append({
-                                    'sku': sku,
-                                    'warehouse_name': warehouse_name,
-                                    'previous_qty': int(old_qty),
-                                })
-                        elif old_qty == 0 and available_qty > 0:
-                            sku = str(before_row.get('sku') or '').strip()
-                            warehouse_name = str(before_row.get('warehouse_name') or '').strip()
-                            if sku and warehouse_name:
-                                restock_items.append({
-                                    'sku': sku,
-                                    'warehouse_name': warehouse_name,
-                                    'available_qty': int(available_qty),
-                                })
-                        stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
-                        restock_items = self._enrich_overseas_notify_items(cur, restock_items)
-                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(conn, [order_product_id])
+                        stockout_items, restock_items = self._overseas_qty_change_notify_pair(
+                            old_qty, available_qty,
+                            before_row.get('sku'), before_row.get('warehouse_name'),
+                        )
+                        stockout_items, restock_items, low_stock_alert_items = (
+                            self._prepare_overseas_inventory_notify_payload(
+                                cur, conn, stockout_items, restock_items, [order_product_id],
+                            )
+                        )
                 return self.send_json({
                     'status': 'success',
                     'stockout_items': stockout_items,
@@ -3392,6 +3413,7 @@ class LogisticsWarehouseMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_logistics_warehouse_inventory_template_api(self, environ, method, start_response):
+        """海外仓库存 Excel 导入模板下载。"""
         try:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -3430,6 +3452,7 @@ class LogisticsWarehouseMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_logistics_warehouse_inventory_import_api(self, environ, method, start_response):
+        """海外仓库存 Excel 导入（partial / replace_all），返回缺货/上架/低库存通知项。"""
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -3614,17 +3637,16 @@ class LogisticsWarehouseMixin:
                         import_mode=import_mode,
                         label_by_key=label_by_key,
                     )
-                    stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
-                    restock_items = self._enrich_overseas_notify_items(cur, restock_items)
                     if import_mode == 'replace_all':
                         for key in before_snapshot.keys():
                             op_id = self._parse_int(key[1] if isinstance(key, tuple) and len(key) >= 2 else None)
                             if op_id:
                                 affected_order_product_ids.add(int(op_id))
-                    if affected_order_product_ids:
-                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(
-                            conn, sorted(affected_order_product_ids),
+                    stockout_items, restock_items, low_stock_alert_items = (
+                        self._prepare_overseas_inventory_notify_payload(
+                            cur, conn, stockout_items, restock_items, affected_order_product_ids,
                         )
+                    )
 
             return self.send_json({
                 'status': 'success',
