@@ -41,9 +41,8 @@ class CommissionCalcMixin:
                     mappings[(int(pt_id), cat)] = grp
             cur.execute(
                 """
-                SELECT platform_type_id, commission_group, calc_method, params_json, label
+                SELECT platform_type_id, commission_group, calc_method, params_json
                 FROM commission_calc_rules
-                WHERE COALESCE(is_enabled, 1) = 1
                 """
             )
             for row in cur.fetchall() or []:
@@ -64,7 +63,6 @@ class CommissionCalcMixin:
                 rules[(int(pt_id), grp)] = {
                     'calc_method': str(row.get('calc_method') or '').strip().lower(),
                     'params_json': params,
-                    'label': str(row.get('label') or '').strip(),
                     'commission_group': grp,
                 }
         return {'mappings': mappings, 'rules': rules, 'ready': True}
@@ -202,7 +200,6 @@ class CommissionCalcMixin:
                 'commission_status': 'unavailable',
                 'commission_message': self.COMMISSION_UNAVAILABLE_LABEL,
                 'commission_group': grp,
-                'commission_rule_label': rule.get('label') or '',
                 'est_referral_commission_usd': None,
                 'commission_rate': None,
             }
@@ -210,7 +207,6 @@ class CommissionCalcMixin:
             'commission_status': 'ok',
             'commission_message': None,
             'commission_group': grp,
-            'commission_rule_label': rule.get('label') or '',
             'est_referral_commission_usd': comm,
             'commission_rate': rate,
         }
@@ -265,7 +261,6 @@ class CommissionCalcMixin:
             'commission_status': (comm_result or {}).get('commission_status'),
             'commission_message': (comm_result or {}).get('commission_message'),
             'commission_group': (comm_result or {}).get('commission_group'),
-            'commission_rule_label': (comm_result or {}).get('commission_rule_label'),
         }
         if (comm_result or {}).get('commission_status') != 'ok':
             base.update({
@@ -310,10 +305,9 @@ class CommissionCalcMixin:
                     cur.execute(
                         """
                         SELECT r.id, r.platform_type_id, pt.name AS platform_type_name,
-                               r.commission_group, r.calc_method, r.params_json, r.label
+                               r.commission_group, r.calc_method, r.params_json
                         FROM commission_calc_rules r
                         INNER JOIN platform_types pt ON pt.id = r.platform_type_id
-                        WHERE COALESCE(r.is_enabled, 1) = 1
                         ORDER BY pt.name ASC, r.commission_group ASC
                         """
                     )
@@ -333,7 +327,6 @@ class CommissionCalcMixin:
                             'commission_group': row.get('commission_group') or '',
                             'calc_method': row.get('calc_method') or '',
                             'params_json': params if isinstance(params, dict) else {},
-                            'label': row.get('label') or '',
                         })
                     cur.execute(
                         """

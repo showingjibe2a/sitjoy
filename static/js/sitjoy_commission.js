@@ -33,7 +33,6 @@
             rules[`${pt}:${grp}`] = {
                 calc_method: String(row.calc_method || '').trim().toLowerCase(),
                 params_json: row.params_json && typeof row.params_json === 'object' ? row.params_json : {},
-                label: String(row.label || '').trim(),
                 commission_group: grp,
             };
         });
@@ -159,7 +158,6 @@
                 commission_status: 'unavailable',
                 commission_message: UNAVAILABLE_LABEL,
                 commission_group: resolved.group,
-                commission_rule_label: rule.label || '',
                 est_referral_commission_usd: null,
                 commission_rate: null,
             };
@@ -170,7 +168,6 @@
             commission_status: 'ok',
             commission_message: null,
             commission_group: resolved.group,
-            commission_rule_label: rule.label || '',
             est_referral_commission_usd: comm,
             commission_rate: rate,
         };

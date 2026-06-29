@@ -2453,7 +2453,6 @@ class SalesManagementMixin:
             'commission_status': (comm_result or {}).get('commission_status'),
             'commission_message': (comm_result or {}).get('commission_message'),
             'commission_group': (comm_result or {}).get('commission_group'),
-            'commission_rule_label': (comm_result or {}).get('commission_rule_label'),
         }
         return payload
 
