@@ -56,6 +56,10 @@ except Exception as e:
 class SalesManagementMixin:
     """销售管理 Mixin：订单登记、预测看板、动销月计算与仓储看板挂载。"""
 
+    # -------------------------------------------------------------------------
+    # 订单登记：解析、子表写入与详情查询
+    # -------------------------------------------------------------------------
+
     def _registration_get_replacement_options(self, conn, base_order_product_ids):
         """按基础发货 SKU 加载替代方案及方案明细。"""
         result = {}
@@ -474,6 +478,10 @@ class SalesManagementMixin:
             row['logistics_items'] = cur.fetchall() or []
 
             return row
+
+    # -------------------------------------------------------------------------
+    # 订单登记 API：列表/详情、模板与导入
+    # -------------------------------------------------------------------------
 
     def handle_sales_order_registration_api(self, environ, method, start_response):
         perf_ctx = self._perf_begin('sales_order_registration_api', environ, {'entry_method': method})
@@ -1249,9 +1257,9 @@ class SalesManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    # ==============================================
-    # 销量预测（Sales Forecast）
-    # ==============================================
+    # -------------------------------------------------------------------------
+    # 销量预测：月份归一化、维度加载与看板计算
+    # -------------------------------------------------------------------------
 
     FORECAST_MODES = ('platform', 'spec', 'order')
     FORECAST_PRODUCT_STATUSES = ('enabled', 'retained', 'discarded')
@@ -5238,6 +5246,10 @@ class SalesManagementMixin:
                 'forecasts': {},
             })
         return out
+
+    # -------------------------------------------------------------------------
+    # 销量预测 API：看板查询与批量更新
+    # -------------------------------------------------------------------------
 
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:

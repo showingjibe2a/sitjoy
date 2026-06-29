@@ -133,7 +133,7 @@ class AplusMixin:
         return name, None
 
     # -------------------------------------------------------------------------
-    # API：版本 / 素材 / 上传
+    # API：A+ 版本 CRUD
     # -------------------------------------------------------------------------
 
     def handle_aplus_version_api(self, environ, method, start_response):
@@ -238,10 +238,18 @@ class AplusMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # API：版本素材绑定（已废弃的布局路由保留占位）
+    # -------------------------------------------------------------------------
+
     def handle_aplus_version_layout_api(self, environ, method, start_response):
         """已废弃：布局 JSON 改由 image_types 表字段维护。"""
         # Deprecated route: layout JSON now lives on image_types.aplus_layout_json_{mobile,desktop}
         return self.send_json({'status': 'error', 'message': 'Deprecated: use /api/image-type to read/write A+ layout JSON'}, start_response)
+
+    # -------------------------------------------------------------------------
+    # API：版本素材列表与绑定
+    # -------------------------------------------------------------------------
 
     def handle_aplus_version_assets_api(self, environ, method, start_response):
         """A+ 版本素材列表与绑定（GET/POST/DELETE）。"""
@@ -324,6 +332,10 @@ class AplusMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # API：A+ 素材上传
+    # -------------------------------------------------------------------------
 
     def handle_aplus_upload_api(self, environ, start_response):
         """Upload images into A+ version folder and register into image_assets + aplus_version_assets."""

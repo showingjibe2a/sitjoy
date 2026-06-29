@@ -24,6 +24,10 @@ except Exception as _openpyxl_import_error:
 class OrderManagementMixin:
     """下单 SKU CRUD、替代发货方案、下市迁移、包装尺寸/FedEx 归类。"""
 
+    # -------------------------------------------------------------------------
+    # 下单 SKU 主 API（查询 / CRUD / 删除影响）
+    # -------------------------------------------------------------------------
+
     def handle_order_product_api(self, environ, method, start_response):
         """下单产品管理 API - CRUD"""
         try:
@@ -383,6 +387,10 @@ class OrderManagementMixin:
         except Exception as e:
             print(f"Order Product API error: {str(e)}")
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 删除前引用影响分析
+    # -------------------------------------------------------------------------
 
     def _handle_order_product_delete_impact(self, environ, method, start_response, query_params):
         try:
@@ -1382,6 +1390,9 @@ class OrderManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # Excel 模板下载（下单 SKU）
+    # -------------------------------------------------------------------------
 
     def handle_order_product_template_api(self, environ, method, start_response):
         """下单产品模板下载"""
@@ -1912,6 +1923,10 @@ class OrderManagementMixin:
             return self._send_excel_workbook(wb, '下单产品导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # Excel 批量导入（下单 SKU）
+    # -------------------------------------------------------------------------
 
     def handle_order_product_import_api(self, environ, method, start_response):
         """下单产品批量导入"""
@@ -2445,6 +2460,10 @@ class OrderManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 父体（parent）管理 API
+    # -------------------------------------------------------------------------
+
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
@@ -2948,6 +2967,10 @@ class OrderManagementMixin:
         self._replace_order_product_link_ids(
             conn, order_product_id, 'order_product_factory_links', 'factory_id', factory_ids,
         )
+
+    # -------------------------------------------------------------------------
+    # 工厂关联 Excel 模板 / 导入
+    # -------------------------------------------------------------------------
 
     def _handle_order_product_factory_links_template(self, environ, method, start_response):
         try:

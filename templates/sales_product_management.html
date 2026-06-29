@@ -1086,6 +1086,10 @@
 
     <script>
         /* 销售产品管理：列表内联编辑、模态框 CRUD、主图、NAS 导入、父体分组、平台库存导出 */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态与常量
+        // -------------------------------------------------------------------------
         let editId = null;
         let shopOptions = [];
         let skuFamilyOptions = [];
@@ -1168,7 +1172,9 @@
         const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.nasMainImage.actionMode.v1';
         const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.nasMainImage.thumbSize.v1';
 
-        /** NAS 主图浏览：路径记忆、面包屑、缩略图尺寸 */
+        // -------------------------------------------------------------------------
+        // NAS 主图浏览：路径记忆、面包屑、缩略图尺寸
+        // -------------------------------------------------------------------------
         function persistNasMainImageBrowseLocation() {
             try {
                 if (window.NasMainImageBrowserUi && typeof window.NasMainImageBrowserUi.persistNasBrowseLocationState === 'function') {
@@ -1199,7 +1205,9 @@
             return Number.isFinite(num) ? num : null;
         }
 
-        /** 列表内联预览编辑：草稿字段、统一保存栏 */
+        // -------------------------------------------------------------------------
+        // 列表内联预览编辑：草稿字段、统一保存栏
+        // -------------------------------------------------------------------------
         function normalizeSalesPreviewFieldValue(field, rawValue) {
             if (field === 'child_code' || field === 'gtin' || field === 'upc' || field === 'notes' || field === 'product_link') {
                 return String(rawValue == null ? '' : rawValue).trim();
@@ -1517,6 +1525,9 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // 通用转义、解析与产品状态
+        // -------------------------------------------------------------------------
         function escapeHtml(value) {
             return String(value == null ? '' : value)
                 .replace(/&/g, '&amp;')
@@ -1769,6 +1780,9 @@
             if (exists) markerInput.value = '';
         }
 
+        // -------------------------------------------------------------------------
+        // 上传对话框与 Toast
+        // -------------------------------------------------------------------------
         function renderUploadErrorDetails(errors) {
             const wrap = document.getElementById('uploadDialogDetails');
             const body = document.getElementById('uploadDialogDetailsBody');
@@ -1827,6 +1841,9 @@
             else if (window.showAppToast) window.showAppToast(message || '', !!isError, isError === true ? 0 : 2600);
         }
 
+        // -------------------------------------------------------------------------
+        // 模态与页面状态提示
+        // -------------------------------------------------------------------------
         function showModalStatus(message, isError) {
             const msg = String(message || '').trim();
             if (!msg) return;
@@ -1870,6 +1887,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 货号 pm-select 下拉
+        // -------------------------------------------------------------------------
         function updateSkuFamilyTrigger() {
             const trigger = document.getElementById('modalSkuFamilyTrigger');
             const select = document.getElementById('modalSkuFamily');
@@ -2005,7 +2025,9 @@
             }
         }
 
-        /** 父体分组：聚合行、组内编辑、父体信息弹窗 */
+        // -------------------------------------------------------------------------
+        // 父体分组：聚合行、组内编辑、父体信息弹窗
+        // -------------------------------------------------------------------------
         function salesParentGroupMetaOf(item) {
             const code = String(item && item.parent_code || '').trim();
             const shop = String(item && item.shop_name || '').trim();
@@ -2216,9 +2238,9 @@
             return `${bits.join(' ｜ ')}（${n}）`;
         }
 
-        /** 促销/折扣与经济测算（平台佣金规则、折后价） */
-
-        /** 佣金：平台类型 + 货号 commission_group → sitjoy_commission.js 规则引擎 */
+        // -------------------------------------------------------------------------
+        // 促销折扣、佣金规则与行经济测算
+        // -------------------------------------------------------------------------
         function salesResolvePlatformTypeId(item) {
             const direct = Number(item && item.platform_type_id);
             if (Number.isFinite(direct) && direct > 0) return direct;
@@ -2307,7 +2329,9 @@
             return formatSalesEconomicsUsd(econ.commission, false            );
         }
 
-        /** 单件净利/净利率展示（佣金不可算时显示原因） */
+        // -------------------------------------------------------------------------
+        // 单件净利/净利率展示（佣金不可算时显示原因）
+        // -------------------------------------------------------------------------
         function salesFormatEconNetProfit(econ) {
             if (!econ || econ.salePrice <= 0) return '-';
             if (econ.commission_status === 'unavailable') {
@@ -2588,7 +2612,9 @@
             return Number.isFinite(n) ? String(n) : '';
         }
 
-        /** 行经济测算汇总：成本、佣金、净利、净利率 */
+        // -------------------------------------------------------------------------
+        // 行经济测算汇总：成本、佣金、净利、净利率
+        // -------------------------------------------------------------------------
         function salesComputeRowEconomics(item) {
             const salePrice = Number(getSalesPreviewEffectiveValue(item, 'sale_price_usd') || 0);
             const bom = Number(item.warehouse_cost_usd || 0);
@@ -2793,7 +2819,9 @@
             return `<span class="sj-table-thumb-lazy" data-sj-lazy-thumb="${escapeAttr(src)}" aria-hidden="true"></span>`;
         }
 
-        /** 列表行渲染：子体编号、链接、分组表格 */
+        // -------------------------------------------------------------------------
+        // 列表行渲染：子体编号、链接、分组表格
+        // -------------------------------------------------------------------------
         function sjSalesListThumbEmptyHtml() {
             return '<span class="sj-table-thumb-empty">暂无</span>';
         }
@@ -2930,6 +2958,9 @@
             }
         }
 
+        // -------------------------------------------------------------------------
+        // 父体分组聚合表格与折叠
+        // -------------------------------------------------------------------------
         function initSalesGroupedAggregateHelpers() {
             if (!window.SitjoyGroupedAggregate) return;
             SitjoyGroupedAggregate.bindGroupRowToggle({
@@ -3484,7 +3515,9 @@
 
         let salesMainImageGrid = null;
 
-        /** 编辑模态框：主图网格、上传、类型筛选 */
+        // -------------------------------------------------------------------------
+        // 编辑模态框：主图网格、上传、类型筛选
+        // -------------------------------------------------------------------------
         function ensureSalesMainImageGrid() {
             if (salesMainImageGrid) return salesMainImageGrid;
             if (!window.SitjoyMainImageGrid) return null;
@@ -4507,7 +4540,9 @@
             }
         }
 
-        /** NAS 主图导入弹窗：浏览 NAS 目录、批量选中导入 */
+        // -------------------------------------------------------------------------
+        // NAS 主图导入弹窗：浏览 NAS 目录、批量选中导入
+        // -------------------------------------------------------------------------
         function showNasMainImageStatus(message, isError) {
             const el = document.getElementById('nasMainImageStatus');
             if (!el) return;
@@ -4555,7 +4590,9 @@
                 });
             } catch (e) {}
         }
-        /** 多选切换选中时只更新勾选态与卡片样式，避免整表重载导致滚动条回到顶部 */
+        // -------------------------------------------------------------------------
+        // NAS 多选：局部更新勾选态，避免整表重载
+        // -------------------------------------------------------------------------
         function patchNasMainImageSelectionUi() {
             const list = document.getElementById('nasMainImageList');
             if (!list) return;
@@ -5388,8 +5425,9 @@
             hidden.value = text.split('（')[0].trim();
         }
 
-        // fabric images will be merged into main image grid (readonly, non-deletable)
-
+        // -------------------------------------------------------------------------
+        // 编辑模态框：打开新建、保存销售子体
+        // -------------------------------------------------------------------------
         async function openCreateModal() {
             window.clearTimeout(variantPrefillTimer);
             window.clearTimeout(specSuggestTimer);
@@ -5530,7 +5568,9 @@
             currentEditingMainImageName = '';
         }
 
-        /** 编辑模态框：保存/新建销售子体 */
+        // -------------------------------------------------------------------------
+        // 编辑模态框：保存销售子体
+        // -------------------------------------------------------------------------
         function saveSalesProductFromModal() {
             const normalizedLinks = selectedOrderSkus
                 .map(x => ({ order_product_id: Number(x.order_product_id) || null, quantity: Math.max(1, Number(x.quantity) || 1) }))
@@ -5841,7 +5881,9 @@
             });
         }
 
-        /** 列表加载与详情缓存 */
+        // -------------------------------------------------------------------------
+        // 列表加载与详情缓存
+        // -------------------------------------------------------------------------
         function loadSalesProductList() {
             const q = document.getElementById('searchInput').value.trim();
             // Performance: list view doesn't need order_sku_links payload; fetch links only in detail API calls.
@@ -5897,7 +5939,9 @@
             return document.querySelector(`#salesProductTable tbody tr[data-sj-row-entity-id="${sid.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
         }
 
-        /** 编辑保存后局部更新列表行，保留搜索词与分组折叠状态；父体分组变化时回退为整表重载 */
+        // -------------------------------------------------------------------------
+        // 编辑保存后局部更新列表行
+        // -------------------------------------------------------------------------
         async function sjPatchSalesProductListRow(entityId) {
             const id = Number(entityId || 0);
             if (!id || !window.SitjoyRowImageRefresh || typeof window.SitjoyRowImageRefresh.patchTableRow !== 'function') {
@@ -6132,6 +6176,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 页面事件绑定
+        // -------------------------------------------------------------------------
         function bindPageEvents() {
             if (!pageDomReady()) return;
             const navEpoch = window.__sitjoyNavEpoch ?? '__initial__';
@@ -6293,7 +6340,9 @@
             }
         }
 
-        /** 页面初始化：选项数据、表格、平台库存导出入口 */
+        // -------------------------------------------------------------------------
+        // 页面初始化：选项数据、表格、平台库存导出入口
+        // -------------------------------------------------------------------------
         function initPage() {
             if (!pageDomReady()) return;
             bindPageEvents();

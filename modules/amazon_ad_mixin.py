@@ -34,6 +34,10 @@ class AmazonAdMixin:
     _AMAZON_AD_ADJUSTMENT_IMPORT_BATCH_SIZE = 500
     _AMAZON_US_PACIFIC_TZ = ZoneInfo('America/Los_Angeles')
 
+    # -------------------------------------------------------------------------
+    # 细分类解析、默认投放与校验辅助
+    # -------------------------------------------------------------------------
+
     def _amazon_us_pacific_now_naive(self):
         """Amazon 美国站常用太平洋时间（含冬夏令时），返回 naive datetime 供 datetime-local 字段。"""
         dt = datetime.now(self._AMAZON_US_PACIFIC_TZ).replace(second=0, microsecond=0)

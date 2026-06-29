@@ -2090,6 +2090,11 @@
 
     <script>
         /* 销售预测：多维度矩阵、库存/表现侧栏、出货计划与批量保存 */
+
+        // -------------------------------------------------------------------------
+        // 常量与列布局工具
+        // -------------------------------------------------------------------------
+
         const FORECAST_MODES = ['platform', 'spec', 'order'];
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
         const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
@@ -2152,6 +2157,10 @@
             { label: '在库', tip: '工厂在库数量合计' },
             { label: '在制', tip: '工厂在制未完工数量合计' },
         ];
+
+        // -------------------------------------------------------------------------
+        // 页面运行时状态（行、脏数据、侧栏、出货计划等）
+        // -------------------------------------------------------------------------
 
         const state = {
             forecastMode: 'spec',
@@ -2218,6 +2227,10 @@
                 regionRatios: {},
             },
         };
+
+        // -------------------------------------------------------------------------
+        // 本地偏好、月份与全局月份选择器
+        // -------------------------------------------------------------------------
 
         function readBoolPref(key, fallback) {
             try {
@@ -2676,7 +2689,9 @@
             return String(value);
         }
 
-        // ===== 模式切换 =====
+        // -------------------------------------------------------------------------
+        // 预测维度模式切换
+        // -------------------------------------------------------------------------
         function bindModeSegment() {
             const seg = document.getElementById('forecastModeSegment');
             if (!seg) return;
@@ -4445,7 +4460,9 @@
             updateSfShopFilterTriggerLabel();
         }
 
-        // ===== 数据加载 =====
+        // -------------------------------------------------------------------------
+        // 数据加载（API / 懒加载分组）
+        // -------------------------------------------------------------------------
         async function loadForecastData() {
             setLoading(true);
             try {
@@ -4640,7 +4657,9 @@
             if (histEndEl && state.historyRange.end) histEndEl.value = state.historyRange.end.slice(0, 7);
         }
 
-        // ===== 列定义 =====
+        // -------------------------------------------------------------------------
+        // 列定义与表头
+        // -------------------------------------------------------------------------
         function getColumnsForMode(mode) {
             if (mode === 'platform') {
                 return [
@@ -6406,7 +6425,9 @@
             });
         }
 
-        // ===== Multi-month performance dialog (history cells) =====
+        // -------------------------------------------------------------------------
+        // 多月表现弹窗（历史单元格）
+        // -------------------------------------------------------------------------
         /** 与产品表现看板货号分组明细中数值类列的百分比展示一致（stored 为小数比率） */
         const SF_PERF_PERCENT_KEYS = new Set(['acos', 'acoas', 'ctr', 'cvr', 'discount_rate', 'refund_rate', 'commission_rate', 'net_margin_rate']);
 
@@ -8772,7 +8793,9 @@
             }, true);
         }
 
-        // ===== 单元格 =====
+        // -------------------------------------------------------------------------
+        // 单元格编辑与脏数据
+        // -------------------------------------------------------------------------
         function forecastDigitsOnly(s) {
             return String(s || '').replace(/[^0-9]/g, '');
         }
@@ -9110,7 +9133,9 @@
                 + totalLine;
         }
 
-        // ===== 批量保存弹窗 =====
+        // -------------------------------------------------------------------------
+        // 批量保存弹窗
+        // -------------------------------------------------------------------------
         function refreshBatchPopup() {
             const popup = document.getElementById('sfBatchPopup');
             const summary = document.getElementById('sfBatchPopupSummary');
@@ -9233,7 +9258,9 @@
             renderForecastTableBodyOnly();
         }
 
-        // ===== 初始化 =====
+        // -------------------------------------------------------------------------
+        // 页面初始化
+        // -------------------------------------------------------------------------
         document.addEventListener('DOMContentLoaded', () => {
             state.historyExpanded = readBoolPref(SF_PREF_HISTORY_EXPANDED_KEY, true);
             state.forecastExpanded = readBoolPref(SF_PREF_FORECAST_EXPANDED_KEY, true);

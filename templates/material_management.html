@@ -203,6 +203,14 @@
         const expandedParents = new Set();
         const parentOptionsCache = new Map();
 
+        /**
+         * 材料管理：类型筛选条、父子层级列表、材料与材料类型 CRUD。
+         */
+
+        // -------------------------------------------------------------------------
+        // 材料模态框状态与搜索
+        // -------------------------------------------------------------------------
+
         function showModalStatus(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -219,6 +227,10 @@
             document.getElementById('searchInput').value = '';
             loadMaterialList();
         }
+
+        // -------------------------------------------------------------------------
+        // 材料 CRUD 模态框
+        // -------------------------------------------------------------------------
 
         function openCreateModal() {
             editId = null;
@@ -316,6 +328,10 @@
             })
             .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
+
+        // -------------------------------------------------------------------------
+        // 材料类型选项、父级联动与筛选条
+        // -------------------------------------------------------------------------
 
         function getMaterialTypeLabel(item) {
             return item.material_type_name || '';
@@ -456,6 +472,10 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 材料类型 CRUD 模态框
+        // -------------------------------------------------------------------------
+
         function showTypeModalStatus(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -552,6 +572,10 @@
             })
             .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
+
+        // -------------------------------------------------------------------------
+        // 列表渲染与数据加载
+        // -------------------------------------------------------------------------
 
         function renderMaterialTable(items) {
             const rows = [];
@@ -676,6 +700,9 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // 页面启动（SitjoyPageUI）
+        // -------------------------------------------------------------------------
 
         function bootMaterialManagementPage() {
             const run = () => {

@@ -132,6 +132,11 @@
     </footer>
 
     <script>
+        /* 店铺/平台/品牌：三级筛选条、店铺 CRUD、平台类型与品牌子管理 */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let editId = null;
         let editPlatformTypeId = null;
         let editBrandId = null;
@@ -142,6 +147,9 @@
         let activePlatformTypeId = null;
         let activeBrandId = null;
 
+        // -------------------------------------------------------------------------
+        // 店铺模态：尾程配送与 CRUD
+        // -------------------------------------------------------------------------
         function isAmazonPlatformName(platformName) {
             const p = String(platformName || '').trim().toLowerCase();
             return p.includes('亚马逊') || p === 'amazon' || p.includes('amazon');
@@ -389,6 +397,9 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // 平台类型筛选条与子管理
+        // -------------------------------------------------------------------------
         function renderPlatformTypeBar() {
             const UI = window.SitjoyPageUI;
             if (!UI) return;
@@ -506,6 +517,9 @@
             .catch(err => showPlatformTypeModalStatus('请求失败: ' + err, true));
         }
 
+        // -------------------------------------------------------------------------
+        // 品牌筛选条与子管理
+        // -------------------------------------------------------------------------
         function showBrandModalStatus(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -577,6 +591,9 @@
             .catch(err => showBrandModalStatus('请求失败: ' + err, true));
         }
 
+        // -------------------------------------------------------------------------
+        // 店铺列表加载与渲染
+        // -------------------------------------------------------------------------
         function renderShopTable(items) {
             const tbody = document.querySelector('#shopTable tbody');
             if (!items.length) {
@@ -632,6 +649,9 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // 页面初始化
+        // -------------------------------------------------------------------------
         function bootShopBrandManagementPage() {
             const run = () => {
                 SitjoyPageUI.init({

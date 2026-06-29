@@ -91,10 +91,18 @@
     </footer>
 
     <script>
+        /* 卖点管理：品类多选、列表 CRUD */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let editId = null;
         let categoryOptions = [];
         let selectedCategoryIds = [];
 
+        // -------------------------------------------------------------------------
+        // 模态 CRUD
+        // -------------------------------------------------------------------------
         function showModalStatus(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -203,6 +211,9 @@
             .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
 
+        // -------------------------------------------------------------------------
+        // 列表加载
+        // -------------------------------------------------------------------------
         function loadFeatureList() {
             const q = document.getElementById('searchInput').value.trim();
             const url = q ? `/api/feature?q=${encodeURIComponent(q)}` : '/api/feature';
@@ -248,6 +259,9 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // 品类多选与标签池
+        // -------------------------------------------------------------------------
         function loadCategories() {
             fetch('/api/category')
                 .then(r => r.json())

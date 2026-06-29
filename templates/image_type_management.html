@@ -254,9 +254,17 @@
 
     <script src="/static/js/header.js"></script>
     <script>
+        /* 图片类型：平台适用范围、A+ 布局 JSON、列表开关与 CRUD */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let platformTypeOptions = [];
         let currentEditItem = null;
 
+        // -------------------------------------------------------------------------
+        // 通用工具与状态提示
+        // -------------------------------------------------------------------------
         function escapeHtml(value) {
             return String(value == null ? '' : value)
                 .replace(/&/g, '&amp;')
@@ -289,6 +297,9 @@
             loadImageTypeList();
         }
 
+        // -------------------------------------------------------------------------
+        // 列表渲染与内联开关
+        // -------------------------------------------------------------------------
         function buildSwitchCell(item, field, label) {
             const checked = Number(item[field] || 0) === 1 ? 'checked' : '';
             return `
@@ -405,6 +416,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 新建/编辑模态 CRUD
+        // -------------------------------------------------------------------------
         function openCreateModal() {
             document.getElementById('modalTypeName').value = '';
             document.getElementById('modalApplyFabric').checked = true;
@@ -581,6 +595,9 @@
             if (ap) b(ap, closeAplusJsonPreview);
         }, 0);
 
+        // -------------------------------------------------------------------------
+        // A+ 布局 JSON 格式化与预览
+        // -------------------------------------------------------------------------
         function closeAplusJsonPreview() {
             document.getElementById('aplus-json-preview-modal').classList.remove('active');
             document.getElementById('aplusJsonPreviewBox').innerHTML = '';

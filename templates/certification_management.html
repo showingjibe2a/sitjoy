@@ -63,7 +63,16 @@
     </div>
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script>
+        /* 认证管理：简单列表 CRUD */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let editId = null;
+
+        // -------------------------------------------------------------------------
+        // 模态 CRUD
+        // -------------------------------------------------------------------------
         function showModalStatus(message, isError) { if (window.showPageStatus) window.showPageStatus(message, isError); }
         function resetModalStatus() { const el = document.getElementById('modalStatus'); el.style.display = 'none'; el.innerText = ''; }
         function resetSearch() { document.getElementById('searchInput').value = ''; loadCertificationList(); }
@@ -97,6 +106,10 @@
                 })
                 .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
+
+        // -------------------------------------------------------------------------
+        // 列表加载
+        // -------------------------------------------------------------------------
         function loadCertificationList() {
             const q = document.getElementById('searchInput').value.trim();
             const url = q ? `/api/certification?q=${encodeURIComponent(q)}` : '/api/certification';

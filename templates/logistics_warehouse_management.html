@@ -182,6 +182,11 @@
     </div>
 
     <script>
+        /* 物流仓库：供应商/区域筛选条、Wayfair ID 内联编辑、仓库 CRUD 与 Excel 导入 */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let editId = null;
         let supplierEditId = null;
         let regionEditId = null;
@@ -193,6 +198,9 @@
         let warehouseListCache = [];
         let whWayfairDraft = {};
 
+        // -------------------------------------------------------------------------
+        // Wayfair ID 内联预览编辑
+        // -------------------------------------------------------------------------
         function escAttr(v) {
             return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
@@ -289,6 +297,10 @@
                     }
                 });
         }
+
+        // -------------------------------------------------------------------------
+        // 仓库列表渲染与启用状态分段
+        // -------------------------------------------------------------------------
         function renderWarehouseTable(items) {
             const tbody = document.querySelector('#mainTable tbody');
             const safe = Array.isArray(items) ? items : [];
@@ -327,6 +339,10 @@
         function resetRegionStatus(){ const el=document.getElementById('regionStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('warehouseImportStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+
+        // -------------------------------------------------------------------------
+        // 供应商与目的区域筛选条
+        // -------------------------------------------------------------------------
         function fillSupplierSelect(selected){
             const select = document.getElementById('supplierSelect');
             select.innerHTML = '<option value="">请选择供应商</option>' + (supplierOptions||[]).map(x => `<option value="${x.id}">${x.supplier_name||''}</option>`).join('');
@@ -447,6 +463,10 @@
                 document.getElementById('warehouseShortName').value = parts.slice(1).join(' ');
             }
         }
+
+        // -------------------------------------------------------------------------
+        // 仓库模态 CRUD 与供应商/区域子管理
+        // -------------------------------------------------------------------------
         function openCreateModal(){
             editId=null;
             document.getElementById('pm-modal-title').innerText='新增海外仓仓库';
@@ -591,6 +611,10 @@
                 renderRegionManageBar();
             }).catch(()=>{ destinationRegionOptions=[]; fillRegionSelect(''); renderRegionManageBar(); });
         }
+
+        // -------------------------------------------------------------------------
+        // 列表加载、快捷启用与 Excel 导入
+        // -------------------------------------------------------------------------
         function loadList(){
             const q = document.getElementById('searchInput').value.trim();
             const params = [];
@@ -655,6 +679,10 @@
             setSegmentValue(seg, newVal);
             toggleWarehouseEnabled(id, newVal === '1');
         });
+
+        // -------------------------------------------------------------------------
+        // 页面初始化
+        // -------------------------------------------------------------------------
         function bootLogisticsWarehousePage() {
             const run = () => {
                 const UI = window.SitjoyPageUI;

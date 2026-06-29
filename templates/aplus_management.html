@@ -166,12 +166,20 @@
 
     <script src="/static/js/header.js"></script>
     <script>
+        /* A+ 页面：版本目录、素材绑定、布局 JSON 与预览渲染 */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let platformTypes = [];
         let skuFamilies = [];
         let currentVersion = null; // {id, version_name, platform_type_id, sku_family_id, ...}
         let currentAssets = [];
         let currentImageTypes = [];
 
+        // -------------------------------------------------------------------------
+        // 通用工具与筛选选项加载
+        // -------------------------------------------------------------------------
         function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
         function toast(msg, isError){
@@ -206,6 +214,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 版本列表与选中
+        // -------------------------------------------------------------------------
         function loadVersions(){
             const platform_type_id = document.getElementById('platformSelect').value || '';
             const sku_family_id = document.getElementById('skuFamilySelect').value || '';
@@ -267,6 +278,9 @@
             }).catch(err => toast(String(err||'选择失败'), true));
         }
 
+        // -------------------------------------------------------------------------
+        // 图片类型布局 JSON
+        // -------------------------------------------------------------------------
         function loadImageTypeLayouts(){
             if (!currentVersion) return;
             const id = Number(document.getElementById('layoutImageTypeSelect').value||0);
@@ -304,6 +318,9 @@
 
         // (旧的“模板/模块编辑器”逻辑已移除：布局 JSON 现在存到 image_types 的 mobile/desktop 字段中)
 
+        // -------------------------------------------------------------------------
+        // 版本素材列表与上传
+        // -------------------------------------------------------------------------
         function loadAssets(){
             if (!currentVersion) return Promise.resolve();
             const device = String(document.getElementById('assetDeviceSelect').value||'desktop');
@@ -406,6 +423,9 @@
             }
         }
 
+        // -------------------------------------------------------------------------
+        // 预览渲染（模块拼装）
+        // -------------------------------------------------------------------------
         function renderPreview(){
             const el = document.getElementById('preview');
             if (!currentVersion){
@@ -498,6 +518,9 @@
             </div>`;
         }
 
+        // -------------------------------------------------------------------------
+        // 新建版本弹窗
+        // -------------------------------------------------------------------------
         function openCreateVersionModal(){
             document.getElementById('createStatus').style.display = 'none';
             document.getElementById('createStatus').textContent = '';

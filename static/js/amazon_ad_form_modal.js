@@ -30,6 +30,9 @@
 
     function $(id) { return document.getElementById(id); }
 
+    // -------------------------------------------------------------------------
+    // DOM 与内联样式
+    // -------------------------------------------------------------------------
     function ensureModalStyles() {
         if (document.getElementById(STYLE_ID)) return;
         const style = document.createElement('style');
@@ -247,6 +250,9 @@
         return [];
     }
 
+    // -------------------------------------------------------------------------
+    // 选项加载：类目、SKU、细分类、操作类型
+    // -------------------------------------------------------------------------
     function loadCategoryMap() {
         return fetch('/api/category')
             .then(r => r.json())
@@ -481,6 +487,9 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 分段选择与细分类展示
+    // -------------------------------------------------------------------------
     function syncSegmentButtons(targetId) {
         const input = $(targetId);
         const value = input ? String(input.value || '') : '';
@@ -685,6 +694,9 @@
         refreshInitialProductSkusSection();
     }
 
+    // -------------------------------------------------------------------------
+    // 广告组合/活动/组名称生成
+    // -------------------------------------------------------------------------
     function buildPortfolioNameBySkuId(skuId) {
         const sku = skuOptions.find(x => String(x.id) === String(skuId));
         if (!sku) return '';
@@ -735,6 +747,9 @@
         refreshInitialProductSkusSection();
     }
 
+    // -------------------------------------------------------------------------
+    // 默认投放目标
+    // -------------------------------------------------------------------------
     function normalizeDefaultTargetItems(items) {
         const seen = new Set();
         return (Array.isArray(items) ? items : [])
@@ -889,6 +904,9 @@
         );
     }
 
+    // -------------------------------------------------------------------------
+    // 弹窗打开、表单重置、保存与校验
+    // -------------------------------------------------------------------------
     function resetCreateForm() {
         adEditId = null;
         $('ad-modal-title').innerText = '新增广告信息';
@@ -1175,6 +1193,9 @@
         submitPayload();
     }
 
+    // -------------------------------------------------------------------------
+    // 事件绑定与模块初始化
+    // -------------------------------------------------------------------------
     function bindEvents() {
         if (eventsBound) return;
         eventsBound = true;

@@ -33,6 +33,10 @@ except Exception as _e:
 class LogisticsInTransitMixin:
     """在途物流 Mixin：箱号/提单、SKU 明细、状态快捷更新与钉钉通知辅助。"""
 
+    # -------------------------------------------------------------------------
+    # 物流关联路径、拼柜工厂与列表筛选辅助
+    # -------------------------------------------------------------------------
+
     def _get_logistics_link_root_bytes(self):
         resources_root = self._join_resources('')
         resources_parent = os.path.dirname(resources_root)
@@ -517,6 +521,10 @@ class LogisticsInTransitMixin:
         item = self._build_transit_listed_available_item(cur, transit_id, event_kind='registered')
         if item:
             bucket.append(item)
+
+    # -------------------------------------------------------------------------
+    # 在途主 API：列表/详情、CRUD、快捷状态
+    # -------------------------------------------------------------------------
 
     def handle_logistics_in_transit_api(self, environ, method, start_response):
         """在途物流主 API：列表/详情、CRUD、快捷状态、数量核对。"""
@@ -1728,6 +1736,10 @@ class LogisticsInTransitMixin:
         finally:
             self._perf_end(perf_ctx)
 
+    # -------------------------------------------------------------------------
+    # Excel 模板下载
+    # -------------------------------------------------------------------------
+
     def handle_logistics_in_transit_template_api(self, environ, method, start_response):
         """在途物流模板下载（Sheet1在途信息 + Sheet2 SKU明细）"""
         try:
@@ -2049,6 +2061,10 @@ class LogisticsInTransitMixin:
             return self._send_excel_workbook(wb, '在途物流导入模板.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # Excel 批量导入
+    # -------------------------------------------------------------------------
 
     def handle_logistics_in_transit_import_api(self, environ, method, start_response):
         """在途物流模板导入（Sheet1在途信息 + Sheet2 SKU明细）"""
@@ -2555,6 +2571,10 @@ class LogisticsInTransitMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 报关/清关资料上传
+    # -------------------------------------------------------------------------
+
     def handle_logistics_in_transit_doc_upload_api(self, environ, start_response):
         try:
             if environ.get('REQUEST_METHOD') != 'POST':
@@ -2623,6 +2643,10 @@ class LogisticsInTransitMixin:
             return self.send_json({'status': 'success', 'saved': saved}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # 报关/清关资料文件列表与删除
+    # -------------------------------------------------------------------------
 
     def handle_logistics_in_transit_doc_files_api(self, environ, method, start_response):
         try:
