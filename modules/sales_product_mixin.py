@@ -9659,7 +9659,98 @@ class SalesProductMixin:
                     """,
                     tuple(params),
                 )
+        window = {
+            'anchor_date': anchor,
+            'window_start': ws,
+            'window_end': we,
+        }
+        self._refresh_sales_perf_op_rolling_30d(conn, window, sales_product_ids=id_list)
         conn.commit()
+
+    def _refresh_sales_perf_op_rolling_30d(self, conn, window, sales_product_ids=None):
+        """刷新下单 SKU 近 30 天销量快照（链接变体×BOM，窗口与 sales_perf_rolling_30d 一致）。"""
+        if not conn or not window:
+            return
+        if not self._table_exists_simple(conn, 'sales_perf_op_rolling_30d'):
+            return
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        anchor = str(window.get('anchor_date') or '')[:10]
+        if not ws or not we or not anchor:
+            return
+
+        sp_ids = None
+        if sales_product_ids is not None:
+            sp_ids = sorted({int(x) for x in (sales_product_ids or []) if self._parse_int(x)})
+            if not sp_ids:
+                return
+
+        with conn.cursor() as cur:
+            cur.execute('SELECT anchor_date FROM sales_perf_op_rolling_30d LIMIT 1')
+            anchor_row = cur.fetchone() or {}
+            old_anchor = str(anchor_row.get('anchor_date') or '')[:10]
+            if old_anchor and old_anchor != anchor:
+                sp_ids = None
+
+            op_filter_ids = None
+            if sp_ids is not None:
+                sp_ph = ','.join(['%s'] * len(sp_ids))
+                cur.execute(
+                    f"""
+                    SELECT DISTINCT l.order_product_id
+                    FROM sales_variant_order_links l
+                    INNER JOIN sales_products sp ON sp.variant_id = l.variant_id
+                    WHERE sp.id IN ({sp_ph})
+                    """,
+                    tuple(sp_ids),
+                )
+                op_filter_ids = sorted({
+                    int(r.get('order_product_id'))
+                    for r in (cur.fetchall() or [])
+                    if self._parse_int(r.get('order_product_id'))
+                })
+                if not op_filter_ids:
+                    return
+
+            if sp_ids is None:
+                cur.execute('DELETE FROM sales_perf_op_rolling_30d')
+                op_id_filter_sql = ''
+                params = [anchor, ws, we, ws, we]
+            else:
+                op_ph = ','.join(['%s'] * len(op_filter_ids))
+                cur.execute(
+                    f'DELETE FROM sales_perf_op_rolling_30d WHERE order_product_id IN ({op_ph})',
+                    tuple(op_filter_ids),
+                )
+                op_id_filter_sql = f' AND l.order_product_id IN ({op_ph}) '
+                params = [anchor, ws, we, ws, we] + list(op_filter_ids)
+
+            cur.execute(
+                f"""
+                INSERT INTO sales_perf_op_rolling_30d
+                    (order_product_id, anchor_date, window_start, window_end, sales_qty)
+                SELECT l.order_product_id,
+                       %s AS anchor_date,
+                       %s AS window_start,
+                       %s AS window_end,
+                       SUM(COALESCE(r.sales_qty, 0) * GREATEST(1, COALESCE(l.quantity, 1))) AS sales_qty
+                FROM sales_variant_order_links l
+                INNER JOIN sales_products sp ON sp.variant_id = l.variant_id
+                INNER JOIN sales_perf_rolling_30d r
+                    ON r.sales_product_id = sp.id
+                   AND r.window_start = %s
+                   AND r.window_end = %s
+                WHERE 1=1
+                {op_id_filter_sql}
+                GROUP BY l.order_product_id
+                ON DUPLICATE KEY UPDATE
+                    anchor_date = VALUES(anchor_date),
+                    window_start = VALUES(window_start),
+                    window_end = VALUES(window_end),
+                    sales_qty = VALUES(sales_qty)
+                """,
+                tuple(params),
+            )
 
     def _refresh_sales_perf_agg_for_deleted_records(self, conn, affected_rows):
         """按被删记录所在的精确月/周桶刷新聚合，避免 min~max 日期区间全量扫描。"""

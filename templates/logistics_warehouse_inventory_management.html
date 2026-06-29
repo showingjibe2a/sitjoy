@@ -151,9 +151,10 @@
             const payload = data && typeof data === 'object' ? data : {};
             const stockout = Array.isArray(payload.stockout_items) ? payload.stockout_items : [];
             const restock = Array.isArray(payload.restock_items) ? payload.restock_items : [];
-            if(!stockout.length && !restock.length) return;
+            const lowStock = Array.isArray(payload.low_stock_alert_items) ? payload.low_stock_alert_items : [];
+            if(!stockout.length && !restock.length && !lowStock.length) return;
             if(typeof window.dispatchAppDingtalkOverseasInventoryChanges === 'function'){
-                window.dispatchAppDingtalkOverseasInventoryChanges(stockout, restock);
+                window.dispatchAppDingtalkOverseasInventoryChanges(stockout, restock, { lowStockItems: lowStock });
                 return;
             }
             if(stockout.length && typeof window.promptAppDingtalkOverseasStockout === 'function'){

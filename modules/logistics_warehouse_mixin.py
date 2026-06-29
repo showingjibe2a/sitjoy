@@ -2832,6 +2832,94 @@ class LogisticsWarehouseMixin:
             item['us_remaining_qty'] = totals.get(sku, 0)
         return rows
 
+    OVERSEAS_LOW_STOCK_QTY_THRESHOLD = 5
+    OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD = 0.5
+
+    def _overseas_low_stock_channel_totals(self, conn, order_product_ids):
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
+        extra_subs = []
+        for oid in ids:
+            for sid in self._forecast_substitute_ids_from_plan_groups(substitute_plans.get(oid) or []):
+                extra_subs.append(sid)
+        load_ids = sorted(set(ids).union(int(x) for x in extra_subs if self._parse_int(x)))
+        brief_by_op = self._forecast_load_order_product_brief_map(conn, load_ids)
+        inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
+        out = {}
+        for op_id in ids:
+            brief = brief_by_op.get(op_id) or {}
+            sku = str(brief.get('sku') or '').strip()
+            if not sku:
+                continue
+            is_on = self._parse_int(brief.get('is_on_market')) or 0
+            plans = substitute_plans.get(op_id) or []
+            agg, _ = self._forecast_order_row_inventory_aggregate(
+                inv_by_op, op_id, is_on, plans, brief_by_op, plans,
+            )
+            overseas = int(agg.get('overseas_qty') or 0)
+            transit = int(agg.get('transit_qty') or 0)
+            factory = int(agg.get('factory_stock_qty') or 0)
+            wip = int(agg.get('wip_qty') or 0)
+            out[op_id] = {
+                'sku': sku,
+                'overseas_qty': overseas,
+                'transit_qty': transit,
+                'factory_stock_qty': factory,
+                'wip_qty': wip,
+                'total_channel_qty': overseas + transit + factory + wip,
+            }
+        return out
+
+    def _evaluate_overseas_low_stock_alerts(self, conn, order_product_ids):
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return []
+        totals = self._overseas_low_stock_channel_totals(conn, ids)
+        turnover_map = self._turnover_compute_order_turnover_map(conn, ids)
+        window = self._turnover_sales_window(conn)
+        sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window)
+        qty_threshold = int(self.OVERSEAS_LOW_STOCK_QTY_THRESHOLD)
+        turnover_threshold = float(self.OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD)
+        alerts = []
+        for op_id in ids:
+            info = totals.get(op_id) or {}
+            sku = str(info.get('sku') or '').strip()
+            if not sku:
+                continue
+            total_qty = int(info.get('total_channel_qty') or 0)
+            turnover = turnover_map.get(op_id) or {}
+            months_cover = turnover.get('months_cover_total')
+            reasons = []
+            if total_qty <= qty_threshold:
+                reasons.append('全渠道库存≤5')
+            if months_cover is not None and float(months_cover) < turnover_threshold:
+                reasons.append('动销月(全部)<0.5')
+            if not reasons:
+                continue
+            window_sales = float(sales_map.get(op_id) or 0)
+            alerts.append({
+                'sku': sku,
+                'order_product_id': op_id,
+                'total_channel_qty': total_qty,
+                'overseas_qty': int(info.get('overseas_qty') or 0),
+                'transit_qty': int(info.get('transit_qty') or 0),
+                'factory_stock_qty': int(info.get('factory_stock_qty') or 0),
+                'wip_qty': int(info.get('wip_qty') or 0),
+                'window_sales_qty': round(window_sales, 2) if window_sales > 1e-9 else 0,
+                'months_cover_total': months_cover,
+                'alert_reasons': reasons,
+            })
+        alerts.sort(key=lambda x: (x.get('sku') or ''))
+        return alerts
+
+    def _attach_overseas_low_stock_alerts(self, conn, order_product_ids):
+        try:
+            return self._evaluate_overseas_low_stock_alerts(conn, order_product_ids)
+        except Exception:
+            return []
+
     def _stockout_items_from_inventory_change(self, before_snapshot, after_qty_by_key, import_mode='partial'):
         mode = (import_mode or 'partial').strip().lower()
         items = []
@@ -3057,6 +3145,8 @@ class LogisticsWarehouseMixin:
                 available_qty = self._parse_int(data.get('available_qty'))
                 if not warehouse_id or not order_product_id or available_qty is None:
                     return self.send_json({'status': 'error', 'message': 'Missing warehouse_id/order_product_id/available_qty'}, start_response)
+                restock_items = []
+                low_stock_alert_items = []
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         duplicate = self._find_overseas_inventory_duplicate(
@@ -3096,9 +3186,11 @@ class LogisticsWarehouseMixin:
                                     'available_qty': int(available_qty),
                                 })
                         restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(conn, [order_product_id])
                 return self.send_json({
                     'status': 'success',
                     'restock_items': restock_items if available_qty > 0 else [],
+                    'low_stock_alert_items': low_stock_alert_items,
                 }, start_response)
 
             if method == 'PUT':
@@ -3132,12 +3224,14 @@ class LogisticsWarehouseMixin:
                     id_placeholders = ','.join(['%s'] * len(id_list))
                     stockout_items = []
                     restock_items = []
+                    low_stock_alert_items = []
+                    affected_order_product_ids = set()
 
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute(
                                 f"""
-                                SELECT i.id, i.available_qty, w.warehouse_name, op.sku
+                                SELECT i.id, i.order_product_id, i.available_qty, w.warehouse_name, op.sku
                                 FROM logistics_overseas_inventory i
                                 JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
                                 JOIN order_products op ON op.id = i.order_product_id
@@ -3165,6 +3259,9 @@ class LogisticsWarehouseMixin:
                                 new_qty = item['available_qty']
                                 if old_qty == new_qty:
                                     continue
+                                op_id = self._parse_int(before_row.get('order_product_id'))
+                                if op_id:
+                                    affected_order_product_ids.add(int(op_id))
                                 sku = str(before_row.get('sku') or '').strip()
                                 warehouse_name = str(before_row.get('warehouse_name') or '').strip()
                                 if not sku or not warehouse_name:
@@ -3199,11 +3296,16 @@ class LogisticsWarehouseMixin:
                             restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                             stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
                             restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                            if affected_order_product_ids:
+                                low_stock_alert_items = self._attach_overseas_low_stock_alerts(
+                                    conn, sorted(affected_order_product_ids),
+                                )
                     return self.send_json({
                         'status': 'success',
                         'updated': len(parsed_items),
                         'stockout_items': stockout_items,
                         'restock_items': restock_items,
+                        'low_stock_alert_items': low_stock_alert_items,
                     }, start_response)
 
                 item_id = self._parse_int(data.get('id'))
@@ -3212,6 +3314,9 @@ class LogisticsWarehouseMixin:
                 available_qty = self._parse_int(data.get('available_qty'))
                 if not item_id or not warehouse_id or not order_product_id or available_qty is None:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
+                stockout_items = []
+                restock_items = []
+                low_stock_alert_items = []
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         duplicate = self._find_overseas_inventory_duplicate(
@@ -3265,10 +3370,12 @@ class LogisticsWarehouseMixin:
                                 })
                         stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
                         restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(conn, [order_product_id])
                 return self.send_json({
                     'status': 'success',
                     'stockout_items': stockout_items,
                     'restock_items': restock_items,
+                    'low_stock_alert_items': low_stock_alert_items,
                 }, start_response)
 
             if method == 'DELETE':
@@ -3373,6 +3480,8 @@ class LogisticsWarehouseMixin:
             errors = []
             stockout_items = []
             restock_items = []
+            low_stock_alert_items = []
+            affected_order_product_ids = set()
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -3465,11 +3574,13 @@ class LogisticsWarehouseMixin:
                         if existing:
                             if (existing.get('available_qty') or 0) != available_qty:
                                 to_upsert.append((warehouse_id, order_product_id, available_qty, 0))
+                                affected_order_product_ids.add(int(order_product_id))
                             else:
                                 unchanged += 1
                         else:
                             to_insert.append((warehouse_id, order_product_id, available_qty, 0))
                             to_upsert.append((warehouse_id, order_product_id, available_qty, 0))
+                            affected_order_product_ids.add(int(order_product_id))
 
                     if to_upsert:
                         cur.executemany(
@@ -3505,6 +3616,15 @@ class LogisticsWarehouseMixin:
                     )
                     stockout_items = self._enrich_overseas_notify_items(cur, stockout_items)
                     restock_items = self._enrich_overseas_notify_items(cur, restock_items)
+                    if import_mode == 'replace_all':
+                        for key in before_snapshot.keys():
+                            op_id = self._parse_int(key[1] if isinstance(key, tuple) and len(key) >= 2 else None)
+                            if op_id:
+                                affected_order_product_ids.add(int(op_id))
+                    if affected_order_product_ids:
+                        low_stock_alert_items = self._attach_overseas_low_stock_alerts(
+                            conn, sorted(affected_order_product_ids),
+                        )
 
             return self.send_json({
                 'status': 'success',
@@ -3515,6 +3635,7 @@ class LogisticsWarehouseMixin:
                 'errors': errors,
                 'stockout_items': stockout_items,
                 'restock_items': restock_items,
+                'low_stock_alert_items': low_stock_alert_items,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

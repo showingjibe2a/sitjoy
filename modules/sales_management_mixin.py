@@ -3678,14 +3678,60 @@ class SalesManagementMixin:
                     out[int(spid)] = float(sales)
         return out
 
+    def _turnover_load_op_window_sales_from_rolling(self, conn, order_product_ids, window, shop_ids=None):
+        """下单 SKU 窗口销量（优先 sales_perf_op_rolling_30d 快照）。"""
+        if shop_ids:
+            return {}
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: 0.0 for i in ids}
+        if not ids or not window:
+            return out
+        if not self._table_exists_simple(conn, 'sales_perf_op_rolling_30d'):
+            return out
+        ws = str(window.get('window_start') or '')[:10]
+        we = str(window.get('window_end') or '')[:10]
+        if not ws or not we:
+            return out
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                params = [ws, we] + list(chunk)
+                cur.execute(
+                    f"""
+                    SELECT order_product_id, COALESCE(sales_qty, 0) AS sales_qty
+                    FROM sales_perf_op_rolling_30d
+                    WHERE window_start = %s
+                      AND window_end = %s
+                      AND order_product_id IN ({ph})
+                    """,
+                    tuple(params),
+                )
+                for row in cur.fetchall() or []:
+                    op_id = self._parse_int(row.get('order_product_id'))
+                    if op_id:
+                        out[int(op_id)] = float(row.get('sales_qty') or 0)
+        return out
+
     def _turnover_load_op_window_sales_map(self, conn, order_product_ids, window=None, shop_ids=None):
-        """下单 SKU -> 窗口 sales_qty（链接变体×BOM；日表与变体链接兜底）。"""
+        """下单 SKU -> 窗口 sales_qty（优先 op rolling 快照，日表与变体链接兜底）。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return {}
         window = window or self._turnover_sales_window(conn)
-        out = self._turnover_load_op_window_sales_from_daily(conn, ids, window, shop_ids=shop_ids)
-        missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if shop_ids:
+            out = {i: 0.0 for i in ids}
+            missing = ids
+        else:
+            out = self._turnover_load_op_window_sales_from_rolling(conn, ids, window, shop_ids=shop_ids)
+            missing = [i for i in ids if float(out.get(i) or 0) <= 1e-9]
+        if missing:
+            daily = self._turnover_load_op_window_sales_from_daily(conn, missing, window, shop_ids=shop_ids)
+            for op_id, sales in (daily or {}).items():
+                if float(sales or 0) > 1e-9:
+                    out[int(op_id)] = float(sales)
+            missing = [i for i in missing if float(out.get(i) or 0) <= 1e-9]
         if missing:
             link_sales = self._turnover_op_sales_via_variant_links(
                 conn, missing, window, shop_ids=shop_ids,

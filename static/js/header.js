@@ -1059,6 +1059,7 @@
     let appDingtalkNotifyPromptState = null;
     let appDingtalkPendingOverseasStockoutItems = [];
     let appDingtalkPendingOverseasRestockItems = [];
+    let appDingtalkPendingOverseasLowStockItems = [];
     let appDingtalkPendingTransitEtaDelayItems = [];
     let appDingtalkPendingTransitListedItems = [];
     let appDingtalkNotifyPromptFollowUp = null;
@@ -1099,6 +1100,8 @@
             .filter(item => item && item.sku && item.warehouse_name);
         const restockIncoming = (Array.isArray(restockItems) ? restockItems : [])
             .filter(item => item && item.sku && item.warehouse_name);
+        const lowStockIncoming = (Array.isArray(opt.lowStockItems) ? opt.lowStockItems : [])
+            .filter(item => item && item.sku);
         const stockoutBatch = mergeOverseasStockoutNotifyItems(
             appDingtalkPendingOverseasStockoutItems,
             stockoutIncoming,
@@ -1107,13 +1110,19 @@
             appDingtalkPendingOverseasRestockItems,
             restockIncoming,
         );
+        const lowStockBatch = mergeOverseasLowStockNotifyItems(
+            appDingtalkPendingOverseasLowStockItems,
+            lowStockIncoming,
+        );
         clearAppDingtalkPendingOverseasStockout();
         clearAppDingtalkPendingOverseasRestock();
+        clearAppDingtalkPendingOverseasLowStock();
         appDingtalkNotifyPromptFollowUp = null;
         hideAppDingtalkNotifyPrompt(false);
 
         let sentStockout = 0;
         let sentRestock = 0;
+        let sentLowStock = 0;
         if(stockoutBatch.length){
             const result = await sendAppDingtalkNotify('overseas_stockout', {
                 items: stockoutBatch,
@@ -1132,26 +1141,39 @@
                 sentRestock = groupOverseasNotifyItemsBySku(restockBatch).length;
             }
         }
-        if(opt.silent === true) return { sentStockout, sentRestock };
-        if(sentStockout || sentRestock){
+        if(lowStockBatch.length){
+            const result = await sendAppDingtalkNotify('overseas_low_stock', {
+                items: lowStockBatch,
+                silent: true,
+            });
+            if(result && result.ok){
+                sentLowStock = lowStockBatch.length;
+            }
+        }
+        if(opt.silent === true) return { sentStockout, sentRestock, sentLowStock };
+        if(sentStockout || sentRestock || sentLowStock){
             const parts = [];
             if(sentStockout) parts.push(`缺货 ${sentStockout} 条`);
             if(sentRestock) parts.push(`重新上架 ${sentRestock} 条`);
+            if(sentLowStock) parts.push(`低库存预警 ${sentLowStock} 条`);
             if(typeof showAppToast === 'function'){
                 showAppToast(`已自动发送钉钉通知：${parts.join('，')}`, false, 3200);
             }
         }
-        return { sentStockout, sentRestock };
+        return { sentStockout, sentRestock, sentLowStock };
     }
 
     function dispatchAppDingtalkOverseasInventoryChanges(stockoutItems, restockItems, options){
+        const opt = options && typeof options === 'object' ? options : {};
         const stockout = (Array.isArray(stockoutItems) ? stockoutItems : [])
             .filter(item => item && item.sku && item.warehouse_name);
         const restock = (Array.isArray(restockItems) ? restockItems : [])
             .filter(item => item && item.sku && item.warehouse_name);
-        if(!stockout.length && !restock.length) return;
+        const lowStock = (Array.isArray(opt.lowStockItems) ? opt.lowStockItems : [])
+            .filter(item => item && item.sku);
+        if(!stockout.length && !restock.length && !lowStock.length) return;
         if(isAppDingtalkAutoSendEnabled()){
-            autoSendAppDingtalkOverseasInventoryChanges(stockout, restock, options).catch((err) => {
+            autoSendAppDingtalkOverseasInventoryChanges(stockout, restock, opt).catch((err) => {
                 if(typeof showAppToast === 'function'){
                     const msg = err && err.message ? err.message : String(err || '自动发送钉钉通知失败');
                     showAppToast(msg, true, 0);
@@ -1159,7 +1181,33 @@
             });
             return;
         }
-        promptAppDingtalkOverseasInventoryChanges(stockout, restock, options);
+        promptAppDingtalkOverseasInventoryChanges(stockout, restock, opt);
+    }
+
+    function mergeOverseasLowStockNotifyItems(pendingItems, newItems){
+        const pending = Array.isArray(pendingItems) ? pendingItems : [];
+        const incoming = Array.isArray(newItems) ? newItems : [];
+        const index = new Map();
+        const merged = [];
+        const pushItem = (item) => {
+            const sku = String(item && item.sku || '').trim();
+            if(!sku) return;
+            let row = index.get(sku);
+            if(!row){
+                row = Object.assign({}, item, { sku });
+                index.set(sku, row);
+                merged.push(row);
+            } else {
+                Object.assign(row, item);
+            }
+        };
+        pending.forEach(pushItem);
+        incoming.forEach(pushItem);
+        return merged;
+    }
+
+    function clearAppDingtalkPendingOverseasLowStock(){
+        appDingtalkPendingOverseasLowStockItems = [];
     }
 
     function initSitjoyDingtalkAutoSend(authData){
@@ -1505,6 +1553,37 @@
         return buildOverseasInventoryPreviewHtml(items, 'restock', maxLines);
     }
 
+    function buildOverseasLowStockPreviewHtml(items, maxLines){
+        const list = Array.isArray(items) ? items : [];
+        const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
+        const blocks = list.slice(0, limit).map((item) => {
+            const sku = escapeAppNotifyHtml(String(item && item.sku || '').trim() || '-');
+            const totalQty = Number(item && item.total_channel_qty);
+            const totalText = Number.isFinite(totalQty) ? String(totalQty) : '0';
+            const monthsCover = item && item.months_cover_total;
+            const monthsText = monthsCover === null || monthsCover === undefined || monthsCover === ''
+                ? '—'
+                : escapeAppNotifyHtml(String(monthsCover));
+            const reasons = Array.isArray(item && item.alert_reasons) ? item.alert_reasons : [];
+            const reasonText = escapeAppNotifyHtml(reasons.filter(Boolean).join('、') || '库存预警');
+            const detailHtml = [
+                `海外仓 ${escapeAppNotifyHtml(String(Number(item && item.overseas_qty) || 0))}`,
+                `在途 ${escapeAppNotifyHtml(String(Number(item && item.transit_qty) || 0))}`,
+                `在库 ${escapeAppNotifyHtml(String(Number(item && item.factory_stock_qty) || 0))}`,
+                `在制 ${escapeAppNotifyHtml(String(Number(item && item.wip_qty) || 0))}`,
+                `触发：${reasonText}`,
+            ].map((line) => `<div class="app-dingtalk-notify-sku-line">${line}</div>`).join('');
+            return '<div class="app-dingtalk-notify-block">'
+                + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--negative">• ${sku}（全渠道：${escapeAppNotifyHtml(totalText)} · 动销月：${monthsText}）</div>`
+                + (detailHtml ? `<div class="app-dingtalk-notify-block-skus">${detailHtml}</div>` : '')
+                + '</div>';
+        });
+        if(list.length > limit){
+            blocks.push(`<div class="app-dingtalk-notify-block-more">…等共 ${list.length} 条</div>`);
+        }
+        return blocks.join('');
+    }
+
     function formatTransitSkuDetailHtmlLines(skuLines){
         return (Array.isArray(skuLines) ? skuLines : []).map((row) => {
             const sku = String(row && row.sku || '').trim() || '-';
@@ -1794,34 +1873,77 @@
         });
     }
 
+    function promptAppDingtalkOverseasLowStock(items, options){
+        const opt = options && typeof options === 'object' ? options : {};
+        const incoming = (Array.isArray(items) ? items : []).filter(item => item && item.sku);
+        const merged = mergeOverseasLowStockNotifyItems(appDingtalkPendingOverseasLowStockItems, incoming);
+        if(!merged.length) return;
+        appDingtalkPendingOverseasLowStockItems = merged;
+        if(typeof showAppDingtalkNotifyPrompt !== 'function') return;
+        showAppDingtalkNotifyPrompt({
+            title: String(opt.title || '钉钉低库存预警').trim() || '钉钉低库存预警',
+            previewHtml: buildOverseasLowStockPreviewHtml(merged, opt.maxPreviewLines),
+            confirmText: opt.confirmText,
+            cancelText: opt.cancelText,
+            onConfirm: async () => {
+                const batch = appDingtalkPendingOverseasLowStockItems.slice();
+                const result = await sendAppDingtalkNotify('overseas_low_stock', {
+                    items: batch,
+                    successMessage: batch.length > 1
+                        ? `已发送 ${batch.length} 条低库存预警到钉钉群`
+                        : '已发送低库存预警到钉钉群',
+                });
+                if(result && result.ok){
+                    clearAppDingtalkPendingOverseasLowStock();
+                }
+                return !!(result && result.ok);
+            },
+        });
+    }
+
     function promptAppDingtalkOverseasInventoryChanges(stockoutItems, restockItems, options){
         const stockout = (Array.isArray(stockoutItems) ? stockoutItems : []).filter(item => item && item.sku && item.warehouse_name);
         const restock = (Array.isArray(restockItems) ? restockItems : []).filter(item => item && item.sku && item.warehouse_name);
-        if(!stockout.length && !restock.length) return;
+        const lowStock = (Array.isArray(options && options.lowStockItems) ? options.lowStockItems : [])
+            .filter(item => item && item.sku);
+        if(!stockout.length && !restock.length && !lowStock.length) return;
         const opt = options && typeof options === 'object' ? options : {};
         const panelOpen = !!(appDingtalkNotifyPromptPanel && appDingtalkNotifyPromptPanel.classList.contains('show'));
+        const scheduleLowStock = () => {
+            if(!lowStock.length) return;
+            if(typeof promptAppDingtalkOverseasLowStock === 'function'){
+                promptAppDingtalkOverseasLowStock(lowStock, opt.lowStock || opt);
+            }
+        };
         const scheduleRestock = () => {
-            if(!restock.length) return;
+            if(!restock.length){
+                scheduleLowStock();
+                return;
+            }
             if(typeof promptAppDingtalkOverseasRestock === 'function'){
+                appDingtalkNotifyPromptFollowUp = scheduleLowStock;
                 promptAppDingtalkOverseasRestock(restock, opt.restock || opt);
             }
         };
-        if(stockout.length && restock.length){
-            appDingtalkNotifyPromptFollowUp = scheduleRestock;
-        } else {
-            appDingtalkNotifyPromptFollowUp = null;
-        }
         if(stockout.length){
+            appDingtalkNotifyPromptFollowUp = restock.length ? scheduleRestock : scheduleLowStock;
             if(typeof promptAppDingtalkOverseasStockout === 'function'){
                 promptAppDingtalkOverseasStockout(stockout, opt.stockout || opt);
             }
             return;
         }
-        if(panelOpen){
-            appDingtalkNotifyPromptFollowUp = scheduleRestock;
+        if(restock.length){
+            appDingtalkNotifyPromptFollowUp = scheduleLowStock;
+            if(typeof promptAppDingtalkOverseasRestock === 'function'){
+                promptAppDingtalkOverseasRestock(restock, opt.restock || opt);
+            }
             return;
         }
-        scheduleRestock();
+        if(panelOpen){
+            appDingtalkNotifyPromptFollowUp = scheduleLowStock;
+            return;
+        }
+        scheduleLowStock();
     }
 
     function ensureHelpDotTooltip(){
@@ -12754,6 +12876,7 @@
         window.sendAppDingtalkNotify = sendAppDingtalkNotify;
         window.promptAppDingtalkOverseasStockout = promptAppDingtalkOverseasStockout;
         window.promptAppDingtalkOverseasRestock = promptAppDingtalkOverseasRestock;
+        window.promptAppDingtalkOverseasLowStock = promptAppDingtalkOverseasLowStock;
         window.dispatchAppDingtalkOverseasInventoryChanges = dispatchAppDingtalkOverseasInventoryChanges;
         window.promptAppDingtalkOverseasInventoryChanges = dispatchAppDingtalkOverseasInventoryChanges;
         window.promptAppDingtalkTransitEtaDelay = promptAppDingtalkTransitEtaDelay;
@@ -12763,6 +12886,7 @@
         window.setAppDingtalkAutoSendEnabled = setAppDingtalkAutoSendEnabled;
         window.clearAppDingtalkPendingOverseasStockout = clearAppDingtalkPendingOverseasStockout;
         window.clearAppDingtalkPendingOverseasRestock = clearAppDingtalkPendingOverseasRestock;
+        window.clearAppDingtalkPendingOverseasLowStock = clearAppDingtalkPendingOverseasLowStock;
         window.clearAppDingtalkPendingTransitEtaDelay = clearAppDingtalkPendingTransitEtaDelay;
         window.clearAppDingtalkPendingTransitListed = clearAppDingtalkPendingTransitListed;
         window.bindFloatingHelpDots = bindFloatingHelpDots;

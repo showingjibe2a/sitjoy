@@ -32,6 +32,11 @@ class DingTalkNotifyMixin:
             'page_key': 'logistics_warehouse_inventory_management',
         },
         {
+            'notify_key': 'overseas_low_stock',
+            'label': '海外仓低库存预警',
+            'page_key': 'logistics_warehouse_inventory_management',
+        },
+        {
             'notify_key': 'transit_eta_delay',
             'label': '在途物流到货延迟',
             'page_key': 'logistics_in_transit_management',
@@ -417,6 +422,39 @@ class DingTalkNotifyMixin:
     def _format_overseas_restock_lines(self, items):
         return self._format_overseas_inventory_notify_blocks(items, 'restock')
 
+    def _format_overseas_low_stock_lines(self, items):
+        blocks = []
+        for row in items or []:
+            if not isinstance(row, dict):
+                continue
+            sku = str(row.get('sku') or '').strip()
+            if not sku:
+                continue
+            total_qty = self._parse_int(row.get('total_channel_qty'))
+            if total_qty is None:
+                total_qty = 0
+            months_cover = row.get('months_cover_total')
+            months_text = '—' if months_cover is None else str(months_cover)
+            reasons = row.get('alert_reasons') if isinstance(row.get('alert_reasons'), list) else []
+            reason_text = '、'.join(str(r or '').strip() for r in reasons if str(r or '').strip()) or '库存预警'
+            header = f'**{sku}**（全渠道：{total_qty} · 动销月：{months_text}）'
+            detail_parts = [
+                f'海外仓 {self._parse_int(row.get("overseas_qty")) or 0}',
+                f'在途 {self._parse_int(row.get("transit_qty")) or 0}',
+                f'在库 {self._parse_int(row.get("factory_stock_qty")) or 0}',
+                f'在制 {self._parse_int(row.get("wip_qty")) or 0}',
+            ]
+            window_sales = row.get('window_sales_qty')
+            if window_sales is not None and str(window_sales) != '':
+                detail_parts.append(f'近30天销量 {window_sales}')
+            detail_parts.append(f'触发：{reason_text}')
+            detail_block = '<br/>'.join(detail_parts)
+            blocks.append('\n'.join([
+                f'- {self._dingtalk_markdown_colored_text(header, self.DINGTALK_COLOR_NEGATIVE)}',
+                self._dingtalk_markdown_muted_text(f'  {detail_block}'),
+            ]))
+        return blocks
+
     def _send_dingtalk_overseas_markdown(self, title, lines, notify_key=None, user_id=None, title_tone=None, include_summary_line=True):
         formatted = [line for line in (lines or []) if line]
         if not formatted:
@@ -663,6 +701,17 @@ class DingTalkNotifyMixin:
         title = f'海外仓重新上架提醒（{count}条）'
         return self._send_dingtalk_overseas_markdown(
             title, lines, notify_key=key, user_id=user_id, title_tone='positive', include_summary_line=False,
+        )
+
+    def _send_dingtalk_overseas_low_stock(self, items, notify_key=None, user_id=None):
+        key = notify_key or 'overseas_low_stock'
+        lines = self._format_overseas_low_stock_lines(items)
+        if not lines:
+            return False, '没有可发送的记录'
+        count = len(lines)
+        title = f'海外仓低库存预警（{count}条）'
+        return self._send_dingtalk_overseas_markdown(
+            title, lines, notify_key=key, user_id=user_id, title_tone='negative', include_summary_line=False,
         )
 
     def _validate_dingtalk_notify_access(self, user_id, notify_key):
@@ -963,6 +1012,19 @@ class DingTalkNotifyMixin:
                 return self.send_json({
                     'status': 'success',
                     'sent_count': len(self._format_overseas_restock_lines(items)),
+                }, start_response)
+
+            if action == 'overseas_low_stock':
+                ok_access, access_err = self._validate_dingtalk_notify_access(user_id, notify_key)
+                if not ok_access:
+                    return self.send_json({'status': 'error', 'message': access_err}, start_response)
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                ok, err = self._send_dingtalk_overseas_low_stock(items, notify_key=notify_key, user_id=user_id)
+                if not ok:
+                    return self.send_json({'status': 'error', 'message': err or '发送失败'}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'sent_count': len(self._format_overseas_low_stock_lines(items)),
                 }, start_response)
 
             if action == 'transit_eta_delay':
