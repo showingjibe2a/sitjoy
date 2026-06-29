@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+"""核心 Mixin：性能追踪、HTTP 响应、数据库连接与通用解析。"""
+
 import json
 import mimetypes
 import os
@@ -14,7 +17,11 @@ except Exception as e:
 
 
 class CoreAppMixin:
-    """应用通用能力：缓存、响应、静态文件、DB连接、基础解析。"""
+    """应用通用能力：缓存、响应、静态文件、DB 连接、基础解析。"""
+
+    # -------------------------------------------------------------------------
+    # 性能追踪（SITJOY_PERF_DEBUG / SITJOY_PERF_SLOW_MS）
+    # -------------------------------------------------------------------------
 
     def _perf_enabled(self):
         val = str(os.environ.get('SITJOY_PERF_DEBUG', '1') or '1').strip().lower()
@@ -94,6 +101,10 @@ class CoreAppMixin:
         except Exception:
             pass
 
+    # -------------------------------------------------------------------------
+    # 模板选项内存/文件缓存
+    # -------------------------------------------------------------------------
+
     def _get_cached_template_options(self, cache_key, loader, ttl_seconds=120):
         try:
             now = time.time()
@@ -125,6 +136,10 @@ class CoreAppMixin:
             return data
         except Exception:
             return loader()
+
+    # -------------------------------------------------------------------------
+    # Schema 就绪标记（本地文件缓存，非运行时 DDL）
+    # -------------------------------------------------------------------------
 
     def _read_schema_markers(self):
         try:
@@ -199,6 +214,10 @@ class CoreAppMixin:
                 row = cur.fetchone() or {}
                 cnt = int(row.get('cnt') or 0)
         return cnt == len(names)
+
+    # -------------------------------------------------------------------------
+    # HTTP 响应：SSE / JSON / 错误 / 静态文件
+    # -------------------------------------------------------------------------
 
     def send_sse_stream(self, start_response, byte_iterable, status='200 OK'):
         """Server-Sent Events（text/event-stream）。byte_iterable 产出 UTF-8 字节块。"""
@@ -290,6 +309,10 @@ class CoreAppMixin:
         ])
         return [content]
 
+    # -------------------------------------------------------------------------
+    # 请求体 / 数据库连接
+    # -------------------------------------------------------------------------
+
     def _read_json_body(self, environ):
         content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
         if content_length <= 0:
@@ -375,6 +398,10 @@ class CoreAppMixin:
             read_timeout=int(read_timeout or 600),
             write_timeout=int(write_timeout or 600),
         )
+
+    # -------------------------------------------------------------------------
+    # 通用解析：多值 / 数值 / 日期 / 40HQ 装箱
+    # -------------------------------------------------------------------------
 
     def _split_multi_values(self, value):
         if value is None:

@@ -102,6 +102,9 @@
     </footer>
 
     <script>
+        /**
+         * 广告商品：关联广告组与销售 SKU，观察时间联动 AaObserveInterval。
+         */
         let editId = null;
         let adOptions = [];
         let salesOptions = [];
@@ -111,6 +114,10 @@
         let salesOptionsLoaded = false;
         const AD_OPTIONS_CACHE_KEY = 'amazonAdProduct:groupOptions';
         const SALES_OPTIONS_CACHE_KEY = 'amazonAdProduct:salesOptions';
+
+        // ---------------------------------------------------------------------
+        // 观察时间（商品维度）
+        // ---------------------------------------------------------------------
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
@@ -233,6 +240,10 @@
                 sessionStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
             } catch (_) {}
         }
+
+        // ---------------------------------------------------------------------
+        // 下拉选项缓存 / 列表与弹窗
+        // ---------------------------------------------------------------------
 
         function loadAdOptions(forceReload = false) {
             if (!forceReload) {
@@ -484,6 +495,10 @@
                     });
                 });
         }
+
+        // ---------------------------------------------------------------------
+        // 页面初始化
+        // ---------------------------------------------------------------------
 
         function init() {
             loadList();

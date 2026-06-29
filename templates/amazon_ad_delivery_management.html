@@ -145,6 +145,9 @@
     </footer>
 
     <script>
+        /**
+         * 广告投放（target）：表格内联改竞价/描述、弹窗 CRUD、批量导入。
+         */
         const DELIVERY_API = '/api/amazon-ad-delivery';
 
         let editId = null;
@@ -153,6 +156,10 @@
         let lastSelectedAdItemId = '';
         /** @type {Record<string, {bid_value?: string, target_desc?: string}>} */
         let deliveryPreviewDraft = {};
+
+        // ---------------------------------------------------------------------
+        // 表格内联预览草稿（竞价 / 投放描述）
+        // ---------------------------------------------------------------------
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -391,6 +398,10 @@
             const adName = (item && (item.ad_name || item.name)) ? (item.ad_name || item.name) : '';
             return `${adName}（${levelText}）`;
         }
+
+        // ---------------------------------------------------------------------
+        // 列表 / 弹窗 CRUD
+        // ---------------------------------------------------------------------
 
         function renderAdOptions(selectedValue) {
             const select = document.getElementById('modalAdItem');
@@ -635,6 +646,10 @@
                     });
                 });
         }
+
+        // ---------------------------------------------------------------------
+        // 页面初始化
+        // ---------------------------------------------------------------------
 
         function init() {
             Promise.all([loadAdOptions(), loadList()]).then(() => syncStatusButtons());

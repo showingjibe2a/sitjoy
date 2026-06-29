@@ -769,6 +769,9 @@
     </div>
 
     <script>
+        /**
+         * 首页：个人信息、待办事项、工作日历、快捷入口与装箱计算器等小组件。
+         */
         let currentUser = null;
         let isAdmin = false;
         function escapeHtml(value) {
@@ -1957,6 +1960,10 @@
             return loadCalendar({ useCacheOnly: true });
         }
 
+        // ---------------------------------------------------------------------
+        // 待办事项
+        // ---------------------------------------------------------------------
+
         function loadTodos(options = {}) {
             const opts = options || {};
             const params = new URLSearchParams();
@@ -2385,6 +2392,10 @@
             );
             return { ok: removeSelf, delete_scope: 'self' };
         }
+
+        // ---------------------------------------------------------------------
+        // 工作日历
+        // ---------------------------------------------------------------------
 
         function loadEmployeesForCalendar() {
             return fetch('/api/employee', { credentials: 'include' })

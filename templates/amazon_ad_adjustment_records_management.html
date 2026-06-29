@@ -106,6 +106,9 @@
 
     <script src="/static/js/header.js"></script>
     <script>
+        /**
+         * 广告调整记录：按广告筛选、表格内联编辑指标、批量删除与导入。
+         */
         let recordsRaw = [];
         let recordsFiltered = [];
         let filterAdItemId = '';
@@ -633,6 +636,10 @@
             })
             .catch(err => aaSaveResult({ action: 'delete', isError: true, message: '删除失败: ' + err }));
         }
+
+        // ---------------------------------------------------------------------
+        // 记录列表加载 / 筛选
+        // ---------------------------------------------------------------------
 
         function loadRecords() {
             const base = '/api/amazon-ad-adjustment';

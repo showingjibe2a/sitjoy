@@ -443,6 +443,9 @@
     </footer>
 
     <script>
+        /**
+         * 广告细分类 + 操作类型：双表管理、操作类型排序与默认投放目标配置。
+         */
         let subtypeEditId = null;
         let opTypeEditId = null;
         let subtypeCache = [];
@@ -1052,6 +1055,10 @@
             }
         }
 
+        // ---------------------------------------------------------------------
+        // 操作类型：排序 / 表格 / 弹窗
+        // ---------------------------------------------------------------------
+
         function renderOpTypeTable() {
             const tbody = document.querySelector('#opTypeTable tbody');
             if (!opTypeOptions.length) {
@@ -1226,6 +1233,10 @@
                     }
                 });
         }
+
+        // ---------------------------------------------------------------------
+        // 细分类：表格 / 加载
+        // ---------------------------------------------------------------------
 
         function renderSubtypeTable() {
             const tbody = document.querySelector('#subtypeTable tbody');

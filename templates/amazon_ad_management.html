@@ -62,6 +62,9 @@
     </footer>
 
     <script>
+        /**
+         * 广告信息（组合/活动/组）列表：搜索、内联状态、AmazonAdFormModal 新建编辑。
+         */
         let adItemsCache = [];
         let adItemsById = {};
 
@@ -88,6 +91,10 @@
             }
             return item.subtype_description || '';
         }
+
+        // ---------------------------------------------------------------------
+        // 表格渲染 / 内联状态
+        // ---------------------------------------------------------------------
 
         function renderInlineAdStatus(item) {
             const current = item?.status || '启动';
@@ -253,6 +260,10 @@
             })
             .catch(err => window.showAppSaveResult({ action: 'delete', isError: true, message: '请求失败: ' + err }));
         }
+
+        // ---------------------------------------------------------------------
+        // 列表加载 / 页面初始化
+        // ---------------------------------------------------------------------
 
         function loadAdList() {
             const q = document.getElementById('searchInput').value.trim();

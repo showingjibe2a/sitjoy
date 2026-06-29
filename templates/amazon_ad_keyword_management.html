@@ -277,6 +277,9 @@
     </footer>
 
     <script>
+        /**
+         * 广告关键词库：按品类筛选、标签池、相关性遍历与批量操作。
+         */
         let categoryOptions = [];
         let tagOptions = [];
         let skuFamilyOptions = [];
@@ -367,6 +370,10 @@
             });
         }
 
+        // ---------------------------------------------------------------------
+        // 品类 / 标签选项加载
+        // ---------------------------------------------------------------------
+
         function loadCategories() {
             fetch('/api/category').then(r => r.json()).then(data => {
                 categoryOptions = data.status === 'success' ? (data.items || []) : [];
@@ -418,6 +425,10 @@
                     renderTagPool('tagWalkerTagPool', 'tagWalkerTags');
                 });
         }
+
+        // ---------------------------------------------------------------------
+        // 关键词列表与编辑
+        // ---------------------------------------------------------------------
 
         function loadKeywordList() {
             if (!currentCategoryId) return Promise.resolve();
