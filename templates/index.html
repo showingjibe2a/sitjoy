@@ -495,9 +495,7 @@
                         <button class="btn-add" onclick="showTodoModal('create')">+ 新增待办</button>
                     </div>
                     <div class="todo-type-bar-title">待办类型管理</div>
-                    <div class="material-type-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
-                        <button class="material-type-add" type="button" aria-label="新增类型" onclick="openTodoTypeModal('create')">+</button>
-                    </div>
+                    <div class="sj-option-bar material-type-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;"></div>
                     <div class="todo-table-wrap">
                         <table class="pm-table" id="todoTable">
                             <thead>
@@ -2098,38 +2096,32 @@
         }
 
         function renderTodoTypeBar() {
-            const host = document.getElementById('todoTypeBar');
-            if (!host) return;
-            const addBtn = host.querySelector('.material-type-add');
-            host.innerHTML = '';
-            if (addBtn) host.appendChild(addBtn);
-
+            const UI = window.SitjoyPageUI;
+            if (!UI) return;
             const selected = parseInt(window.todoSelectedTypeId || '0', 10) || 0;
-            const makeBtn = (id, name) => {
-                const label = document.createElement('label');
-                label.className = 'material-type-option material-type-radio';
-                label.dataset.typeId = String(id);
-                label.innerHTML = `<input type="radio" name="todoTypeFilter" value="${id}"><span>${escapeHtml(name)}</span>`;
-                const input = label.querySelector('input');
-                if (input) {
-                    input.checked = (selected === id);
-                    input.addEventListener('click', () => {
-                        window.todoSelectedTypeId = id;
-                        renderTodoTypeBar();
-                        loadTodos();
-                    });
-                }
-                label.addEventListener('dblclick', () => {
+            UI.renderOptionBar('#todoTypeBar', {
+                mode: 'radio',
+                radioName: 'todoTypeFilter',
+                selectedValue: String(selected),
+                allLabel: '全部',
+                allValue: '0',
+                showAdd: true,
+                addAriaLabel: '新增类型',
+                onAdd: () => openTodoTypeModal('create'),
+                items: (window.todoTypesCache || []).map(t => ({
+                    id: t.id,
+                    label: t.type_name || ('类型#' + t.id),
+                    raw: t,
+                })).filter(x => parseInt(x.id, 10) > 0),
+                onSelect: (value) => {
+                    window.todoSelectedTypeId = parseInt(value, 10) || 0;
+                    renderTodoTypeBar();
+                    loadTodos();
+                },
+                onItemDblClick: (item) => {
+                    const id = parseInt(item.id, 10) || 0;
                     if (id > 0) openTodoTypeModal('edit', id);
-                });
-                return label;
-            };
-
-            host.appendChild(makeBtn(0, '全部'));
-            (window.todoTypesCache || []).forEach(t => {
-                const id = parseInt(t.id, 10) || 0;
-                if (!id) return;
-                host.appendChild(makeBtn(id, t.type_name || ('类型#' + id)));
+                },
             });
         }
 

@@ -118,7 +118,7 @@
             const radioName = cfg.radioName || `sjOptionBar_${wrap.id || 'filter'}`;
             if (cfg.showAll !== false) {
                 const allLabel = document.createElement('label');
-                allLabel.className = `${OPTION_RADIO} option-radio material-type-radio`;
+                allLabel.className = `${OPTION_RADIO} option-radio material-type-radio material-type-option sj-option-radio`;
                 const allVal = cfg.allValue == null ? '' : String(cfg.allValue);
                 allLabel.innerHTML = `<input type="radio" name="${escapeHtml(radioName)}" value="${escapeHtml(allVal)}"><span>${escapeHtml(cfg.allLabel || '全部')}</span>`;
                 const allInput = allLabel.querySelector('input');
@@ -131,7 +131,7 @@
             items.forEach((item) => {
                 const value = item.value != null ? String(item.value) : String(item.id != null ? item.id : '');
                 const label = document.createElement('label');
-                label.className = `${OPTION_RADIO} option-radio material-type-radio`;
+                label.className = `${OPTION_RADIO} option-radio material-type-radio material-type-option sj-option-radio`;
                 label.innerHTML = `<input type="radio" name="${escapeHtml(radioName)}" value="${escapeHtml(value)}"><span>${escapeHtml(item.label || '')}</span>`;
                 const input = label.querySelector('input');
                 if (selected === value) input.checked = true;
@@ -140,6 +140,9 @@
                 });
                 if (typeof cfg.onItemDblClick === 'function') {
                     label.addEventListener('dblclick', () => cfg.onItemDblClick(item));
+                }
+                if (typeof cfg.onItemMount === 'function') {
+                    cfg.onItemMount(label, item, 'radio');
                 }
                 wrap.appendChild(label);
             });
@@ -245,6 +248,8 @@
         enhanceTables,
         bindModalBackdrop,
         init,
+        /** @deprecated 使用 bindStatusSegment */
+        bindSegmentButtons: bindStatusSegment,
     };
 
     global.SitjoyPageUI = api;

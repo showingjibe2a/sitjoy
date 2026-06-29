@@ -632,19 +632,28 @@
                 });
         }
 
-        window.addEventListener('load', loadPlatformTypes);
-        window.addEventListener('load', loadBrands);
-        window.addEventListener('load', loadShopList);
-        window.setTimeout(function() {
-            var bindBackdrop = window.bindPmModalBackdropClose;
-            if (typeof bindBackdrop !== 'function') return;
-            var pm = document.getElementById('pm-modal');
-            if (pm) bindBackdrop(pm, closeModal);
-            var plat = document.getElementById('pm-platform-modal');
-            if (plat) bindBackdrop(plat, closePlatformTypeModal);
-            var brand = document.getElementById('pm-brand-modal');
-            if (brand) bindBackdrop(brand, closeBrandModal);
-        }, 0);
+        function bootShopBrandManagementPage() {
+            const run = () => {
+                SitjoyPageUI.init({
+                    selects: true,
+                    tables: '#shopTable',
+                    modals: [
+                        { el: '#pm-modal', onClose: closeModal },
+                        { el: '#pm-platform-modal', onClose: closePlatformTypeModal },
+                        { el: '#pm-brand-modal', onClose: closeBrandModal },
+                    ],
+                    onReady: () => {
+                        loadPlatformTypes();
+                        loadBrands();
+                        loadShopList();
+                    },
+                });
+            };
+            if (window.SitjoyPageUI) run();
+            else document.addEventListener('sitjoy:page-ui-ready', run, { once: true });
+        }
+
+        window.addEventListener('load', bootShopBrandManagementPage);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadShopList();

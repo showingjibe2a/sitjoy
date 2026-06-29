@@ -677,16 +677,26 @@
         }
 
 
-        window.addEventListener('load', loadMaterialTypes);
-        window.addEventListener('load', loadMaterialList);
-        window.setTimeout(function() {
-            var b = window.bindPmModalBackdropClose;
-            if (typeof b !== 'function') return;
-            var pm = document.getElementById('pm-modal');
-            if (pm) b(pm, closeModal);
-            var tm = document.getElementById('pm-type-modal');
-            if (tm) b(tm, closeTypeModal);
-        }, 0);
+        function bootMaterialManagementPage() {
+            const run = () => {
+                SitjoyPageUI.init({
+                    selects: true,
+                    tables: '#materialTable',
+                    modals: [
+                        { el: '#pm-modal', onClose: closeModal },
+                        { el: '#pm-type-modal', onClose: closeTypeModal },
+                    ],
+                    onReady: () => {
+                        loadMaterialTypes();
+                        loadMaterialList();
+                    },
+                });
+            };
+            if (window.SitjoyPageUI) run();
+            else document.addEventListener('sitjoy:page-ui-ready', run, { once: true });
+        }
+
+        window.addEventListener('load', bootMaterialManagementPage);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadMaterialList();

@@ -73,6 +73,7 @@ SitjoyPageUI.renderOptionBar('#filterBar', {
     items: [{ id: 1, label: '餐椅', raw: row }],
     onSelect(value, item) { /* 筛选列表 */ },
     onItemDblClick(item) { /* 打开编辑 */ },
+    onItemMount(label, item, mode) { /* 如区域条拖拽排序 */ },
     showAdd: true,
     onAdd() { /* 新增 */ },
 });
@@ -179,7 +180,11 @@ document.addEventListener('sitjoy:theme-change', (e) => console.log(e.detail));
 
 | 状态 | 内容 |
 |------|------|
-| 已完成 | `sitjoy-ui-patterns.css`、`SitjoyPageUI`、货号/材料/店铺品牌页筛选条 |
-| 进行中 | 去除各页内联 `required-field` / `upload-progress` 重复 |
-| 待办 | `pm-select` → universal-select（销售产品、下单产品等大页） |
-| 待办 | `sales_product_performance` 的 `check-select` 评估与 universal 对齐 |
+| 已完成 | `sitjoy-ui-patterns.css`（含 `pm-select`/`sj-upload-progress`/`sj-dialog-message` 全局规则） |
+| 已完成 | `SitjoyPageUI`：`renderOptionBar`、`onItemMount`、货号/材料/店铺品牌/首页待办/海外仓供应商·区域/在途货代筛选条 |
+| 已完成 | 去除各页内联 `required-field`、`upload-progress`、`status-pill` 焦点、`preview-savebar` 重复 |
+| 已完成 | 废弃 `wip-col-filter-btn`（仅保留 `pm-column-filter-btn`） |
+| 已完成 | `SitjoyPageUI.init`：货号、材料、店铺品牌、海外仓仓库 |
+| 遗留 | `image-type-bar` 主图类型条（销售/下单/面料等大页内嵌逻辑，类名已别名到 `sj-option-bar`） |
+| 遗留 | `pm-select` DOM 结构 → universal-select（大页渐进迁移，样式已由全局覆盖） |
+| 遗留 | `sales_product_performance` 的 `check-select` 与 universal 对齐（待评估） |

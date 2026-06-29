@@ -187,3 +187,173 @@
 .feature-category-create:hover {
     background: #6f9a7c;
 }
+
+/* -------------------------------------------------------------------------
+ * sj-custom-dropdown — 弹窗/表单内自定义下拉（遗留别名 pm-select-*）
+ * 与 universal-select-trigger + panel 结构配合；优先新页用原生 <select> + initUniversalSingleSelects
+ * ------------------------------------------------------------------------- */
+
+.sj-custom-dropdown,
+.pm-select {
+    position: relative;
+    width: 100%;
+}
+
+.sj-custom-dropdown-panel,
+.pm-select-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid var(--morandi-sand);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    padding: 0.6rem;
+    display: none;
+    z-index: 3400;
+}
+
+.sj-custom-dropdown-panel.open,
+.pm-select-panel.open {
+    display: block;
+}
+
+.sj-custom-dropdown-search,
+.pm-select-search,
+.universal-select-search {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--morandi-sand);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    box-sizing: border-box;
+}
+
+.sj-custom-dropdown-list,
+.pm-select-list {
+    max-height: 220px;
+    overflow-y: auto;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.sj-custom-dropdown-option,
+.pm-select-option {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 400;
+}
+
+.sj-custom-dropdown-option:hover,
+.pm-select-option:hover {
+    background: rgba(207, 199, 189, 0.55);
+}
+
+.sj-custom-dropdown-empty,
+.pm-select-empty {
+    padding: 0.6rem;
+    text-align: center;
+    color: var(--morandi-slate);
+    font-size: 0.9rem;
+}
+
+/* 弹窗滚动区内下拉面板不被 overflow 裁切 */
+.pm-modal .pm-modal-scroll .form-group:has(.pm-select),
+.pm-modal .pm-modal-scroll .form-group:has(.sj-custom-dropdown),
+.pm-modal .pm-modal-scroll .pm-select,
+.pm-modal .pm-modal-scroll .sj-custom-dropdown {
+    overflow: visible;
+}
+
+.pm-modal .pm-select-panel.open,
+.pm-modal .sj-custom-dropdown-panel.open {
+    z-index: 30;
+}
+
+/* -------------------------------------------------------------------------
+ * sj-upload-progress — 遗留页内上传进度条（新页请用 showAppUploadProgress）
+ * ------------------------------------------------------------------------- */
+
+.sj-upload-progress,
+.upload-progress,
+#uploadProgress {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    width: 280px;
+    padding: 0.75rem 0.8rem;
+    background: #fff;
+    border: 1px solid var(--morandi-sand);
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+    z-index: 4200;
+    display: none;
+}
+
+.sj-upload-progress-title,
+.upload-progress-title,
+#uploadProgressText {
+    font-size: 0.9rem;
+    color: var(--morandi-ink);
+    margin-bottom: 0.45rem;
+}
+
+.sj-upload-progress-bar,
+.upload-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--morandi-mist);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.sj-upload-progress-bar > span,
+.upload-progress-bar > span,
+#uploadProgressFill {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: var(--morandi-sand);
+}
+
+/* -------------------------------------------------------------------------
+ * sj-dialog-message / sj-modal-status — 导入结果与弹窗内状态条
+ * ------------------------------------------------------------------------- */
+
+.sj-dialog-message,
+.dialog-message {
+    white-space: pre-wrap;
+    color: var(--morandi-ink);
+    line-height: 1.55;
+    font-size: 0.95rem;
+}
+
+.sj-modal-status,
+.op-modal-status {
+    margin-top: 0.75rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+/* status-pill 焦点环：全站统一去掉默认 outline（各页勿重复写） */
+.status-pill:focus,
+.status-pill:focus-visible,
+.status-pill:active {
+    outline: none;
+    box-shadow: none;
+}
+
+/* material-type-option：遗留别名，等同 sj-option-radio */
+.material-type-option {
+    margin: 0;
+}
