@@ -478,6 +478,7 @@
     </footer>
 
     <script>
+        /** Amazon 账户健康：CRUD、趋势图、Excel 导入、钉钉指标预警 */
         const metricConfig = {
             account_health_rating: { label: '账户状况评级', type: 'int', target: 200, direction: 'gt' },
             suspected_ip_infringement: { label: '涉嫌侵犯知识产权', type: 'int', target: 0, direction: 'eq' },
@@ -515,6 +516,10 @@
         let shops = [];
         let latestListItems = [];
         let modalBaselineRecord = null;
+
+        // -------------------------------------------------------------------------
+        // 指标格式化、基线对比与表格单元格
+        // -------------------------------------------------------------------------
 
         function showModalStatus(message, isError) {
             const text = String(message || '').trim();
@@ -673,6 +678,10 @@
                 window.refreshUniversalSingleSelect(modalSelect);
             }
         }
+
+        // -------------------------------------------------------------------------
+        // 店铺下拉与列表违规提示
+        // -------------------------------------------------------------------------
 
         function loadShops() {
             return fetch('/api/platform-type?q=Amazon')
@@ -876,6 +885,10 @@
                 });
         }
 
+        // -------------------------------------------------------------------------
+        // Excel 模板下载与批量导入
+        // -------------------------------------------------------------------------
+
         function downloadHealthTemplate() {
             window.location.href = '/api/amazon-account-health-template';
         }
@@ -969,6 +982,10 @@
                 window.refreshUniversalSingleSelect(document.getElementById('modalShopId'));
             }
         }
+
+        // -------------------------------------------------------------------------
+        // 录入弹窗：新增 / 编辑 / 保存
+        // -------------------------------------------------------------------------
 
         function openCreateModal() {
             editId = null;
@@ -1202,6 +1219,10 @@
             }).join('');
         }
 
+        // -------------------------------------------------------------------------
+        // 列表加载与钉钉预警条目
+        // -------------------------------------------------------------------------
+
         function loadHealthList() {
             return fetch(buildQueryForList())
                 .then(r => r.json())
@@ -1238,6 +1259,10 @@
             clearChart('请选择店铺后查看趋势');
             updateLatestViolationAlert([]);
         }
+
+        // -------------------------------------------------------------------------
+        // 趋势折线图（Canvas）
+        // -------------------------------------------------------------------------
 
         function clearChart(text) {
             const canvas = document.getElementById('healthChart');
@@ -1431,6 +1456,10 @@
                 .catch(err => clearChart('图表加载失败: ' + err));
         }
 
+        // -------------------------------------------------------------------------
+        // 页面启动与筛选事件
+        // -------------------------------------------------------------------------
+
         function init() {
             bindModalChangeTracking();
             loadShops().then(() => {
@@ -1458,10 +1487,4 @@
             loadLatestForModalShop(this.value);
         });
         document.getElementById('searchShopId').addEventListener('change', loadChartData);
-        document.getElementById('searchStartDate').addEventListener('change', loadChartData);
-        document.getElementById('searchEndDate').addEventListener('change', loadChartData);
-    </script>
-</body>
-<script src="/static/js/header.js"></script>
-</html>
-
+        document.getElementById('searchStartDate').addE

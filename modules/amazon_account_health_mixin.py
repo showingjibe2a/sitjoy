@@ -42,6 +42,10 @@ class AmazonAccountHealthMixin:
         'on_time_delivery_rate',
     )
 
+    # -------------------------------------------------------------------------
+    # 指标解析、日期规范化与店铺校验
+    # -------------------------------------------------------------------------
+
     def _normalize_datetime_text(self, value):
         text = ('' if value is None else str(value)).strip()
         if not text:
@@ -107,6 +111,10 @@ class AmazonAccountHealthMixin:
             (shop_id,),
         )
         return bool(cur.fetchone())
+
+    # -------------------------------------------------------------------------
+    # HTTP API：CRUD、趋势图表
+    # -------------------------------------------------------------------------
 
     def handle_amazon_account_health_api(self, environ, method, start_response):
         """Amazon 账户健康管理 API（CRUD + 图表）"""
@@ -308,6 +316,10 @@ class AmazonAccountHealthMixin:
         except Exception as e:
             print("AmazonAccountHealth API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    # -------------------------------------------------------------------------
+    # Excel 模板下载与批量导入
+    # -------------------------------------------------------------------------
 
     def handle_amazon_account_health_template_api(self, environ, method, start_response):
         """Amazon 账户健康模板下载"""

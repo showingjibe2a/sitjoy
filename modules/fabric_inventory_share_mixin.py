@@ -8,6 +8,10 @@ from urllib.parse import parse_qs
 class FabricInventoryShareMixin:
     """面料库存比例 Mixin：按货号×面料统计历史销量并维护 inventory_share_ratio。"""
 
+    # -------------------------------------------------------------------------
+    # 月数 / 比例工具与历史销量查询
+    # -------------------------------------------------------------------------
+
     def _fabric_share_parse_months(self, raw, default=12):
         """历史统计月数：1–36，默认 12。"""
         try:
@@ -126,6 +130,10 @@ class FabricInventoryShareMixin:
             payload['category'] = family.get('category')
         return payload
 
+    # -------------------------------------------------------------------------
+    # 加载货号、计算比例、保存与变体映射
+    # -------------------------------------------------------------------------
+
     def _fabric_share_load_family_calculate(
         self, conn, sku_family_id, months, *, use_suggested_only=False,
     ):
@@ -196,6 +204,10 @@ class FabricInventoryShareMixin:
                 ratio = self._fabric_share_clamp_ratio(row.get('share_ratio'))
                 out[vid] = ratio if ratio is not None else 1.0
         return out
+
+    # -------------------------------------------------------------------------
+    # HTTP API：GET 加载 / POST calculate 重算 / POST save 保存
+    # -------------------------------------------------------------------------
 
     def handle_fabric_inventory_share_api(self, environ, method, start_response):
         """面料库存比例：GET 加载 / POST calculate 重算 / POST save 保存。"""

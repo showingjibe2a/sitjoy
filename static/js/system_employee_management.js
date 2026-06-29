@@ -1,8 +1,16 @@
-/** 员工账号管理（系统管理） */
+/**
+ * 员工账号管理（系统管理）
+ * - 待审批注册、在职员工列表、创建/编辑弹窗
+ * - 权限开关、工厂范围、主管关系
+ */
 (function () {
     const P = () => window.SitjoyPerm;
     let currentUser = null;
     let isAdmin = false;
+
+    // -------------------------------------------------------------------------
+    // 权限校验与表单辅助
+    // -------------------------------------------------------------------------
 
     function isAuthAdminUser(user) {
         if (!user) return false;
@@ -98,6 +106,10 @@
         return { ok: true, confirm_username: username, confirm_phrase: 'DELETE' };
     }
 
+    // -------------------------------------------------------------------------
+    // 待审批与员工列表加载
+    // -------------------------------------------------------------------------
+
     function loadPendingUsers() {
         if (!isAdmin) {
             const section = document.getElementById('pendingUsersSection');
@@ -188,6 +200,10 @@
                 return items;
             });
     }
+
+    // -------------------------------------------------------------------------
+    // 创建 / 编辑弹窗与工厂范围
+    // -------------------------------------------------------------------------
 
     function openEmployeeCreateModal() {
         const modal = document.getElementById('employeeCreateModal');
@@ -346,6 +362,10 @@
             if (window.showAppToast) window.showAppToast('重置失败，请稍后重试', true, 0);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // 页面事件绑定与启动
+    // -------------------------------------------------------------------------
 
     function bindEmployeePageEvents() {
         const pendingUsersTable = document.getElementById('pendingUsersTable');

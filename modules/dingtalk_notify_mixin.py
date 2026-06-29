@@ -189,44 +189,75 @@ class DingTalkNotifyMixin:
             'keyword': self.DINGTALK_KEYWORD,
         }
 
+    DINGTALK_NOTIFY_BINDING_FALLBACKS = {
+        # 低库存预警未单独绑群时，继承缺货提醒的群聊（与 SQL 迁移默认行为一致）
+        'overseas_low_stock': ('overseas_stockout',),
+    }
+
+    def _dingtalk_binding_row_to_cfg(self, row, notify_key):
+        if not row:
+            return None
+        webhook = str(row.get('webhook_url') or '').strip()
+        if not webhook:
+            return None
+        secret = str(row.get('secret') or '').strip()
+        return {
+            'source': 'database',
+            'notify_key': str(notify_key or '').strip(),
+            'group_id': int(row.get('id') or 0),
+            'group_name': str(row.get('group_name') or '').strip(),
+            'webhook_url': webhook,
+            'secret': secret,
+        }
+
+    def _lookup_dingtalk_binding_from_db(self, notify_key):
+        key = str(notify_key or '').strip()
+        if not key:
+            return None
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT g.id, g.group_name, g.webhook_url, g.secret
+                    FROM dingtalk_notify_bindings b
+                    JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
+                    WHERE b.notify_key=%s
+                      AND COALESCE(b.is_enabled, 1) = 1
+                      AND COALESCE(g.is_enabled, 1) = 1
+                    LIMIT 1
+                    """,
+                    (key,),
+                )
+                row = cur.fetchone()
+        return self._dingtalk_binding_row_to_cfg(row, key)
+
     def _resolve_dingtalk_delivery_config(self, notify_key=None):
         notify_key = str(notify_key or '').strip()
+        keys_to_try = []
         if notify_key:
+            keys_to_try.append(notify_key)
+            keys_to_try.extend(self.DINGTALK_NOTIFY_BINDING_FALLBACKS.get(notify_key, ()))
+        seen = set()
+        if keys_to_try:
             try:
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            SELECT g.id, g.group_name, g.webhook_url, g.secret
-                            FROM dingtalk_notify_bindings b
-                            JOIN dingtalk_groups g ON g.id = b.dingtalk_group_id
-                            WHERE b.notify_key=%s
-                              AND COALESCE(b.is_enabled, 1) = 1
-                              AND COALESCE(g.is_enabled, 1) = 1
-                            LIMIT 1
-                            """,
-                            (notify_key,),
-                        )
-                        row = cur.fetchone()
-                        if row:
-                            webhook = str(row.get('webhook_url') or '').strip()
-                            secret = str(row.get('secret') or '').strip()
-                            if webhook and secret:
-                                return {
-                                    'source': 'database',
-                                    'notify_key': notify_key,
-                                    'group_id': int(row.get('id') or 0),
-                                    'group_name': str(row.get('group_name') or '').strip(),
-                                    'webhook_url': webhook,
-                                    'secret': secret,
-                                }, None
+                for key in keys_to_try:
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    cfg = self._lookup_dingtalk_binding_from_db(key)
+                    if cfg:
+                        if key != notify_key:
+                            cfg = dict(cfg)
+                            cfg['notify_key'] = notify_key
+                            cfg['fallback_from'] = key
+                        return cfg, None
             except Exception as exc:
                 if not self._dingtalk_table_missing(exc):
                     return None, str(exc)
         file_cfg = self._get_dingtalk_notify_config()
         webhook = str(file_cfg.get('webhook_url') or '').strip()
         secret = str(file_cfg.get('secret') or '').strip()
-        if webhook and secret:
+        if webhook:
             return {
                 'source': 'file',
                 'webhook_url': webhook,

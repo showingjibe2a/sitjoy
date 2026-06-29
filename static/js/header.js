@@ -1183,6 +1183,8 @@
             });
             if(result && result.ok){
                 sentLowStock = lowStockBatch.length;
+            } else if(result && result.message && typeof showAppToast === 'function'){
+                showAppToast(`低库存预警发送失败：${result.message}`, true, 0);
             }
         }
         if(opt.silent === true) return { sentStockout, sentRestock, sentLowStock };
@@ -1889,7 +1891,6 @@
             .filter(item => item && item.sku);
         if(!stockout.length && !restock.length && !lowStock.length) return;
         const opt = options && typeof options === 'object' ? options : {};
-        const panelOpen = !!(appDingtalkNotifyPromptPanel && appDingtalkNotifyPromptPanel.classList.contains('show'));
         const scheduleLowStock = () => {
             if(!lowStock.length) return;
             if(typeof promptAppDingtalkOverseasLowStock === 'function'){
@@ -1918,10 +1919,6 @@
             if(typeof promptAppDingtalkOverseasRestock === 'function'){
                 promptAppDingtalkOverseasRestock(restock, opt.restock || opt);
             }
-            return;
-        }
-        if(panelOpen){
-            appDingtalkNotifyPromptFollowUp = scheduleLowStock;
             return;
         }
         scheduleLowStock();

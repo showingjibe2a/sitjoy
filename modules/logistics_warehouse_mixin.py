@@ -2883,15 +2883,54 @@ class LogisticsWarehouseMixin:
             }
         return out
 
+    def _overseas_low_stock_channel_totals_fallback(self, conn, order_product_ids):
+        """简化口径：本体 SKU 库存汇总（不含替代方案），forecast 失败时兜底。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        brief_by_op = self._forecast_load_order_product_brief_map(conn, ids)
+        inv_by_op = self._forecast_load_inventory_by_order_product(conn, ids)
+        out = {}
+        for op_id in ids:
+            brief = brief_by_op.get(op_id) or {}
+            sku = str(brief.get('sku') or '').strip()
+            if not sku:
+                continue
+            inv = inv_by_op.get(op_id) or {}
+            overseas = int(inv.get('overseas_qty') or 0)
+            transit = int(inv.get('transit_qty') or 0)
+            factory = int(inv.get('factory_stock_qty') or 0)
+            wip = int(inv.get('wip_qty') or 0)
+            out[op_id] = {
+                'sku': sku,
+                'overseas_qty': overseas,
+                'transit_qty': transit,
+                'factory_stock_qty': factory,
+                'wip_qty': wip,
+                'total_channel_qty': overseas + transit + factory + wip,
+            }
+        return out
+
     def _evaluate_overseas_low_stock_alerts(self, conn, order_product_ids):
         """全渠道库存≤5 或 动销月(全部)<0.5 时生成低库存预警项。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return []
-        totals = self._overseas_low_stock_channel_totals(conn, ids)
-        turnover_map = self._turnover_compute_order_turnover_map(conn, ids)
-        window = self._turnover_sales_window(conn)
-        sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window)
+        try:
+            totals = self._overseas_low_stock_channel_totals(conn, ids)
+        except Exception as exc:
+            print(f'[overseas_low_stock] channel totals fallback: {type(exc).__name__}: {exc}')
+            totals = self._overseas_low_stock_channel_totals_fallback(conn, ids)
+        turnover_map = {}
+        sales_map = {}
+        try:
+            window = self._turnover_sales_window(conn)
+            turnover_map = self._turnover_compute_order_turnover_map(conn, ids)
+            sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window)
+        except Exception as exc:
+            print(f'[overseas_low_stock] turnover skipped: {type(exc).__name__}: {exc}')
+            turnover_map = {i: {'months_cover_total': None} for i in ids}
+            sales_map = {i: 0.0 for i in ids}
         qty_threshold = int(self.OVERSEAS_LOW_STOCK_QTY_THRESHOLD)
         turnover_threshold = float(self.OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD)
         alerts = []
@@ -2927,10 +2966,7 @@ class LogisticsWarehouseMixin:
         return alerts
 
     def _attach_overseas_low_stock_alerts(self, conn, order_product_ids):
-        try:
-            return self._evaluate_overseas_low_stock_alerts(conn, order_product_ids)
-        except Exception:
-            return []
+        return self._evaluate_overseas_low_stock_alerts(conn, order_product_ids)
 
     def _prepare_overseas_inventory_notify_payload(self, cur, stockout_items, restock_items):
         """富化缺货/上架通知项（在外层 cursor 上执行）。"""

@@ -81,6 +81,10 @@ def _spp_unregister_import_waiter(task_id, ev):
 class SalesProductMixin:
     """销售产品 Mixin：规格变体 CRUD、图库、产品表现与聚合/rolling 快照刷新。"""
 
+    # -------------------------------------------------------------------------
+    # 图库 / resources 路径与 image_assets 工具
+    # -------------------------------------------------------------------------
+
     def _resources_root(self):
         """Return absolute resources root as bytes path."""
         return self._join_resources('')
@@ -299,6 +303,10 @@ class SalesProductMixin:
                 'variant_folder': variant_folder_name,
                 'folder_path': folder_path,
             }
+
+    # -------------------------------------------------------------------------
+    # Gallery 元数据 API（关联状态、启用/弃用、备注）
+    # -------------------------------------------------------------------------
 
     def handle_gallery_image_meta_api(self, environ, method, start_response):
         """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型/启用状态/备注。
@@ -3876,6 +3884,10 @@ class SalesProductMixin:
             updated += int(cur.rowcount or 0)
         return updated
 
+    # -------------------------------------------------------------------------
+    # 父体管理 API（CRUD）
+    # -------------------------------------------------------------------------
+
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
@@ -4235,6 +4247,10 @@ class SalesProductMixin:
             'spec_all_end': spec_all_end,
             'fab_all_end': fab_all_end,
         }
+
+    # -------------------------------------------------------------------------
+    # 销售产品 Excel 模板下载
+    # -------------------------------------------------------------------------
 
     def handle_sales_product_template_api(self, environ, method, start_response):
         """销售产品模板下载"""
@@ -5188,6 +5204,9 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 销售产品 CRUD API
+    # -------------------------------------------------------------------------
 
     def handle_sales_product_api(self, environ, method, start_response):
         """销售产品管理 API（CRUD）"""
@@ -7575,6 +7594,10 @@ class SalesProductMixin:
                 f"UPDATE sales_variant_image_mappings SET sort_order=%s WHERE id=%s AND {where_key}=%s",
                 [(sort_order, mapping_id, where_val) for sort_order, mapping_id in updates],
             )
+
+    # -------------------------------------------------------------------------
+    # 主图排序与映射 API
+    # -------------------------------------------------------------------------
 
     def handle_sales_product_main_images_api(self, environ, method, start_response):
         try:
