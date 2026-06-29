@@ -10,6 +10,10 @@ from urllib.parse import parse_qs
 class AppEntryMixin:
     """WSGI 入口：权限校验 → 页面 → API。"""
 
+    # -------------------------------------------------------------------------
+    # 路径规范化与 WSGI 分发
+    # -------------------------------------------------------------------------
+
     @staticmethod
     def _normalize_request_path(path):
         p = str(path or '/').strip()
@@ -56,6 +60,10 @@ class AppEntryMixin:
             if str(environ.get('PATH_INFO') or '').startswith('/api/'):
                 return self.send_json({'status': 'error', 'message': f'服务器错误: {str(e)}', 'path': environ.get('PATH_INFO', '')}, start_response)
             return self.send_error(500, f'服务器错误: {str(e)}', start_response)
+
+    # -------------------------------------------------------------------------
+    # 示例 / 健康检查 API
+    # -------------------------------------------------------------------------
 
     def handle_hello_api(self, environ, path, method, start_response):
         try:

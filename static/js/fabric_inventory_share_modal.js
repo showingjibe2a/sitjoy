@@ -10,7 +10,9 @@
     return document.getElementById(id);
   }
 
-  /* --- 状态与比例输入 --- */
+  // -------------------------------------------------------------------------
+  // 比例输入与行状态
+  // -------------------------------------------------------------------------
 
   function setStatus(msg, isError) {
     const node = el('fisStatus');
@@ -82,7 +84,9 @@
     syncRatioInputState(input, i);
   }
 
-  /* --- 弹窗挂载与表格 --- */
+  // -------------------------------------------------------------------------
+  // 弹窗挂载与表格渲染
+  // -------------------------------------------------------------------------
 
   async function ensureMounted() {
     if (mounted && el('fabricInventoryShareModal')) return;
@@ -167,7 +171,9 @@
     return Math.max(1, Math.min(36, Number(el('fisHistMonths')?.value || 12)));
   }
 
-  /* --- API：加载 / 重算 / 保存 --- */
+  // -------------------------------------------------------------------------
+  // API：加载 / 重算 / 保存
+  // -------------------------------------------------------------------------
 
   function applyPayload(data) {
     items = (data && data.items) ? data.items.map(normalizeRow) : [];
@@ -256,6 +262,10 @@
       setStatus((e && e.message) ? e.message : String(e), true);
     }
   }
+
+  // -------------------------------------------------------------------------
+  // 打开 / 关闭与事件绑定
+  // -------------------------------------------------------------------------
 
   function syncScrollLock() {
     const hasActive = !!document.querySelector('.pm-modal.active');

@@ -1,10 +1,16 @@
-/** 系统审计日志 */
+/**
+ * 系统审计日志：页面访问与操作记录分页查询、清理。
+ */
 (function () {
     let currentUser = null;
     let auditLogType = 'access';
     let auditLogPage = 1;
     let auditLogTotal = 0;
     const auditLogPageSize = 50;
+
+    // -------------------------------------------------------------------------
+    // 权限与渲染辅助
+    // -------------------------------------------------------------------------
 
     function canViewAuditLogs() {
         if (!currentUser) return false;
@@ -64,8 +70,12 @@
         }
         const summary = String(row.request_summary || '').trim();
         if (!summary) return '—';
-        return escapeHtml(summary).replace(/\n/g, '<br>');
+        }
     }
+
+    // -------------------------------------------------------------------------
+    // 列表加载与分页
+    // -------------------------------------------------------------------------
 
     function renderAuditLogTableHead() {
         const head = document.getElementById('auditLogTableHead');
@@ -149,6 +159,10 @@
             if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#a33;">网络错误</td></tr>';
         }
     }
+
+    // -------------------------------------------------------------------------
+    // 类型切换、清理与事件绑定
+    // -------------------------------------------------------------------------
 
     function setSegmentValue(seg, value) {
         if (!seg) return;

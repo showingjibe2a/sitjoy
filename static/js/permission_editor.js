@@ -2,6 +2,10 @@
 window.SitjoyPerm = window.SitjoyPerm || {};
 
 (function () {
+    // -------------------------------------------------------------------------
+    // 权限元数据与默认值
+    // -------------------------------------------------------------------------
+
     function permUser() {
         return window.__sitjoyPermUser || {};
     }
@@ -60,6 +64,10 @@ window.SitjoyPerm = window.SitjoyPerm || {};
         });
         return normalized;
     }
+
+    // -------------------------------------------------------------------------
+    // 开关与分组 HTML 构建
+    // -------------------------------------------------------------------------
 
     function canEditAdminGrant() {
         const u = permUser();
@@ -129,6 +137,10 @@ window.SitjoyPerm = window.SitjoyPerm || {};
         `;
     }
 
+    // -------------------------------------------------------------------------
+    // 编辑器渲染、采集与模块开关联动
+    // -------------------------------------------------------------------------
+
     function renderPermissionEditor(target, payload, options = {}) {
         const el = typeof target === 'string' ? document.getElementById(target) : target;
         if (!el) return;
@@ -185,6 +197,10 @@ window.SitjoyPerm = window.SitjoyPerm || {};
         });
         syncPermissionEditor(root);
     }
+
+    // -------------------------------------------------------------------------
+    // 全局访问判断与对外 API
+    // -------------------------------------------------------------------------
 
     function isAuthAdminUser(user) {
         if (!user) return false;

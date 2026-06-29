@@ -339,7 +339,10 @@
     </div>
 
     <script>
+        /** 登录 / 注册：Tab 切换与 /api/auth 交互 */
+        // -------------------------------------------------------------------------
         // Tab 切换
+        // -------------------------------------------------------------------------
         document.querySelectorAll('.tab-button').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tab = btn.getAttribute('data-tab');
@@ -361,6 +364,9 @@
             });
         });
 
+        // -------------------------------------------------------------------------
+        // 登录
+        // -------------------------------------------------------------------------
         async function handleLogin(evt) {
             evt.preventDefault();
             const username = document.getElementById('loginUsername').value.trim();
@@ -405,6 +411,9 @@
             }
         }
 
+        // -------------------------------------------------------------------------
+        // 注册
+        // -------------------------------------------------------------------------
         async function handleRegister(evt) {
             evt.preventDefault();
             const name = document.getElementById('registerName').value.trim();

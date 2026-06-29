@@ -3753,6 +3753,64 @@ class SalesManagementMixin:
                     out[int(op_id)] = float(sales)
         return out
 
+    def _turnover_assembled_sales_from_substitute_plans(self, plan_groups, sales_by_op, owner_id=None):
+        """各替代发货方案按瓶颈折算 owner 等效窗口销量后相加（与 _forecast_inventory_assembled_from_substitute_plans 对称）。"""
+        owner_id = int(owner_id) if self._parse_int(owner_id) else 0
+        total = 0.0
+        for grp in plan_groups or []:
+            vals = []
+            for sid, mult in grp.get('items') or []:
+                sid = self._parse_int(sid)
+                if not sid or (owner_id and int(sid) == owner_id):
+                    continue
+                mult = max(1, self._parse_int(mult) or 1)
+                s = float((sales_by_op or {}).get(int(sid)) or 0)
+                if s > 1e-9:
+                    vals.append(s / float(mult))
+            if vals:
+                total += min(vals)
+        return total
+
+    def _turnover_owner_effective_window_sales(self, owner_id, plan_groups, sales_by_op):
+        """本体窗口销量 + 全部替代发货方案折算销量（owner 等效件数）。"""
+        oid = self._parse_int(owner_id)
+        if not oid:
+            return 0.0
+        owner_sales = float((sales_by_op or {}).get(int(oid)) or 0)
+        sub_sales = self._turnover_assembled_sales_from_substitute_plans(
+            plan_groups, sales_by_op, owner_id=oid,
+        )
+        total = owner_sales + sub_sales
+        return total if total > 1e-9 else 0.0
+
+    def _turnover_load_op_effective_window_sales_map(self, conn, order_product_ids, window=None, shop_ids=None):
+        """下单 SKU -> 近30天等效窗口销量（本体 + 全部替代发货方案折算）。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        window = window or self._turnover_sales_window(conn)
+        substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
+        extra_subs = []
+        for oid in ids:
+            for sid in self._forecast_substitute_ids_from_plan_groups(substitute_plans.get(oid) or []):
+                extra_subs.append(sid)
+        load_ids = sorted(set(ids).union(int(x) for x in extra_subs if self._parse_int(x)))
+        sales_map = self._turnover_load_op_window_sales_map(conn, load_ids, window=window, shop_ids=shop_ids)
+        still_missing = [i for i in ids if float(sales_map.get(i) or 0) <= 1e-9]
+        if still_missing:
+            link_sales = self._turnover_op_sales_via_variant_links(
+                conn, still_missing, window, shop_ids=shop_ids,
+            )
+            for op_id, sales in (link_sales or {}).items():
+                if float(sales or 0) > 1e-9:
+                    sales_map[int(op_id)] = float(sales)
+        return {
+            oid: self._turnover_owner_effective_window_sales(
+                oid, substitute_plans.get(oid) or [], sales_map,
+            )
+            for oid in ids
+        }
+
     def _turnover_spec_coverage_from_bom_pairs(self, pairs, op_sales_map, inv_by_op, substitute_plans_by_owner):
         """规格行动销月三列：各下单 SKU（含替代方案库存）取最小值。"""
         vals_o, vals_ot, vals_tot = [], [], []
@@ -3761,10 +3819,10 @@ class SalesManagementMixin:
             qp = max(1, int(qp or 1))
             if not oid:
                 continue
-            avg_op = float(op_sales_map.get(oid) or 0)
+            plans = (substitute_plans_by_owner or {}).get(oid) or []
+            avg_op = self._turnover_owner_effective_window_sales(oid, plans, op_sales_map)
             if avg_op <= 1e-9:
                 continue
-            plans = (substitute_plans_by_owner or {}).get(oid) or []
             ai = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans)
             inv = inv_by_op.get(oid) or {}
             ai_sum = sum(int(ai.get(k) or 0) for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'))
@@ -3826,7 +3884,7 @@ class SalesManagementMixin:
         ))
 
     def _turnover_compute_order_turnover_map(self, conn, order_product_ids, shop_ids=None):
-        """下单 SKU -> 动销月三列（库存口径与销量预测下单行一致）。"""
+        """下单 SKU -> 动销月三列（全渠道库存含全部替代方案；分母含本体与替代 SKU 折算销量）。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         window = self._turnover_sales_window(conn)
         empty = {
@@ -3834,11 +3892,14 @@ class SalesManagementMixin:
             'months_cover_overseas': None,
             'months_cover_overseas_transit': None,
             'months_cover_total': None,
+            'window_sales_qty': None,
         }
         out = {i: dict(empty) for i in ids}
         if not ids:
             return out
-        sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window, shop_ids=shop_ids)
+        effective_sales_map = self._turnover_load_op_effective_window_sales_map(
+            conn, ids, window=window, shop_ids=shop_ids,
+        )
         substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, ids)
         extra_subs = []
         for oid in ids:
@@ -3854,9 +3915,7 @@ class SalesManagementMixin:
             agg, _ = self._forecast_order_row_inventory_aggregate(
                 inv_by_op, op_id, is_on, plans, brief_by_op, plans,
             )
-            sales = sales_map.get(op_id)
-            if sales is None:
-                sales = 0.0
+            sales = float(effective_sales_map.get(op_id) or 0)
             o = int(agg.get('overseas_qty') or 0)
             t = int(agg.get('transit_qty') or 0)
             st = int(agg.get('factory_stock_qty') or 0)
@@ -3866,6 +3925,7 @@ class SalesManagementMixin:
                 'months_cover_overseas': self._turnover_coverage(o, sales),
                 'months_cover_overseas_transit': self._turnover_coverage(o + t, sales),
                 'months_cover_total': self._turnover_coverage(o + t + st + wp, sales),
+                'window_sales_qty': round(sales, 2) if sales > 1e-9 else None,
             }
         return out
 
@@ -3952,7 +4012,6 @@ class SalesManagementMixin:
                 else:
                     out[vid]['turnover_sales_window'] = window
             return out
-        op_sales = self._turnover_load_op_window_sales_map(conn, all_ops, window=window, shop_ids=shop_ids)
         substitute_plans = self._forecast_load_all_substitute_plans_by_owner(conn, all_ops)
         extra_subs = []
         for oid in all_ops:
@@ -3960,6 +4019,7 @@ class SalesManagementMixin:
                 extra_subs.append(sid)
         load_ids = sorted(set(all_ops).union(int(x) for x in extra_subs if self._parse_int(x)))
         inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
+        op_sales = self._turnover_load_op_window_sales_map(conn, load_ids, window=window, shop_ids=shop_ids)
         for vid in ids:
             pairs = links_by_vid.get(vid) or []
             cov = self._turnover_spec_coverage_from_bom_pairs(

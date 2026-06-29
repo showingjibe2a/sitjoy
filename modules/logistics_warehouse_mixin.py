@@ -2846,7 +2846,7 @@ class LogisticsWarehouseMixin:
     OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD = 0.5
 
     def _overseas_low_stock_channel_totals(self, conn, order_product_ids):
-        """汇总各 SKU 全渠道库存（海外+在途+工厂+在制），含替代款合并。"""
+        """汇总各 SKU 全渠道库存（海外+在途+工厂+在制），含全部替代发货方案成套折算。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return {}
@@ -2912,7 +2912,10 @@ class LogisticsWarehouseMixin:
         return out
 
     def _evaluate_overseas_low_stock_alerts(self, conn, order_product_ids):
-        """全渠道库存≤5 或 动销月(全部)<0.5 时生成低库存预警项。"""
+        """全渠道库存≤5 或 动销月(全部)<0.5 时生成低库存预警项。
+
+        库存与动销分母均含该下单 SKU 下全部替代发货方案（与销量预测库存口径一致）。
+        """
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         if not ids:
             return []
@@ -2922,15 +2925,11 @@ class LogisticsWarehouseMixin:
             print(f'[overseas_low_stock] channel totals fallback: {type(exc).__name__}: {exc}')
             totals = self._overseas_low_stock_channel_totals_fallback(conn, ids)
         turnover_map = {}
-        sales_map = {}
         try:
-            window = self._turnover_sales_window(conn)
             turnover_map = self._turnover_compute_order_turnover_map(conn, ids)
-            sales_map = self._turnover_load_op_window_sales_map(conn, ids, window=window)
         except Exception as exc:
             print(f'[overseas_low_stock] turnover skipped: {type(exc).__name__}: {exc}')
-            turnover_map = {i: {'months_cover_total': None} for i in ids}
-            sales_map = {i: 0.0 for i in ids}
+            turnover_map = {i: {'months_cover_total': None, 'window_sales_qty': None} for i in ids}
         qty_threshold = int(self.OVERSEAS_LOW_STOCK_QTY_THRESHOLD)
         turnover_threshold = float(self.OVERSEAS_LOW_STOCK_TURNOVER_THRESHOLD)
         alerts = []
@@ -2949,7 +2948,11 @@ class LogisticsWarehouseMixin:
                 reasons.append('动销月(全部)<0.5')
             if not reasons:
                 continue
-            window_sales = float(sales_map.get(op_id) or 0)
+            window_sales = turnover.get('window_sales_qty')
+            if window_sales is None:
+                window_sales = 0.0
+            else:
+                window_sales = float(window_sales)
             alerts.append({
                 'sku': sku,
                 'order_product_id': op_id,

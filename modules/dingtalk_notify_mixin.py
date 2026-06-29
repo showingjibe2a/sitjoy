@@ -554,7 +554,7 @@ class DingTalkNotifyMixin:
             ]
             window_sales = row.get('window_sales_qty')
             if window_sales is not None and str(window_sales) != '':
-                detail_parts.append(f'近30天销量 {window_sales}')
+                detail_parts.append(f'近30天等效销量 {window_sales}')
             detail_parts.append(f'触发：{reason_text}')
             blocks.append(self._dingtalk_notify_block(
                 header, detail_parts, self.DINGTALK_COLOR_NEGATIVE,
