@@ -11,6 +11,9 @@
   const MJ_JOIN_LOCAL_ORIGIN = 'http://192.168.5.203:233';
   const MJ_JOIN_CLOUD_ORIGIN = 'http://812165.xyz:233';
 
+  // -------------------------------------------------------------------------
+  // 模式检测与模块级状态
+  // -------------------------------------------------------------------------
   function mjPlayMode() {
     const mode = String((document.body && document.body.dataset.mjPlayMode) || '').trim().toLowerCase();
     const popup = mode === 'popup';
@@ -60,6 +63,9 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // -------------------------------------------------------------------------
+  // 庄家揭示轮询与状态归一化
+  // -------------------------------------------------------------------------
   function clearDealerRevealPoll() {
     if (dealerRevealTimer) {
       win.clearTimeout(dealerRevealTimer);
@@ -152,6 +158,9 @@
     return Object.assign({}, raw, { status: phase, room_status: phase });
   }
 
+  // -------------------------------------------------------------------------
+  // 牌桌中央浮层
+  // -------------------------------------------------------------------------
   function initMjBoardOverlay() {
     if (mjBoardOverlay) return mjBoardOverlay;
     if (!win.WidgetBoardOverlay) return null;
@@ -348,6 +357,9 @@
     return s.status === 'lobby' || s.status === 'dealer_roll' || s.status === 'hand_end';
   }
 
+  // -------------------------------------------------------------------------
+  // URL 解析与 API
+  // -------------------------------------------------------------------------
   function getAppBasePath() {
     if (win.SITJOY_BASE_PATH) {
       return String(win.SITJOY_BASE_PATH).replace(/\/$/, '');
@@ -409,6 +421,9 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // 牌面渲染
+  // -------------------------------------------------------------------------
   function tileLabel(t) {
     if (!t) return '?';
     const suit = t[0];
@@ -770,6 +785,9 @@
     try { return localStorage.getItem(ROOM_KEY) || ''; } catch (_) { return ''; }
   }
 
+  // -------------------------------------------------------------------------
+  // 房间聊天
+  // -------------------------------------------------------------------------
   function initRoomChat() {
     if (roomChat || !win.WidgetRoom) return roomChat;
     const root = $('mjRoomChat');
@@ -1013,6 +1031,9 @@
     setVisible(mainBtn, inRoom && !isPopup);
   }
 
+  // -------------------------------------------------------------------------
+  // 房间侧栏 UI
+  // -------------------------------------------------------------------------
   function renderRoomSidebar(s) {
     if (!s) return;
     const codeEl = $('mjRoomCode');
@@ -1356,6 +1377,9 @@
     return el;
   }
 
+  // -------------------------------------------------------------------------
+  // 座位、河牌与副露
+  // -------------------------------------------------------------------------
   function renderSeat(seatIdx, s) {
     const logical = s._view_seat != null ? s._view_seat : seatIdx;
     renderPlayerBadge(seatIdx, s, logical);
@@ -1481,6 +1505,9 @@
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 手牌
+  // -------------------------------------------------------------------------
   function renderHand(s) {
     const handEl = $('mjMyHand');
     const stripEl = handEl && handEl.closest('.mj-hand-strip');

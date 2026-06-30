@@ -6,6 +6,9 @@
 
   const STORAGE_PREFIX = 'sitjoy_widget_popup_bounds_';
 
+  // -------------------------------------------------------------------------
+  // 边界读写与归一化
+  // -------------------------------------------------------------------------
   function clamp(n, min, max) {
     return Math.min(max, Math.max(min, n));
   }
@@ -109,6 +112,9 @@
     return b;
   }
 
+  // -------------------------------------------------------------------------
+  // 打开小窗
+  // -------------------------------------------------------------------------
   function openWithRememberedBounds(key, url, name, defaults) {
     const defs = defaults || {};
     const bounds = resolveBounds(key, defs);
@@ -120,6 +126,9 @@
     return popup;
   }
 
+  // -------------------------------------------------------------------------
+  // 位置记忆
+  // -------------------------------------------------------------------------
   function attachBoundsSaver(key, popup, defaults) {
     if (!popup) return { save: function () {}, stop: function () {} };
     const defs = defaults || {};

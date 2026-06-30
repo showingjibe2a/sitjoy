@@ -9,6 +9,9 @@
   const WHITE = 2;
   const EMPTY = 0;
 
+  // -------------------------------------------------------------------------
+  // 模块级状态与常量
+  // -------------------------------------------------------------------------
   const isPopup = document.body && document.body.dataset.goPlayMode === 'popup';
 
   let roomCode = '';
@@ -59,6 +62,9 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // -------------------------------------------------------------------------
+  // 房间聊天
+  // -------------------------------------------------------------------------
   function initGoRoomChat() {
     if (goRoomChat || !win.WidgetRoom) return goRoomChat;
     const root = document.getElementById('goRoomChat');
@@ -82,6 +88,9 @@
     if (active) goRoomChat.render((data && data.chat_messages) || []);
   }
 
+  // -------------------------------------------------------------------------
+  // URL 解析、API 与 Toast
+  // -------------------------------------------------------------------------
   function getAppBasePath() {
     if (win.SITJOY_BASE_PATH) {
       return String(win.SITJOY_BASE_PATH).replace(/\/$/, '');
@@ -289,6 +298,9 @@
     return '撤回上一手';
   }
 
+  // -------------------------------------------------------------------------
+  // 本地练习棋盘与自由摆棋
+  // -------------------------------------------------------------------------
   function cloneBoard2d(src) {
     const b = [];
     for (let y = 0; y < SIZE; y++) {
@@ -876,6 +888,9 @@
     return d.innerHTML;
   }
 
+  // -------------------------------------------------------------------------
+  // 棋盘中央浮层（确认框等）
+  // -------------------------------------------------------------------------
   function initBoardOverlay() {
     if (boardOverlay) return boardOverlay;
     if (!win.WidgetBoardOverlay) return null;
@@ -1012,6 +1027,9 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // 服务端状态拉取与弹窗同步
+  // -------------------------------------------------------------------------
   function refreshMainStateFromServer() {
     if (isPopup || !roomCode) return;
     api('state', { room_code: roomCode }, 'GET').then((d) => {
@@ -1157,6 +1175,9 @@
     }, 400);
   }
 
+  // -------------------------------------------------------------------------
+  // 独立棋盘窗口（window.open）
+  // -------------------------------------------------------------------------
   /** 须在按钮 click 里同步调用，否则会被浏览器拦截 */
   function openBoardWindow() {
     if (!roomCode && !localBoardMode) {
@@ -1417,6 +1438,9 @@
     applyState(data);
   }
 
+  // -------------------------------------------------------------------------
+  // 房间状态应用与玩家头像
+  // -------------------------------------------------------------------------
   function applyState(data, opts) {
     if (!data || data.status !== 'success') return false;
     if (data.chat_only) return applyGoChatOnly(data);
@@ -1574,6 +1598,9 @@
     return { x, y };
   }
 
+  // -------------------------------------------------------------------------
+  // 棋盘渲染与落子
+  // -------------------------------------------------------------------------
   function renderBoard(el) {
     if (!el) return;
     const frame = getBoardFrame(el);

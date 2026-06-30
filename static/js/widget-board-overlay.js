@@ -37,6 +37,9 @@
     else els.overlay.setAttribute('hidden', '');
   }
 
+  // -------------------------------------------------------------------------
+  // 中央浮层控制器
+  // -------------------------------------------------------------------------
   function createController(ids) {
     const els = {
       overlay: resolveEl(ids.overlayId || ids.overlay),
