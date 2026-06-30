@@ -219,7 +219,9 @@
             padding: 0.5rem;
             display: none;
         }
-        /* 打开时由 header.js 挂到 body 并加 .floating-dropdown-panel，避免父级 overflow 裁切 */
+        /* -------------------------------------------------------------------------
+         * 多选下拉（floating-dropdown-panel）
+         * ------------------------------------------------------------------------- */
         .check-select.open .check-select-panel:not(.floating-dropdown-panel) {
             display: block;
         }
@@ -591,7 +593,9 @@
             font-size: 0.76rem;
             color: var(--morandi-slate);
         }
-        /* 货号分组明细：内外层排序下拉（不用 optional-field，更紧凑） */
+        /* -------------------------------------------------------------------------
+         * 货号分组明细：内外层排序下拉
+         * ------------------------------------------------------------------------- */
         #perfGroupSortToolbar {
             display: flex;
             align-items: center;
@@ -678,12 +682,13 @@
             background: #fff;
             max-width: 100%;
         }
-        /* 分组明细托管表：隐藏每页条数、显示 x–y/共 z 条、翻页（本表固定全量展示） */
+        /* -------------------------------------------------------------------------
+         * 分组明细托管表：工具栏与双行 sticky 表头
+         * ------------------------------------------------------------------------- */
         .perf-group-tree-wrap > .pm-table-toolbar > .pm-table-toolbar-left,
         .perf-group-tree-wrap > .pm-table-toolbar .pm-table-pager {
             display: none !important;
         }
-        /* 全量汇总：主表 thead 第二行，与列宽/显隐/冻结同源；双行 sticky 表头 */
         .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr:first-child > th {
             top: 0;
             z-index: 5;
@@ -703,7 +708,9 @@
             white-space: nowrap;
             color: var(--morandi-ink);
         }
-        /* 分组明细：交给全局 managed-table 接管（列筛选/字段排序/字段显示） */
+        /* -------------------------------------------------------------------------
+         * 分组明细：父行展开与 managed-table 列配置
+         * ------------------------------------------------------------------------- */
         .perf-group-parent-row {
             background: #f7f4ef;
             cursor: pointer;
@@ -825,7 +832,9 @@
             gap: 0.28rem;
             width: 100%;
         }
-        /* 分组明细：单表 sticky 双行表头（分离克隆表头已禁用） */
+        /* -------------------------------------------------------------------------
+         * 分组明细：单表 sticky 双行表头
+         * ------------------------------------------------------------------------- */
         .perf-group-tree-wrap .pm-managed-body-wrap > table#perfGroupTable > thead > tr > th {
             background: #f3efe9;
         }
@@ -1165,7 +1174,9 @@
 
     <script src="/static/js/sitjoy_task_progress_sse.js"></script>
     <script>
-        /* 销售产品表现：看板趋势图、货号分组明细、原始记录列表与导入 */
+        // -------------------------------------------------------------------------
+        // 销售产品表现：看板趋势图、货号分组明细、原始记录列表与导入
+        // -------------------------------------------------------------------------
         let uploadProcessingTimer = null;
         let uploadProgressPollingTimer = null;
         const PERF_PAGE_SIZE_KEY = 'sales_perf_list_page_size_v1';

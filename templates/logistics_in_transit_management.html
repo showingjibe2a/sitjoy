@@ -7,6 +7,9 @@
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
+    /* -------------------------------------------------------------------------
+     * 在途物流页：表单布局与 SKU 四列格选
+     * ------------------------------------------------------------------------- */
     .required-asterisk { color: #c73a3a; font-weight: 700; }
     .line { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
     .line .k { min-width: 172px; color: var(--morandi-slate); margin: 0; }
@@ -70,7 +73,9 @@
       padding-left: 0.28rem;
       padding-right: 0.28rem;
     }
-    /* SKU 四列之间无额外左 padding，列缝仅左右各 0.28rem */
+    /* -------------------------------------------------------------------------
+     * SKU 四列：列缝 padding 与格选框线
+     * ------------------------------------------------------------------------- */
     #mainTable td.transit-col-sku-color + td.transit-col-sku,
     #mainTable td.transit-col-sku + td.transit-col-sku-qty,
     #mainTable td.transit-col-sku-qty + td.transit-col-sku-listed {
@@ -89,7 +94,9 @@
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-listed .transit-sku-stack {
       overflow: visible;
     }
-    /* 默认只向右吃进 padding，保留完整左侧框线 */
+    /* -------------------------------------------------------------------------
+     * SKU 格选：列内 stack-line 框线延伸
+     * ------------------------------------------------------------------------- */
     #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected,
     #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor {
       position: relative;
@@ -113,6 +120,9 @@
       padding-left: 0.28rem;
       width: calc(100% + 0.56rem);
     }
+    /* -------------------------------------------------------------------------
+     * SKU 格选：固定行高与表头 sticky
+     * ------------------------------------------------------------------------- */
     .transit-sku-stack {
       display: flex;
       flex-direction: column;
@@ -460,7 +470,9 @@
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script>
-/* 在途物流页：表格预览编辑、状态快捷切换、导入导出、钉钉延迟/上架通知 */
+// -------------------------------------------------------------------------
+// 在途物流页：表格预览编辑、状态快捷切换、导入导出、钉钉延迟/上架通知
+// -------------------------------------------------------------------------
 let editId=null, forwarderEditId=null, activeForwarderFilterId=null, optionFactories=[], optionForwarders=[], optionDestinationRegions=[], optionWarehouses=[], optionOrderProducts=[], optionLinks=[], currentUploadDocType=null, currentUploadTransitId=null;
 let transitSkuFactoryMap = new Map();
 let optionsReadyPromise = null;

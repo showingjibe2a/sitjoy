@@ -16,7 +16,9 @@
             min-width: 0;
             justify-content: start;
         }
-        /* 广告调整页：container 保持可纵向滚动，不被 fill-scroll 裁切 */
+        /* -------------------------------------------------------------------------
+         * 广告调整页：整页纵向滚动（不参与 fill-scroll 裁切）
+         * ------------------------------------------------------------------------- */
         body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aa-adjust) > .container {
             overflow: visible;
             display: block;
@@ -26,7 +28,6 @@
         body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aa-adjust) {
             overflow: auto;
         }
-        /* 广告调整页：不参与 fill-scroll 的 overflow:hidden，允许整页纵向滚动 */
         body.sitjoy-has-shell .sitjoy-page-body .pm-layout.pm-layout--aa-adjust,
         body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout.pm-layout--aa-adjust {
             display: block;
@@ -838,7 +839,9 @@
             color: var(--morandi-slate);
             margin-bottom: 0.1rem;
         }
-        /* 归因输入使用全站 .inline-input，卡片内规格见 static/css/style.css → .aa-period-card .inline-input */
+        /* -------------------------------------------------------------------------
+         * 归因输入（复用全站 .inline-input）
+         * ------------------------------------------------------------------------- */
         .aa-period-attrib-checked {
             font-size: 0.7rem;
             color: var(--morandi-slate);
@@ -1257,7 +1260,9 @@
     </footer>
 
     <script>
-        /* 广告调整页：左侧广告搜索/列表、中间调整表单、右侧观察期指标卡片；状态持久化 localStorage */
+        // -------------------------------------------------------------------------
+        // 广告调整页：左侧广告搜索/列表、中间调整表单、右侧观察期指标卡片；状态持久化 localStorage
+        // -------------------------------------------------------------------------
 
         // -------------------------------------------------------------------------
         // 模块级状态与常量

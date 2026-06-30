@@ -6,6 +6,9 @@
   'use strict';
   const win = global || (typeof window !== 'undefined' ? window : globalThis);
 
+  // -------------------------------------------------------------------------
+  // DOM 辅助（解析、转义、按钮）
+  // -------------------------------------------------------------------------
   function resolveEl(id) {
     if (!id) return null;
     return typeof id === 'string' ? document.getElementById(id) : id;

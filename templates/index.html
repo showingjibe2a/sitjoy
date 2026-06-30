@@ -10,7 +10,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        /* 待办弹窗样式 */
+        /* -------------------------------------------------------------------------
+         * 待办弹窗样式
+         * ------------------------------------------------------------------------- */
         .modal {
             display: none;
             position: fixed;
@@ -158,7 +160,9 @@
             background: #e8e8e8;
         }
 
-        /* 多选标签 */
+        /* -------------------------------------------------------------------------
+         * 多选标签
+         * ------------------------------------------------------------------------- */
         .checkbox-list {
             margin: 0;
             padding: 0;
@@ -350,7 +354,9 @@
             margin-bottom: 1.25rem;
         }
 
-        /* Home - Todo rail enhancements */
+        /* -------------------------------------------------------------------------
+         * 首页待办侧栏
+         * ------------------------------------------------------------------------- */
         .todo-type-bar-title {
             font-size: 13px;
             color: #444;
@@ -391,7 +397,9 @@
         .todo-table-wrap .pm-managed-body-wrap.is-managed-wrap {
             box-shadow: none;
         }
-        /* 托管表尚未初始化时的兜底：整表滚动 + 粘性表头 */
+        /* -------------------------------------------------------------------------
+         * 待办托管表兜底（未初始化时整表滚动 + 粘性表头）
+         * ------------------------------------------------------------------------- */
         .todo-table-wrap:not(:has(.pm-managed-body-wrap)) {
             display: block;
             overflow: auto;
@@ -412,7 +420,9 @@
         .todo-other-status { color: #888; }
         .todo-other-assignee--done .todo-other-status { color: #2d7d4a; }
         .todo-other-assignee--open .todo-other-status { color: #a66; }
-        /* 完成时间：高度由全站 .app-datetime-text-input / .pm-table 表内控件规则统一 */
+        /* -------------------------------------------------------------------------
+         * 完成时间与优先级 pill
+         * ------------------------------------------------------------------------- */
         .todo-completed-at-input,
         .todo-completed-at-compact {
             max-width: 100%;
@@ -428,8 +438,6 @@
             gap: 0.45rem;
             align-items: center;
         }
-        /* todo-complete-pop removed */
-        /* Todo modal - yellow priority pill */
         .status-pill--warning.is-active { background: #d2bf82 !important; } /* lighter yellow */
     </style>
 </head>
@@ -767,7 +775,9 @@
     </div>
 
     <script>
-        /* 首页：个人信息、待办事项、工作日历、快捷入口与装箱计算器 */
+        // -------------------------------------------------------------------------
+        // 首页：个人信息、待办事项、工作日历、快捷入口与装箱计算器
+        // -------------------------------------------------------------------------
 
         // -------------------------------------------------------------------------
         // 模块级状态
