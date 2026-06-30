@@ -246,6 +246,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
     transition: color 0.12s ease, background 0.12s ease;
 }
 
+/* -------------------------------------------------------------------------
+ * 侧栏大模块与分组标题
+ * ------------------------------------------------------------------------- */
+
 /* 大模块：首页 + 分组标题 */
 .sitjoy-sidebar-link {
     display: flex;
@@ -781,6 +785,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
     display: none !important;
 }
 
+/* -------------------------------------------------------------------------
+ * 侧栏底部用户区
+ * ------------------------------------------------------------------------- */
+
 /* 侧栏底部：头像 + 姓名 */
 .sitjoy-sidebar-footer {
     flex: 0 0 auto;
@@ -885,6 +893,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-user-btn {
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-user-name {
     display: none;
 }
+
+/* -------------------------------------------------------------------------
+ * 账户侧滑抽屉
+ * ------------------------------------------------------------------------- */
 
 /* 账户侧滑抽屉（挂到 body，浮于顶栏/弹窗之上） */
 .sitjoy-user-drawer-backdrop {

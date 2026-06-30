@@ -233,6 +233,10 @@ input[type="month"] {
     border-radius: 50%;
 }
 
+/* -------------------------------------------------------------------------
+ * 日期时间输入与浮层选择器
+ * ------------------------------------------------------------------------- */
+
 .app-date-input {
     letter-spacing: 0.02em;
 }
@@ -1523,6 +1527,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     opacity: 0.92;
 }
 
+/* -------------------------------------------------------------------------
+ * 表格内联输入与可编辑单元格
+ * ------------------------------------------------------------------------- */
+
 /* Reusable inline table input — 全站表格单元格小输入框基准类（托管表内 28px 高见 .pm-table tbody tr td input 约 2673 行） */
 .inline-input {
     display: block;
@@ -2582,6 +2590,10 @@ table th.pm-col-num .perf-th-head-metric {
     display: none;
 }
 
+/* -------------------------------------------------------------------------
+ * 托管表 sticky 表头与排序
+ * ------------------------------------------------------------------------- */
+
 /* 默认单表 sticky 表头（无分离克隆表头时） */
 .pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > th,
 .pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > td {
@@ -2964,6 +2976,10 @@ table th.pm-col-num .perf-th-head-metric {
     align-items: center;
 }
 
+/* -------------------------------------------------------------------------
+ * pm-modal 弹窗
+ * ------------------------------------------------------------------------- */
+
 .pm-modal {
     display: none;
     position: fixed;
@@ -3130,6 +3146,10 @@ table th.pm-col-num .perf-th-head-metric {
         bottom: auto;
     }
 }
+
+/* -------------------------------------------------------------------------
+ * 宽弹窗滚动与固定操作栏
+ * ------------------------------------------------------------------------- */
 
 /* 宽弹窗：默认整块可纵向滚动，底部 .pm-modal-actions 用 sticky 贴在卡片视口底（兼容无 .pm-modal-scroll 的旧结构） */
 .pm-modal-content--wide {
@@ -3656,6 +3676,10 @@ table.sf-table td.sf-cell-thumb {
     margin-top: 1rem;
 }
 
+/* -------------------------------------------------------------------------
+ * 全站确认弹窗（app-confirm-modal）
+ * ------------------------------------------------------------------------- */
+
 #app-confirm-modal.app-confirm-modal--danger .app-confirm-title {
     color: #6f2f2f;
 }
@@ -3685,6 +3709,10 @@ table.sf-table td.sf-cell-thumb {
 .app-confirm-check-input {
     margin-top: 0.1rem;
 }
+
+/* -------------------------------------------------------------------------
+ * 语义化按钮（accent / danger 等）
+ * ------------------------------------------------------------------------- */
 
 .btn-danger {
     background: #9b4a4a;
@@ -3831,6 +3859,10 @@ button:hover {
     display: none !important;
 }
 
+/* -------------------------------------------------------------------------
+ * Toast 与上传进度
+ * ------------------------------------------------------------------------- */
+
 .app-toast-stack {
     position: fixed;
     right: 18px;
@@ -3892,6 +3924,10 @@ button:hover {
 }
 
 .app-upload-progress-panel.show { display: block; }
+
+/* -------------------------------------------------------------------------
+ * 钉钉通知确认条
+ * ------------------------------------------------------------------------- */
 
 /* 全站唯一：左下角钉钉通知确认条（询问是否发送到钉钉群；禁止用 modal/toast/confirm 替代） */
 .app-dingtalk-notify-prompt {
@@ -4086,6 +4122,10 @@ footer {
     }
 }
 
+/* -------------------------------------------------------------------------
+ * 图库浏览布局
+ * ------------------------------------------------------------------------- */
+
 /* 宽布局容器（供 gallery 使用） */
 .container--wide {
     max-width: 100%;
@@ -4145,6 +4185,10 @@ footer {
     transform: translateY(-2px);
     box-shadow: 0 12px 30px rgba(0,0,0,0.2);
 }
+
+/* -------------------------------------------------------------------------
+ * Feature 品类多选（feature-category-picker）
+ * ------------------------------------------------------------------------- */
 
 .feature-category-picker {
     display: flex;
@@ -4372,6 +4416,10 @@ footer {
     /* 与 header.js positionFloatingDropdown 内联 z-index 一致：高于 pm-modal，低于 app-toast-stack */
     z-index: 15600;
 }
+
+/* -------------------------------------------------------------------------
+ * 挂 body 浮层下拉
+ * ------------------------------------------------------------------------- */
 
 /* 任意自定义下拉挂 body 后的浮层（check-select / thumb-dropdown 等） */
 .floating-dropdown-panel,
@@ -4849,6 +4897,10 @@ footer {
     margin-bottom: 0.5rem;
 }
 
+/* -------------------------------------------------------------------------
+ * NAS / 图库浏览网格
+ * ------------------------------------------------------------------------- */
+
 /* 浏览网格：自动铺满，可伸缩列数 */
 .browser-grid {
     display: grid;
@@ -4864,6 +4916,10 @@ footer {
 .browser-grid > .item-card {
     width: 220px;
 }
+
+/* -------------------------------------------------------------------------
+ * NAS 主图导入浏览网格
+ * ------------------------------------------------------------------------- */
 
 /* NAS 主图导入弹窗：与 gallery 同网格卡片尺寸，避免文件夹/图片混排冲突 */
 .nas-main-image-browser-grid {
@@ -4986,6 +5042,10 @@ footer {
     border-radius: 12px;
     padding: 0.5rem 0.65rem;
 }
+
+/* -------------------------------------------------------------------------
+ * 堆叠弹窗 z-index
+ * ------------------------------------------------------------------------- */
 
 /* 叠在「主编辑」等同级 pm-modal 之上，避免同 z-index 下事件/命中异常 */
 #nas-main-image-import-modal.pm-modal.active,
@@ -5143,6 +5203,10 @@ a.nas-main-image-crumb:hover {
 .item-name { font-weight: 600; color: var(--morandi-ink); font-size: 0.95rem; }
 .item-type { font-size: 0.75rem; color: var(--morandi-slate); margin-top: 0.25rem; }
 
+/* -------------------------------------------------------------------------
+ * 主/次按钮令牌别名
+ * ------------------------------------------------------------------------- */
+
 /* 主按钮 / 次按钮（令牌驱动，见 theme-engine.css） */
 .btn-primary { background: var(--sj-variant-btn-primary-bg); color: var(--sj-color-on-primary); }
 .btn-primary:hover { box-shadow: var(--sj-variant-btn-primary-shadow-hover); }
@@ -5151,6 +5215,10 @@ a.nas-main-image-crumb:hover {
     color: var(--morandi-ink);
     background: rgba(207, 199, 189, 0.55);
 }
+
+/* -------------------------------------------------------------------------
+ * 图库重命名弹窗
+ * ------------------------------------------------------------------------- */
 
 /* Gallery rename modal (pm-modal based) */
 .gallery-rename-preview {
@@ -5295,6 +5363,10 @@ a.nas-main-image-crumb:hover {
         flex-direction: column;
     }
 }
+
+/* -------------------------------------------------------------------------
+ * 首页仪表盘（home-container）
+ * ------------------------------------------------------------------------- */
 
 /* Home dashboard */
 .home-container {
@@ -6323,9 +6395,10 @@ a.nas-main-image-crumb:hover {
     border: 1px solid rgba(173, 101, 101, 0.14);
 }
 
-/* =======================
-   全站控件统一规范
-   ======================= */
+/* -------------------------------------------------------------------------
+ * 全站控件统一规范（ui-control）
+ * ------------------------------------------------------------------------- */
+
 :root {
     --ui-control-height: 40px;
     --ui-control-height-sm: 26px;
@@ -6528,6 +6601,10 @@ button.btn-capsule-sm:active {
     padding-right: 2rem !important;
     font-weight: 400 !important;
 }
+
+/* -------------------------------------------------------------------------
+ * 表格工具栏紧凑控件
+ * ------------------------------------------------------------------------- */
 
 /* Reusable compact controls for table toolbars */
 :root {
