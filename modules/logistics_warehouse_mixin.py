@@ -2860,6 +2860,65 @@ class LogisticsWarehouseMixin:
             out[sku] = max(0, self._parse_int(row.get('total_qty')) or 0)
         return out
 
+    def _load_reship_accessory_order_product_id_set(self, conn, order_product_ids=None):
+        if not self._table_has_column(conn, 'order_products', 'is_reship_accessory'):
+            return set()
+        with conn.cursor() as cur:
+            if order_product_ids:
+                ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+                if not ids:
+                    return set()
+                placeholders = ','.join(['%s'] * len(ids))
+                cur.execute(
+                    f"""
+                    SELECT id
+                    FROM order_products
+                    WHERE id IN ({placeholders}) AND COALESCE(is_reship_accessory, 0) = 1
+                    """,
+                    tuple(ids),
+                )
+            else:
+                cur.execute(
+                    "SELECT id FROM order_products WHERE COALESCE(is_reship_accessory, 0) = 1"
+                )
+            rows = cur.fetchall() or []
+        return {
+            self._parse_int(row.get('id'))
+            for row in rows
+            if self._parse_int(row.get('id'))
+        }
+
+    def _reship_accessory_skus_for(self, conn, skus):
+        if not self._table_has_column(conn, 'order_products', 'is_reship_accessory'):
+            return set()
+        sku_list = sorted({str(s or '').strip() for s in (skus or []) if str(s or '').strip()})
+        if not sku_list:
+            return set()
+        placeholders = ','.join(['%s'] * len(sku_list))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sku
+                FROM order_products
+                WHERE sku IN ({placeholders}) AND COALESCE(is_reship_accessory, 0) = 1
+                """,
+                tuple(sku_list),
+            )
+            rows = cur.fetchall() or []
+        return {str(row.get('sku') or '').strip() for row in rows if str(row.get('sku') or '').strip()}
+
+    def _filter_overseas_stock_notify_items(self, conn, items):
+        rows = [dict(item) for item in (items or []) if isinstance(item, dict)]
+        if not rows:
+            return rows
+        accessory_skus = self._reship_accessory_skus_for(conn, [item.get('sku') for item in rows])
+        if not accessory_skus:
+            return rows
+        return [
+            item for item in rows
+            if str(item.get('sku') or '').strip() not in accessory_skus
+        ]
+
     def _enrich_overseas_notify_items(self, cur, items):
         """为缺货/上架通知项附加全美在库合计（us_remaining_qty）。"""
         rows = [dict(item) for item in (items or []) if isinstance(item, dict)]
@@ -3000,16 +3059,23 @@ class LogisticsWarehouseMixin:
     def _attach_overseas_low_stock_alerts(self, conn, order_product_ids):
         return self._evaluate_overseas_low_stock_alerts(conn, order_product_ids)
 
-    def _prepare_overseas_inventory_notify_payload(self, cur, stockout_items, restock_items):
-        """富化缺货/上架通知项（在外层 cursor 上执行）。"""
+    def _prepare_overseas_inventory_notify_payload(self, conn, cur, stockout_items, restock_items):
+        """富化缺货/上架通知项（在外层 cursor 上执行）；补发配件 SKU 不通知。"""
+        stockout_items = self._filter_overseas_stock_notify_items(conn, stockout_items or [])
+        restock_items = self._filter_overseas_stock_notify_items(conn, restock_items or [])
         return (
-            self._enrich_overseas_notify_items(cur, stockout_items or []),
-            self._enrich_overseas_notify_items(cur, restock_items or []),
+            self._enrich_overseas_notify_items(cur, stockout_items),
+            self._enrich_overseas_notify_items(cur, restock_items),
         )
 
     def _overseas_low_stock_alerts_for_order_products(self, conn, order_product_ids):
         """低库存预警：须在主 conn.cursor() 关闭后调用（forecast/动销内部会再开 cursor，避免 PyMySQL 嵌套 cursor 异常）。"""
         op_ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        if not op_ids:
+            return []
+        accessory_ids = self._load_reship_accessory_order_product_id_set(conn, op_ids)
+        if accessory_ids:
+            op_ids = [op_id for op_id in op_ids if op_id not in accessory_ids]
         if not op_ids:
             return []
         return self._attach_overseas_low_stock_alerts(conn, op_ids)
@@ -3304,7 +3370,7 @@ class LogisticsWarehouseMixin:
                                     'available_qty': int(available_qty),
                                 })
                         _, restock_items = self._prepare_overseas_inventory_notify_payload(
-                            cur, [], restock_items,
+                            conn, cur, [], restock_items,
                         )
                     low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
                         conn, [order_product_id],
@@ -3408,7 +3474,7 @@ class LogisticsWarehouseMixin:
                             stockout_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                             restock_items.sort(key=lambda x: (x.get('warehouse_name') or '', x.get('sku') or ''))
                             stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
-                                cur, stockout_items, restock_items,
+                                conn, cur, stockout_items, restock_items,
                             )
                         low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
                             conn, affected_order_product_ids,
@@ -3466,7 +3532,7 @@ class LogisticsWarehouseMixin:
                             before_row.get('sku'), before_row.get('warehouse_name'),
                         )
                         stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
-                            cur, stockout_items, restock_items,
+                            conn, cur, stockout_items, restock_items,
                         )
                     low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
                         conn, [order_product_id],
@@ -3722,7 +3788,7 @@ class LogisticsWarehouseMixin:
                             if op_id:
                                 affected_order_product_ids.add(int(op_id))
                     stockout_items, restock_items = self._prepare_overseas_inventory_notify_payload(
-                        cur, stockout_items, restock_items,
+                        conn, cur, stockout_items, restock_items,
                     )
                 low_stock_alert_items = self._overseas_low_stock_alerts_for_order_products(
                     conn, affected_order_product_ids,

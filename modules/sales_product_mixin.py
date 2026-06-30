@@ -3704,6 +3704,7 @@ class SalesProductMixin:
             f"""
             SELECT sp.id, s.platform_type_id
             FROM sales_products sp
+            LEFT JOIN sales_parents p ON p.id = sp.parent_id
             LEFT JOIN shops s ON s.id = {shop_expr}
             WHERE sp.id IN ({placeholders})
             """,
