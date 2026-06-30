@@ -46,6 +46,7 @@
   let rulePresetSyncing = false;
   let activeJokerTiles = new Set();
   let lastJoinNoticeVersion = -1;
+  const mjTurnTracker = win.WidgetTurnNotify ? win.WidgetTurnNotify.createTracker('mahjong') : null;
   let mjToastStack = null;
 
   const MJ_PRESET_HINTS = {
@@ -1098,6 +1099,7 @@
     roomCode = '';
     saveRoomCode('');
     state = null;
+    mjTurnTracker && mjTurnTracker.reset();
     lastVersion = -1;
     lastChatSeq = -1;
     lastJoinNoticeVersion = -1;
@@ -1845,6 +1847,35 @@
     return -1;
   }
 
+  /** 是否轮到我操作（出牌或响应吃碰杠胡） */
+  function isMjMyActionTurn(s) {
+    if (!s || s.status !== 'playing') return false;
+    const mySeat = resolveMySeat(s);
+    if (mySeat == null) return false;
+    const cr = s.claim_round;
+    if (cr && cr.need_response) return true;
+    return s.phase === 'discard' && Number(s.current_seat) === Number(mySeat);
+  }
+
+  function notifyMjTurnIfNeeded(s) {
+    if (!mjTurnTracker) return;
+    if (!s || !s.code) {
+      mjTurnTracker.reset();
+      return;
+    }
+    const isMyTurn = isMjMyActionTurn(s);
+    const cr = s.claim_round;
+    let body = '请出牌';
+    if (cr && cr.need_response) body = '请响应吃、碰、杠或胡';
+    else if ((s.self_win_options || []).length) body = '可自摸胡，或出牌';
+    mjTurnTracker.update({
+      isMyTurn,
+      dedupeKey: `${s.code}:${s.version}:${s.phase}:${s.current_seat}:${(cr && cr.tile) || ''}:${cr && cr.need_response ? 1 : 0}`,
+      title: '麻将 · 轮到你了',
+      body,
+    });
+  }
+
   function renderTable(raw) {
     const s = withResolvedSeat(normalizeRoomState(raw));
     state = s;
@@ -1921,6 +1952,7 @@
     syncMjLayoutScale();
     syncDealerRevealPoll(s);
     maybeShowJoinNotice(s);
+    notifyMjTurnIfNeeded(s);
   }
 
   function ensureMjToastStack() {
@@ -2512,6 +2544,12 @@
   function initMain() {
     initMjBoardOverlay();
     initRoomChat();
+    if (win.WidgetTurnNotify) {
+      win.WidgetTurnNotify.bindPrefs({
+        soundEl: '#mjTurnNotifySound',
+        desktopEl: '#mjTurnNotifyDesktop',
+      });
+    }
     bindPlayerAvatarUi();
     bindMainMessageBridge();
     syncRulePresetHint();

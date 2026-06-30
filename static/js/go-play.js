@@ -59,6 +59,7 @@
   let boardOverlay = null;
   let goRoomChat = null;
   let lastChatMessages = [];
+  const goTurnTracker = win.WidgetTurnNotify ? win.WidgetTurnNotify.createTracker('go') : null;
 
   const $ = (id) => document.getElementById(id);
 
@@ -1439,6 +1440,26 @@
   }
 
   // -------------------------------------------------------------------------
+  // 轮到我：提示音 / 桌面通知
+  // -------------------------------------------------------------------------
+  function notifyGoTurnIfNeeded(data) {
+    if (!goTurnTracker) return;
+    if (!roomCode || localBoardMode) {
+      goTurnTracker.reset();
+      return;
+    }
+    const playing = gameStatus === 'playing' && !youInPractice && !opponentInPractice;
+    const isMyTurn = playing && yourColor > 0 && yourColor === currentPlayer;
+    const ver = Number((data && data.version) || lastVersion || 0);
+    goTurnTracker.update({
+      isMyTurn,
+      dedupeKey: `${roomCode}:${ver}:${currentPlayer}`,
+      title: '围棋 · 轮到你了',
+      body: `该你落子（${colorName(currentPlayer)}）`,
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // 房间状态应用与玩家头像
   // -------------------------------------------------------------------------
   function applyState(data, opts) {
@@ -1530,6 +1551,7 @@
     updatePopupStatusBar(data);
     syncGoRoomChat(data);
     postStateToPopup();
+    notifyGoTurnIfNeeded(data);
     return true;
   }
 
@@ -2029,6 +2051,7 @@
     lastChatMessages = [];
     persistRoomCode('');
     stopWatch();
+    goTurnTracker && goTurnTracker.reset();
     syncGoRoomChat({ chat_messages: [] });
     $('goRoomPanel')?.classList.add('pm-u-hidden');
     $('goRoomCopyBtn')?.classList.add('pm-u-hidden');
@@ -2477,6 +2500,12 @@
     initBoardOverlay();
     bindMainUi();
     bindMainMessageBridge();
+    if (win.WidgetTurnNotify) {
+      win.WidgetTurnNotify.bindPrefs({
+        soundEl: '#goTurnNotifySound',
+        desktopEl: '#goTurnNotifyDesktop',
+      });
+    }
     renderBoard($('goBoard'));
     bindBoardFrame(getBoardFrame($('goBoard')));
     updateBoardOverlay({});

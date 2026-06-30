@@ -2573,6 +2573,30 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     font-weight: 600;
 }
 
+.widget-turn-notify-prefs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 0.85rem;
+    margin: 0.45rem 0 0.35rem;
+    padding-top: 0.4rem;
+    border-top: 1px dashed rgba(207, 199, 189, 0.45);
+    font-size: 0.72rem;
+    color: var(--morandi-slate);
+}
+
+.widget-turn-notify-pref {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.widget-turn-notify-pref input {
+    margin: 0;
+    accent-color: var(--morandi-bluegray);
+}
+
 @media (max-width: 760px) {
     .go-play-board-cluster,
     .widget-room-board-cluster {

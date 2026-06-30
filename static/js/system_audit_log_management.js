@@ -70,7 +70,7 @@
         }
         const summary = String(row.request_summary || '').trim();
         if (!summary) return '—';
-        }
+        return escapeHtml(summary);
     }
 
     // -------------------------------------------------------------------------
