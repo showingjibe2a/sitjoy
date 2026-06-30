@@ -438,7 +438,10 @@
             gap: 0.45rem;
             align-items: center;
         }
-        .status-pill--warning.is-active { background: #d2bf82 !important; } /* lighter yellow */
+        /* -------------------------------------------------------------------------
+         * 待办优先级 pill（浅黄激活态）
+         * ------------------------------------------------------------------------- */
+        .status-pill--warning.is-active { background: #d2bf82 !important; }
     </style>
 </head>
 <body>
@@ -1477,7 +1480,9 @@
             });
         }
 
-        // ===== Todo links: 关联货号 / 关联销售SKU =====
+        // -------------------------------------------------------------------------
+        // 待办关联货号与销售 SKU
+        // -------------------------------------------------------------------------
         function getTodoSelectedSkuFamilyIds() {
             if (!Array.isArray(window.todoSelectedSkuFamilyIds)) window.todoSelectedSkuFamilyIds = [];
             return window.todoSelectedSkuFamilyIds;
@@ -2104,7 +2109,9 @@
                 .replace(/'/g, '&#039;');
         }
 
-        // ===== Todo types / filter / completion time pop =====
+        // -------------------------------------------------------------------------
+        // 待办类型、筛选与完成时间
+        // -------------------------------------------------------------------------
         async function loadTodoTypes() {
             try {
                 const resp = await fetch('/api/todo-type', { credentials: 'include' });

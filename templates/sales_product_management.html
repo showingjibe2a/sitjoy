@@ -1383,8 +1383,11 @@
             }
         }
 
+        // -------------------------------------------------------------------------
+        // 表格交互委托（预览编辑、行勾选、父体组勾选）
+        // -------------------------------------------------------------------------
         function bindSalesPreviewEditEvents() {
-            /* 预览编辑已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
+            // no-op：见 initSalesTableInteractionDelegation
         }
 
         function initSalesTableInteractionDelegation() {
@@ -2116,7 +2119,7 @@
                 try {
                     return await fetchSalesParentDetailById(id);
                 } catch (e) {
-                    /* fall through by code */
+                    // fall through by parent_code
                 }
             }
             const code = String(parentCode || '').trim();
@@ -3195,7 +3198,7 @@
         }
 
         function bindSalesRowSelectionEvents() {
-            /* 行勾选已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
+            // no-op：见 initSalesTableInteractionDelegation
         }
 
         function syncSalesParentGroupCheckboxes() {
@@ -3226,7 +3229,7 @@
         }
 
         function bindSalesParentGroupSelectionEvents() {
-            /* 父体组勾选已改为 tbody 事件委托，见 initSalesTableInteractionDelegation */
+            // no-op：见 initSalesTableInteractionDelegation
         }
 
         function getSalesSelectAllCheckboxes() {
@@ -4151,7 +4154,9 @@
             if (next && next !== raw) input.value = next;
         }
 
-        // ===== 以下为“批量应用到规格”模块（与 gallery 完全一致）=====
+        // -------------------------------------------------------------------------
+        // 批量应用到规格（与 gallery 一致）
+        // -------------------------------------------------------------------------
         function updateGalleryVariantSelectedText() {
             const tbody = document.getElementById('galleryApplySelectedTbody');
             if (!tbody) return;
