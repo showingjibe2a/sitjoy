@@ -428,8 +428,10 @@ class LogisticsInTransitMixin:
         )
         return cur.fetchone() or {}
 
-    def _fetch_transit_sku_lines(self, cur, transit_id, qty_by_order_product=None):
-        """读取在途 SKU 行；qty_by_order_product 可覆盖上架数量（核对上架场景）。"""
+    def _fetch_transit_sku_lines(self, cur, transit_id, qty_by_order_product=None, qty_source='listed'):
+        """读取在途 SKU 行；qty_by_order_product 可覆盖数量（核对上架场景）。
+        qty_source: listed=上架数量（默认），shipped=发货数量（到货延迟等在途场景）。
+        """
         cur.execute(
             """
             SELECT li.order_product_id, op.sku, li.shipped_qty, li.listed_qty
@@ -441,6 +443,7 @@ class LogisticsInTransitMixin:
             (transit_id,),
         )
         qty_map = qty_by_order_product if isinstance(qty_by_order_product, dict) else None
+        use_shipped = str(qty_source or 'listed').strip().lower() == 'shipped'
         lines = []
         for row in cur.fetchall() or []:
             sku = str(row.get('sku') or '').strip()
@@ -449,6 +452,8 @@ class LogisticsInTransitMixin:
             op_id = self._parse_int(row.get('order_product_id'))
             if qty_map is not None and op_id in qty_map:
                 qty = max(0, self._parse_int(qty_map.get(op_id)) or 0)
+            elif use_shipped:
+                qty = max(0, self._parse_int(row.get('shipped_qty')) or 0)
             else:
                 qty = self._parse_int(row.get('listed_qty'))
                 if qty is None:
@@ -460,11 +465,11 @@ class LogisticsInTransitMixin:
             lines.append({'sku': sku, 'qty': int(qty)})
         return lines
 
-    def _build_transit_eta_delay_item(self, meta, field_key, field_label, old_date, new_date):
+    def _build_transit_eta_delay_item(self, meta, field_key, field_label, old_date, new_date, sku_lines=None):
         """组装单条「到货延迟」钉钉通知项。"""
         if not meta:
             return None
-        return {
+        item = {
             'transit_id': int(meta.get('id') or 0),
             'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
             'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
@@ -474,6 +479,9 @@ class LogisticsInTransitMixin:
             'previous_date': self._transit_notify_date_text(old_date),
             'new_date': self._transit_notify_date_text(new_date),
         }
+        if isinstance(sku_lines, list) and sku_lines:
+            item['sku_lines'] = sku_lines
+        return item
 
     def _build_transit_listed_available_item(self, cur, transit_id, event_kind='registered', sku_lines=None, qty_by_order_product=None):
         """组装「上架可售」钉钉通知项（含 SKU 行与海外仓名）。"""
@@ -495,23 +503,31 @@ class LogisticsInTransitMixin:
             'sku_lines': sku_lines,
         }
 
-    def _append_transit_eta_delay_if_needed(self, bucket, meta, field_key, field_label, old_date, new_date):
+    def _append_transit_eta_delay_if_needed(self, bucket, meta, field_key, field_label, old_date, new_date, sku_lines=None):
         if not self._transit_date_is_delayed(old_date, new_date):
             return
-        item = self._build_transit_eta_delay_item(meta, field_key, field_label, old_date, new_date)
+        item = self._build_transit_eta_delay_item(
+            meta, field_key, field_label, old_date, new_date, sku_lines=sku_lines,
+        )
         if item and item.get('transit_id'):
             bucket.append(item)
 
-    def _append_transit_eta_delays_from_changes(self, bucket, meta, existing, updated, field_specs):
+    def _append_transit_eta_delays_from_changes(self, bucket, meta, existing, updated, field_specs, cur=None):
         """批量检测日期字段延后（field_specs: [(field_key, field_label), ...]）。"""
         existing = existing or {}
         updated = updated or {}
+        sku_lines = None
+        if cur and meta:
+            transit_id = self._parse_int(meta.get('id'))
+            if transit_id:
+                sku_lines = self._fetch_transit_sku_lines(cur, transit_id, qty_source='shipped')
         for field_key, field_label in field_specs:
             if field_key not in updated:
                 continue
             self._append_transit_eta_delay_if_needed(
                 bucket, meta, field_key, field_label,
                 existing.get(field_key), updated.get(field_key),
+                sku_lines=sku_lines,
             )
 
     def _maybe_append_transit_listed_registered(self, cur, bucket, transit_id, prev_registered, new_registered):
@@ -1397,6 +1413,7 @@ class LogisticsInTransitMixin:
                                     ('expected_listed_date_latest', '预计上架时间'),
                                     ('eta_latest', 'ETA（预计到港）'),
                                 ],
+                                cur=cur,
                             )
 
                             if 'remark' in payload:
@@ -1692,6 +1709,7 @@ class LogisticsInTransitMixin:
                                     ('eta_latest', 'ETA（预计到港）'),
                                     ('expected_listed_date_latest', '预计上架时间'),
                                 ],
+                                cur=cur,
                             )
                             self._maybe_append_transit_listed_registered(
                                 cur, transit_listed_available_items, item_id,

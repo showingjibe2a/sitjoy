@@ -138,6 +138,9 @@ let listCache = [];
 let selectedStockIds = new Set();
 let factoryStockEditDraft = {};
 
+// -------------------------------------------------------------------------
+// 模块级状态与通用工具
+// -------------------------------------------------------------------------
 const $ = (s) => document.querySelector(s);
 
 function withFetchBust(url){
@@ -174,6 +177,9 @@ function fillSelect(id, items, valueKey, textKey, placeholder){
   if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(el);
 }
 
+// -------------------------------------------------------------------------
+// SKU / 工厂联动与表单工具
+// -------------------------------------------------------------------------
 function rebuildOptionLinkMaps(){
   skuFactoryMap = new Map();
   factorySkuMap = new Map();
@@ -545,6 +551,9 @@ function importTemplate(file){
     });
 }
 
+// -------------------------------------------------------------------------
+// 记录弹窗 CRUD
+// -------------------------------------------------------------------------
 function openCreateModal(){
   const open = () => {
     editId = null;

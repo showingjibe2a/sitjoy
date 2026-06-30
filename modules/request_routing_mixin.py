@@ -1,6 +1,9 @@
 ﻿# -*- coding: utf-8 -*-
 # 请求路由分发 Mixin：集中管理 API/页面路由与权限检查。
 
+# -------------------------------------------------------------------------
+# API 路径 → 页面权限键
+# -------------------------------------------------------------------------
 API_PERMISSION_MAP = {
     '/api/profile': 'home',
     '/api/profile/avatar': 'home',
@@ -139,6 +142,9 @@ API_PERMISSION_MAP = {
     '/api/mahjong-play': 'widgets_mahjong',
 }
 
+# -------------------------------------------------------------------------
+# 页面路径 → 模板与权限键
+# -------------------------------------------------------------------------
 PAGE_TEMPLATE_MAP = {
     '/about': ('templates/about.html', 'about'),
     '/about.html': ('templates/about.html', 'about'),
@@ -184,6 +190,9 @@ PAGE_TEMPLATE_MAP = {
     '/widgets/mahjong/table': ('templates/widgets_mahjong_table.html', 'widgets_mahjong'),
 }
 
+# -------------------------------------------------------------------------
+# API 路径 → Handler 方法
+# -------------------------------------------------------------------------
 API_ROUTE_MAP = {
     '/api/employee': ('method', 'handle_employee_api'),
     '/api/todo': ('method', 'handle_todo_api'),
@@ -326,6 +335,9 @@ API_ROUTE_MAP = {
 }
 
 
+# -------------------------------------------------------------------------
+# 路由分发与权限校验
+# -------------------------------------------------------------------------
 class RequestRoutingMixin:
     """请求路由相关能力：API 权限检查 + 页面分发 + API 分发。"""
 
@@ -337,12 +349,18 @@ class RequestRoutingMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
 
+    # -------------------------------------------------------------------------
+    # Handler 调用与 API 分发
+    # -------------------------------------------------------------------------
     def _dispatch_named_api_handler(self, path, environ, method, start_response, handler_name, *, handler_mode='method'):
         handler = getattr(self, handler_name, None)
         if handler is None:
             return self.send_json({'status': 'error', 'message': f'Handler not found: {handler_name}', 'path': path}, start_response)
         return self._invoke_api_handler(path, handler, handler_mode, environ, method, start_response)
 
+    # -------------------------------------------------------------------------
+    # API 请求分发
+    # -------------------------------------------------------------------------
     def _dispatch_api_request(self, path, environ, method, start_response):
         """统一 API 路由分发，减少主入口分支数量。"""
         if path.startswith('/api/auth'):

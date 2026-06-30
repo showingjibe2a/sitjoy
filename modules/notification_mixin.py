@@ -11,6 +11,9 @@ class NotificationMixin:
 
     _NOTIFICATIONS_MIGRATION_HINT = 'scripts/sql/20260529_01_user_notifications.sql'
 
+    # -------------------------------------------------------------------------
+    # 表检测与序列化
+    # -------------------------------------------------------------------------
     def _notification_is_missing_table_error(self, exc):
         """判断异常是否因 user_notifications 表尚未迁移导致。"""
         message = str(exc or '').lower()
@@ -138,6 +141,9 @@ class NotificationMixin:
                 link_label=link_label,
             )
 
+    # -------------------------------------------------------------------------
+    # 业务事件通知（注册、待办指派）
+    # -------------------------------------------------------------------------
     def _notify_registration_pending(self, username, name=None):
         display = (name or '').strip() or (username or '').strip() or '新用户'
         account = (username or '').strip() or '—'

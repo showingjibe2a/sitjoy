@@ -195,6 +195,9 @@ class AuthEmployeeMixin:
                     (user_id, factory_id)
                 )
 
+    # -------------------------------------------------------------------------
+    # 认证 API
+    # -------------------------------------------------------------------------
     def handle_auth_api(self, environ, method, start_response):
         """登录/登出、当前用户、注册与审核。"""
         try:
@@ -466,6 +469,9 @@ class AuthEmployeeMixin:
             print('Auth API error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    # -------------------------------------------------------------------------
+    # 员工列表序列化
+    # -------------------------------------------------------------------------
     _EMPLOYEE_LIST_SQL = """
         SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
                u.direct_supervisor_id,
@@ -499,6 +505,9 @@ class AuthEmployeeMixin:
             'created_at': row.get('created_at'),
         }
 
+    # -------------------------------------------------------------------------
+    # 员工账号 API
+    # -------------------------------------------------------------------------
     def handle_employee_api(self, environ, method, start_response):
         """员工账号 CRUD、密码重置、工厂范围配置。"""
         try:

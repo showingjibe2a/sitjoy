@@ -135,6 +135,9 @@
         let listCache = [];
         let inventoryEditDraft = {};
 
+        // -------------------------------------------------------------------------
+        // 模块级状态与通用工具
+        // -------------------------------------------------------------------------
         function escapeHtml(value) {
             return String(value == null ? '' : value)
                 .replace(/&/g, '&amp;')
@@ -214,6 +217,10 @@
                 });
             });
         }
+
+        // -------------------------------------------------------------------------
+        // 预览批量改数
+        // -------------------------------------------------------------------------
         function normalizeInventoryDraftQty(rawValue){
             const num = parseInt(String(rawValue || '').trim(), 10);
             return Number.isFinite(num) ? Math.max(0, num) : 0;
@@ -352,6 +359,10 @@
                 }
             });
         }
+
+        // -------------------------------------------------------------------------
+        // 记录弹窗 CRUD
+        // -------------------------------------------------------------------------
         function openCreateModal(){
             editId = null;
             document.getElementById('pm-modal-title').innerText = '新增库存记录';

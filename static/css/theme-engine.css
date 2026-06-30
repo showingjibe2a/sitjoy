@@ -6,7 +6,9 @@
  * 业务 CSS 应使用 var(--sj-cmp-xxx, 回退值)，勿在变体里直接改选择器颜色。
  */
 
-/* 示例变体（可按需删除或扩展；默认外观由 tokens.css 决定） */
+/* -------------------------------------------------------------------------
+ * 示例变体（可按需删除或扩展；默认由 tokens.css 决定）
+ * ------------------------------------------------------------------------- */
 html[data-sj-status-segment-variant="compact"] {
     --sj-cmp-status-segment-radius: 10px;
     --sj-cmp-status-segment-gap: 0.2rem;
@@ -19,7 +21,9 @@ html[data-sj-date-input="compact"] {
     --sj-cmp-date-text-min-height: 26px;
 }
 
-/* —— 圆形图标按钮（iconCircle） —— */
+/* -------------------------------------------------------------------------
+ * 圆形图标按钮（iconCircle）
+ * ------------------------------------------------------------------------- */
 button.modal-close {
     color: var(--sj-cmp-icon-close-color);
     border-color: var(--sj-cmp-icon-close-border);
@@ -70,7 +74,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     display: none !important;
 }
 
-/* —— 顶栏页签（tabs） —— */
+/* -------------------------------------------------------------------------
+ * 顶栏页签（tabs）
+ * ------------------------------------------------------------------------- */
 .sitjoy-tab {
     color: var(--sj-variant-tab-text);
     border-color: var(--sj-variant-tab-divider);
@@ -89,7 +95,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     box-shadow: 0 1px 2px rgba(42, 36, 32, 0.06);
 }
 
-/* —— 顶栏页签（tabs） —— */
+/* -------------------------------------------------------------------------
+ * 提示条（toast）
+ * ------------------------------------------------------------------------- */
 .app-toast.success {
     background: linear-gradient(135deg, var(--sj-variant-toast-success-from), var(--sj-variant-toast-success-to));
 }
@@ -98,7 +106,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     background: linear-gradient(135deg, var(--sj-variant-toast-error-from), var(--sj-variant-toast-error-to));
 }
 
-/* —— 通知面板（notification） —— */
+/* -------------------------------------------------------------------------
+ * 通知面板（notification）
+ * ------------------------------------------------------------------------- */
 .sitjoy-notification-panel {
     background: var(--sj-variant-notification-panel-bg);
     border-color: var(--sj-variant-notification-panel-border);
@@ -108,7 +118,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     background: var(--sj-variant-notification-badge-bg);
 }
 
-/* —— 次要按钮悬停 —— */
+/* -------------------------------------------------------------------------
+ * 次要按钮悬停
+ * ------------------------------------------------------------------------- */
 .btn-secondary:hover,
 button.btn-secondary:hover {
     background: var(--sj-variant-btn-secondary-hover-bg);
@@ -123,7 +135,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     border: 1px solid rgba(255, 225, 225, 0.5);
 }
 
-/* 状态分段 status-segment */
+/* -------------------------------------------------------------------------
+ * 状态分段（status-segment）
+ * ------------------------------------------------------------------------- */
 .status-segment {
     background: var(--sj-cmp-status-segment-bg);
     border-color: var(--sj-cmp-status-segment-border);
@@ -136,7 +150,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     transform: scale(var(--sj-cmp-status-segment-inline-scale));
 }
 
-/* 组件样式弹窗 */
+/* -------------------------------------------------------------------------
+ * 组件样式弹窗
+ * ------------------------------------------------------------------------- */
 .sitjoy-theme-panel--modal {
     padding: 0 0 0.5rem;
     font-size: 0.82rem;
@@ -179,7 +195,9 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     cursor: not-allowed;
 }
 
-/* 小组件 · 组件样式配置页 */
+/* -------------------------------------------------------------------------
+ * 小组件 · 组件样式配置页
+ * ------------------------------------------------------------------------- */
 .sitjoy-theme-studio-head {
     display: flex;
     align-items: flex-start;

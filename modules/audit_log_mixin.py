@@ -67,6 +67,9 @@ _AUDIT_MIGRATION_HINT = '审计表未初始化，请先执行 scripts/sql/202605
 class AuditLogMixin:
     """审计日志写入与超级管理员查询 API。"""
 
+    # -------------------------------------------------------------------------
+    # 工具方法与用户快照
+    # -------------------------------------------------------------------------
     def _is_super_admin_user(self, user_id):
         try:
             return int(user_id or 0) == 1
@@ -219,6 +222,9 @@ class AuditLogMixin:
             return [AuditLogMixin._audit_redact_json(item) for item in obj[:50]]
         return obj
 
+    # -------------------------------------------------------------------------
+    # 请求摘要与字段变更
+    # -------------------------------------------------------------------------
     def _audit_build_request_summary(self, environ, path, method):
         parts = [method or 'GET', path or '']
         qs = (environ.get('QUERY_STRING') or '').strip()

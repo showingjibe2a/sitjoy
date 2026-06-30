@@ -655,8 +655,17 @@ class DingTalkNotifyMixin:
                 detail_parts.append(f'{label} {old_date} → {new_date}')
             if not detail_parts:
                 continue
+            sku_block = self._format_transit_listed_sku_block_text(meta.get('sku_lines'))
+            if sku_block:
+                detail_content = '<br/>'.join(detail_parts)
+                if detail_content:
+                    detail_content = detail_content + '<br/><br/>' + sku_block
+                else:
+                    detail_content = sku_block
+            else:
+                detail_content = detail_parts
             blocks.append(self._dingtalk_notify_block(
-                header, detail_parts, self.DINGTALK_COLOR_NEGATIVE,
+                header, detail_content, self.DINGTALK_COLOR_NEGATIVE,
             ))
         return blocks
 

@@ -1,3 +1,10 @@
+/**
+ * 小组件与休闲游戏页样式（麻将、围棋、主题工作室、房间聊天等）
+ */
+
+/* -------------------------------------------------------------------------
+ * 组件样式配置页布局
+ * ------------------------------------------------------------------------- */
 body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
     flex: 1;
     min-height: 0;
@@ -47,6 +54,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     overflow: auto;
 }
 
+/* -------------------------------------------------------------------------
+ * 小组件入口卡片
+ * ------------------------------------------------------------------------- */
 .widgets-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -89,7 +99,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     line-height: 1.45;
 }
 
-/* 搓麻将 */
+/* -------------------------------------------------------------------------
+ * 麻将对弈：布局与牌桌
+ * ------------------------------------------------------------------------- */
 .mj-layout-root { width: 100%; max-width: 100%; }
 .mj-rule-preset-wrap,
 .mj-side-rule-block {
@@ -1097,7 +1109,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     display: none;
 }
 
-/* —— 麻将牌：平面粗框 + 精细花纹 —— */
+/* -------------------------------------------------------------------------
+ * 麻将牌面：平面粗框与花纹
+ * ------------------------------------------------------------------------- */
 .mj-tile {
     position: relative;
     display: inline-block;
@@ -1703,7 +1717,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 .mj-actions-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .mj-toolbar { flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 
-/* 通用多人房间：布局 + 对话 */
+/* -------------------------------------------------------------------------
+ * 通用多人房间：布局与对话
+ * ------------------------------------------------------------------------- */
 .widget-room-stage--inline {
     display: flex;
     flex-direction: column;
@@ -2007,7 +2023,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     max-width: 11rem;
 }
 
-/* 围棋对弈：与业务页一致的全宽 pm-layout */
+/* -------------------------------------------------------------------------
+ * 围棋对弈：pm-layout 与侧栏
+ * ------------------------------------------------------------------------- */
 .go-play-layout-root {
     width: 100%;
     max-width: 100%;
@@ -2756,7 +2774,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     display: none !important;
 }
 
-/* 小组件牌桌/棋盘中央弹窗（围棋、麻将等共用） */
+/* -------------------------------------------------------------------------
+ * 牌桌/棋盘中央浮层（围棋、麻将共用）
+ * ------------------------------------------------------------------------- */
 .widget-board-overlay[hidden],
 .go-play-board-overlay[hidden] {
     display: none !important;
@@ -2862,7 +2882,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     margin: 0;
 }
 
-/* 棋盘占位（独立窗口打开后显示文案） */
+/* -------------------------------------------------------------------------
+ * 棋盘占位（独立窗口打开后）
+ * ------------------------------------------------------------------------- */
 .go-play-board-slot:not(.go-play-board-slot--inline) {
     width: 100%;
     min-height: min(280px, 40vh);

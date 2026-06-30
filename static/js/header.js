@@ -1727,9 +1727,13 @@
                 const newDate = escapeAppNotifyHtml(String(item && item.new_date || '').trim() || '-');
                 return `<div class="app-dingtalk-notify-sku-line">${label} ${oldDate} → ${newDate}</div>`;
             }).filter(Boolean).join('');
+            const skuHtml = formatTransitSkuDetailHtmlLines(meta.sku_lines).map((line) => (
+                `<div class="app-dingtalk-notify-sku-line">${line}</div>`
+            )).join('');
+            const bodyHtml = [detailHtml, skuHtml].filter(Boolean).join('');
             return '<div class="app-dingtalk-notify-block">'
                 + `<div class="app-dingtalk-notify-block-head app-dingtalk-notify-block-head--negative">• ${box}${blText}</div>`
-                + (detailHtml ? `<div class="app-dingtalk-notify-block-skus">${detailHtml}</div>` : '')
+                + (bodyHtml ? `<div class="app-dingtalk-notify-block-skus">${bodyHtml}</div>` : '')
                 + '</div>';
         });
         if(groups.length > limit){

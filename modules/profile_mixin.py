@@ -186,6 +186,9 @@ class ProfileMixin:
             raise ValueError('仅支持 JPG / PNG / WebP / GIF')
         return filename, file_bytes, ext
 
+    # -------------------------------------------------------------------------
+    # 个人资料 API
+    # -------------------------------------------------------------------------
     def handle_profile_api(self, environ, method, start_response):
         """GET 资料 / PUT 更新 / 改密 / 头像上传与删除。"""
         try:

@@ -199,6 +199,9 @@ let wipCollapsedOrderGroups = new Set();
 let wipCollapsedFamilyGroups = new Set();
 let wipGroupCollapseInitDone = false;
 
+// -------------------------------------------------------------------------
+// 模块级状态与本地存储
+// -------------------------------------------------------------------------
 const FACTORY_WIP_AGGREGATE_MODE_KEY = 'sj.factoryWip.aggregateMode.v1';
 
 function safeSetLocalStorage(key, value){
@@ -558,6 +561,9 @@ function todayStr(){
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+// -------------------------------------------------------------------------
+// 行内编辑与分段控件
+// -------------------------------------------------------------------------
 function getRowById(id){
   return listCache.find(item => Number(item.id) === Number(id));
 }
@@ -1023,6 +1029,9 @@ function saveFactoryWipEdits(updateFactoryStock){
     });
 }
 
+// -------------------------------------------------------------------------
+// 记录弹窗 CRUD
+// -------------------------------------------------------------------------
 function openCreateModal(){
   const open = () => {
     editId = null;
