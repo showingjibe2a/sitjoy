@@ -2547,9 +2547,9 @@
     if (win.WidgetTurnNotify) {
       win.WidgetTurnNotify.bindPrefs({
         soundEl: '#mjTurnNotifySound',
-        desktopEl: '#mjTurnNotifyDesktop',
-        permissionStatusEl: '#mjTurnNotifyPermStatus',
-        permissionBtnEl: '#mjTurnNotifyPermBtn',
+        presetEl: '#mjTurnNotifyPreset',
+        volumeEl: '#mjTurnNotifyVolume',
+        previewBtn: '#mjTurnNotifyPreview',
       });
     }
     bindPlayerAvatarUi();

@@ -2576,52 +2576,12 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 .widget-turn-notify-prefs {
     display: flex;
     flex-direction: column;
-    flex-wrap: wrap;
     gap: 0.42rem;
     margin: 0.45rem 0 0.35rem;
     padding-top: 0.4rem;
     border-top: 1px dashed rgba(207, 199, 189, 0.45);
     font-size: 0.72rem;
     color: var(--morandi-slate);
-}
-
-.widget-turn-notify-prefs > .widget-turn-notify-pref {
-    flex: 0 0 auto;
-}
-
-.widget-turn-notify-prefs > .widget-turn-notify-pref,
-.widget-turn-notify-prefs > .widget-turn-notify-perm-row {
-    width: 100%;
-}
-
-.widget-turn-notify-perm-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    margin-top: 0.15rem;
-}
-
-.widget-turn-notify-perm-status {
-    line-height: 1.4;
-}
-
-.widget-turn-notify-perm-status.is-granted {
-    color: #3e6f52;
-}
-
-.widget-turn-notify-perm-status.is-denied {
-    color: #9b4a4a;
-}
-
-.widget-turn-notify-perm-btn {
-    align-self: flex-start;
-    max-width: 100%;
-}
-
-.widget-turn-notify-perm-btn.is-granted,
-.widget-turn-notify-perm-btn:disabled {
-    opacity: 0.72;
-    cursor: default;
 }
 
 .widget-turn-notify-pref {
@@ -2635,6 +2595,37 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 .widget-turn-notify-pref input {
     margin: 0;
     accent-color: var(--morandi-bluegray);
+}
+
+.widget-turn-notify-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+}
+
+.widget-turn-notify-label {
+    flex: 0 0 2.6rem;
+    color: var(--morandi-slate);
+}
+
+.widget-turn-notify-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    height: 28px;
+    font-size: 0.72rem;
+}
+
+.widget-turn-notify-volume {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--morandi-bluegray);
+}
+
+.widget-turn-notify-preview-btn {
+    align-self: flex-start;
 }
 
 @media (max-width: 760px) {

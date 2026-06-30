@@ -2503,9 +2503,9 @@
     if (win.WidgetTurnNotify) {
       win.WidgetTurnNotify.bindPrefs({
         soundEl: '#goTurnNotifySound',
-        desktopEl: '#goTurnNotifyDesktop',
-        permissionStatusEl: '#goTurnNotifyPermStatus',
-        permissionBtnEl: '#goTurnNotifyPermBtn',
+        presetEl: '#goTurnNotifyPreset',
+        volumeEl: '#goTurnNotifyVolume',
+        previewBtn: '#goTurnNotifyPreview',
       });
     }
     renderBoard($('goBoard'));

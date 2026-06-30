@@ -214,19 +214,20 @@
                                 </div>
                             </div>
 
-                            <div class="widget-turn-notify-prefs" aria-label="轮到我时的提醒">
+                            <div class="widget-turn-notify-prefs" aria-label="轮到我时的提示音">
                                 <label class="widget-turn-notify-pref">
                                     <input type="checkbox" id="mjTurnNotifySound" checked>
-                                    <span>轮到我时提示音</span>
+                                    <span>轮到我时播放提示音</span>
                                 </label>
-                                <label class="widget-turn-notify-pref">
-                                    <input type="checkbox" id="mjTurnNotifyDesktop" checked>
-                                    <span>后台桌面通知</span>
+                                <label class="widget-turn-notify-row">
+                                    <span class="widget-turn-notify-label">提示音</span>
+                                    <select id="mjTurnNotifyPreset" class="inline-input widget-turn-notify-select" data-universal-compact="1" data-universal-no-search="1" aria-label="提示音类型"></select>
                                 </label>
-                                <div class="widget-turn-notify-perm-row">
-                                    <span class="widget-turn-notify-perm-status" id="mjTurnNotifyPermStatus">通知权限：检测中…</span>
-                                    <button type="button" class="btn-secondary btn-small widget-turn-notify-perm-btn" id="mjTurnNotifyPermBtn">授权桌面通知</button>
-                                </div>
+                                <label class="widget-turn-notify-row">
+                                    <span class="widget-turn-notify-label">音量</span>
+                                    <input type="range" id="mjTurnNotifyVolume" class="widget-turn-notify-volume" min="5" max="100" step="5" aria-label="提示音音量">
+                                </label>
+                                <button type="button" class="btn-secondary btn-small widget-turn-notify-preview-btn" id="mjTurnNotifyPreview">试听</button>
                             </div>
 
                             <p class="go-play-side-foot" id="mjSideFoot">在牌桌区域操作出牌；在线对局时请保持<strong>主页面</strong>开启以同步，或使用牌桌独立窗口。</p>
