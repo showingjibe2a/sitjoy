@@ -292,6 +292,30 @@
             pointer-events: none;
             font-size: 0.9rem;
         }
+        .pm-toolbar .sales-toolbar-default-rate {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-shrink: 0;
+        }
+        .pm-toolbar .sales-toolbar-default-rate .percent-input {
+            width: 4.6rem;
+        }
+        .pm-toolbar .sales-toolbar-default-rate .percent-input input {
+            width: 100%;
+            padding: 0.18rem 1.25rem 0.18rem 0.35rem !important;
+            font-size: 0.8rem !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            border-radius: 6px;
+            border: 2px solid var(--morandi-sand);
+            background: #fff;
+            box-sizing: border-box;
+        }
+        .pm-toolbar .sales-toolbar-default-rate .percent-suffix {
+            font-size: 0.78rem;
+            right: 0.38rem;
+        }
         .pm-section-header {
             display: flex;
             justify-content: space-between;
@@ -436,6 +460,14 @@
                             <div class="status-segment status-segment--inline" id="salesProductAggregateSegment" data-value="none">
                                 <button type="button" class="status-pill is-active" data-value="none">不汇总</button>
                                 <button type="button" class="status-pill" data-value="parent">按父体汇总</button>
+                            </div>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <div class="form-group sales-toolbar-default-rate">
+                            <label for="salesDefaultRefundRateInput" class="pm-search-title label-help" style="margin:0;">默认退货率<span class="help-dot" data-tip="无父体或父体未填预估退款率时，净利率等测算采用此值。"></span></label>
+                            <div class="percent-input">
+                                <input type="number" step="0.01" min="0" id="salesDefaultRefundRateInput" class="optional-field" placeholder="0">
+                                <span class="percent-suffix">%</span>
                             </div>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
@@ -1121,6 +1153,7 @@
         let selectedSalesProductIds = new Set();
         let salesPreviewEditDraft = {};
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
+        const SALES_DEFAULT_REFUND_RATE_KEY = 'sj.salesProduct.defaultRefundRate.v1';
         let salesProductAggregateMode = 'none';
         let salesProductCollapsedParentGroups = new Set();
         const SALES_PRODUCT_TABLE_COLSPAN = 29;
@@ -2462,6 +2495,49 @@
             return n;
         }
 
+        function salesItemHasParentRefundRate(item) {
+            const raw = item && item.estimated_refund_rate;
+            if (raw === null || raw === undefined || raw === '') return false;
+            return Number.isFinite(Number(raw));
+        }
+
+        function salesGetDefaultRefundRateInputValue() {
+            const el = document.getElementById('salesDefaultRefundRateInput');
+            return el ? String(el.value || '').trim() : '';
+        }
+
+        function salesGetDefaultRefundRateRatio() {
+            return salesNormalizeParentRateRatio(salesGetDefaultRefundRateInputValue());
+        }
+
+        function salesResolveRefundRateRatio(item) {
+            if (salesItemHasParentRefundRate(item)) {
+                return salesNormalizeParentRateRatio(item.estimated_refund_rate);
+            }
+            return salesGetDefaultRefundRateRatio();
+        }
+
+        function initSalesDefaultRefundRateInput() {
+            const el = document.getElementById('salesDefaultRefundRateInput');
+            if (!el || el.dataset._salesDefaultRefundBound === '1') return;
+            el.dataset._salesDefaultRefundBound = '1';
+            const saved = String(safeGetLocalStorage(SALES_DEFAULT_REFUND_RATE_KEY) || '').trim();
+            if (saved) el.value = saved;
+            const persistAndRefresh = () => {
+                const text = salesGetDefaultRefundRateInputValue();
+                safeSetLocalStorage(SALES_DEFAULT_REFUND_RATE_KEY, text);
+                refreshAllSalesRowEconomicsCells();
+            };
+            el.addEventListener('change', persistAndRefresh);
+            el.addEventListener('input', persistAndRefresh);
+        }
+
+        function refreshAllSalesRowEconomicsCells() {
+            (salesProductItems || []).forEach(item => {
+                if (item && item.id != null) refreshSalesRowEconomicsCells(item.id);
+            });
+        }
+
         function salesComputeDiscountedPrice(item, options) {
             const opts = options || {};
             const allowExplicit = opts.allowExplicit !== false;
@@ -2641,7 +2717,7 @@
             const lastMile = handlesLastMile ? lastMileRaw : 0;
             const totalCost = Math.round((bom + lastMile) * 100) / 100;
             const discountRate = salesResolveDiscountRateRatio(item);
-            const refundRate = salesNormalizeParentRateRatio(item && item.estimated_refund_rate);
+            const refundRate = salesResolveRefundRateRatio(item);
             const acoas = salesNormalizeParentRateRatio(item && item.estimated_acoas);
             const gross = salePrice;
             const netSales = salesComputeDiscountedPrice(item);
@@ -6216,6 +6292,7 @@
             bindEl('searchInput', 'keydown', function(e) {
                 if (e.key === 'Enter') loadSalesProductList();
             });
+            initSalesDefaultRefundRateInput();
             document.querySelectorAll('#modalProductStatusSegment .status-pill').forEach(btn => {
                 btn.addEventListener('click', () => {
                     currentProductStatus = normalizeProductStatus(btn.getAttribute('data-status'));
