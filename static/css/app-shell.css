@@ -38,6 +38,10 @@ body.sitjoy-has-shell .sitjoy-page-body footer {
     padding: 0 !important;
 }
 
+/* -------------------------------------------------------------------------
+ * 大表格页内滚动（sj-page-fill-scroll）
+ * ------------------------------------------------------------------------- */
+
 /**
  * 大表格页：滚动限制在 pm-layout 内的表格区域（.pm-managed-body-wrap / .board-body-wrap / .sj-table-fill-host），
  * 避免分组展开后撑出 .sitjoy-page-body 外层滚动。由 header.js 打上 .sj-page-fill-scroll。
@@ -138,6 +142,10 @@ body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-table-fill-host:
     display: flex;
     flex-direction: column;
 }
+
+/* -------------------------------------------------------------------------
+ * 应用壳主框架（sitjoy-app-shell）
+ * ------------------------------------------------------------------------- */
 
 .sitjoy-app-shell {
     display: flex;

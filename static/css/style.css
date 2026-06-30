@@ -117,6 +117,10 @@ button.modal-close:focus-visible {
     position: relative;
 }
 
+/* -------------------------------------------------------------------------
+ * 全局排版与表单控件
+ * ------------------------------------------------------------------------- */
+
 body {
     font-family: var(--sj-font-body);
     background-color: var(--sj-bg-body-base);
@@ -158,7 +162,9 @@ input[type="month"] {
     font-weight: 400;
 }
 
-/* 圆形取色器：色盘 + 右下角取色棒（全站复用） */
+/* -------------------------------------------------------------------------
+ * 圆形取色器
+ * ------------------------------------------------------------------------- */
 .sj-color-swatch-picker {
     position: relative;
     display: inline-block;
@@ -413,6 +419,10 @@ body.sitjoy-has-shell {
     display: flex;
     flex-direction: column;
 }
+
+/* -------------------------------------------------------------------------
+ * 顶栏导航（legacy navbar，已由 app-shell 替代）
+ * ------------------------------------------------------------------------- */
 
 /* 登录页等无壳页面仍可使用 --sj-bg-body 深色底；有壳页面由 app-shell.css 覆盖 */
 
@@ -891,6 +901,10 @@ button.help-dot {
     box-shadow: var(--sj-variant-card-shadow);
 }
 
+/* -------------------------------------------------------------------------
+ * pm-card 列表顶栏与工具条
+ * ------------------------------------------------------------------------- */
+
 /* 业务列表顶栏卡片：收紧边距，风格对齐 pm-section；工具条分区由 header.js partitionPmCardToolbars 注入 .pm-card-zone */
 .card.pm-card,
 section.card.pm-card {
@@ -1321,6 +1335,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     margin-bottom: 1rem;
 }
 
+/* -------------------------------------------------------------------------
+ * pm-modal 与表单
+ * ------------------------------------------------------------------------- */
+
 /* pm-modal / form adjustments for todo modal */
 .pm-modal-content h3 {
     font-size: 20px;
@@ -1351,6 +1369,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     margin-left: 6px;
     font-weight: 700;
 }
+
+/* -------------------------------------------------------------------------
+ * 字段帮助（label-help / 悬浮提示）
+ * ------------------------------------------------------------------------- */
 
 /* Global field-help tooltip style */
 .label-help {
@@ -1429,6 +1451,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     word-break: break-word;
     -webkit-overflow-scrolling: touch;
 }
+
+/* -------------------------------------------------------------------------
+ * 状态分段（status-segment）
+ * ------------------------------------------------------------------------- */
 
 /* Status segment (shared) */
 .status-segment {
@@ -1746,6 +1772,10 @@ input.optional-date-input[type="text"]:focus {
     margin-bottom: 0.5rem;
 }
 
+/* -------------------------------------------------------------------------
+ * pm-layout 与工具栏
+ * ------------------------------------------------------------------------- */
+
 /* 产品管理 */
 .pm-layout {
     display: grid;
@@ -1962,6 +1992,10 @@ button.sj-group-row-edit-btn {
     background: var(--morandi-sand);
     border-color: var(--morandi-bluegray);
 }
+
+/* -------------------------------------------------------------------------
+ * pm-table 业务表格
+ * ------------------------------------------------------------------------- */
 
 .pm-table {
     width: 100%;
@@ -2484,6 +2518,10 @@ table th.pm-col-num .perf-th-head-metric {
     font-size: 0.72rem;
     line-height: 1;
 }
+
+/* -------------------------------------------------------------------------
+ * 托管表冻结列（freeze-pane）
+ * ------------------------------------------------------------------------- */
 
 /* Freeze-pane: pinned columns stay on the left while horizontal scrolling */
 .pm-table.is-managed-table th.pm-table-pinned-cell,
