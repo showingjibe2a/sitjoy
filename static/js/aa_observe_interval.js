@@ -46,7 +46,7 @@
         };
         try {
             global.localStorage.setItem(LS_KEY, JSON.stringify(settings));
-        } catch (_e) { /* ignore */ }
+        } catch (_e) { }
         return settings;
     }
 

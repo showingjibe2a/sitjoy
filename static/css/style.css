@@ -443,7 +443,6 @@ body.sitjoy-has-shell {
  * 顶栏导航（legacy navbar，已由 app-shell 替代）
  * ------------------------------------------------------------------------- */
 
-/* 高于列筛选(≈5800)、部分表单下拉(≈10000)；须低于 .pm-modal 与 .app-date-picker 浮层 */
 .navbar {
     width: 100%;
     min-width: var(--sitjoy-page-min-width);
@@ -458,7 +457,10 @@ body.sitjoy-has-shell {
     z-index: 11000;
 }
 
-/* 不在整行容器上裁切，否则 position:absolute 的 .dropdown-menu 会被裁掉 */
+/* -------------------------------------------------------------------------
+ * legacy navbar 容器 overflow（避免裁切 .dropdown-menu）
+ * ------------------------------------------------------------------------- */
+
 .navbar .container,
 .navbar .container.navbar-container {
     display: flex;
@@ -1538,7 +1540,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     color: var(--morandi-ink);
 }
 
-/* 默认「是」绿底，保证可读性 */
+/* -------------------------------------------------------------------------
+ * 状态 pill 默认激活色（「是」绿底，保证可读性）
+ * ------------------------------------------------------------------------- */
+
 .status-pill.is-active {
     color: #fff;
     background: #7fa88b;
@@ -2017,7 +2022,11 @@ input.optional-date-input[type="text"]:focus {
     outline: 2px solid rgba(90, 79, 66, 0.35);
     outline-offset: 1px;
 }
-/* 须用 visibility:collapse 保留列网格；display:none 会使表体脱离 colgroup 导致后续列（如图片）错位 */
+
+/* -------------------------------------------------------------------------
+ * 汇总列收起（visibility:collapse 保留列网格，避免 display:none 错位）
+ * ------------------------------------------------------------------------- */
+
 .sj-sales-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
 .sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell,
 .sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
@@ -2273,7 +2282,6 @@ table th.pm-col-num .perf-th-head-metric {
     transform: none !important;
 }
 
-/* 与 .pm-table-columns-panel 同层：弹窗内托管表列筛选须高于 .pm-modal(15000) */
 .pm-column-filter-pop {
     position: fixed;
     z-index: 15500;
@@ -2426,7 +2434,6 @@ table th.pm-col-num .perf-th-head-metric {
     position: relative;
     z-index: 2;
 }
-/* 与 .pm-table-columns-panel 同层，避免被表头/表体遮挡 */
 .pm-table-reset-menu {
     position: fixed;
     top: 0;
@@ -2489,7 +2496,6 @@ table th.pm-col-num .perf-th-head-metric {
     position: relative;
 }
 
-/* 须高于 .pm-modal(15000)，否则在弹窗内托管表点击「字段显示」面板不可见；低于 .app-toast-stack(16000) */
 .pm-table-columns-panel {
     position: fixed;
     top: 0;
@@ -3065,7 +3071,6 @@ table th.pm-col-num .perf-th-head-metric {
  * pm-modal 弹窗
  * ------------------------------------------------------------------------- */
 
-/* 高于顶栏(7000)，打开弹窗时遮罩盖住导航 */
 .pm-modal {
     display: none;
     position: fixed;
@@ -3079,8 +3084,10 @@ table th.pm-col-num .perf-th-head-metric {
     overscroll-behavior: contain;
 }
 
-/* 壳层默认不可选，避免遮罩操作（含 capture 边界竞态）时选区落到子树第一个文本（常见为标题） */
-/* 点击委托在壳层：深色区命中 .pm-modal 本体时显示手型；白卡片内恢复默认光标 */
+/* -------------------------------------------------------------------------
+ * pm-modal 壳层交互（user-select、点击委托光标）
+ * ------------------------------------------------------------------------- */
+
 .pm-modal.active {
     display: flex;
     user-select: none;
@@ -3181,7 +3188,6 @@ table th.pm-col-num .perf-th-head-metric {
     padding: 0 0.25rem;
 }
 
-/* 勿用低位 z-index，否则会覆盖 .pm-modal(15000) 导致确认框叠在托管表/分页条之下 */
 .pm-batch-delete-modal {
     z-index: 15100;
 }
@@ -4487,7 +4493,6 @@ footer {
     z-index: 3200;
 }
 
-/* 与 header.js positionFloatingDropdown 内联 z-index 一致：高于 pm-modal，低于 app-toast-stack */
 .feature-category-menu.universal-select-floating-menu {
     position: fixed;
     z-index: 15600;
@@ -5455,7 +5460,10 @@ a.nas-main-image-crumb:hover {
     font-family: 'Manrope', 'Segoe UI', sans-serif;
 }
 
-/* decorative overlay removed per user request */
+/* -------------------------------------------------------------------------
+ * 首页 decorative overlay（已按用户要求移除）
+ * ------------------------------------------------------------------------- */
+
 .home-container::before {
     display: none;
 }
@@ -6978,7 +6986,10 @@ select.pm-inline-compact-select,
     overflow: hidden;
 }
 
-/* 透明区衬在 img 自身背景上，避免 GPU 合成时透出页面深色底而发黑 */
+/* -------------------------------------------------------------------------
+ * 媒体预览透明区衬底（避免 GPU 合成透出页面深色底）
+ * ------------------------------------------------------------------------- */
+
 .sj-media-image-preview {
     width: 100%;
     height: 100%;

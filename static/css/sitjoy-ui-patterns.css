@@ -272,7 +272,10 @@
     font-size: 0.9rem;
 }
 
-/* 弹窗滚动区内下拉面板不被 overflow 裁切 */
+/* -------------------------------------------------------------------------
+ * 弹窗滚动区内下拉（overflow:visible，避免面板被裁切）
+ * ------------------------------------------------------------------------- */
+
 .pm-modal .pm-modal-scroll .form-group:has(.pm-select),
 .pm-modal .pm-modal-scroll .form-group:has(.sj-custom-dropdown),
 .pm-modal .pm-modal-scroll .pm-select,

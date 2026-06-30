@@ -1136,7 +1136,7 @@
     function setAppDingtalkAutoSendEnabled(enabled){
         try {
             localStorage.setItem(APP_DINGTALK_AUTO_SEND_KEY, enabled ? '1' : '0');
-        } catch(_e) { /* ignore */ }
+        } catch(_e) { }
         syncAppDingtalkAutoSendToggleUi();
     }
 
@@ -1479,7 +1479,7 @@
         appDingtalkNotifyPromptState = null;
         if(panel) panel.classList.remove('show');
         if(state && !confirmed && typeof state.onCancel === 'function'){
-            try { state.onCancel(state); } catch(_e) { /* ignore */ }
+            try { state.onCancel(state); } catch(_e) { }
         }
         runAppDingtalkNotifyPromptFollowUp();
     }
@@ -1995,7 +1995,7 @@
                 if(pt && pt === tip){
                     el.removeAttribute('title');
                 }
-            }catch(_){ /* ignore */ }
+            }catch(_){ }
         }
     }
 
@@ -10869,7 +10869,7 @@
     function saveSitjoyTabsState(state){
         try {
             localStorage.setItem(SITJOY_TABS_STORAGE_KEY, JSON.stringify({ tabs: state.tabs || [] }));
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
     }
 
     function ensureDefaultPinnedTabs(state){
@@ -11135,7 +11135,7 @@
             if(localStorage.getItem(SITJOY_SIDEBAR_COLLAPSED_KEY) === '1'){
                 document.body.classList.add('sitjoy-sidebar-collapsed');
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
     }
 
     let sitjoyLayoutSyncDepth = 0;
@@ -11323,7 +11323,7 @@
         }
 
         if(sitjoyNavInFlight){
-            try { await sitjoyNavInFlight; } catch (e) { /* ignore */ }
+            try { await sitjoyNavInFlight; } catch (e) { }
         }
         if(navToken !== sitjoyNavToken) return sitjoyNavInFlight;
 
@@ -11760,7 +11760,7 @@
             if(localStorage.getItem(SITJOY_SIDEBAR_COLLAPSED_KEY) === '1'){
                 document.body.classList.add('sitjoy-sidebar-collapsed');
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
 
         document.querySelectorAll('.sitjoy-sidebar-details').forEach(details => {
             if(details.dataset.sitjoyDetailsBound === '1') return;
@@ -11783,7 +11783,7 @@
                 document.body.classList.toggle('sitjoy-sidebar-collapsed');
                 try {
                     localStorage.setItem(SITJOY_SIDEBAR_COLLAPSED_KEY, document.body.classList.contains('sitjoy-sidebar-collapsed') ? '1' : '0');
-                } catch (e) { /* ignore */ }
+                } catch (e) { }
                 hideSitjoySidebarFlyout();
                 document.querySelectorAll('.sitjoy-sidebar-details[open]').forEach(details => {
                     details.open = false;
@@ -12002,7 +12002,7 @@
             logoutBtn.addEventListener('click', async () => {
                 try {
                     await fetch('/api/auth?action=logout', { method: 'POST', credentials: 'include' });
-                } catch (e) { /* ignore */ }
+                } catch (e) { }
                 window.__sitjoyAuthStatePromise = null;
                 window.location.href = '/';
             });
@@ -12515,17 +12515,17 @@
                     .then(r => r.text())
                     .then(html => {
                         sitjoyHeaderHtmlCache = html;
-                        try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { /* ignore */ }
+                        try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { }
                     })
                     .catch(() => {});
                 return Promise.resolve(cached);
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
         return fetch('/static/partials/header.html')
             .then(r => r.text())
             .then(html => {
                 sitjoyHeaderHtmlCache = html;
-                try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { /* ignore */ }
+                try { sessionStorage.setItem(SITJOY_HEADER_CACHE_KEY, html); } catch (e) { }
                 return html;
             });
     }

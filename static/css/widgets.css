@@ -1402,7 +1402,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
         width: 11cqw;
         height: 28cqh;
     }
-    /* 八条每列四根，略缩短以免溢出 */
+    /* -------------------------------------------------------------------------
+     * 八条每列四根（略缩短以免溢出）
+     * ------------------------------------------------------------------------- */
     .mj-tile-sou-col[style*="--sou-rows:4"] .mj-tile-sou-stick {
         height: 21cqh;
     }
@@ -1789,8 +1791,12 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     overflow-x: hidden;
     overflow-y: auto;
 }
+
+/* -------------------------------------------------------------------------
+ * 围棋侧边栏（与 widget-room-side-panel 同构）
+ * ------------------------------------------------------------------------- */
+
 .go-play-side-panel {
-    /* 围棋沿用；与 widget-room-side-panel 同构 */
 }
 .mj-board-card {
     display: flex;

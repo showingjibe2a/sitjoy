@@ -260,7 +260,7 @@
     function savePrefs(prefs) {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
     }
 
     function dataAttrToDatasetKey(dataAttr) {
