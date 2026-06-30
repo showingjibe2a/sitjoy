@@ -7,6 +7,9 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
+        /* -------------------------------------------------------------------------
+         * 工具栏
+         * ------------------------------------------------------------------------- */
         .sf-toolbar {
             display: flex;
             flex-wrap: wrap;
@@ -40,7 +43,6 @@
             font-size: 0.82rem;
             min-width: 0;
         }
-        /* 年月：小输入框尺寸（与工具栏其它控件比例协调） */
         .sf-toolbar .sf-month-input-wrap input.sf-compact-month[type="month"] {
             box-sizing: border-box;
             width: 6.05rem;
@@ -251,6 +253,9 @@
             background: rgba(207, 199, 189, 0.72);
         }
 
+        /* -------------------------------------------------------------------------
+         * 预测矩阵表：滚动容器与双行 sticky 表头
+         * ------------------------------------------------------------------------- */
         .sf-table-wrap {
             border: 1px solid rgba(207, 199, 189, 0.55);
             border-radius: 8px;
@@ -262,14 +267,12 @@
             box-sizing: border-box;
         }
         table.sf-table {
-            /* collapse：消除 separate 模式下表头两行之间、表头与首行 tbody 间易出现的一条“假空白”带 */
             border-collapse: collapse;
             border-spacing: 0;
             width: max-content;
             font-size: 0.85rem;
             table-layout: fixed;
         }
-        /* 整块 thead 一次 sticky：两行同进同退，根除「行间缝透出 tbody」；勿对两行 tr 分别 sticky+top */
         table.sf-table thead {
             position: -webkit-sticky;
             position: sticky;
@@ -304,7 +307,6 @@
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-turn {
             text-align: center;
         }
-        /* 与 tbody 数字列一致：表头也服从 colgroup，避免表头已缩窄而表身仍被内容撑开 */
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-history,
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-inv,
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-turn {
@@ -341,7 +343,6 @@
             height: auto;
             padding-top: 0.3rem;
             padding-bottom: 0.3rem;
-            /* 与第二行之间只保留一条分割线，避免 border-top+border-bottom 叠出“假空白” */
             border-bottom: 1px solid rgba(207, 199, 189, 0.85);
             cursor: default;
         }
@@ -432,7 +433,9 @@
             margin-top: 0.12rem;
             line-height: 1.15;
         }
-        /* Column resize handle (like warehouse dashboard) */
+        /* -------------------------------------------------------------------------
+         * 列宽拖拽把手
+         * ------------------------------------------------------------------------- */
         .sf-col-resize-handle{
             position: absolute;
             top: 0;
@@ -463,7 +466,9 @@
             white-space: nowrap;
             box-sizing: border-box;
         }
-        /* 数字列：固定列宽内截断，避免长数字压到相邻列上（预测列除外，见下） */
+        /* -------------------------------------------------------------------------
+         * 数字列截断（预测列除外）
+         * ------------------------------------------------------------------------- */
         table.sf-table tbody td.sf-cell-history:not(.sf-cell-remark),
         table.sf-table tbody td.sf-cell-inv,
         table.sf-table tbody td.sf-cell-turn {
@@ -546,7 +551,9 @@
             font-variant-numeric: tabular-nums;
             color: #5b5346;
         }
-        /* Excel-like selection spotlight（横/竖底纹一致；需 !important 压过斑马纹与动销月预警底色） */
+        /* -------------------------------------------------------------------------
+         * Excel 式格选高亮
+         * ------------------------------------------------------------------------- */
         td.sf-grid-selectable.sf-cell-selected{
             box-shadow: inset 0 0 0 2px rgba(80, 120, 170, 0.85);
             background: rgba(80, 120, 170, 0.10) !important;
@@ -572,7 +579,9 @@
         tr.sf-spotlight-row td.sf-cell-selected {
             background: rgba(80, 120, 170, 0.10) !important;
         }
-        /* 预测列：限制列宽但不裁切顶栏角标（来源合计 / 变更%） */
+        /* -------------------------------------------------------------------------
+         * 预测格列与框选矩形预览
+         * ------------------------------------------------------------------------- */
         table.sf-table tbody td.sf-cell-forecast.preview-edit-cell {
             max-width: 0;
             min-width: 0;
@@ -585,7 +594,6 @@
         td.sf-cell-forecast.preview-edit-cell .sf-cell-wrap {
             overflow: visible;
         }
-        /* Shift+拖拽框选时的矩形预览（fixed，不拦截指针） */
         .sf-grid-marquee {
             display: none;
             position: fixed;
@@ -602,7 +610,9 @@
             font-variant-numeric: tabular-nums;
             color: #5b5346;
         }
-        /* 与全站 .inline-input.preview-edit-input 同系，但更紧凑；覆盖 inline-input 默认 min-width/min-height */
+        /* -------------------------------------------------------------------------
+         * 预测格紧凑输入与来源/变更顶栏
+         * ------------------------------------------------------------------------- */
         table.sf-table .sf-cell-wrap input.inline-input.preview-edit-input.sf-num-input {
             display: block;
             width: 100%;
@@ -662,7 +672,6 @@
             overflow-x: hidden;
             overflow-y: visible;
         }
-        /* 来源/变更顶栏：叠在输入框正上方，不占 flex 高度，避免有顶数时撑高行 */
         .sf-forecast-meta-row.sf-forecast-cell-top {
             position: absolute;
             left: 0;
@@ -728,7 +737,6 @@
             min-width: 0;
             flex: 0 0 auto;
         }
-        /* 仅包裹输入框，与顶栏角标分离 */
         .sf-num-input-stack {
             display: block;
             width: 100%;
@@ -736,7 +744,6 @@
             position: relative;
             z-index: 1;
         }
-        /* 相对已存储数量的变化：显示在输入框外侧顶栏右侧 */
         .sf-forecast-delta-badge {
             position: static;
             z-index: 4;
@@ -782,7 +789,9 @@
         }
         .sf-surplus-transit { text-align: left; }
         .sf-surplus-total { text-align: right; }
-        /* 下单 SKU 盈余角标：按正负用莫兰迪底纹区分（文字同色） */
+        /* -------------------------------------------------------------------------
+         * 下单 SKU 盈余角标
+         * ------------------------------------------------------------------------- */
         .sf-surplus-pos {
             background: rgba(90, 154, 98, 0.22);
         }
@@ -997,7 +1006,9 @@
             table-layout: fixed;
             width: 100%;
         }
-        /* 覆盖 .sf-leadtime-table 首列 min-width:6.5rem，否则表身无法随 col 缩窄 */
+        /* -------------------------------------------------------------------------
+         * 动销预警表与交期弹窗
+         * ------------------------------------------------------------------------- */
         .sf-turn-alert-table.sf-leadtime-table th:first-child,
         .sf-turn-alert-table.sf-leadtime-table td:first-child {
             min-width: 0;
@@ -1058,7 +1069,9 @@
             color: var(--morandi-slate);
             white-space: nowrap;
         }
-        /* 下单 SKU：库存多来源指示（⋯） */
+        /* -------------------------------------------------------------------------
+         * 库存多来源指示（⋯）
+         * ------------------------------------------------------------------------- */
         td.sf-cell-sku-composition,
         td.sf-cell-inv.sf-cell-inv-composition {
             position: relative;
@@ -1193,7 +1206,9 @@
         .sf-tooltip-wrap.is-pinned .sf-tooltip-bubble {
             display: block;
         }
-        /* 预测格：气泡相对整格 fixed 定位，由 JS 控制显隐（勿依赖 :hover，避免 inline display 残留） */
+        /* -------------------------------------------------------------------------
+         * 预测格气泡（fixed 定位，由 JS 控制显隐）
+         * ------------------------------------------------------------------------- */
         .sf-tooltip-wrap.sf-tooltip-wrap--cell-anchor:not(.is-anchor-open):not(.is-pinned) .sf-tooltip-bubble {
             display: none !important;
         }
@@ -1223,7 +1238,9 @@
         }
         .sf-tooltip-bubble dt { color: #d6cfbf; font-weight: 500; }
         .sf-tooltip-bubble dd { margin: 0; color: #fff; word-break: break-all; }
-        /* 产品表现：侧栏统一为深色表格（横向月份、纵向指标） */
+        /* -------------------------------------------------------------------------
+         * 产品表现侧栏矩阵（深色表格）
+         * ------------------------------------------------------------------------- */
         .sf-perf-matrix-outer {
             margin-top: 0.2rem;
             overflow: auto;
@@ -1269,7 +1286,6 @@
             white-space: normal;
             max-width: 10rem;
         }
-        /* 历史月单元格：气泡略加宽并可滚动 */
         .sf-tooltip-bubble.sf-history-perf-tooltip-bubble {
             max-width: min(900px, 96vw);
             max-height: 72vh;
@@ -1339,7 +1355,9 @@
             text-align: center;
         }
 
-        /* 表头筛选/排序行（可点击） */
+        /* -------------------------------------------------------------------------
+         * 表头筛选/排序行
+         * ------------------------------------------------------------------------- */
         .sf-th-cell {
             display: flex;
             flex-direction: column;
@@ -1371,7 +1389,9 @@
             background: #fff;
         }
 
-        /* 右下角批量处理弹窗 */
+        /* -------------------------------------------------------------------------
+         * 右下角批量处理弹窗
+         * ------------------------------------------------------------------------- */
         .sf-batch-popup {
             position: fixed;
             right: 24px;
@@ -1572,7 +1592,9 @@
             color: rgba(42, 36, 32, 0.62);
             line-height: 1.4;
         }
-        /* 本页 .sf-perf-float-panel 含 display:flex，会压过 [hidden] 的默认隐藏，导致 hidden=true / 点 × 仍可见 */
+        /* -------------------------------------------------------------------------
+         * 浮动侧栏面板（产品表现 / 库存 / 历史来源）
+         * ------------------------------------------------------------------------- */
         #sfPerfFloatingPanel.sf-perf-float-panel[hidden],
         #sfInvFloatingPanel.sf-perf-float-panel[hidden],
         #sfHistSourceFloatingPanel.sf-perf-float-panel[hidden] {
@@ -3046,6 +3068,9 @@
             return `${String(state.sfSurplusRegion || '')}|${mtdSig}|${JSON.stringify(state.factoryLeadTimes || {})}`;
         }
 
+        // -------------------------------------------------------------------------
+        // 下单 SKU 盈余推算
+        // -------------------------------------------------------------------------
         function computeOrderSkuSurplusSeries(row, months, leadTimeRegion, leadTimes) {
             const detail = (row && row.inventory_surplus_detail) || {};
             const regionName = String(leadTimeRegion || '').trim();
@@ -3053,7 +3078,7 @@
             const stockDays = Math.max(0, parseInt(lt.stock_days, 10) || 0);
             const wipDays = Math.max(0, parseInt(lt.wip_days, 10) || 0);
             const today = sfTodayYmd();
-            /* 海外仓/在途：全部目的区域；regionName 仅用于工厂在库/在制→上架月 */
+            // 海外仓/在途：全部目的区域；regionName 仅用于工厂在库/在制→上架月
             const invScalars = (row && row.inventory) || {};
             const overseasInit = Math.max(0, Number(invScalars.overseas_qty) || 0)
                 || getTotalOverseasQty(detail);
@@ -5733,6 +5758,9 @@
             return false;
         }
 
+        // -------------------------------------------------------------------------
+        // 预测表格选：全局键盘、复制与粘贴
+        // -------------------------------------------------------------------------
         function initSfForecastSelectionGlobalOnce() {
             if (document.body.dataset.sfForecastGlobalBound === '1') return;
             document.body.dataset.sfForecastGlobalBound = '1';
@@ -5790,7 +5818,7 @@
 
                 if (sfActiveElementBlocksForecastMatrixPaste()) return;
 
-                /* 框选区域粘贴（含单个数字 → 锚点格；多选后焦点常在表格外） */
+                // 框选区域粘贴（含单个数字 → 锚点格；多选后焦点常在表格外）
                 if (state.sfGridSelected && state.sfGridSelected.size) {
                     if (applySfMatrixPasteFromGridSelection(matrix)) {
                         e.preventDefault();
@@ -5814,7 +5842,7 @@
                     return;
                 }
 
-                /* 仅复制一个数字、无框选时：写入当前聚焦的预测输入框 */
+                // 仅复制一个数字、无框选时：写入当前聚焦的预测输入框
                 if (single) {
                     const ae = document.activeElement;
                     if (ae && ae.matches && ae.matches('input.sf-num-input')
@@ -5830,7 +5858,7 @@
             const forecastWrap = document.getElementById('forecastTableWrap');
             if (forecastWrap && forecastWrap.dataset.sfForecastWrapBlurBound !== '1') {
                 forecastWrap.dataset.sfForecastWrapBlurBound = '1';
-                /* 点击 wrap 内空白（表宽小于容器时右侧留白、或下方留白）：事件不落在 tbody/td 上，原逻辑不会失焦 */
+                // 点击 wrap 内空白：让仍聚焦的预测输入框失焦
                 forecastWrap.addEventListener('mousedown', (e) => {
                     if (e.button !== 0) return;
                     if (state.sfPerfPanelAttachMode === 'follow' && state.sfPerfPanelFollowBlurDismissed) {
@@ -5986,6 +6014,9 @@
             try { ae.blur(); } catch (_) {}
         }
 
+        // -------------------------------------------------------------------------
+        // 预测表格选：tbody 拖选与点选
+        // -------------------------------------------------------------------------
         function bindForecastGridSelection(tbody) {
             if (!tbody || tbody.dataset.sfGridSelectBound === '1') return;
             tbody.dataset.sfGridSelectBound = '1';
@@ -6100,7 +6131,7 @@
             const pickGridTdFromEvent = (e) => {
                 const t = e.target;
                 if (t && t.closest && t.closest('input.sf-num-input, select, textarea, button')) {
-                    /* 无修饰键时默认让输入框接收焦点；正在拖拽时必须仍能解析到 TD，否则光标经过输入框会中断框选 */
+                    // 无修饰键时默认让输入框接收焦点；拖拽中须仍能解析到 TD
                     if (!(e.ctrlKey || e.metaKey || e.shiftKey) && !dragging) return null;
                 }
                 let td = t && t.closest ? t.closest('tr[data-row-key] td.sf-grid-selectable[data-sf-ci]') : null;
@@ -6121,14 +6152,14 @@
                 dragging = true;
                 dragStart = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
                 marqueeUnionBase = e.shiftKey ? new Set(state.sfGridSelected) : null;
-                /* Shift+点选/框选：锚点须保持为第一次点中的角，不能在 Shift 按下时再改成当前格 */
+                // Shift+点选/框选：锚点保持为第一次点中的角
                 if (!e.shiftKey && !(e.ctrlKey || e.metaKey)) {
                     state.selectionAnchor = dragStart;
                 } else if (e.shiftKey
                     && (!state.selectionAnchor || !Number.isFinite(Number(state.selectionAnchor.colIdx)))) {
                     state.selectionAnchor = dragStart;
                 }
-                /* Shift/Ctrl 时勿 preventDefault，避免部分浏览器不派发 click，导致 Shift+点选矩形无效 */
+                // Shift/Ctrl 时勿 preventDefault，避免部分浏览器不派发 click
                 if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
                     try { e.preventDefault(); } catch (_) {}
                 }
@@ -6314,6 +6345,9 @@
             });
         }
 
+        // -------------------------------------------------------------------------
+        // 预测表列宽拖拽
+        // -------------------------------------------------------------------------
         function attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths) {
             if (!thead) return;
             const table = document.getElementById('forecastTable');
@@ -6323,7 +6357,7 @@
                 const colStart = Number(cell.dataset.colStart);
                 const colEnd = Number(cell.dataset.colEnd);
                 if (!Number.isFinite(colStart) || !Number.isFinite(colEnd) || colStart < 0 || colEnd < colStart || colEnd >= totalCols) return;
-                /* 勿设为 relative：会覆盖 thead th 的 position:sticky，且第二行 th 的 top 会在文档流中产生空白带 */
+                // 勿在 th 上设 relative：会覆盖 thead sticky
                 const handle = document.createElement('span');
                 handle.className = 'sf-col-resize-handle';
                 handle.addEventListener('click', (event) => {
@@ -6918,7 +6952,7 @@
                     const pr = panel.getBoundingClientRect();
                     const pw = pr.width || panel.offsetWidth || 320;
                     const ph = pr.height || panel.offsetHeight || 240;
-                    /* 跟随选中：贴在单元格下方（优先）或上方，避免左右遮挡整行 */
+                    // 跟随选中：贴在单元格下方（优先）或上方
                     let left = a.left + (a.width - pw) / 2;
                     left = Math.max(pad, Math.min(left, vw - pad - pw));
                     const belowTop = a.bottom + gap;
@@ -8179,7 +8213,7 @@
             if (!state.sfGridSelected || !state.sfGridSelected.size) return false;
             if (!state.sfInvPanelClickPinned || !state.sfInvPanelAnchorTd) return false;
             if (!state.sfInvPanelAnchorTd.isConnected) return false;
-            /* 点击库存格打开的弹窗：保持显示直至用户点 × 或表格外，勿因弹窗内切换维度清空选区而关闭 */
+            // 点击库存格打开的弹窗：保持显示直至用户点 × 或表格外
             return true;
         }
 
@@ -8509,7 +8543,7 @@
             });
             const wrap = document.getElementById('forecastTableWrap');
             if (wrap) {
-                /* 跟随选中：焦点离开预测表区域且不在产品表现弹窗内时，同步隐藏（不视为用户“永久关闭”） */
+                // 跟随选中：焦点离开预测表区域时同步隐藏产品表现弹窗
                 wrap.addEventListener('focusout', () => {
                     if (state.sfPerfPanelAttachMode !== 'follow') return;
                     if (!isSalesForecastHistoryPerfMode()) return;
@@ -8557,7 +8591,7 @@
                     return;
                 }
             }
-            /* 无 payload 时只隐藏面板，勿重置手动关闭状态；否则用户点 × 后若随即触发无 payload 的更新会清掉 sfPerfPanelManuallyHidden，弹窗会立刻再次出现 */
+            // 无 payload 时只隐藏面板，勿重置手动关闭状态
             if (!payloadRaw) {
                 setSfFloatPanelHidden(panel, true);
                 closeSfPerfFieldsPanel();
@@ -8817,7 +8851,7 @@
             const dirtyKey = row.row_key + '|' + monthKey;
             const dirtyVal = state.dirty.has(dirtyKey) ? Number(state.dirty.get(dirtyKey).latest_qty) : null;
 
-            /* 本层已存储数量（用于输入框基线）；继承合计仍在 row.forecasts[].value_qty 供 MTD/盈余等使用 */
+            // 本层已存储数量（用于输入框基线）；继承合计仍在 row.forecasts[].value_qty
             const storedBaseline = forecast && forecast.is_inherited
                 ? 0
                 : (forecast ? Number(forecast.value_qty || 0) : 0);
@@ -8841,7 +8875,7 @@
             input.addEventListener('beforeinput', (ev) => {
                 if (!ev || ev.isComposing) return;
                 const it = ev.inputType ? String(ev.inputType) : '';
-                /* 粘贴内容常含逗号、制表符、多字符等，勿在此拦截，交给 input 里 normalizeForecastDigitString */
+                // 粘贴内容交给 normalizeForecastDigitString，勿在此拦截多字符
                 if (it === 'insertFromPaste' || it === 'insertFromPasteAsQuotation' || it === 'insertReplacementText') return;
                 if (!ev.data) return;
                 if (/^\d+$/.test(ev.data)) return;

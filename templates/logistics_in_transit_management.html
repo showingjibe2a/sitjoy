@@ -81,7 +81,9 @@
     #mainTable td.transit-col-sku-qty + td.transit-col-sku-listed {
       padding-left: 0;
     }
-    /* 框选时勿裁切 inset 框线（托管表 td 默认 overflow:hidden） */
+    /* -------------------------------------------------------------------------
+     * SKU 格选：框线裁切与列缝延伸
+     * ------------------------------------------------------------------------- */
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
@@ -109,7 +111,6 @@
       max-width: none;
       box-sizing: border-box;
     }
-    /* 仅当左侧相邻列也有选中时，才向左吃进列缝 */
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor,
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
@@ -130,7 +131,6 @@
       min-width: 0;
       width: 100%;
     }
-    /* 固定行高：选中/未选中一致，避免框选时行高突变；行间用分隔线而非 padding/gap */
     .transit-sku-stack-line {
       display: flex;
       align-items: center;
@@ -163,7 +163,6 @@
       font-weight: 700;
     }
     #mainTable thead th { vertical-align: middle; white-space: nowrap; }
-    /* 勿用 position:relative，否则会覆盖托管表 sticky 表头，导致 SKU 四列表头随滚动消失 */
     #mainTable thead th.transit-th-sku-group,
     .pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > th.transit-th-sku-group {
       position: sticky;
