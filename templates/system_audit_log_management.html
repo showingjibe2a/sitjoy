@@ -7,11 +7,6 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .audit-log-hint {
-            margin: 0.45rem 0 0;
-            font-size: 0.78rem;
-            color: var(--morandi-slate);
-        }
         .audit-log-summary-cell {
             min-width: 280px;
             max-width: 520px;
@@ -78,41 +73,31 @@
                         <input type="date" id="auditDateTo">
                     </div>
                     <button type="button" class="btn-secondary" id="auditSearchBtn">搜索</button>
-                    <button type="button" class="btn-accent" id="auditCleanupBtn">清理旧日志</button>
+                    <button type="button" class="btn-danger" id="auditCleanupBtn">清理全部日志</button>
                 </div>
             </div>
-            <p id="auditLogHint" class="audit-log-hint"></p>
         </section>
 
         <!-- ------------------------------------------------------------------------- -->
-        <!-- 列表 -->
+        <!-- 列表（托管表：列筛选 / 排序 / 重置） -->
         <!-- ------------------------------------------------------------------------- -->
         <section class="card pm-card">
             <div>
-                <table class="pm-table" id="auditLogTable" data-disable-table-manage="1">
+                <table class="pm-table" id="auditLogTable" data-server-pagination-mode="server">
                     <thead id="auditLogTableHead">
                         <tr>
-                            <th>时间</th>
-                            <th>账号</th>
-                            <th>姓名</th>
-                            <th>页面路径</th>
-                            <th>页面</th>
-                            <th>IP</th>
+                            <th data-manage-col-key="created_at">时间</th>
+                            <th data-manage-col-key="username">账号</th>
+                            <th data-manage-col-key="user_name">姓名</th>
+                            <th data-manage-col-key="page_path">页面路径</th>
+                            <th data-manage-col-key="page_label">页面</th>
+                            <th data-manage-col-key="client_ip">IP</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr><td colspan="6" style="text-align:center;">加载中…</td></tr>
                     </tbody>
                 </table>
-            </div>
-            <div class="pm-table-toolbar">
-                <div class="pm-table-toolbar-left">
-                    <span class="pm-table-info" id="auditPageInfo">第 1 页</span>
-                </div>
-                <div class="pm-table-toolbar-right">
-                    <button type="button" class="btn-secondary btn-small" id="auditPrevBtn" disabled>上一页</button>
-                    <button type="button" class="btn-secondary btn-small" id="auditNextBtn" disabled>下一页</button>
-                </div>
             </div>
         </section>
     </div>

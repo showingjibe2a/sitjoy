@@ -2504,6 +2504,8 @@
       win.WidgetTurnNotify.bindPrefs({
         soundEl: '#goTurnNotifySound',
         desktopEl: '#goTurnNotifyDesktop',
+        permissionStatusEl: '#goTurnNotifyPermStatus',
+        permissionBtnEl: '#goTurnNotifyPermBtn',
       });
     }
     renderBoard($('goBoard'));

@@ -3873,11 +3873,10 @@ class SalesManagementMixin:
         }
 
     def _turnover_spec_coverage_from_bom_pairs(self, pairs, op_sales_map, inv_by_op, substitute_plans_by_owner):
-        """规格行动销月三列：各下单 SKU（含替代方案库存）取最小值。"""
+        """规格行动销月三列：各下单 SKU（含替代方案库存）分别计算后取最小值（不除以 BOM 数量）。"""
         vals_o, vals_ot, vals_tot = [], [], []
-        for oid, qp in pairs or []:
+        for oid, _qp in pairs or []:
             oid = int(oid)
-            qp = max(1, int(qp or 1))
             if not oid:
                 continue
             plans = (substitute_plans_by_owner or {}).get(oid) or []
@@ -3895,10 +3894,10 @@ class SalesManagementMixin:
                     'factory_stock_qty': int(inv.get('factory_stock_qty') or 0),
                     'wip_qty': int(inv.get('wip_qty') or 0),
                 }
-            oi = int(int(ai.get('overseas_qty') or 0) // qp)
-            ti = int(int(ai.get('transit_qty') or 0) // qp)
-            sti = int(int(ai.get('factory_stock_qty') or 0) // qp)
-            wpi = int(int(ai.get('wip_qty') or 0) // qp)
+            oi = int(ai.get('overseas_qty') or 0)
+            ti = int(ai.get('transit_qty') or 0)
+            sti = int(ai.get('factory_stock_qty') or 0)
+            wpi = int(ai.get('wip_qty') or 0)
             if oi > 0:
                 vals_o.append(round(float(oi) / avg_op, 2))
             if oi + ti > 0:
@@ -3912,21 +3911,20 @@ class SalesManagementMixin:
         }
 
     def _turnover_spec_coverage_from_bom_pairs_raw(self, pairs, op_sales_map, inv_by_op):
-        """规格行动销月三列：本体库存（不含替代方案），与海外仓可售口径一致。"""
+        """规格行动销月三列：本体库存（不含替代方案），各下单 SKU 分别计算后取最小值（不除以 BOM 数量）。"""
         vals_o, vals_ot, vals_tot = [], [], []
-        for oid, qp in pairs or []:
+        for oid, _qp in pairs or []:
             oid = int(oid)
-            qp = max(1, int(qp or 1))
             if not oid:
                 continue
             avg_op = float(op_sales_map.get(oid) or 0)
             if avg_op <= 1e-9:
                 continue
             inv = inv_by_op.get(oid) or {}
-            oi = int(int(inv.get('overseas_qty') or 0) // qp)
-            ti = int(int(inv.get('transit_qty') or 0) // qp)
-            sti = int(int(inv.get('factory_stock_qty') or 0) // qp)
-            wpi = int(int(inv.get('wip_qty') or 0) // qp)
+            oi = int(inv.get('overseas_qty') or 0)
+            ti = int(inv.get('transit_qty') or 0)
+            sti = int(inv.get('factory_stock_qty') or 0)
+            wpi = int(inv.get('wip_qty') or 0)
             if oi > 0:
                 vals_o.append(round(float(oi) / avg_op, 2))
             if oi + ti > 0:
@@ -4506,7 +4504,7 @@ class SalesManagementMixin:
 
     def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months, hist_start=None, hist_end=None, shop_ids=None):
         """按各下单 SKU：本体库存 + 全部替代发货方案替代 SKU 库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。
-        规格/平台维度下：库存为变体整套瓶颈；动销月三列 = 所链接各下单 SKU（按替代方案展开后单独成套）的动销月再取最小值；
+        规格/平台维度下：动销月三列 = 所链接各下单 SKU 的动销月再取最小值（各 SKU 用自身库存与窗口销量，不除以 BOM 数量）；
         每个下单 SKU 的动销月分母为其自身窗口销量（全局最新 record_date 向前 30 天，含首尾）。"""
         if not rows:
             return
@@ -4722,12 +4720,10 @@ class SalesManagementMixin:
                             'factory_stock_qty': int(inv_raw.get('factory_stock_qty') or 0),
                             'wip_qty': int(inv_raw.get('wip_qty') or 0),
                         }
-                    for tier_k in ai:
-                        ai[tier_k] = int(int(ai[tier_k] or 0) // max(1, qp))
-                    oi = int(ai['overseas_qty'])
-                    ti = int(ai['transit_qty'])
-                    sti = int(ai['factory_stock_qty'])
-                    wpi = int(ai['wip_qty'])
+                    oi = int(ai.get('overseas_qty') or 0)
+                    ti = int(ai.get('transit_qty') or 0)
+                    sti = int(ai.get('factory_stock_qty') or 0)
+                    wpi = int(ai.get('wip_qty') or 0)
                     if oi > 0:
                         vals_o.append(round(float(oi) / float(avg_op), 2))
                     if oi + ti > 0:

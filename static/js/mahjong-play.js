@@ -2548,6 +2548,8 @@
       win.WidgetTurnNotify.bindPrefs({
         soundEl: '#mjTurnNotifySound',
         desktopEl: '#mjTurnNotifyDesktop',
+        permissionStatusEl: '#mjTurnNotifyPermStatus',
+        permissionBtnEl: '#mjTurnNotifyPermBtn',
       });
     }
     bindPlayerAvatarUi();

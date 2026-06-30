@@ -1,12 +1,13 @@
 /**
- * 系统审计日志：页面访问与操作记录分页查询、清理。
+ * 系统审计日志：页面访问与操作记录分页查询、托管表、清理全部。
  */
 (function () {
     let currentUser = null;
     let auditLogType = 'access';
     let auditLogPage = 1;
     let auditLogTotal = 0;
-    const auditLogPageSize = 50;
+    let auditLogPageSize = 50;
+    let auditManagedTableReady = false;
 
     // -------------------------------------------------------------------------
     // 权限与渲染辅助
@@ -73,6 +74,96 @@
         return escapeHtml(summary);
     }
 
+    function auditColSpan() {
+        return auditLogType === 'access' ? 6 : 8;
+    }
+
+    function auditTotalPages() {
+        return Math.max(1, Math.ceil(auditLogTotal / Math.max(1, auditLogPageSize)));
+    }
+
+    // -------------------------------------------------------------------------
+    // 托管表
+    // -------------------------------------------------------------------------
+
+    function ensureAuditManagedTableReady() {
+        const M = window.SitjoyManagedPmTable;
+        const table = document.getElementById('auditLogTable');
+        if (!M || !table) return;
+        if (typeof M.getState === 'function' && M.getState(table)) return;
+        if (typeof M.enhance === 'function') M.enhance(document);
+    }
+
+    function initAuditManagedTable() {
+        if (auditManagedTableReady) return;
+        ensureAuditManagedTableReady();
+        const M = window.SitjoyManagedPmTable;
+        const table = document.getElementById('auditLogTable');
+        if (!M || !table || typeof M.registerServerList !== 'function') return;
+        if (typeof M.getState !== 'function' || !M.getState(table)) {
+            window.setTimeout(initAuditManagedTable, 120);
+            return;
+        }
+        auditManagedTableReady = true;
+        M.registerServerList('#auditLogTable', {
+            pageSizeMin: 20,
+            pageSizeMax: 200,
+            getPager() {
+                return {
+                    page: auditLogPage,
+                    pageSize: auditLogPageSize,
+                    total: auditLogTotal,
+                    totalPages: auditTotalPages(),
+                };
+            },
+            loadPage(page, options) {
+                loadAuditLogs(page, options);
+            },
+            reload(page, options) {
+                const src = options && options.source;
+                if (src === 'clear-toolbar' || src === 'clear') {
+                    clearAuditPageFilters();
+                }
+                loadAuditLogs(page || 1, options);
+            },
+            onPageSizeChange(size) {
+                auditLogPageSize = size;
+            },
+            onClear() {
+                clearAuditPageFilters();
+                loadAuditLogs(1);
+            },
+        });
+    }
+
+    function clearAuditPageFilters() {
+        const q = document.getElementById('auditSearchQ');
+        const df = document.getElementById('auditDateFrom');
+        const dt = document.getElementById('auditDateTo');
+        if (q) q.value = '';
+        if (df) df.value = '';
+        if (dt) dt.value = '';
+    }
+
+    function syncAuditManagedTablePager() {
+        const M = window.SitjoyManagedPmTable;
+        if (!M || typeof M.syncServerPager !== 'function') return;
+        M.syncServerPager('#auditLogTable', {
+            page: auditLogPage,
+            pageSize: auditLogPageSize,
+            total: auditLogTotal,
+            totalPages: auditTotalPages(),
+        });
+    }
+
+    function refreshAuditManagedTableLayout() {
+        const M = window.SitjoyManagedPmTable;
+        const table = document.getElementById('auditLogTable');
+        if (!M || !table) return;
+        if (typeof M.invalidateLayout === 'function') M.invalidateLayout(table);
+        else if (typeof M.syncLayout === 'function') M.syncLayout(table);
+    }
+
     // -------------------------------------------------------------------------
     // 列表加载与分页
     // -------------------------------------------------------------------------
@@ -81,15 +172,75 @@
         const head = document.getElementById('auditLogTableHead');
         if (!head) return;
         if (auditLogType === 'access') {
-            head.innerHTML = '<tr><th>时间</th><th>账号</th><th>姓名</th><th>页面路径</th><th>页面</th><th>IP</th></tr>';
+            head.innerHTML = `
+                <tr>
+                    <th data-manage-col-key="created_at">时间</th>
+                    <th data-manage-col-key="username">账号</th>
+                    <th data-manage-col-key="user_name">姓名</th>
+                    <th data-manage-col-key="page_path">页面路径</th>
+                    <th data-manage-col-key="page_label">页面</th>
+                    <th data-manage-col-key="client_ip">IP</th>
+                </tr>`;
         } else {
-            head.innerHTML = '<tr><th>时间</th><th>账号</th><th>姓名</th><th>方法</th><th>API</th><th>模块</th><th>摘要</th><th>IP</th></tr>';
+            head.innerHTML = `
+                <tr>
+                    <th data-manage-col-key="created_at">时间</th>
+                    <th data-manage-col-key="username">账号</th>
+                    <th data-manage-col-key="user_name">姓名</th>
+                    <th data-manage-col-key="http_method">方法</th>
+                    <th data-manage-col-key="api_path">API</th>
+                    <th data-manage-col-key="module_key">模块</th>
+                    <th data-manage-col-key="request_summary">摘要</th>
+                    <th data-manage-col-key="client_ip">IP</th>
+                </tr>`;
         }
     }
 
-    async function loadAuditLogs(page = 1) {
+    function renderAuditLogRows(items) {
+        const colSpan = auditColSpan();
+        if (!items.length) {
+            return '<tr><td colspan="' + colSpan + '" style="text-align:center;">暂无记录</td></tr>';
+        }
+        if (auditLogType === 'access') {
+            return items.map(row => `
+                <tr>
+                    <td data-manage-col-key="created_at">${escapeHtml(formatAuditDateTime(row.created_at))}</td>
+                    <td data-manage-col-key="username">${escapeHtml(row.username || '')}</td>
+                    <td data-manage-col-key="user_name">${escapeHtml(row.user_name || '')}</td>
+                    <td data-manage-col-key="page_path">${escapeHtml(row.page_path || '')}</td>
+                    <td data-manage-col-key="page_label">${escapeHtml(row.page_label || row.page_key || '')}</td>
+                    <td data-manage-col-key="client_ip">${escapeHtml(row.client_ip || '')}</td>
+                </tr>
+            `).join('');
+        }
+        return items.map(row => `
+            <tr>
+                <td data-manage-col-key="created_at">${escapeHtml(formatAuditDateTime(row.created_at))}</td>
+                <td data-manage-col-key="username">${escapeHtml(row.username || '')}</td>
+                <td data-manage-col-key="user_name">${escapeHtml(row.user_name || '')}</td>
+                <td data-manage-col-key="http_method">${escapeHtml(row.http_method || '')}</td>
+                <td data-manage-col-key="api_path">${escapeHtml(row.api_path || '')}</td>
+                <td data-manage-col-key="module_key">${escapeHtml(moduleLabel(row))}</td>
+                <td class="audit-log-summary-cell" data-manage-col-key="request_summary">${renderOperationSummaryHtml(row)}</td>
+                <td data-manage-col-key="client_ip">${escapeHtml(row.client_ip || '')}</td>
+            </tr>
+        `).join('');
+    }
+
+    async function loadAuditLogs(page = 1, options) {
         if (!canViewAuditLogs()) return;
+        ensureAuditManagedTableReady();
+        initAuditManagedTable();
+
+        const M = window.SitjoyManagedPmTable;
         auditLogPage = Math.max(1, page);
+        if (options && Number(options.pageSize) > 0) {
+            const norm = (M && typeof M.normalizePageSize === 'function')
+                ? M.normalizePageSize(options.pageSize, auditLogPageSize, 20, 200)
+                : Math.max(20, Math.min(200, Number(options.pageSize) || 50));
+            auditLogPageSize = norm;
+        }
+
         const q = (document.getElementById('auditSearchQ') || {}).value || '';
         const dateFrom = (document.getElementById('auditDateFrom') || {}).value || '';
         const dateTo = (document.getElementById('auditDateTo') || {}).value || '';
@@ -103,60 +254,65 @@
         if (dateTo) params.set('date_to', dateTo);
 
         const tbody = document.querySelector('#auditLogTable tbody');
-        const hint = document.getElementById('auditLogHint');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">加载中…</td></tr>';
+        const colSpan = auditColSpan();
         renderAuditLogTableHead();
+
+        const paintLoading = () => {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;">加载中…</td></tr>';
+        };
+        if (M && typeof M.withBodyUpdate === 'function') {
+            M.withBodyUpdate('#auditLogTable', paintLoading);
+        } else {
+            paintLoading();
+        }
 
         try {
             const resp = await fetch('/api/audit-log?' + params.toString(), { credentials: 'include' });
             const data = await resp.json();
             if (data.status !== 'success') {
-                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#a33;">' + escapeHtml(data.message || '加载失败') + '</td></tr>';
+                const errHtml = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:#a33;">'
+                    + escapeHtml(data.message || '加载失败') + '</td></tr>';
+                if (M && typeof M.withBodyUpdate === 'function') {
+                    M.withBodyUpdate('#auditLogTable', () => { if (tbody) tbody.innerHTML = errHtml; });
+                } else if (tbody) {
+                    tbody.innerHTML = errHtml;
+                }
+                auditLogTotal = 0;
+                syncAuditManagedTablePager();
                 return;
             }
+
             auditLogTotal = Number(data.total || 0);
+            auditLogPage = Math.max(1, Number(data.page || auditLogPage || 1));
+            auditLogPageSize = Math.max(20, Math.min(200, Number(data.page_size || auditLogPageSize || 50)));
             const items = data.items || [];
-            const colSpan = auditLogType === 'access' ? 6 : 8;
-            if (!items.length) {
-                if (tbody) tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;">暂无记录</td></tr>';
-            } else if (auditLogType === 'access') {
-                tbody.innerHTML = items.map(row => `
-                    <tr>
-                        <td>${escapeHtml(formatAuditDateTime(row.created_at))}</td>
-                        <td>${escapeHtml(row.username || '')}</td>
-                        <td>${escapeHtml(row.user_name || '')}</td>
-                        <td>${escapeHtml(row.page_path || '')}</td>
-                        <td>${escapeHtml(row.page_label || row.page_key || '')}</td>
-                        <td>${escapeHtml(row.client_ip || '')}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = items.map(row => `
-                    <tr>
-                        <td>${escapeHtml(formatAuditDateTime(row.created_at))}</td>
-                        <td>${escapeHtml(row.username || '')}</td>
-                        <td>${escapeHtml(row.user_name || '')}</td>
-                        <td>${escapeHtml(row.http_method || '')}</td>
-                        <td>${escapeHtml(row.api_path || '')}</td>
-                        <td>${escapeHtml(moduleLabel(row))}</td>
-                        <td class="audit-log-summary-cell">${renderOperationSummaryHtml(row)}</td>
-                        <td>${escapeHtml(row.client_ip || '')}</td>
-                    </tr>
-                `).join('');
+            const html = renderAuditLogRows(items);
+
+            const table = document.getElementById('auditLogTable');
+            if (table) {
+                table.dataset.serverPaginationMode = 'server';
+                table.dataset.serverCurrentPage = String(auditLogPage);
+                table.dataset.serverPageSize = String(auditLogPageSize);
+                table.dataset.serverTotalRows = String(auditLogTotal);
             }
-            const totalPages = Math.max(1, Math.ceil(auditLogTotal / auditLogPageSize));
-            if (hint) {
-                hint.textContent = (auditLogType === 'access' ? '页面访问' : '操作记录')
-                    + '：共 ' + auditLogTotal + ' 条，第 ' + auditLogPage + ' / ' + totalPages + ' 页';
+
+            if (M && typeof M.withBodyUpdate === 'function') {
+                M.withBodyUpdate('#auditLogTable', () => { if (tbody) tbody.innerHTML = html; });
+            } else if (tbody) {
+                tbody.innerHTML = html;
             }
-            const pageInfo = document.getElementById('auditPageInfo');
-            if (pageInfo) pageInfo.textContent = '第 ' + auditLogPage + ' / ' + totalPages + ' 页';
-            const prevBtn = document.getElementById('auditPrevBtn');
-            const nextBtn = document.getElementById('auditNextBtn');
-            if (prevBtn) prevBtn.disabled = auditLogPage <= 1;
-            if (nextBtn) nextBtn.disabled = auditLogPage >= totalPages;
+
+            syncAuditManagedTablePager();
+            refreshAuditManagedTableLayout();
         } catch (err) {
-            if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#a33;">网络错误</td></tr>';
+            const errHtml = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:#a33;">网络错误</td></tr>';
+            if (M && typeof M.withBodyUpdate === 'function') {
+                M.withBodyUpdate('#auditLogTable', () => { if (tbody) tbody.innerHTML = errHtml; });
+            } else if (tbody) {
+                tbody.innerHTML = errHtml;
+            }
+            auditLogTotal = 0;
+            syncAuditManagedTablePager();
         }
     }
 
@@ -195,34 +351,41 @@
 
     async function cleanupAuditLogs() {
         if (!canViewAuditLogs()) return;
-        const keepDaysRaw = prompt('保留最近多少天的日志？（默认 90，将删除更早的记录）', '90');
-        if (keepDaysRaw === null) return;
-        const keepDays = Math.max(1, Math.min(3650, parseInt(String(keepDaysRaw).trim(), 10) || 90));
         const typeLabel = auditLogType === 'operation' ? '操作记录' : '页面访问';
-        const ok = window.showAppConfirmAsync
-            ? await window.showAppConfirmAsync({
-                title: '清理审计日志',
-                message: '将删除「' + typeLabel + '」中早于 ' + keepDays + ' 天的记录，是否继续？',
-                confirmText: '确认清理',
-            })
-            : confirm('将删除早于 ' + keepDays + ' 天的「' + typeLabel + '」，是否继续？');
+        const confirmAsync = window.showAppConfirmAsync;
+        if (!confirmAsync) return;
+        const ok = await confirmAsync({
+            title: '清理全部审计日志',
+            message: '将永久删除当前「' + typeLabel + '」下的全部日志，不可恢复。',
+            confirmText: '确认清理',
+            cancelText: '取消',
+            requireConfirmCheck: true,
+        });
         if (!ok) return;
         try {
             const resp = await fetch('/api/audit-log?action=cleanup', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: auditLogType, keep_days: keepDays }),
+                body: JSON.stringify({ type: auditLogType }),
             });
             const data = await resp.json();
             if (data.status === 'success') {
-                alert('已清理：访问 ' + (data.deleted_access || 0) + ' 条，操作 ' + (data.deleted_operation || 0) + ' 条');
+                const deleted = auditLogType === 'operation'
+                    ? Number(data.deleted_operation || 0)
+                    : Number(data.deleted_access || 0);
+                const msg = '已清理「' + typeLabel + '」共 ' + deleted + ' 条';
+                if (window.showAppToast) window.showAppToast(msg, false);
+                else alert(msg);
                 loadAuditLogs(1);
+            } else if (window.showAppToast) {
+                window.showAppToast(data.message || '清理失败', true);
             } else {
                 alert(data.message || '清理失败');
             }
         } catch (err) {
-            alert('清理失败：网络错误');
+            if (window.showAppToast) window.showAppToast('清理失败：网络错误', true);
+            else alert('清理失败：网络错误');
         }
     }
 
@@ -230,17 +393,13 @@
         bindAuditLogTypeSegment();
         const searchBtn = document.getElementById('auditSearchBtn');
         if (searchBtn) searchBtn.addEventListener('click', () => loadAuditLogs(1));
-        const prevBtn = document.getElementById('auditPrevBtn');
-        if (prevBtn) prevBtn.addEventListener('click', () => { if (auditLogPage > 1) loadAuditLogs(auditLogPage - 1); });
-        const nextBtn = document.getElementById('auditNextBtn');
-        if (nextBtn) nextBtn.addEventListener('click', () => loadAuditLogs(auditLogPage + 1));
         const cleanupBtn = document.getElementById('auditCleanupBtn');
         if (cleanupBtn) cleanupBtn.addEventListener('click', cleanupAuditLogs);
         const qInput = document.getElementById('auditSearchQ');
         if (qInput) qInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadAuditLogs(1); });
     }
 
-    window.addEventListener('load', () => {
+    function bootAuditLogPage() {
         fetch('/api/auth?action=current', { credentials: 'include' })
             .then(r => r.json())
             .then(data => {
@@ -254,8 +413,18 @@
                     return;
                 }
                 bindAuditLogEvents();
-                loadAuditLogs(1);
+                ensureAuditManagedTableReady();
+                window.requestAnimationFrame(() => {
+                    initAuditManagedTable();
+                    loadAuditLogs(1);
+                });
             })
             .catch(() => { window.location.href = '/login'; });
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootAuditLogPage);
+    } else {
+        bootAuditLogPage();
+    }
 })();

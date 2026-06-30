@@ -148,42 +148,131 @@
     };
   }
 
-  function requestNotificationPermission() {
-    if (!('Notification' in win)) return Promise.resolve('unsupported');
-    if (Notification.permission === 'granted') return Promise.resolve('granted');
-    if (Notification.permission === 'denied') return Promise.resolve('denied');
-    try {
-      return Notification.requestPermission();
-    } catch (_) {
-      return Promise.resolve('denied');
+  function getNotificationPermission() {
+    if (!('Notification' in win)) return 'unsupported';
+    const p = Notification.permission;
+    if (p === 'granted' || p === 'denied' || p === 'default') return p;
+    return 'default';
+  }
+
+  function permissionStatusText(state) {
+    switch (state) {
+      case 'granted':
+        return '已授权（后台轮到你时会弹出系统通知）';
+      case 'denied':
+        return '已拒绝（需在浏览器站点设置中手动开启）';
+      case 'default':
+        return '未授权（点击下方按钮，或在勾选「后台桌面通知」时授权）';
+      default:
+        return '当前浏览器不支持桌面通知';
     }
   }
 
+  function permissionButtonLabel(state) {
+    switch (state) {
+      case 'granted':
+        return '已授权';
+      case 'denied':
+        return '已在浏览器中禁止';
+      case 'default':
+        return '授权桌面通知';
+      default:
+        return '不可用';
+    }
+  }
+
+  function resolveEl(ref) {
+    if (!ref) return null;
+    return typeof ref === 'string' ? document.querySelector(ref) : ref;
+  }
+
+  function refreshPermissionUi(options) {
+    const statusEl = resolveEl(options && options.permissionStatusEl);
+    const btnEl = resolveEl(options && options.permissionBtnEl);
+    const state = getNotificationPermission();
+    if (statusEl) {
+      statusEl.textContent = '通知权限：' + permissionStatusText(state);
+      statusEl.dataset.permissionState = state;
+      statusEl.classList.toggle('is-granted', state === 'granted');
+      statusEl.classList.toggle('is-denied', state === 'denied');
+      statusEl.classList.toggle('is-default', state === 'default');
+      statusEl.classList.toggle('is-unsupported', state === 'unsupported');
+    }
+    if (btnEl) {
+      btnEl.textContent = permissionButtonLabel(state);
+      btnEl.disabled = state === 'granted' || state === 'unsupported';
+      btnEl.classList.toggle('is-granted', state === 'granted');
+      btnEl.title = state === 'denied'
+        ? '请在浏览器地址栏左侧站点图标 → 通知/权限 中改为「允许」，然后刷新本页'
+        : '';
+    }
+    return state;
+  }
+
+  async function requestNotificationPermission() {
+    if (!('Notification' in win)) return 'unsupported';
+    if (Notification.permission === 'granted') return 'granted';
+    if (Notification.permission === 'denied') return 'denied';
+    try {
+      const result = await Notification.requestPermission();
+      return result === 'granted' || result === 'denied' ? result : 'default';
+    } catch (_) {
+      return 'denied';
+    }
+  }
+
+  function bindPermissionControls(options) {
+    const btnEl = resolveEl(options && options.permissionBtnEl);
+    const desktopEl = resolveEl(options && options.desktopEl);
+    if (!btnEl || btnEl.dataset.turnNotifyPermBound === '1') return;
+    btnEl.dataset.turnNotifyPermBound = '1';
+    btnEl.addEventListener('click', async () => {
+      const before = getNotificationPermission();
+      if (before === 'granted' || before === 'unsupported') return;
+      if (before === 'denied') {
+        btnEl.title = '请在浏览器地址栏左侧站点图标 → 通知 中改为「允许」，然后刷新本页';
+        return;
+      }
+      const state = await requestNotificationPermission();
+      refreshPermissionUi(options);
+      if (state === 'granted' && desktopEl) desktopEl.checked = true;
+      writeBool(STORAGE_DESKTOP, state === 'granted' || (desktopEl && desktopEl.checked));
+    });
+    win.addEventListener('focus', () => refreshPermissionUi(options));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshPermissionUi(options);
+    });
+  }
+
   function bindPrefs(options) {
-    const soundEl = options && options.soundEl
-      ? (typeof options.soundEl === 'string' ? document.querySelector(options.soundEl) : options.soundEl)
-      : null;
-    const desktopEl = options && options.desktopEl
-      ? (typeof options.desktopEl === 'string' ? document.querySelector(options.desktopEl) : options.desktopEl)
-      : null;
+    const soundEl = resolveEl(options && options.soundEl);
+    const desktopEl = resolveEl(options && options.desktopEl);
     if (soundEl) {
       soundEl.checked = readBool(STORAGE_SOUND, true);
       soundEl.addEventListener('change', () => writeBool(STORAGE_SOUND, !!soundEl.checked));
     }
     if (desktopEl) {
       desktopEl.checked = readBool(STORAGE_DESKTOP, true);
-      desktopEl.addEventListener('change', () => {
+      desktopEl.addEventListener('change', async () => {
         const on = !!desktopEl.checked;
         writeBool(STORAGE_DESKTOP, on);
-        if (on) requestNotificationPermission();
+        if (on && getNotificationPermission() === 'default') {
+          await requestNotificationPermission();
+        }
+        refreshPermissionUi(options);
       });
     }
+    refreshPermissionUi(options);
+    bindPermissionControls(options);
   }
 
   win.WidgetTurnNotify = {
     createTracker,
     bindPrefs,
     requestNotificationPermission,
+    getNotificationPermission,
+    permissionStatusText,
+    refreshPermissionUi,
     readBool,
     writeBool,
   };

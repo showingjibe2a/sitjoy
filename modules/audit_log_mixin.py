@@ -500,33 +500,24 @@ class AuditLogMixin:
 
             if method == 'POST' and action == 'cleanup':
                 data = self._read_json_body(environ)
-                log_type = (data.get('type') or 'all').strip().lower()
-                days = self._parse_int(data.get('keep_days') or data.get('days'))
-                if days is None or days < 1:
-                    days = 90
-                if days > 3650:
-                    days = 3650
+                log_type = (data.get('type') or 'access').strip().lower()
+                if log_type not in ('access', 'operation', 'all'):
+                    return self.send_json({'status': 'error', 'message': 'type 须为 access、operation 或 all'}, start_response)
                 deleted_access = 0
                 deleted_operation = 0
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if log_type in ('access', 'all'):
-                            cur.execute(
-                                "DELETE FROM access_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL %s DAY)",
-                                (days,),
-                            )
+                            cur.execute('DELETE FROM access_logs')
                             deleted_access = int(cur.rowcount or 0)
                         if log_type in ('operation', 'all'):
-                            cur.execute(
-                                "DELETE FROM operation_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL %s DAY)",
-                                (days,),
-                            )
+                            cur.execute('DELETE FROM operation_logs')
                             deleted_operation = int(cur.rowcount or 0)
                 return self.send_json({
                     'status': 'success',
                     'deleted_access': deleted_access,
                     'deleted_operation': deleted_operation,
-                    'keep_days': days,
+                    'type': log_type,
                 }, start_response)
 
             if method != 'GET':
