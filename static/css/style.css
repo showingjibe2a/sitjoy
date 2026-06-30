@@ -481,7 +481,10 @@ body.sitjoy-has-shell {
     margin-left: auto;
 }
 
-/* 顶栏逐条使用提示（SITJOY 与导航之间） */
+/* -------------------------------------------------------------------------
+ * 顶栏使用提示轮播
+ * ------------------------------------------------------------------------- */
+
 .sitjoy-usage-ticker {
     display: flex;
     align-items: center;
@@ -586,6 +589,10 @@ body.sitjoy-has-shell {
         font-size: 0.72rem;
     }
 }
+
+/* -------------------------------------------------------------------------
+ * 通知中心（顶栏铃铛）
+ * ------------------------------------------------------------------------- */
 
 .sitjoy-notification-center {
     position: relative;
@@ -752,6 +759,10 @@ button.help-dot {
     text-decoration: underline;
 }
 
+/* -------------------------------------------------------------------------
+ * 主导航与下拉菜单
+ * ------------------------------------------------------------------------- */
+
 .logo {
     font-size: 1.5rem;
     color: var(--morandi-ink);
@@ -850,6 +861,10 @@ button.help-dot {
     color: var(--morandi-bluegray);
     border-bottom-color: var(--morandi-bluegray);
 }
+
+/* -------------------------------------------------------------------------
+ * 页面布局（container / hero / card）
+ * ------------------------------------------------------------------------- */
 
 .container {
     width: 100%;
@@ -1105,7 +1120,10 @@ section.card.pm-card .pm-divider {
     margin: 0;
 }
 
-/* 弹窗内「关联下单 SKU」多行编辑（销售产品 / 规格主图等共用） */
+/* -------------------------------------------------------------------------
+ * 弹窗内关联下单 SKU 多行编辑
+ * ------------------------------------------------------------------------- */
+
 .order-link-box {
     border: 2px solid var(--morandi-sand);
     border-radius: 8px;
@@ -1168,7 +1186,10 @@ section.card.pm-card .pm-divider {
     grid-column: 1 / -1;
 }
 
-/* 表内复选框：点击单元格空白处也可切换（与 header.js 全局委托配合） */
+/* -------------------------------------------------------------------------
+ * 表内复选框（点击单元格空白切换）
+ * ------------------------------------------------------------------------- */
+
 th.sj-toggle-cb-cell,
 td.sj-toggle-cb-cell {
     cursor: pointer;
@@ -1179,7 +1200,10 @@ th.pm-th-cb-narrow {
     width: 44px;
 }
 
-/* 列表卡内分区：横向排列、可换行，避免纵向堆叠浪费高度 */
+/* -------------------------------------------------------------------------
+ * 工具条分区（pm-card-zone）
+ * ------------------------------------------------------------------------- */
+
 .pm-toolbar--zoned {
     flex-direction: row;
     flex-wrap: wrap;
@@ -1220,7 +1244,10 @@ section.card.pm-card .pm-card-zone--search {
     min-width: 0;
 }
 
-/* 卡内二级条：小标题 + 控件同一行，多块可并排换行 */
+/* -------------------------------------------------------------------------
+ * 卡内二级条（pm-card-rail / pm-card-sub）
+ * ------------------------------------------------------------------------- */
+
 .pm-card-rail {
     display: flex;
     flex-direction: row;
@@ -1263,7 +1290,10 @@ section.card.pm-card .pm-card-zone--search {
     flex-shrink: 0;
 }
 
-/* 列表顶栏：搜索条与主按钮略收紧；搜索区内标签改为微型角标式，减少字级冗余 */
+/* -------------------------------------------------------------------------
+ * 列表顶栏搜索条紧凑样式
+ * ------------------------------------------------------------------------- */
+
 .card.pm-card .form-group.pm-search,
 section.card.pm-card .form-group.pm-search {
     flex-direction: row;
@@ -1343,7 +1373,6 @@ section.card.pm-card .pm-toolbar .btn-accent {
  * pm-modal 与表单
  * ------------------------------------------------------------------------- */
 
-/* pm-modal / form adjustments for todo modal */
 .pm-modal-content h3 {
     font-size: 20px;
     color: var(--morandi-ink);
@@ -1378,7 +1407,6 @@ section.card.pm-card .pm-toolbar .btn-accent {
  * 字段帮助（label-help / 悬浮提示）
  * ------------------------------------------------------------------------- */
 
-/* Global field-help tooltip style */
 .label-help {
     display: inline-flex;
     align-items: center;
@@ -1425,10 +1453,7 @@ section.card.pm-card .pm-toolbar .btn-accent {
     display: none !important;
 }
 
-/*
-  全站说明浮层：z-index 贴近浏览器上限，保证在顶栏/表格/弹窗之上。
-  由 header.js ensureHelpDotTooltip + 全局 pointer 委托定位。
-*/
+/* 全站说明浮层（header.js ensureHelpDotTooltip + pointer 委托定位） */
 .app-help-floating-tip {
     position: fixed;
     left: 0;
@@ -1460,7 +1485,6 @@ section.card.pm-card .pm-toolbar .btn-accent {
  * 状态分段（status-segment）
  * ------------------------------------------------------------------------- */
 
-/* Status segment (shared) */
 .status-segment {
     display: inline-flex;
     gap: 0.32rem !important;
@@ -1501,7 +1525,6 @@ section.card.pm-card .pm-toolbar .btn-accent {
     background: #7fa88b; /* default to "yes" green for readability */
 }
 
-/* Final guard: keep active pills readable in all contexts */
 .status-segment .status-pill.is-active {
     color: #fff;
 }
@@ -1531,7 +1554,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
  * 表格内联输入与可编辑单元格
  * ------------------------------------------------------------------------- */
 
-/* Reusable inline table input — 全站表格单元格小输入框基准类（托管表内 28px 高见 .pm-table tbody tr td input 约 2673 行） */
+/* -------------------------------------------------------------------------
+ * 表格内联输入（inline-input）
+ * ------------------------------------------------------------------------- */
+
 .inline-input {
     display: block;
     width: 100%;

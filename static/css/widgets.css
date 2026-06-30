@@ -2573,6 +2573,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     font-weight: 600;
 }
 
+/* -------------------------------------------------------------------------
+ * 轮到我提示音（围棋 / 麻将侧栏偏好）
+ * ------------------------------------------------------------------------- */
+
 .widget-turn-notify-prefs {
     display: flex;
     flex-direction: column;

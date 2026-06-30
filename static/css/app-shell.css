@@ -250,7 +250,6 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
  * 侧栏大模块与分组标题
  * ------------------------------------------------------------------------- */
 
-/* 大模块：首页 + 分组标题 */
 .sitjoy-sidebar-link {
     display: flex;
     align-items: center;
@@ -305,6 +304,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
     height: 50%;
     background: var(--sj-variant-sidebar-accent);
 }
+
+/* -------------------------------------------------------------------------
+ * 侧栏子菜单链接
+ * ------------------------------------------------------------------------- */
 
 .sitjoy-sidebar-sub a {
     padding: 0.18rem 0.35rem 0.18rem 0.38rem;
@@ -416,6 +419,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-collapse-btn {
     border-left: 1px solid var(--sj-variant-sidebar-sub-guide);
 }
 
+/* -------------------------------------------------------------------------
+ * 侧栏折叠（仅图标）模式
+ * ------------------------------------------------------------------------- */
+
 body.sitjoy-sidebar-collapsed .sitjoy-sidebar-nav-wrap {
     display: block;
     padding: 0.24rem 0.06rem 0.48rem;
@@ -502,6 +509,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
     color: var(--sj-variant-sidebar-text-active);
 }
 
+/* -------------------------------------------------------------------------
+ * 折叠态浮出子菜单
+ * ------------------------------------------------------------------------- */
+
 .sitjoy-sidebar-flyout {
     position: fixed;
     z-index: 12050;
@@ -582,6 +593,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
     flex-direction: column;
 }
 
+/* -------------------------------------------------------------------------
+ * 主内容区顶栏
+ * ------------------------------------------------------------------------- */
+
 .sitjoy-topbar {
     flex: 0 0 auto;
     display: flex;
@@ -602,6 +617,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
     min-width: 0;
     overflow: hidden;
 }
+
+/* -------------------------------------------------------------------------
+ * 多页签栏（sitjoy-tabs）
+ * ------------------------------------------------------------------------- */
 
 .sitjoy-tabs {
     display: flex;
@@ -729,6 +748,10 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-rail-item:hover {
     display: none !important;
 }
 
+/* -------------------------------------------------------------------------
+ * 页面正文区（sitjoy-page-body）
+ * ------------------------------------------------------------------------- */
+
 .sitjoy-page-body {
     flex: 1 1 auto;
     min-height: 0;
@@ -789,7 +812,6 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-page-body > .container {
  * 侧栏底部用户区
  * ------------------------------------------------------------------------- */
 
-/* 侧栏底部：头像 + 姓名 */
 .sitjoy-sidebar-footer {
     flex: 0 0 auto;
     min-width: 0;
@@ -898,7 +920,6 @@ body.sitjoy-sidebar-collapsed .sitjoy-sidebar-user-name {
  * 账户侧滑抽屉
  * ------------------------------------------------------------------------- */
 
-/* 账户侧滑抽屉（挂到 body，浮于顶栏/弹窗之上） */
 .sitjoy-user-drawer-backdrop {
     position: fixed;
     inset: 0;
