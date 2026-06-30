@@ -47,6 +47,13 @@ class LogisticsWarehouseMixin:
             out.append(item_id)
         return out
 
+    @staticmethod
+    def _parse_yes_no(value):
+        text = str(value if value is not None else '').strip().lower()
+        if text in ('1', 'true', 'yes', 'y', '是'):
+            return 1
+        return 0
+
     def _replace_factory_order_product_links(self, conn, factory_id, order_product_ids):
         factory_num = self._parse_int(factory_id)
         if not factory_num:
@@ -193,7 +200,7 @@ class LogisticsWarehouseMixin:
                 if action == '__disabled_filter_options__':
                     column = self._parse_int(query_params.get('column', ['0'])[0])
                     search = (query_params.get('q', [''])[0] or '').strip()
-                    exact = _parse_yes_no(query_params.get('exact', ['0'])[0])
+                    exact = self._parse_yes_no(query_params.get('exact', ['0'])[0])
                     limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
                     filter_map = {
                         1: {
@@ -459,7 +466,7 @@ class LogisticsWarehouseMixin:
                     items = data.get('items') if isinstance(data, dict) else None
                     if not isinstance(items, list) or not items:
                         return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
-                    update_factory_stock = _parse_yes_no((data or {}).get('update_factory_stock'))
+                    update_factory_stock = self._parse_yes_no((data or {}).get('update_factory_stock'))
 
                     parsed_items = []
                     seen_ids = set()
@@ -570,12 +577,6 @@ class LogisticsWarehouseMixin:
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             user_id = self._get_session_user(environ)
-
-            def _parse_yes_no(value):
-                text = str(value if value is not None else '').strip().lower()
-                if text in ('1', 'true', 'yes', 'y', '是'):
-                    return 1
-                return 0
 
             def _parse_date_text(value):
                 text = (value or '').strip()
@@ -743,7 +744,7 @@ class LogisticsWarehouseMixin:
                 if action == 'filter_options':
                     column = self._parse_int(query_params.get('column', ['0'])[0])
                     search = (query_params.get('q', [''])[0] or '').strip()
-                    exact = _parse_yes_no(query_params.get('exact', ['0'])[0])
+                    exact = self._parse_yes_no(query_params.get('exact', ['0'])[0])
                     limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
                     filter_map = {
                         1: {
@@ -1012,7 +1013,7 @@ class LogisticsWarehouseMixin:
                 notes = (data.get('notes') or '').strip() or None
                 contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
-                is_completed = _parse_yes_no(data.get('is_completed'))
+                is_completed = self._parse_yes_no(data.get('is_completed'))
                 actual_completion_date = _parse_date_text(data.get('actual_completion_date'))
                 if is_completed and not actual_completion_date:
                     actual_completion_date = datetime.now().strftime('%Y-%m-%d')
@@ -1059,7 +1060,7 @@ class LogisticsWarehouseMixin:
                     items = data.get('items') if isinstance(data, dict) else None
                     if not isinstance(items, list) or not items:
                         return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
-                    update_factory_stock = _parse_yes_no((data or {}).get('update_factory_stock'))
+                    update_factory_stock = self._parse_yes_no((data or {}).get('update_factory_stock'))
 
                     parsed_items = []
                     seen_ids = set()
@@ -1072,7 +1073,7 @@ class LogisticsWarehouseMixin:
                         seen_ids.add(item_id)
                         quantity = max(0, self._parse_int(item.get('quantity')) or 0)
                         expected_date = _parse_date_text(item.get('expected_completion_date'))
-                        is_completed = _parse_yes_no(item.get('is_completed'))
+                        is_completed = self._parse_yes_no(item.get('is_completed'))
                         order_no = _normalize_order_no(item.get('order_no')) if ('order_no' in item) else None
                         has_order_no = 'order_no' in item
                         contract_no = _normalize_contract_no(item.get('contract_no')) if ('contract_no' in item) else None
@@ -1202,8 +1203,8 @@ class LogisticsWarehouseMixin:
                 notes = (data.get('notes') or '').strip() or None
                 contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
-                is_completed = _parse_yes_no(data.get('is_completed'))
-                add_to_factory_stock = _parse_yes_no(data.get('add_to_factory_stock'))
+                is_completed = self._parse_yes_no(data.get('is_completed'))
+                add_to_factory_stock = self._parse_yes_no(data.get('add_to_factory_stock'))
                 actual_completion_date = _parse_date_text(data.get('actual_completion_date'))
                 if is_completed and not actual_completion_date:
                     actual_completion_date = datetime.now().strftime('%Y-%m-%d')
