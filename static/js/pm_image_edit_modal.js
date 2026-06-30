@@ -5,6 +5,9 @@
  * - 列表行缩略图刷新：各业务页可引入 /static/js/sitjoy_row_image_refresh.js，在 hooks.onAfterSuccess 等回调里调用 SitjoyRowImageRefresh
  */
 (function () {
+  // -------------------------------------------------------------------------
+  // 通用工具与分段控件
+  // -------------------------------------------------------------------------
   function $(id) { return document.getElementById(id); }
 
   function escapeHtml(value) {
@@ -240,6 +243,9 @@
   /** 当前关联的通道图 { path_b64, storage_path, image_asset_id } 或 null */
   let channelLink = null;
 
+  // -------------------------------------------------------------------------
+  // 通道图缩略图与 NAS 关联
+  // -------------------------------------------------------------------------
   function renderChannelThumb() {
     const img = $('pmImageEditChannelImg');
     const empty = $('pmImageEditChannelEmpty');
@@ -356,6 +362,9 @@
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 推荐文件名与类型/启用/备注字段
+  // -------------------------------------------------------------------------
   function isRecommendNameEnabled() {
     return getSegmentValue($('pmImageEditRecommendNameSegment'), '1') === '1';
   }
@@ -750,6 +759,9 @@
     return variantOptions;
   }
 
+  // -------------------------------------------------------------------------
+  // 规格/面料/下单 SKU 关联选择器
+  // -------------------------------------------------------------------------
   function openVariantPicker() {
     if (!getSelectedTypeName()) {
       window.showAppToast && window.showAppToast('请先选择图片类型', true, 6000);
@@ -1374,6 +1386,9 @@
     } catch (e) {}
   }
 
+  // -------------------------------------------------------------------------
+  // 弹窗打开/关闭与提交
+  // -------------------------------------------------------------------------
   function openModal() {
     const m = $('pmImageEditModal');
     if (m) m.classList.add('active');
@@ -1588,6 +1603,9 @@
     updatePickerButtonsState();
   }
 
+  // -------------------------------------------------------------------------
+  // 一次性 DOM 注入与事件绑定
+  // -------------------------------------------------------------------------
   function bindPmImageEditModalOnce() {
     const modal = $('pmImageEditModal');
     if (!modal || modal.dataset.pmUiBound === '1') return;

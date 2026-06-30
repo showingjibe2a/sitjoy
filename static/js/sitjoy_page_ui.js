@@ -15,6 +15,9 @@
     const OPTION_PILL = 'sj-option-pill';
     const STATUS_SEGMENT_BIND_SELECTOR = '.status-segment[data-sj-status-segment]';
 
+    // -------------------------------------------------------------------------
+    // DOM 与转义工具
+    // -------------------------------------------------------------------------
     function el(root, selector) {
         const base = root && root.querySelector ? root : document;
         if (!selector) return null;
@@ -30,7 +33,9 @@
             .replace(/"/g, '&quot;');
     }
 
-    /** 读取 status-segment 当前值（data-value 或激活 pill 的 data-value） */
+    // -------------------------------------------------------------------------
+    // 状态分段（status-segment）读写与绑定
+    // -------------------------------------------------------------------------
     function getStatusSegmentValue(segment) {
         const seg = el(document, segment);
         if (!seg) return '';
@@ -86,6 +91,9 @@
         list.filter(Boolean).forEach((seg) => bindStatusSegment(seg, options));
     }
 
+    // -------------------------------------------------------------------------
+    // 筛选条（sj-option-bar）
+    // -------------------------------------------------------------------------
     /**
      * 渲染筛选/标签条（统一替代 material-type-bar / option-bar 手写逻辑）。
      *
@@ -166,6 +174,9 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 下拉、表格与模态增强
+    // -------------------------------------------------------------------------
     /** 增强本页所有原生 select（委托 header.js） */
     function enhanceSelects(root) {
         if (typeof global.initUniversalSingleSelects === 'function') {
@@ -205,6 +216,9 @@
         if (typeof binder === 'function') binder(node, onClose);
     }
 
+    // -------------------------------------------------------------------------
+    // 页面初始化入口 SitjoyPageUI.init
+    // -------------------------------------------------------------------------
     /**
      * 标准页面初始化（在 DOMContentLoaded/load 中调用一次）。
      *

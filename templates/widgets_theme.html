@@ -22,6 +22,11 @@
     </div>
     <script src="/static/js/header.js"></script>
     <script>
+        /* 主题工作室：挂载 SitjoyTheme.mountStudioPage */
+
+        // -------------------------------------------------------------------------
+        // 页面初始化
+        // -------------------------------------------------------------------------
         window.addEventListener('load', () => {
             if (window.SitjoyTheme && typeof window.SitjoyTheme.mountStudioPage === 'function') {
                 window.SitjoyTheme.mountStudioPage('sitjoyThemeStudio');

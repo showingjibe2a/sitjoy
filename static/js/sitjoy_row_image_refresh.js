@@ -10,6 +10,9 @@
 (function (global) {
   'use strict';
 
+  // -------------------------------------------------------------------------
+  // 缩略图缓存破坏与行局部刷新
+  // -------------------------------------------------------------------------
   var DEFAULT_IMG_SELECTOR = 'img[src*="/api/image-preview"]';
 
   function withCacheBust(url) {
@@ -136,6 +139,9 @@
 
   global.SitjoyRowImageRefresh = NS;
 
+  // -------------------------------------------------------------------------
+  // 懒加载缩略图 IntersectionObserver
+  // -------------------------------------------------------------------------
   var lazyThumbObserver = null;
 
   function ensureLazyThumbObserver() {

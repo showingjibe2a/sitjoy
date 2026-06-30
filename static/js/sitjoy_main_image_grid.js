@@ -5,6 +5,9 @@
 (function (global) {
   const Card = () => global.SjMediaImageCard;
 
+  // -------------------------------------------------------------------------
+  // 主图网格控制器
+  // -------------------------------------------------------------------------
   function escapeAttr(s) {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -180,6 +183,9 @@
     if (drag) this._bindDrag(grid, placeholder);
   };
 
+  // -------------------------------------------------------------------------
+  // 卡片创建、启用态与拖拽重排
+  // -------------------------------------------------------------------------
   MainImageGrid.prototype._createMainCard = function (item, index, fcOpts, drag) {
     const self = this;
     const C = Card();

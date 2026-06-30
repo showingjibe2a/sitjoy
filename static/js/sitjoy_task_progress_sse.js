@@ -5,6 +5,9 @@
 (function (global) {
     'use strict';
 
+    // -------------------------------------------------------------------------
+    // SSE / 长轮询进度监听
+    // -------------------------------------------------------------------------
     function isTerminalDone(data) {
         const payload = data && typeof data === 'object' ? data : {};
         const state = String(payload.state || '').toLowerCase();

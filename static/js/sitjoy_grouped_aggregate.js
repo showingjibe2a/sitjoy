@@ -5,6 +5,9 @@
 (function(global) {
     'use strict';
 
+    // -------------------------------------------------------------------------
+    // 表格解析与组内排序
+    // -------------------------------------------------------------------------
     function resolveBodyTableForHeaderTh(th, wantTable) {
         if (!th || !wantTable) return null;
         if (global.SitjoyManagedPmTable && typeof global.SitjoyManagedPmTable.resolveBodyTableFromHeaderTh === 'function') {
@@ -114,6 +117,9 @@
         return `<button ${parts.join(' ')}>${escapeAttrText(label)}</button>`;
     }
 
+    // -------------------------------------------------------------------------
+    // 组行折叠与表头展开/收起
+    // -------------------------------------------------------------------------
     function bindGroupRowToggle(opts) {
         const tbody = opts.tbody;
         if (!tbody || tbody.dataset.sjGroupRowToggleBound === '1') return;

@@ -1,6 +1,9 @@
 (function (global) {
     const LS_KEY = 'sj.amazonAdAdjustment.observeInterval.v1';
 
+    // -------------------------------------------------------------------------
+    // 观察间隔 localStorage 与日期推算
+    // -------------------------------------------------------------------------
     const DEFAULTS = {
         product: { days: 14, hours: 0, minutes: 0 },
         delivery: { days: 1, hours: 0, minutes: 0 },
@@ -62,6 +65,9 @@
         return d;
     }
 
+    // -------------------------------------------------------------------------
+    // 操作类型 → 商品/投放观察周期
+    // -------------------------------------------------------------------------
     /** @returns {'product'|'delivery'} */
     function observeKindFromOperationName(name) {
         const n = String(name || '').replace(/[『』【】「」]/g, '').trim();

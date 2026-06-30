@@ -5,6 +5,9 @@
 (function (global) {
   const FABRIC_FOLDER = '『面料』';
 
+  // -------------------------------------------------------------------------
+  // 路径 B64、预览 URL 与绑定合并
+  // -------------------------------------------------------------------------
   function escapeHtml(s) {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -106,6 +109,9 @@
     return selected;
   }
 
+  // -------------------------------------------------------------------------
+  // 图片类型筛选条
+  // -------------------------------------------------------------------------
   function readActiveImageType(barEl, fallback) {
     const bar = typeof barEl === 'string' ? document.getElementById(barEl) : barEl;
     if (!bar) return String(fallback || '').trim();

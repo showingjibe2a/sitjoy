@@ -11,6 +11,9 @@
 (function (global) {
   const NS = {};
 
+  // -------------------------------------------------------------------------
+  // 二项分布盈利概率与曲线数据
+  // -------------------------------------------------------------------------
   function parseNum(v) {
     if (v == null || v === '') return null;
     const n = Number(String(v).replace(/,/g, '').replace(/%/g, ''));
@@ -163,6 +166,9 @@
     return curveProbability(orders, clicks, cvrTarget);
   }
 
+  // -------------------------------------------------------------------------
+  // 曲线图表绘制与交互
+  // -------------------------------------------------------------------------
   function drawChart(canvas, chartState) {
     if (!canvas || !chartState || !chartState.points.length) return;
     const { points, meta, currentClicks, hoverClicks } = chartState;
@@ -363,6 +369,9 @@
     return '';
   }
 
+  // -------------------------------------------------------------------------
+  // 实验指标弹窗与面板渲染
+  // -------------------------------------------------------------------------
   function renderMeta(el, ctx) {
     if (!el || !ctx) return;
     const curClicks = ctx.clicks != null && ctx.clicks >= 0 ? Math.floor(ctx.clicks) : null;
@@ -646,6 +655,9 @@
     renderMeta(metaEl, ctx);
   }
 
+  // -------------------------------------------------------------------------
+  // API 拉取与 UI 绑定
+  // -------------------------------------------------------------------------
   function fetchContext(adItemId, adjustmentId) {
     const url = `/api/amazon-ad-adjustment?action=profit-probability&ad_item_id=${encodeURIComponent(adItemId)}&adjustment_id=${encodeURIComponent(adjustmentId)}`;
     return fetch(url, { credentials: 'include' }).then(r => r.json());

@@ -425,6 +425,7 @@
 <script src="/static/js/sj_media_image_card.js"></script>
 <script src="/static/js/sitjoy_main_image_grid.js"></script>
 <script>
+/* 规格主图管理：规格列表、主图网格、NAS 导入、新增/编辑规格与下单 SKU 关联 */
 (function () {
   const $ = (s) => document.querySelector(s);
   const SPECMI_LS_DUP = 'sj.specmi.promptDuplicate.v1';
@@ -432,17 +433,21 @@
   const SPECMI_LS_NAS = 'sj.specmi.nasPathB64.v1';
   const SPECMI_LS_STACK = 'sj.specmi.nasStack.v1';
   const SPECMI_LS_THUMB = 'sj.specmi.nasThumbSize.v1';
-  /** 列表「图片」列仅展示该类型的第一张主图（与销售侧白底图筛选一致） */
+
+  // -------------------------------------------------------------------------
+  // 模块级状态与常量
+  // -------------------------------------------------------------------------
+  // 列表「图片」列仅展示该类型的第一张主图（与销售侧白底图筛选一致）
   const SPECMI_LIST_THUMB_IMAGE_TYPE = '白底纯图';
 
   let specmiAllVariants = [];
   let specmiFiltered = [];
   let specmiEditingVid = 0;
-  /** 编辑弹窗：关联下单 SKU 行（与销售产品管理一致） */
+  // 编辑弹窗：关联下单 SKU 行（与销售产品管理一致）
   let specmiSelectedOrderSkus = [];
-  /** 新增规格弹窗：关联下单 SKU 行 */
+  // 新增规格弹窗：关联下单 SKU 行
   let specmiCreateSelectedOrderSkus = [];
-  /** 新增规格：用户是否手改规格名/面料（与 sales_product_management 一致） */
+  // 新增规格：用户是否手改规格名/面料（与 sales_product_management 一致）
   let specmiCreateManualFabric = false;
   let specmiCreateManualSpecName = false;
   let specmiInsideAutoComputeCreate = false;
@@ -460,10 +465,13 @@
   let specmiNasNavStack = [];
   let specmiNasSelected = new Set();
   const specmiRowSelected = new Set();
-  /** 列表缩略图：进入视口才请求，避免首屏对全部规格并发拉主图 */
+  // 列表缩略图：进入视口才请求，避免首屏对全部规格并发拉主图
   let specmiThumbObs = null;
   let specmiBvLastRows = [];
 
+  // -------------------------------------------------------------------------
+  // 编码解码与 NAS 浏览路径
+  // -------------------------------------------------------------------------
   function decodeB64Utf8(b64) {
     if (!b64) return '';
     try {
@@ -478,7 +486,7 @@
     }
   }
 
-  /** browse API 的 name 为文件系统字节 base64；仅在为合法 UTF-8 文本时解码展示 */
+  // browse API 的 name 为文件系统字节 base64；仅在为合法 UTF-8 文本时解码展示
   function specmiTryDecodeBrowseLabelB64(raw) {
     const s = String(raw || '').trim();
     if (s.length < 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return '';
@@ -540,6 +548,9 @@
     } catch (e) { return ''; }
   }
 
+  // -------------------------------------------------------------------------
+  // 通用 Toast 与主图/面料显示偏好
+  // -------------------------------------------------------------------------
   function showToast(message, isError) {
     const stack = document.getElementById('specmiToastStack');
     if (!stack) return;
@@ -565,6 +576,9 @@
   $('#specmiFabOn')?.addEventListener('click', () => { specmiShowFabric = true; localStorage.setItem(SPECMI_LS_FAB, '1'); specmiDupUi(); specmiRenderMainGrid(); });
   $('#specmiFabOff')?.addEventListener('click', () => { specmiShowFabric = false; localStorage.setItem(SPECMI_LS_FAB, '0'); specmiDupUi(); specmiRenderMainGrid(); });
 
+  // -------------------------------------------------------------------------
+  // 图片类型筛选条
+  // -------------------------------------------------------------------------
   async function specmiLoadImageTypes() {
     try {
       const resp = await fetch('/api/sales-image-type?usage=sales');
@@ -663,6 +677,9 @@
     specmiUpdateMainBulkBar();
   }
 
+  // -------------------------------------------------------------------------
+  // 规格列表、筛选与缩略图懒加载
+  // -------------------------------------------------------------------------
   function renderTable(rows) {
     specmiDisconnectThumbObs();
     const tbody = document.querySelector('#specmiTable tbody');
@@ -875,10 +892,7 @@
     return true;
   }
 
-  /**
-   * 主图上传/关联/NAS 导入/解绑后的统一刷新（对齐销售产品管理 sjRefreshSalesProductListRowThumb + renderNasMainImageList）
-   * @param {{ refreshNas?: boolean, preserveNasScroll?: boolean }} [opts]
-   */
+  // 主图上传/关联/NAS 导入/解绑后的统一刷新
   async function specmiAfterMainImageMutation(opts) {
     opts = opts || {};
     const vid = Number(specmiEditingVid || 0);
@@ -1032,6 +1046,9 @@
     specmiBvSyncSelectAllDeletable();
   }
 
+  // -------------------------------------------------------------------------
+  // 批量校验与删除
+  // -------------------------------------------------------------------------
   async function specmiOpenBatchValidate() {
     const ids = Array.from(specmiRowSelected);
     if (!ids.length) {
@@ -1132,6 +1149,9 @@
     el.className = `pm-inline-status is-visible${isErr ? ' is-error' : ''}`;
   }
 
+  // -------------------------------------------------------------------------
+  // 新增规格弹窗与下单 SKU 关联
+  // -------------------------------------------------------------------------
   async function specmiLoadCreateFormOptions() {
     const selSku = document.getElementById('specmiCreateSkuFamily');
     const selFab = document.getElementById('specmiCreateFabric');
@@ -1419,6 +1439,9 @@
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 主图网格、上传与编辑
+  // -------------------------------------------------------------------------
   async function specmiRefreshMainImages() {
     if (!specmiEditingVid) return;
     const bust = `t=${Date.now()}`;
@@ -1812,7 +1835,7 @@
     });
   }
 
-  /** 与销售页 autoComputeFabricSpec 中成本/包裹/重量叠加逻辑一致（不改动规格名/面料） */
+  // 与销售页 autoComputeFabricSpec 中成本/包裹/重量叠加逻辑一致（不改动规格名/面料）
   function specmiRecalcVariantMetrics(mode) {
     const prefix = mode === 'create' ? 'specmiCreate' : 'specmiModal';
     const list = specmiOrderLinksList(mode);
@@ -1938,6 +1961,9 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // 编辑规格、保存与详情面板
+  // -------------------------------------------------------------------------
   async function specmiSaveEdit() {
     const vid = Number(specmiEditingVid || 0) || 0;
     if (!vid) return;
@@ -2075,6 +2101,9 @@
     specmiClearVariantDetailPanel();
   }
 
+  // -------------------------------------------------------------------------
+  // NAS 导入弹窗
+  // -------------------------------------------------------------------------
   function specmiNasMode() {
     const seg = $('#specmiNasActionMode');
     return seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
@@ -2673,6 +2702,9 @@
   window.specmiCloseCopyOrderLinksModal = specmiCloseCopyOrderLinksModal;
   window.specmiSubmitBatchDeleteFromModal = specmiSubmitBatchDeleteFromModal;
 
+  // -------------------------------------------------------------------------
+  // 表格委托事件与页面启动
+  // -------------------------------------------------------------------------
   function specmiAttachSpecTableDelegatedListeners() {
     const tbl = document.getElementById('specmiTable');
     if (!tbl || tbl.dataset.specmiDelegated === '1') return;

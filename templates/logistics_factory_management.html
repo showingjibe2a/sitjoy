@@ -85,10 +85,18 @@
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
     <script>
+        /* 拼柜工厂：关联下单 SKU 多选、CRUD 与 Excel 导入 */
+
+        // -------------------------------------------------------------------------
+        // 模块级状态
+        // -------------------------------------------------------------------------
         let editId = null;
         let orderProductOptions = [];
         let selectedOrderProductIds = [];
 
+        // -------------------------------------------------------------------------
+        // 下单 SKU 多选下拉
+        // -------------------------------------------------------------------------
         function normalizeIds(value){
             if(!value) return [];
             if(Array.isArray(value)) return value.map(v => String(v));
@@ -199,6 +207,10 @@
         }
         function resetStatus(){ const el = document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+
+        // -------------------------------------------------------------------------
+        // 工厂模态 CRUD
+        // -------------------------------------------------------------------------
         function openCreateModal(){
             editId = null;
             document.getElementById('pm-modal-title').innerText = '新增工厂';
@@ -248,6 +260,10 @@
                     } else { showStatus(data.message || '操作失败', true); }
                 }).catch(err=>showStatus('请求失败: '+err, true));
         }
+
+        // -------------------------------------------------------------------------
+        // Excel 模板与关联导入
+        // -------------------------------------------------------------------------
         function downloadSkuFactoryTemplate(){
             window.location.href = '/api/order-product?action=factory_links_template';
         }
@@ -311,6 +327,10 @@
                 .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else if(window.showAppToast){ window.showAppToast(data.message || '删除失败', true, 3200); } })
                 .catch(err=>{ if(window.showAppToast){ window.showAppToast('删除失败: '+err, true, 3200); } });
         }
+
+        // -------------------------------------------------------------------------
+        // 列表加载
+        // -------------------------------------------------------------------------
         function loadList(){
             const q = document.getElementById('searchInput').value.trim();
             const url = q ? `/api/logistics-factory?q=${encodeURIComponent(q)}` : '/api/logistics-factory';

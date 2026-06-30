@@ -8,6 +8,9 @@
     const PANEL_ID = 'sitjoyCellSelectionStats';
     const MIN_NUMERIC_CELLS = 2;
 
+    // -------------------------------------------------------------------------
+    // 单元格文本解析与数值提取
+    // -------------------------------------------------------------------------
     function extractPlainTextFromCell(td, customExtract) {
         if (!td) return '';
         if (typeof customExtract === 'function') {
@@ -104,6 +107,9 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 左下角统计面板与选区事件
+    // -------------------------------------------------------------------------
     function ensurePanel() {
         let panel = document.getElementById(PANEL_ID);
         if (panel) return panel;

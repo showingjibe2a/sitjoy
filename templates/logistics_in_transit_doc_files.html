@@ -7,6 +7,7 @@
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <meta http-equiv="refresh" content="0;url=/logistics-in-transit-management">
   <script>
+    /* 旧路由占位：携带 transit_id / doc_type 重定向至在途物流管理页 */
     (function () {
       const params = new URLSearchParams(window.location.search || '');
       const transitId = Number(params.get('transit_id') || 0);

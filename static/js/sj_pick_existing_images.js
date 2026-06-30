@@ -6,6 +6,9 @@
   const api = { open: null, close: null, loadList: null };
   global.SjPickExistingImages = api;
 
+  // -------------------------------------------------------------------------
+  // 打开/关闭（委托 SitjoyNasBrowseModal）
+  // -------------------------------------------------------------------------
   function modal() {
     return global.SitjoyNasBrowseModal || null;
   }
