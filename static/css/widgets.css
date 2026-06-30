@@ -450,7 +450,11 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     max-width: calc(5.75rem * var(--mj-ui-scale, 1));
     user-select: none;
 }
-/* 上下两端：头像与信息横向排列 */
+
+/* -------------------------------------------------------------------------
+ * 玩家信息徽章布局（四向座位）
+ * ------------------------------------------------------------------------- */
+
 .mj-player-rail--top .mj-player-badge,
 .mj-player-rail--bottom .mj-player-badge {
     flex-direction: row;
@@ -548,14 +552,14 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     width: 100%;
     min-width: 0;
 }
-/* 左右两侧：庄闲在名字上方（竖向） */
+
 .mj-player-rail--left .mj-player-identity,
 .mj-player-rail--right .mj-player-identity {
     flex-direction: column;
     align-items: center;
     gap: 0.22rem;
 }
-/* 上下两端：庄闲在名字左侧（横向） */
+
 .mj-player-rail--top .mj-player-identity,
 .mj-player-rail--bottom .mj-player-identity {
     flex-direction: row;
@@ -857,7 +861,11 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 }
 .mj-actions--popup { margin: 0; padding: 0; border: none; flex-direction: row; flex-wrap: wrap; justify-content: center; }
 .mj-actions--popup .mj-actions-btns { flex-direction: row; flex-wrap: wrap; justify-content: center; }
-/* 小窗：对话框仅覆盖绿色牌面，不遮挡四周玩家信息；限制高度并可滚动 */
+
+/* -------------------------------------------------------------------------
+ * 麻将小窗：牌面区浮层对话框
+ * ------------------------------------------------------------------------- */
+
 .mj-play-popup-body .mj-table {
     container-type: size;
     container-name: mj-popup-table;
@@ -1178,7 +1186,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     padding: 0.04em;
 }
 
-/* 万：上黑下红 */
+/* -------------------------------------------------------------------------
+ * 万子牌面
+ * ------------------------------------------------------------------------- */
+
 .mj-tile-face--man {
     flex-direction: column;
     justify-content: center;
@@ -1200,7 +1211,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     letter-spacing: 0.05em;
 }
 
-/* 筒：正方牌面区 + 固定圆点尺寸，避免格子拉伸导致变形 */
+/* -------------------------------------------------------------------------
+ * 筒子牌面
+ * ------------------------------------------------------------------------- */
+
 .mj-tile-pin-board {
     display: flex;
     align-items: center;
@@ -1321,7 +1335,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     place-items: center;
 }
 
-/* 条：全牌统一竹条宽高（cqmin），无描边 */
+/* -------------------------------------------------------------------------
+ * 条子牌面
+ * ------------------------------------------------------------------------- */
+
 .mj-tile-sou-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1478,7 +1495,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     overflow: visible;
 }
 
-/* 字牌 */
+/* -------------------------------------------------------------------------
+ * 字牌
+ * ------------------------------------------------------------------------- */
+
 .mj-tile-honor-glyph {
     font-family: "STSong", "SimSun", "PingFang SC", "Hiragino Sans GB", serif;
     font-size: 0.48em;
@@ -1558,7 +1578,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     transform: translateY(-4px);
 }
 
-/* 摸牌 / 刚打出的牌：小圆角箭头标注（替代边框高亮） */
+/* -------------------------------------------------------------------------
+ * 摸牌 / 打出标注
+ * ------------------------------------------------------------------------- */
+
 .mj-tile--last-discard::after,
 .mj-tile--drawn::after {
     content: '';
@@ -1588,7 +1611,11 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     width: 0.46em;
     height: 0.54em;
 }
-/* 吃碰明杠：外来牌顶标注小三角（莫兰迪红），替代下沉 */
+
+/* -------------------------------------------------------------------------
+ * 吃碰明杠标注
+ * ------------------------------------------------------------------------- */
+
 .mj-tile--called::after {
     content: '';
     position: absolute;
@@ -2054,6 +2081,9 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     gap: 0.45rem;
 }
 
+/* -------------------------------------------------------------------------
+ * 房间加入与元信息
+ * ------------------------------------------------------------------------- */
 
 .go-play-join-group {
     display: inline-flex;
@@ -2088,7 +2118,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     box-sizing: border-box;
 }
 
-/* 主内容区（牌桌/棋盘卡片内）按钮统一为小号 */
+/* -------------------------------------------------------------------------
+ * 牌桌/棋盘卡片内紧凑按钮
+ * ------------------------------------------------------------------------- */
+
 .widget-room-board-cluster .go-play-side-btn,
 .widget-room-board-cluster .widget-board-dialog-actions .btn-secondary,
 .widget-room-board-cluster .widget-board-dialog-actions .btn-accent,
@@ -2135,6 +2168,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 .go-play-toolbar--room {
     margin: 0;
 }
+
+/* -------------------------------------------------------------------------
+ * 棋盘舞台与侧栏
+ * ------------------------------------------------------------------------- */
 
 .go-play-board-card {
     display: flex;
@@ -2221,6 +2258,11 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     background: rgba(210, 170, 80, 0.18);
     border-color: rgba(184, 140, 50, 0.4);
 }
+
+/* -------------------------------------------------------------------------
+ * 本地练习模式
+ * ------------------------------------------------------------------------- */
+
 .go-local-banner-controls {
     display: flex;
     flex-direction: column;
@@ -2290,6 +2332,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     z-index: 1;
 }
 
+/* -------------------------------------------------------------------------
+ * 侧栏状态与操作
+ * ------------------------------------------------------------------------- */
+
 .go-play-side-section {
     display: flex;
     flex-direction: column;
@@ -2350,6 +2396,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     line-height: 1.25;
     min-height: 0;
 }
+
+/* -------------------------------------------------------------------------
+ * 玩家头像与执子色
+ * ------------------------------------------------------------------------- */
 
 .go-play-players-head {
     display: flex;
@@ -2632,6 +2682,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     align-self: flex-start;
 }
 
+/* -------------------------------------------------------------------------
+ * 窄屏：棋盘/牌桌纵向堆叠
+ * ------------------------------------------------------------------------- */
+
 @media (max-width: 760px) {
     .go-play-board-cluster,
     .widget-room-board-cluster {
@@ -2681,6 +2735,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
         min-height: 3.4rem;
     }
 }
+
+/* -------------------------------------------------------------------------
+ * 棋盘渲染与棋子
+ * ------------------------------------------------------------------------- */
 
 .go-play-stage {
     display: flex;
@@ -2961,7 +3019,10 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     margin: 0;
 }
 
-/* 旧版页内浮动层（已弃用，保留样式避免残留页面错乱） */
+/* -------------------------------------------------------------------------
+ * 旧版页内浮动层（已弃用）
+ * ------------------------------------------------------------------------- */
+
 .go-play-float-dock {
     position: fixed;
     top: 72px;

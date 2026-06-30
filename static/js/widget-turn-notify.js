@@ -19,6 +19,10 @@
     { id: 'ping', label: '单音叮' },
   ];
 
+  // -------------------------------------------------------------------------
+  // 本地偏好读写
+  // -------------------------------------------------------------------------
+
   function readBool(key, defaultVal) {
     try {
       const v = win.localStorage.getItem(key);
@@ -75,6 +79,10 @@
   }
 
   let audioCtx = null;
+
+  // -------------------------------------------------------------------------
+  // Web Audio 合成与预设
+  // -------------------------------------------------------------------------
 
   function getAudioContext() {
     try {
@@ -182,6 +190,10 @@
   let titleFlashTimer = null;
   let titleFlashOriginal = '';
 
+  // -------------------------------------------------------------------------
+  // 文档标题闪烁
+  // -------------------------------------------------------------------------
+
   function flashDocumentTitle(title) {
     if (!document.hidden && document.hasFocus()) return;
     titleFlashOriginal = document.title;
@@ -219,6 +231,10 @@
     } catch (_) {}
     return true;
   }
+
+  // -------------------------------------------------------------------------
+  // 轮次追踪与去重
+  // -------------------------------------------------------------------------
 
   function createTracker(gameKey) {
     let wasMyTurn = null;
@@ -260,6 +276,10 @@
     if (volumeEl) volumeEl.disabled = !enabled;
     if (previewBtn) previewBtn.disabled = !enabled;
   }
+
+  // -------------------------------------------------------------------------
+  // 设置 UI 绑定
+  // -------------------------------------------------------------------------
 
   function bindPrefs(options) {
     const soundEl = resolveEl(options && options.soundEl);

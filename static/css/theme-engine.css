@@ -568,6 +568,10 @@ button.btn-capsule-sm.sitjoy-sidebar-collapse-btn {
     pointer-events: none;
 }
 
+/* -------------------------------------------------------------------------
+ * 窄屏：主题工作室表格
+ * ------------------------------------------------------------------------- */
+
 @media (max-width: 860px) {
     .sitjoy-theme-studio-table,
     .sitjoy-theme-studio-table thead,

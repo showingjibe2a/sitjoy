@@ -111,7 +111,10 @@
     background: rgba(207, 199, 189, 0.55);
 }
 
-/* material-type-group：条内分组（少见） */
+/* -------------------------------------------------------------------------
+ * sj-option-bar：条内分组
+ * ------------------------------------------------------------------------- */
+
 .material-type-group {
     display: flex;
     flex-wrap: wrap;
@@ -119,6 +122,9 @@
     align-items: center;
 }
 
+/* -------------------------------------------------------------------------
+ * sj-option-bar：pill 按钮模式
+ * ------------------------------------------------------------------------- */
 
 .sj-option-bar button.sj-option-pill,
 .sj-option-bar button.option-pill,
@@ -150,19 +156,20 @@
     border-color: var(--morandi-sand);
 }
 
-/* sj-form-grid-full — 表单 grid 跨列 */
+/* -------------------------------------------------------------------------
+ * 辅助工具类（表单跨列 / 负面文案 / chip 新增按钮）
+ * ------------------------------------------------------------------------- */
+
 .sj-form-grid-full,
 .pm-form-full {
     grid-column: 1 / -1;
 }
 
-/* sj-text-negative — 负面状态文案 */
 .sj-text-negative,
 .sku-market-off {
     color: #a33;
 }
 
-/* sj-chip-picker-create — chip 多选面板内「新增」绿按钮 */
 .sj-chip-picker-create,
 .feature-category-create {
     height: 34px;
@@ -345,7 +352,10 @@
     line-height: 1.45;
 }
 
-/* status-pill 焦点环：全站统一去掉默认 outline（各页勿重复写） */
+/* -------------------------------------------------------------------------
+ * status-pill 焦点环（全站统一）
+ * ------------------------------------------------------------------------- */
+
 .status-pill:focus,
 .status-pill:focus-visible,
 .status-pill:active {
@@ -353,7 +363,6 @@
     box-shadow: none;
 }
 
-/* material-type-option：遗留别名，等同 sj-option-radio */
 .material-type-option {
     margin: 0;
 }

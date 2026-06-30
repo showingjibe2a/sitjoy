@@ -104,7 +104,10 @@ button.modal-close:focus-visible {
     flex: 0 0 auto;
 }
 
-/* 无 .modal-header 时：关闭钮贴在弹窗卡片右上角 */
+/* -------------------------------------------------------------------------
+ * 无 header 时的弹窗关闭钮
+ * ------------------------------------------------------------------------- */
+
 .pm-modal-content > .modal-close,
 .modal-content > .modal-close {
     position: absolute;
@@ -428,9 +431,6 @@ body.sitjoy-has-shell {
  * 顶栏导航（legacy navbar，已由 app-shell 替代）
  * ------------------------------------------------------------------------- */
 
-/* 登录页等无壳页面仍可使用 --sj-bg-body 深色底；有壳页面由 app-shell.css 覆盖 */
-
-/* 旧横向顶栏（已由 app-shell 替代，保留样式供残留页面参考） */
 .navbar {
     width: 100%;
     min-width: var(--sitjoy-page-min-width);
@@ -458,7 +458,10 @@ body.sitjoy-has-shell {
     overflow: visible;
 }
 
-/* 仅左侧「SITJOY + 提示」区横向滚动；主导航与下拉不参与 overflow 裁切 */
+/* -------------------------------------------------------------------------
+ * legacy navbar 左侧滚动区
+ * ------------------------------------------------------------------------- */
+
 .navbar-leading {
     display: flex;
     flex: 1 1 0;
@@ -471,7 +474,6 @@ body.sitjoy-has-shell {
     scrollbar-width: thin;
 }
 
-/* 顶栏：SITJOY | 使用提示（中间自适应） | 主导航（靠右） */
 .navbar .navbar-leading > .logo {
     flex: 0 0 auto;
 }
@@ -538,7 +540,6 @@ body.sitjoy-has-shell {
     min-width: 0;
 }
 
-/* 当前一条提示：可多行截断，避免顶栏过高 */
 .sitjoy-usage-ticker-line {
     margin: 0;
     padding: 0;
@@ -924,7 +925,6 @@ button.help-dot {
  * pm-card 列表顶栏与工具条
  * ------------------------------------------------------------------------- */
 
-/* 业务列表顶栏卡片：收紧边距，风格对齐 pm-section；工具条分区由 header.js partitionPmCardToolbars 注入 .pm-card-zone */
 .card.pm-card,
 section.card.pm-card {
     padding: 0.48rem 0.62rem;
@@ -939,7 +939,6 @@ section.card.pm-card > .pm-toolbar + .pm-toolbar {
     margin-top: 0.42rem;
 }
 
-/* 列表顶栏：整体左对齐，避免 space-between + actions 撑满造成的左右留白 */
 .card.pm-card .pm-toolbar,
 section.card.pm-card .pm-toolbar {
     gap: 0.32rem;
@@ -960,7 +959,10 @@ section.card.pm-card .pm-divider {
     align-self: center;
 }
 
-/* 通用：页头副文案 / 工具栏内联筛选 / 表单说明（规格主图管理等页共用） */
+/* -------------------------------------------------------------------------
+ * 页头副文案与工具栏筛选
+ * ------------------------------------------------------------------------- */
+
 .pm-page-lead {
     color: var(--morandi-slate);
     font-size: 0.9rem;
@@ -1003,7 +1005,10 @@ section.card.pm-card .pm-divider {
     font-size: 0.9rem;
 }
 
-/* 轻量提醒框：待补全、操作前提示等（虚线暖色底，可包裹表单项） */
+/* -------------------------------------------------------------------------
+ * 轻量提醒框（pm-notice）
+ * ------------------------------------------------------------------------- */
+
 .pm-notice {
     display: flex;
     flex-direction: column;
@@ -1024,7 +1029,6 @@ section.card.pm-card .pm-divider {
     color: var(--morandi-slate);
 }
 
-/* 与父体管理等页一致：表格块与上方工具卡片留出间距 */
 .pm-table-block {
     margin-top: 0.35rem;
 }
@@ -1437,7 +1441,6 @@ section.card.pm-card .pm-toolbar .btn-accent {
     font-size: 11px;
 }
 
-/* 禁用伪元素/内嵌气泡的本地绘制：说明统一由 body 上 .app-help-floating-tip 承载（避免 overflow/stacking 裁切） */
 .help-dot::after {
     display: none !important;
     content: none !important;
@@ -1453,7 +1456,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     display: none !important;
 }
 
-/* 全站说明浮层（header.js ensureHelpDotTooltip + pointer 委托定位） */
+/* -------------------------------------------------------------------------
+ * 全站说明浮层（app-help-floating-tip）
+ * ------------------------------------------------------------------------- */
+
 .app-help-floating-tip {
     position: fixed;
     left: 0;
@@ -1582,7 +1588,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     box-shadow: 0 0 0 2px rgba(42, 36, 32, 0.1);
 }
 
-/* 可编辑字段状态色：未入库灰 / 已保存黑 / 已修改红 */
+/* -------------------------------------------------------------------------
+ * 可编辑字段状态色
+ * ------------------------------------------------------------------------- */
+
 .inline-input.is-not-persisted {
     color: #999;
 }
@@ -1590,7 +1599,10 @@ section.card.pm-card .pm-toolbar .btn-accent {
     color: #a33;
 }
 
-/* 胶囊小号按钮：正圆包裹单字/符号，尺寸小于 btn-small */
+/* -------------------------------------------------------------------------
+ * 胶囊小号按钮（btn-capsule-sm）
+ * ------------------------------------------------------------------------- */
+
 .btn-capsule-sm,
 button.btn-capsule-sm {
     --btn-capsule-sm-size: 20px;
@@ -1642,7 +1654,10 @@ button.btn-capsule-sm:active {
     transform: none;
 }
 
-/* 输入框旁胶囊按钮 + 悬浮菜单（水平展开在按钮右侧，::after / ::before 桥接间距） */
+/* -------------------------------------------------------------------------
+ * 输入框旁胶囊菜单（input-capsule-menu）
+ * ------------------------------------------------------------------------- */
+
 .input-capsule-menu {
     position: relative;
     flex: 0 0 auto;
@@ -1682,7 +1697,7 @@ button.btn-capsule-sm:active {
     width: 10px;
     height: auto;
 }
-/* 按钮靠右时改向左展开，避免超出视口 */
+
 .input-capsule-menu--panel-left .input-capsule-menu-panel {
     left: auto;
     right: calc(100% + 2px);
@@ -1738,7 +1753,10 @@ button.input-capsule-menu-item:focus {
     padding: 0.12rem 0.42rem;
 }
 
-/* 原生 date / datetime-local / month：较大触控区 */
+/* -------------------------------------------------------------------------
+ * 原生 date 输入（表单内大尺寸触控）
+ * ------------------------------------------------------------------------- */
+
 input.optional-field[type="date"],
 input.optional-field[type="datetime-local"],
 input[type="month"],
@@ -1758,7 +1776,10 @@ input.app-date-input[type="datetime-local"] {
     padding-right: 2.2rem !important;
 }
 
-/* 文本型日期时间（浮层选择）：与 .inline-input / preview-edit-input 一致，避免被上面 42px 规则抬高 */
+/* -------------------------------------------------------------------------
+ * 文本型日期时间（浮层选择器）
+ * ------------------------------------------------------------------------- */
+
 input.app-datetime-text-input,
 input.app-date-input[type="text"],
 input.optional-date-input[type="text"] {
@@ -1810,7 +1831,6 @@ input.optional-date-input[type="text"]:focus {
  * pm-layout 与工具栏
  * ------------------------------------------------------------------------- */
 
-/* 产品管理 */
 .pm-layout {
     display: grid;
     gap: 0.62rem;
@@ -1857,7 +1877,10 @@ input.optional-date-input[type="text"]:focus {
     background: rgba(74, 78, 87, 0.25);
 }
 
-/* 工具栏搜索条：必须横向排列，覆盖 .form-group 的 column 布局 */
+/* -------------------------------------------------------------------------
+ * 工具栏搜索条（pm-search）
+ * ------------------------------------------------------------------------- */
+
 .form-group.pm-search,
 .pm-search.form-group {
     flex-direction: row;
@@ -1922,7 +1945,10 @@ input.optional-date-input[type="text"]:focus {
     margin-left: 0.25rem;
 }
 
-/* 销售产品管理 / 工厂在制等：汇总模式下首列「整组展开/收起」表头按钮（.sj-agg-all-toggle） */
+/* -------------------------------------------------------------------------
+ * 汇总模式展开列（sj-agg-toggle）
+ * ------------------------------------------------------------------------- */
+
 .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-col,
 .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-cell,
 .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
@@ -1999,7 +2025,10 @@ input.optional-date-input[type="text"]:focus {
     display: none !important;
 }
 
-/* 汇总分组父行：右侧通用小编辑按钮（销售父体、工厂在制等可复用） */
+/* -------------------------------------------------------------------------
+ * 汇总分组父行操作
+ * ------------------------------------------------------------------------- */
+
 .sj-group-row-actions-cell {
     text-align: right;
     vertical-align: middle;
@@ -2053,7 +2082,10 @@ button.sj-group-row-edit-btn {
     text-overflow: ellipsis;
 }
 
-/* 全局表格数值列右对齐（pm-col-num / num / data-pm-align="num"） */
+/* -------------------------------------------------------------------------
+ * 表格数值列右对齐
+ * ------------------------------------------------------------------------- */
+
 .pm-table th.pm-col-num,
 .pm-table td.pm-col-num,
 .pm-table th.num,
@@ -2127,7 +2159,10 @@ table th.pm-col-num .perf-th-head-metric {
     box-shadow: inset 0 0 0 2px rgba(102, 99, 93, 0.44);
 }
 
-/* 在途 SKU 堆叠行：选中仅铺底色，不改 gap/padding，避免框选时布局跳动 */
+/* -------------------------------------------------------------------------
+ * 在途 SKU 堆叠行格选
+ * ------------------------------------------------------------------------- */
+
 .pm-table.is-grid-selecting td.transit-col-sku-color:has(.transit-sku-stack .pm-grid-detail-selected),
 .pm-table.is-grid-selecting td.transit-col-sku-color:has(.transit-sku-stack .pm-grid-detail-anchor),
 .pm-table.is-grid-selecting td.transit-col-sku:has(.transit-sku-stack .pm-grid-detail-selected),
@@ -2148,7 +2183,6 @@ table th.pm-col-num .perf-th-head-metric {
     overflow: visible;
 }
 
-/* 在途 SKU：相邻选中行去掉行间分隔线，底色/框线连贯；行高由模板固定，不再改 padding */
 .pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected:has(+ .transit-sku-stack-line.pm-grid-detail-selected),
 .pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected:has(+ .transit-sku-stack-line.pm-grid-detail-anchor),
 .pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor:has(+ .transit-sku-stack-line.pm-grid-detail-selected),
@@ -2557,7 +2591,6 @@ table th.pm-col-num .perf-th-head-metric {
  * 托管表冻结列（freeze-pane）
  * ------------------------------------------------------------------------- */
 
-/* Freeze-pane: pinned columns stay on the left while horizontal scrolling */
 .pm-table.is-managed-table th.pm-table-pinned-cell,
 .pm-table.is-managed-table td.pm-table-pinned-cell{
     background: linear-gradient(0deg, rgba(248, 244, 236, 0.92), rgba(248, 244, 236, 0.92));
@@ -2575,7 +2608,6 @@ table th.pm-col-num .perf-th-head-metric {
         8px 0 18px rgba(35, 28, 20, 0.06);
 }
 
-/* Sticky columns require separate border model and no overflow clipping */
 .pm-table.is-managed-table{
     border-collapse: separate !important;
     border-spacing: 0 !important;
@@ -2620,7 +2652,6 @@ table th.pm-col-num .perf-th-head-metric {
  * 托管表 sticky 表头与排序
  * ------------------------------------------------------------------------- */
 
-/* 默认单表 sticky 表头（无分离克隆表头时） */
 .pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > th,
 .pm-managed-body-wrap:not(.pm-uses-detached-header) > .pm-table.is-managed-table > thead > tr > td {
     position: sticky;
@@ -2706,7 +2737,10 @@ table th.pm-col-num .perf-th-head-metric {
     vertical-align: middle;
 }
 
-/* 业务页常给 .preview-edit-cell 设 min-width，会撑破 colgroup 导致表头/表体列错位 */
+/* -------------------------------------------------------------------------
+ * 托管表 preview-edit 列宽约束
+ * ------------------------------------------------------------------------- */
+
 .pm-table.is-managed-table td.preview-edit-cell,
 .pm-table.is-managed-table .preview-edit-cell {
     min-width: 0 !important;
@@ -2755,7 +2789,10 @@ table th.pm-col-num .perf-th-head-metric {
     box-sizing: border-box;
 }
 
-/* 表格单元格内：与下单产品预览 .inline-input / .preview-edit-input 同规格（小字、28px 高；含嵌套在 div 内的控件） */
+/* -------------------------------------------------------------------------
+ * 托管表单元格内联控件（28px 高）
+ * ------------------------------------------------------------------------- */
+
 .pm-table tbody tr td input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="file"]),
 .pm-table tbody tr td select {
     min-height: 28px !important;
@@ -2780,7 +2817,10 @@ table th.pm-col-num .perf-th-head-metric {
     box-sizing: border-box;
 }
 
-/* 广告调整 · 修改前后列表卡片：复用 .inline-input，规格对齐托管表单元格 input/textarea（非表格场景需覆盖 min-width） */
+/* -------------------------------------------------------------------------
+ * 广告调整周期卡片内联输入
+ * ------------------------------------------------------------------------- */
+
 .aa-period-card .inline-input,
 .aa-period-card input.inline-input {
     min-width: 0 !important;
@@ -2810,7 +2850,10 @@ table th.pm-col-num .perf-th-head-metric {
     box-sizing: border-box;
 }
 
-/* 全局不可编辑展示样式（纯展示块；表单内只读字段可复用 .history-text） */
+/* -------------------------------------------------------------------------
+ * 只读展示块（history-text）
+ * ------------------------------------------------------------------------- */
+
 .history-text {
     min-height: 38px;
     border: 1px solid rgba(207, 199, 189, 0.55);
@@ -2970,7 +3013,10 @@ table th.pm-col-num .perf-th-head-metric {
     border-width: 0 !important;
 }
 
-/* WebKit/Safari：visibility:collapse 常只藏内容不收回列宽；colgroup 已占位时用 display:none 清零列槽 */
+/* -------------------------------------------------------------------------
+ * WebKit 隐藏列宽修正
+ * ------------------------------------------------------------------------- */
+
 @supports (-webkit-touch-callout: none) {
     .pm-table.is-managed-table[data-pm-col-width-sum="1"] col[data-pm-col-hidden="1"],
     .pm-managed-head-table.is-managed-table[data-pm-col-width-sum="1"] col[data-pm-col-hidden="1"] {
@@ -3034,7 +3080,6 @@ table th.pm-col-num .perf-th-head-metric {
     z-index: 1;
 }
 
-/* 白卡片：恢复光标与可选中文本（壳层 user-select:none / cursor:pointer 不污染卡片内） */
 .pm-modal.active .pm-modal-content {
     cursor: auto;
     user-select: text;
@@ -3177,7 +3222,6 @@ table th.pm-col-num .perf-th-head-metric {
  * 宽弹窗滚动与固定操作栏
  * ------------------------------------------------------------------------- */
 
-/* 宽弹窗：默认整块可纵向滚动，底部 .pm-modal-actions 用 sticky 贴在卡片视口底（兼容无 .pm-modal-scroll 的旧结构） */
 .pm-modal-content--wide {
     max-width: 980px;
     max-height: calc(100vh - 64px);
@@ -3197,7 +3241,6 @@ table th.pm-col-num .perf-th-head-metric {
     z-index: 2;
 }
 
-/* 新结构：显式 .pm-modal-scroll 时仅中间滚动，操作区真正固定在卡片底部（不随正文滚动） */
 @supports selector(:has(*)) {
     .pm-modal-content--wide:has(> .pm-modal-scroll) {
         min-height: min(720px, calc(100vh - 140px));
@@ -3225,7 +3268,6 @@ table th.pm-col-num .perf-th-head-metric {
     }
 }
 
-/* 通用弹窗：若采用 .pm-modal-scroll + .pm-modal-actions 结构，则让中间滚动，底部操作栏始终可见 */
 @supports selector(:has(*)) {
     .pm-modal-content:has(> .pm-modal-scroll) {
         max-height: calc(100vh - 64px);
@@ -3567,7 +3609,10 @@ body.has-active-modal {
     white-space: nowrap;
 }
 
-/* 全站表格缩略图列（与销量预测 sf-* 一致；含 pm-table 与 sf-table） */
+/* -------------------------------------------------------------------------
+ * 表格缩略图列
+ * ------------------------------------------------------------------------- */
+
 .pm-table th.sj-th-thumb,
 .pm-table td.sj-cell-thumb,
 table.sf-table th.sf-th-thumb,
@@ -3758,7 +3803,6 @@ table.sf-table td.sf-cell-thumb {
     background: linear-gradient(90deg, #3e6f70, #5f7f64);
 }
 
-/* Semantic button aliases (keep old names for compatibility) */
 .btn-accent,
 .btn-add {
     background: linear-gradient(90deg, #4f8a8b, #6b8f71);
@@ -3816,7 +3860,6 @@ table.sf-table td.sf-cell-thumb {
     min-height: 60px;
 }
 
-/* 下单产品新增：非必填字段底纹 */
 .optional-field {
     background: rgba(236, 231, 223, 0.35) !important;
 }
@@ -3955,7 +3998,6 @@ button:hover {
  * 钉钉通知确认条
  * ------------------------------------------------------------------------- */
 
-/* 全站唯一：左下角钉钉通知确认条（询问是否发送到钉钉群；禁止用 modal/toast/confirm 替代） */
 .app-dingtalk-notify-prompt {
     position: fixed;
     left: 18px;
@@ -4087,7 +4129,6 @@ button:hover {
     transition: width 0.18s ease;
 }
 
-/* 兼容旧页面的局部上传进度条（.upload-progress / #uploadProgress），避免与右下角弹窗/操作条重叠 */
 .upload-progress,
 #uploadProgress {
     left: 18px !important;
@@ -4152,20 +4193,17 @@ footer {
  * 图库浏览布局
  * ------------------------------------------------------------------------- */
 
-/* 宽布局容器（供 gallery 使用） */
 .container--wide {
     max-width: 100%;
     padding-left: 1.1rem;
     padding-right: 1.1rem;
 }
 
-/* 提高优先级，确保宽容器覆盖 .container 的 max-width */
 .container.container--wide {
     max-width: 100%;
     width: 100%;
 }
 
-/* 文件浏览器头部，避免与上方导航重叠 */
 .header {
     padding: 1.25rem 0 0.5rem 0;
     color: var(--morandi-cream);
@@ -4180,7 +4218,6 @@ footer {
     color: var(--morandi-sand);
 }
 
-/* 面包屑与统计栏间距 */
 .breadcrumb {
     padding: 0.5rem 0.25rem;
     margin-bottom: 0.75rem;
@@ -4447,7 +4484,6 @@ footer {
  * 挂 body 浮层下拉
  * ------------------------------------------------------------------------- */
 
-/* 任意自定义下拉挂 body 后的浮层（check-select / thumb-dropdown 等） */
 .floating-dropdown-panel,
 .check-select-panel.floating-dropdown-panel,
 .thumb-dropdown-menu.floating-dropdown-panel {
@@ -4623,7 +4659,10 @@ footer {
     box-shadow: none;
 }
 
-/* Reusable multi-check picker style (checkbox options inside feature-category picker) */
+/* -------------------------------------------------------------------------
+ * Feature 多选 checkbox 模式
+ * ------------------------------------------------------------------------- */
+
 .feature-category-picker.is-multi-check .feature-category-menu {
     z-index: 3900;
 }
@@ -4673,7 +4712,10 @@ footer {
     margin-bottom: 0.45rem;
 }
 
-/* 统一下拉选单列表模板（供后续下拉菜单复用） */
+/* -------------------------------------------------------------------------
+ * 统一下拉选单列表（dropdown-menu-unified）
+ * ------------------------------------------------------------------------- */
+
 .dropdown-menu-unified {
     min-width: 240px;
     background: rgba(236, 231, 223, 0.97);
@@ -4927,7 +4969,6 @@ footer {
  * NAS / 图库浏览网格
  * ------------------------------------------------------------------------- */
 
-/* 浏览网格：自动铺满，可伸缩列数 */
 .browser-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, 220px);
@@ -4947,7 +4988,6 @@ footer {
  * NAS 主图导入浏览网格
  * ------------------------------------------------------------------------- */
 
-/* NAS 主图导入弹窗：与 gallery 同网格卡片尺寸，避免文件夹/图片混排冲突 */
 .nas-main-image-browser-grid {
     max-height: 460px;
     overflow: auto;
@@ -5018,7 +5058,6 @@ footer {
     user-select: none;
 }
 
-/* NAS image type: keep readable selected fill */
 #nasMainImageTypeBar .status-pill.is-active {
     background: #7fa88b;
     color: #fff;
@@ -5073,7 +5112,6 @@ footer {
  * 堆叠弹窗 z-index
  * ------------------------------------------------------------------------- */
 
-/* 叠在「主编辑」等同级 pm-modal 之上，避免同 z-index 下事件/命中异常 */
 #nas-main-image-import-modal.pm-modal.active,
 #specmi-nas-import-modal.pm-modal.active,
 #fabric-nas-import-modal.pm-modal.active,
@@ -5082,13 +5120,10 @@ footer {
     z-index: 15100;
 }
 
-/* 下市前发货方案迁移：须叠在编辑弹窗与 NAS 导入弹窗之上 */
 #offMarketShipMigrateModal.pm-modal.active {
     z-index: 15200;
 }
 
-/* 叠在普通 pm-modal(15000) / NAS(15100) 之上：在已有弹窗上再开短流程。
-   短表单勿包在 .pm-modal-scroll 内，否则部分浏览器下原生 <select> 选项层会被 overflow 裁切或叠层异常。 */
 .pm-modal.pm-modal--stack.active {
     z-index: 15150;
     overflow: visible;
@@ -5174,7 +5209,10 @@ a.nas-main-image-crumb:hover {
     color: #6b2a2a;
 }
 
-/* 文件/图片卡片（亮色，和深色背景分离） */
+/* -------------------------------------------------------------------------
+ * 图库文件/图片卡片（item-card）
+ * ------------------------------------------------------------------------- */
+
 .item-card {
     background: var(--morandi-cream);
     color: var(--morandi-ink);
@@ -5233,7 +5271,6 @@ a.nas-main-image-crumb:hover {
  * 主/次按钮令牌别名
  * ------------------------------------------------------------------------- */
 
-/* 主按钮 / 次按钮（令牌驱动，见 theme-engine.css） */
 .btn-primary { background: var(--sj-variant-btn-primary-bg); color: var(--sj-color-on-primary); }
 .btn-primary:hover { box-shadow: var(--sj-variant-btn-primary-shadow-hover); }
 .btn-secondary { background: var(--sj-variant-btn-secondary-bg); border: 1px solid var(--sj-variant-btn-secondary-border); color: var(--sj-color-ink); }
@@ -5246,7 +5283,6 @@ a.nas-main-image-crumb:hover {
  * 图库重命名弹窗
  * ------------------------------------------------------------------------- */
 
-/* Gallery rename modal (pm-modal based) */
 .gallery-rename-preview {
     position: relative;
     width: 100%;
@@ -5274,7 +5310,10 @@ a.nas-main-image-crumb:hover {
     border-radius: 999px !important;
 }
 
-/* 编辑图片信息：主预览 + 通道图侧栏 */
+/* -------------------------------------------------------------------------
+ * 编辑图片信息（主预览 + 通道图侧栏）
+ * ------------------------------------------------------------------------- */
+
 .pm-image-edit-preview-row {
     display: flex;
     gap: 0.85rem;
@@ -5394,7 +5433,6 @@ a.nas-main-image-crumb:hover {
  * 首页仪表盘（home-container）
  * ------------------------------------------------------------------------- */
 
-/* Home dashboard */
 .home-container {
     position: relative;
     z-index: 0;
@@ -6234,7 +6272,10 @@ a.nas-main-image-crumb:hover {
     gap: 0.5rem;
 }
 
-/* 日历嵌入式年月选择器 */
+/* -------------------------------------------------------------------------
+ * 日历嵌入式年月选择器
+ * ------------------------------------------------------------------------- */
+
 .cal-picker-wrap {
     position: relative;
 }
@@ -6437,7 +6478,10 @@ a.nas-main-image-crumb:hover {
     --ui-control-focus-shadow: 0 0 0 3px rgba(42, 36, 32, 0.10);
 }
 
-/* 单行输入、下拉、统一下拉触发器 */
+/* -------------------------------------------------------------------------
+ * ui-control：单行输入与下拉
+ * ------------------------------------------------------------------------- */
+
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
 select,
 .universal-select-trigger,
@@ -6468,7 +6512,10 @@ select,
     color: var(--morandi-ink) !important;
 }
 
-/* 文本域保持多行，但风格统一 */
+/* -------------------------------------------------------------------------
+ * ui-control：文本域
+ * ------------------------------------------------------------------------- */
+
 textarea {
     border: var(--ui-control-border) solid var(--ui-control-border-color) !important;
     border-radius: var(--ui-control-radius) !important;
@@ -6477,7 +6524,10 @@ textarea {
     box-shadow: none !important;
 }
 
-/* 必填/选填底纹规则 */
+/* -------------------------------------------------------------------------
+ * ui-control：必填/选填底纹
+ * ------------------------------------------------------------------------- */
+
 .required-field,
 input[required],
 select[required],
@@ -6499,7 +6549,10 @@ textarea.optional.has-value {
     background: var(--ui-control-bg-required) !important;
 }
 
-/* 聚焦效果统一 */
+/* -------------------------------------------------------------------------
+ * ui-control：聚焦态
+ * ------------------------------------------------------------------------- */
+
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 select:focus,
 textarea:focus,
@@ -6509,14 +6562,16 @@ textarea:focus,
     box-shadow: var(--ui-control-focus-shadow) !important;
 }
 
-/* 必填星号统一 */
+/* -------------------------------------------------------------------------
+ * ui-control：必填星号
+ * ------------------------------------------------------------------------- */
+
 .required-asterisk {
     color: #c91d1d !important;
     margin-left: 0.25rem !important;
     font-weight: 700 !important;
 }
 
-/* 当表单组含 required-field 且未手动写星号时，自动补星 */
 .form-group:has(.required-field):not(:has(label .required-asterisk)) > label::after,
 .rail-form label:has(input[required]):not(:has(.required-asterisk))::after,
 .rail-form label:has(select[required]):not(:has(.required-asterisk))::after,
@@ -6526,7 +6581,10 @@ textarea:focus,
     font-weight: 700;
 }
 
-/* 按钮统一（排除图标微按钮、小号按钮、状态 pill、应用壳层账户/抽屉项等） */
+/* -------------------------------------------------------------------------
+ * ui-control：默认按钮尺寸
+ * ------------------------------------------------------------------------- */
+
 button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.btn-small):not(.btn-capsule-sm):not(.input-capsule-menu-item):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.mj-tile--hand):not(.mj-hand-action-btn):not(.sitjoy-notification-trigger):not(.help-dot):not(.sitjoy-sidebar-user-btn):not(.sitjoy-user-drawer-item) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
@@ -6545,7 +6603,10 @@ button:not(.material-type-add):not(.material-type-pill):not(.feature-category-ad
     min-width: fit-content;
 }
 
-/* 小号按钮：toast、表格内、紧凑工具条（与 btn-secondary / btn-danger 等组合） */
+/* -------------------------------------------------------------------------
+ * ui-control：小号按钮（btn-small）
+ * ------------------------------------------------------------------------- */
+
 .btn-small,
 button.btn-small {
     min-height: var(--ui-control-height-sm);
@@ -6607,7 +6668,10 @@ button.btn-capsule-sm:active {
     transform: none;
 }
 
-/* 统一下拉选项列表风格 */
+/* -------------------------------------------------------------------------
+ * 统一下拉选项列表
+ * ------------------------------------------------------------------------- */
+
 .universal-select-search,
 .thumb-dropdown-menu input[type="text"],
 .feature-category-menu input[type="text"] {
@@ -6632,7 +6696,6 @@ button.btn-capsule-sm:active {
  * 表格工具栏紧凑控件
  * ------------------------------------------------------------------------- */
 
-/* Reusable compact controls for table toolbars */
 :root {
     --ui-compact-height: 30px;
     --ui-compact-pad-y: 0.2rem;
@@ -6700,7 +6763,10 @@ button.btn-capsule-sm:active {
     transform: translateY(-40%);
 }
 
-/* 侧栏规则框：compact 下拉占满宽度 */
+/* -------------------------------------------------------------------------
+ * 侧栏规则框 compact 下拉
+ * ------------------------------------------------------------------------- */
+
 .go-play-side-notice .universal-select-dropdown.universal-select-dropdown--compact {
     width: 100%;
     min-width: 0;
@@ -6713,7 +6779,10 @@ button.btn-capsule-sm:active {
     margin: 0 0 0.35rem;
 }
 
-/* 小号 universal-select（表格内联等）：高度与输入框一致，文案省略号，右侧为小三角留白 */
+/* -------------------------------------------------------------------------
+ * 小号 universal-select（表格内联）
+ * ------------------------------------------------------------------------- */
+
 .universal-select-dropdown.universal-select-dropdown--compact {
     width: auto;
     min-width: 0;
@@ -6754,7 +6823,10 @@ button.btn-capsule-sm:active {
     padding: 0.35rem !important;
 }
 
-/* 工具栏/行内紧凑下拉：不继承 .universal-select-dropdown 的 width:100% */
+/* -------------------------------------------------------------------------
+ * 工具栏/行内 compact 下拉宽度
+ * ------------------------------------------------------------------------- */
+
 .sf-toolbar .feature-category-dropdown.universal-select-dropdown,
 .pm-table-toolbar .feature-category-dropdown.universal-select-dropdown {
     width: auto;
@@ -6767,7 +6839,10 @@ button.btn-capsule-sm:active {
     max-width: 5.85rem;
 }
 
-/* 行内紧凑原生 select（表格/工具栏）：覆盖全局 ui-control 40px 规格 */
+/* -------------------------------------------------------------------------
+ * 行内 compact 原生 select
+ * ------------------------------------------------------------------------- */
+
 select.pm-inline-compact-select,
 .sf-toolbar select.sf-compact-select {
     box-sizing: border-box;
@@ -6821,10 +6896,10 @@ select.pm-inline-compact-select,
     font-weight: 500;
 }
 
-/* =========================
-   Shared media image grid (sales + fabric)
-   Keep one visual language; pages can add a thin modifier for accent borders.
-   ========================= */
+/* -------------------------------------------------------------------------
+ * 共享媒体图片网格（销售 + 面料）
+ * ------------------------------------------------------------------------- */
+
 .sj-media-image-grid {
     min-height: 200px;
     display: grid;
@@ -6895,7 +6970,9 @@ select.pm-inline-compact-select,
     background-color: var(--sj-media-image-canvas);
 }
 
-/* 卡片信息区排版见 main-image-manager.css */
+/* -------------------------------------------------------------------------
+ * 主图卡片删除角标
+ * ------------------------------------------------------------------------- */
 
 .sj-media-image-remove {
     position: absolute;
@@ -6949,9 +7026,10 @@ select.pm-inline-compact-select,
 
 .sj-media-image-remove-icon { position: relative; top: -1px; }
 
-/* 筛选/标签条（sj-option-bar 等）见 sitjoy-ui-patterns.css */
+/* -------------------------------------------------------------------------
+ * 多选数字单元格统计浮层
+ * ------------------------------------------------------------------------- */
 
-/* 全局：多选数字单元格时左下角求和/均值 */
 .sj-cell-stats-panel {
     position: fixed;
     left: 16px;
@@ -7017,7 +7095,10 @@ select.pm-inline-compact-select,
     max-width: 12rem;
 }
 
-/* 包裹归类计算器 / 说明弹窗 */
+/* -------------------------------------------------------------------------
+ * 包裹归类计算器说明弹窗
+ * ------------------------------------------------------------------------- */
+
 .pkg-class-explain-result {
     margin: 0 0 0.85rem;
     font-size: 1rem;
@@ -7135,7 +7216,10 @@ select.pm-inline-compact-select,
     margin-bottom: 0;
 }
 
-/* 表格预览批量编辑：右下角统一保存浮条（多页共用） */
+/* -------------------------------------------------------------------------
+ * 表格预览批量编辑保存浮条
+ * ------------------------------------------------------------------------- */
+
 .preview-savebar {
     position: fixed;
     right: 18px;

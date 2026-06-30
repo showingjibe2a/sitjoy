@@ -7,6 +7,8 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
+    /* 仓储看板页：工具条、双表头滚动、格选高亮与列宽记忆 */
+
     .board-tools { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
     .board-tools .board-sku-kind-wrap {
       display: inline-flex;
@@ -584,6 +586,10 @@
 
 <script>
 /** 仓储看板：海外仓/在途/在库/在制矩阵、货号折叠、列宽与格选 */
+
+// -------------------------------------------------------------------------
+// 模块级状态
+// -------------------------------------------------------------------------
 let boardWarehouses = [];
 let boardFactories = [];
 let boardRows = [];
@@ -1276,6 +1282,10 @@ function attachColumnResizeHandles(totalCols){
     cell.appendChild(handle);
   });
 }
+
+// -------------------------------------------------------------------------
+// 列分组、区域排序与动销格式化
+// -------------------------------------------------------------------------
 
 function regionRank(regionText){
   const text = String(regionText || '').trim();

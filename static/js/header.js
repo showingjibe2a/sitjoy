@@ -1088,9 +1088,9 @@
     let appDingtalkNotifyPromptFollowUp = null;
     const APP_DINGTALK_AUTO_SEND_KEY = 'sitjoy_dingtalk_auto_send';
 
-    /* =======================================================================
-     * 钉钉群通知（全站统一：左下角预览 → 确认发送 / 自动发送）
-     * ======================================================================= */
+    // -------------------------------------------------------------------------
+    // 钉钉群通知（全站统一：左下角预览 → 确认发送 / 自动发送）
+    // -------------------------------------------------------------------------
 
     /** 合并待发送队列并弹出预览确认框（各业务通知共用） */
     function setupAppDingtalkNotifyPrompt(cfg){
@@ -1951,6 +1951,10 @@
         scheduleLowStock();
     }
 
+    // -------------------------------------------------------------------------
+    // 字段帮助（help-dot 浮层）
+    // -------------------------------------------------------------------------
+
     function ensureHelpDotTooltip(){
         if(activeHelpDotTooltip && document.body.contains(activeHelpDotTooltip)) return activeHelpDotTooltip;
         const tooltip = document.createElement('div');
@@ -2092,6 +2096,10 @@
      * 将 .card.pm-card 内首个 .pm-toolbar 中、以 .pm-divider 分隔的工具条拆成多块分区（搜索 / 筛选 / 导入导出等），
      * 样式由 .pm-card-zone* 承载；无分隔符的页面保持原单行布局。
      */
+    // -------------------------------------------------------------------------
+    // pm-card 工具条分区
+    // -------------------------------------------------------------------------
+
     function partitionPmCardToolbars(root){
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('.card.pm-card, section.card.pm-card').forEach((card) => {
@@ -2151,6 +2159,10 @@
             });
         });
     }
+
+    // -------------------------------------------------------------------------
+    // 保存/导入结果与上传进度
+    // -------------------------------------------------------------------------
 
     function showAppResultPanel(options){
         showAppSaveResult(options);
@@ -2438,6 +2450,10 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 页面偏好 localStorage 与 SitjoyPagePrefs
+    // -------------------------------------------------------------------------
+
     function makeStorageKey(table, suffix){
         const pathKey = String(location.pathname || '/').replace(/[^a-zA-Z0-9/_-]+/g, '_');
         const tableKey = table.id || table.dataset.manageKey || 'table';
@@ -2677,6 +2693,10 @@
         }
     });
 
+    // -------------------------------------------------------------------------
+    // SitjoyLiveRefresh 轮询刷新
+    // -------------------------------------------------------------------------
+
     const liveRefreshHandlers = new Map();
     let liveRefreshLastTriggerAt = 0;
     const LIVE_REFRESH_GLOBAL_MIN_MS = 3000;
@@ -2745,6 +2765,10 @@
             runLiveRefreshHandlers(source, options);
         }
     });
+
+    // -------------------------------------------------------------------------
+    // 托管表格基础（表头 meta、列顺序、行数据）
+    // -------------------------------------------------------------------------
 
     function shouldManageTable(table){
         if(!table || table.tagName !== 'TABLE') return false;
@@ -3994,6 +4018,10 @@
         if(text) return text;
         return `字段${Number(fallbackIndex) + 1}`;
     }
+
+    // -------------------------------------------------------------------------
+    // 托管表格格选（拖选、复制粘贴）
+    // -------------------------------------------------------------------------
 
     function resolvePointerEventElement(eventOrTarget){
         let node = eventOrTarget && eventOrTarget.target != null ? eventOrTarget.target : eventOrTarget;
@@ -6866,6 +6894,10 @@
         }
     }
 
+    // -------------------------------------------------------------------------
+    // 托管表格列筛选
+    // -------------------------------------------------------------------------
+
     function ensureManagedTableColumnFilter(state){
         if(!state || !state.table || !state.table.tHead || !state.table.tHead.rows || !state.table.tHead.rows.length) return;
         const serverPagination = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
@@ -7658,6 +7690,10 @@
         pageSizeSelect.style.display = '';
     }
 
+    // -------------------------------------------------------------------------
+    // 服务端分页
+    // -------------------------------------------------------------------------
+
     function bindServerPager(tableOrSelector){
         const table = resolveTableForPagePrefs(tableOrSelector);
         if(!table) return;
@@ -8439,6 +8475,10 @@
 
     const pmRowCheckAnchorByTbody = new WeakMap();
 
+    // -------------------------------------------------------------------------
+    // 行勾选与批量操作栏
+    // -------------------------------------------------------------------------
+
     function resolvePmBatchCheckboxTable(el){
         if(!el) return null;
         const tableId = String(el.getAttribute && el.getAttribute('data-table-id') || '').trim();
@@ -9203,6 +9243,10 @@
             cell.dataset.sortOrder = String(active.order);
         });
     }
+
+    // -------------------------------------------------------------------------
+    // 表头排序
+    // -------------------------------------------------------------------------
 
     function ensureSortableHeaders(state){
         const headerRow = getPrimaryHeaderRow(state);
@@ -10710,6 +10754,10 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // App Shell：多页签 SPA 状态
+    // -------------------------------------------------------------------------
+
     const SITJOY_TABS_STORAGE_KEY = 'sitjoy_nav_tabs_v1';
     const SITJOY_SIDEBAR_COLLAPSED_KEY = 'sitjoy_sidebar_collapsed_v1';
     const SITJOY_HEADER_CACHE_KEY = 'sitjoy_header_html_v5';
@@ -10943,6 +10991,10 @@
         if(/^https?:\/\//i.test(href) && !href.startsWith(location.origin)) return false;
         return document.body.classList.contains('sitjoy-has-shell');
     }
+
+    // -------------------------------------------------------------------------
+    // SPA 页面资源（样式、脚本、DOM 注入）
+    // -------------------------------------------------------------------------
 
     function removeSitjoyPageStyles(){
         document.querySelectorAll('style[data-sitjoy-page-style], link[data-sitjoy-page-style]').forEach(el => el.remove());
@@ -11252,6 +11304,10 @@
         pruneDetachedManagedTableArtifacts();
         window.requestAnimationFrame(() => enhanceSitjoyPageContent(pageBody));
     }
+
+    // -------------------------------------------------------------------------
+    // SPA 软导航
+    // -------------------------------------------------------------------------
 
     async function sitjoyNavigateTo(rawHref, options){
         const opts = options || {};
@@ -11688,6 +11744,10 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // 侧栏折叠与 flyout
+    // -------------------------------------------------------------------------
+
     function initSitjoySidebar(){
         const sidebar = document.getElementById('sitjoySidebar');
         if(!sidebar || sidebar.dataset.sitjoySidebarBound === '1') return;
@@ -11754,6 +11814,10 @@
 
         syncSidebarActiveState();
     }
+
+    // -------------------------------------------------------------------------
+    // App Shell 布局挂载
+    // -------------------------------------------------------------------------
 
     function mountAppShellLayout(){
         const headerHost = document.getElementById('site-header');
@@ -12000,6 +12064,10 @@
     }
 
     let sitjoyUsageGuideEscapeInstalled = false;
+
+    // -------------------------------------------------------------------------
+    // 用法速览 ticker
+    // -------------------------------------------------------------------------
 
     function initSitjoyUsageGuide(){
         const tickerBtn = document.getElementById('sitjoyUsageTicker');
