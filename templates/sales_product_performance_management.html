@@ -1409,7 +1409,7 @@
                 const dirRaw = String(o.dir || 'desc').toLowerCase();
                 const dir = dirRaw === 'asc' ? 'asc' : 'desc';
                 if (allowed.has(key)) return { key, dir };
-            } catch (e) { /* ignore */ }
+            } catch (e) {}
             return null;
         }
 
@@ -1418,7 +1418,7 @@
                 const k = String(key || '').trim();
                 const d = String(dir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
                 localStorage.setItem(storageKey, JSON.stringify({ key: k, dir: d }));
-            } catch (e) { /* ignore */ }
+            } catch (e) {}
         }
 
         function loadPerfGroupOuterSortFromStorage(validSortKeys) {
@@ -2282,7 +2282,7 @@
                     const byBucket = base.groups_by_bucket || {};
                     renderGroups(byBucket[dateText] || []);
                 }
-            } catch (e) { /* ignore */ }
+            } catch (e) {}
         }
 
         function getBucketStartEnd(dateText, granularity) {
@@ -2611,7 +2611,7 @@
             wrap.appendChild(table);
             host.appendChild(wrap);
             if (typeof bindFloatingHelpDots === 'function') {
-                try { bindFloatingHelpDots(host); } catch (e) { /* ignore */ }
+                try { bindFloatingHelpDots(host); } catch (e) {}
             }
 
             host.querySelectorAll('.perf-group-toggle').forEach(btn => {
@@ -2663,7 +2663,7 @@
                 });
                 const api = window.SitjoyManagedPmTable;
                 if (api && typeof api.syncLayout === 'function') {
-                    try { api.syncLayout(table); } catch (_e) { /* ignore */ }
+                    try { api.syncLayout(table); } catch (_e) {}
                 }
             };
 
@@ -2680,10 +2680,10 @@
                 const wrap = table.closest('.perf-group-tree-wrap') || table.parentElement;
                 const api = window.SitjoyManagedPmTable;
                 if (api && typeof api.enhance === 'function' && wrap) {
-                    try { api.enhance(wrap); } catch (_e) { /* ignore */ }
+                    try { api.enhance(wrap); } catch (_e) {}
                 }
                 if (api && typeof api.invalidateLayout === 'function') {
-                    try { api.invalidateLayout(table); } catch (_e) { /* ignore */ }
+                    try { api.invalidateLayout(table); } catch (_e) {}
                 }
                 window.requestAnimationFrame(() => {
                     forceShowAllGroupColumns();

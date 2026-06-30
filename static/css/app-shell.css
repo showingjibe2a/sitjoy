@@ -122,7 +122,10 @@ body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .board-body-wrap {
     overflow: auto;
 }
 
-/* pm-layout 内声明的静态表格区（未托管 pm-table）自行滚动 */
+/* -------------------------------------------------------------------------
+ * pm-layout 静态表格区滚动（未托管 pm-table）
+ * ------------------------------------------------------------------------- */
+
 body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .sj-table-fill-host:not(:has(.pm-managed-body-wrap)) {
     overflow: auto;
 }

@@ -2127,7 +2127,7 @@
             cell.appendChild(input);
             input.focus();
             if (inputType === 'text' && input.select) {
-                try { input.select(); } catch (_e) { /* ignore */ }
+                try { input.select(); } catch (_e) {}
             }
             const finish = (commit) => {
                 if (!cell.classList.contains('is-editing')) return;
