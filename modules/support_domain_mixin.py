@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """支持/配置 Mixin - platform_type/brand/shop/certification 等。"""
 
+import re
 from urllib.parse import parse_qs
 
 _SUPPORT_DOMAIN_NAME_TABLES = frozenset({'platform_types', 'brands', 'certifications'})
@@ -72,11 +73,109 @@ class SupportDomainMixin:
             print(f'{log_label} API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _parse_platform_discount_types_list(self, raw):
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            items = raw
+        else:
+            items = re.split(r'[,，;；\n\r]+', str(raw))
+        out = []
+        seen = set()
+        for item in items:
+            text = str(item or '').strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(text[:32])
+        return out
+
+    def _encode_platform_discount_types_field(self, raw):
+        items = self._parse_platform_discount_types_list(raw)
+        return ','.join(items) if items else None
+
+    def _attach_platform_discount_types_list(self, rows):
+        for row in rows or []:
+            row['discount_types'] = self._parse_platform_discount_types_list(row.get('discount_types'))
+
+    def _support_domain_select_platform_type_rows(self, cur, keyword):
+        if keyword:
+            cur.execute(
+                """
+                SELECT id, name, discount_types, created_at
+                FROM platform_types
+                WHERE name LIKE %s
+                ORDER BY id DESC
+                """,
+                (f"%{keyword}%",),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, name, discount_types, created_at
+                FROM platform_types
+                ORDER BY id ASC
+                """
+            )
+        rows = cur.fetchall() or []
+        self._attach_platform_discount_types_list(rows)
+        return rows
+
     def handle_platform_type_api(self, environ, method, start_response):
-        """平台类型管理 API（CRUD）。"""
-        return self._handle_support_domain_name_api(
-            environ, method, start_response, table='platform_types', log_label='Platform Type'
-        )
+        """平台类型管理 API（CRUD，含折扣类型列表）。"""
+        try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            if method == 'GET':
+                keyword = query_params.get('q', [''])[0].strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        rows = self._support_domain_select_platform_type_rows(cur, keyword)
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                name = (data.get('name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
+                discount_types = self._encode_platform_discount_types_field(data.get('discount_types'))
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO platform_types (name, discount_types) VALUES (%s, %s)",
+                            (name, discount_types),
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('name') or '').strip()
+                if not item_id or not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
+                discount_types = self._encode_platform_discount_types_field(data.get('discount_types'))
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE platform_types SET name=%s, discount_types=%s WHERE id=%s",
+                            (name, discount_types, item_id),
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM platform_types WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            print(f'Platform Type API error: {str(e)}')
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_brand_api(self, environ, method, start_response):
         """品牌管理 API（CRUD）。"""

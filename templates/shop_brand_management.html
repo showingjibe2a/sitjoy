@@ -101,6 +101,10 @@
                     <label for="modalPlatformTypeName">平台名<span class="required-asterisk">*</span></label>
                     <input type="text" id="modalPlatformTypeName" class="required-field" placeholder="例如：Amazon">
                 </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalPlatformDiscountTypes" class="label-help">折扣类型<span class="help-dot" data-tip="销售产品管理「活动形式」下拉仅显示此处配置的类型；换行或逗号分隔多个。"></span></label>
+                    <textarea id="modalPlatformDiscountTypes" class="optional-field" placeholder="例如：Coupon, Promotion, BD, Sale, 直降" style="min-height: 96px;"></textarea>
+                </div>
             </div>
             <div id="platformModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -460,10 +464,22 @@
             el.innerText = '';
         }
 
+        function formatPlatformDiscountTypesInput(items) {
+            return (Array.isArray(items) ? items : []).map(x => String(x || '').trim()).filter(Boolean).join('\n');
+        }
+
+        function parsePlatformDiscountTypesInput(text) {
+            return String(text || '')
+                .split(/[,，;；\n\r]+/)
+                .map(x => x.trim())
+                .filter(Boolean);
+        }
+
         function openPlatformTypeCreateModal() {
             editPlatformTypeId = null;
             document.getElementById('pm-platform-modal-title').innerText = '新增平台类型';
             document.getElementById('modalPlatformTypeName').value = '';
+            document.getElementById('modalPlatformDiscountTypes').value = '';
             document.getElementById('platformModalSaveBtn').innerText = '保存';
             resetPlatformTypeModalStatus();
             document.getElementById('pm-platform-modal').classList.add('active');
@@ -474,6 +490,7 @@
             editPlatformTypeId = item.id;
             document.getElementById('pm-platform-modal-title').innerText = '编辑平台类型';
             document.getElementById('modalPlatformTypeName').value = item.name || '';
+            document.getElementById('modalPlatformDiscountTypes').value = formatPlatformDiscountTypesInput(item.discount_types);
             document.getElementById('platformModalSaveBtn').innerText = '保存';
             resetPlatformTypeModalStatus();
             document.getElementById('pm-platform-modal').classList.add('active');
@@ -491,8 +508,11 @@
                 showPlatformTypeModalStatus('请填写平台名', true);
                 return;
             }
+            const discount_types = parsePlatformDiscountTypesInput(
+                document.getElementById('modalPlatformDiscountTypes').value
+            );
 
-            const payload = { name: name };
+            const payload = { name: name, discount_types: discount_types };
             let method = 'POST';
             if (editPlatformTypeId) {
                 payload.id = editPlatformTypeId;

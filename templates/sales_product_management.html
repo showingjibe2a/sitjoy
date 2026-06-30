@@ -1094,6 +1094,7 @@
         // -------------------------------------------------------------------------
         let editId = null;
         let shopOptions = [];
+        let platformTypeOptions = [];
         let skuFamilyOptions = [];
         let parentItems = [];
         let orderSkuOptions = [];
@@ -1124,7 +1125,7 @@
         let salesProductCollapsedParentGroups = new Set();
         const SALES_PRODUCT_TABLE_COLSPAN = 29;
         const SALES_PARENT_GROUP_MIDDLE_COLSPAN = SALES_PRODUCT_TABLE_COLSPAN - 3;
-        const SALES_PROMOTION_ACTIVITY_TYPES = ['Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销'];
+        const SALES_PROMOTION_ACTIVITY_TYPES_FALLBACK = ['Coupon', 'Promotion', 'BD', 'Sale', '直降', '普通专享', '大促专享', '多种促销'];
         const SALES_DISCOUNT_FORM_OPTIONS = [
             { value: 'percent', label: '百分比' },
             { value: 'amount', label: '金额' },
@@ -2254,6 +2255,16 @@
             return Number.isFinite(fromShop) && fromShop > 0 ? fromShop : 0;
         }
 
+        function salesGetPlatformDiscountTypes(item) {
+            const ptId = salesResolvePlatformTypeId(item);
+            const pt = (platformTypeOptions || []).find(p => Number(p.id) === Number(ptId));
+            const configured = (pt && Array.isArray(pt.discount_types))
+                ? pt.discount_types.map(x => String(x || '').trim()).filter(Boolean)
+                : [];
+            if (configured.length) return configured;
+            return SALES_PROMOTION_ACTIVITY_TYPES_FALLBACK.slice();
+        }
+
         function salesResolveCommissionGroup(item) {
             return String((item && item.commission_group) || '').trim();
         }
@@ -2557,8 +2568,10 @@
         function renderSalesPromotionActivityCell(item) {
             const val = getSalesPreviewEffectiveValue(item, 'promotion_activity_type');
             const current = val == null ? '' : String(val);
+            const types = salesGetPlatformDiscountTypes(item).slice();
+            if (current && !types.includes(current)) types.unshift(current);
             const options = ['<option value="">—</option>'].concat(
-                SALES_PROMOTION_ACTIVITY_TYPES.map(t => `<option value="${escapeAttr(t)}"${current === t ? ' selected' : ''}>${escapeHtml(t)}</option>`)
+                types.map(t => `<option value="${escapeAttr(t)}"${current === t ? ' selected' : ''}>${escapeHtml(t)}</option>`)
             );
             return `<td class="preview-edit-cell" data-manage-col-key="活动形式" data-field-wrap="promotion_activity_type"><select class="sales-preview-select preview-edit-field" data-id="${item.id}" data-field="promotion_activity_type">${options.join('')}</select></td>`;
         }
@@ -6089,6 +6102,14 @@
         }
         window.getSalesShopOptions = function() { return shopOptions || []; };
 
+        function loadPlatformTypeOptions() {
+            return fetch('/api/platform-type').then(r => r.json()).then(data => {
+                platformTypeOptions = data.status === 'success' ? (data.items || []) : [];
+            }).catch(() => {
+                platformTypeOptions = [];
+            });
+        }
+
         function loadSkuFamilyOptions() {
             return fetch('/api/sku').then(r => r.json()).then(data => {
                 skuFamilyOptions = data.status === 'success' ? (data.items || []) : [];
@@ -6362,6 +6383,7 @@
             initSalesGroupedAggregateHelpers();
             const bootstrap = Promise.all([
                 loadShopOptions(),
+                loadPlatformTypeOptions(),
                 loadSkuFamilyOptions(),
                 loadFabricOptions(),
                 loadParentOptions(),

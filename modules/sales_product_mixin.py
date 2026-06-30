@@ -3427,12 +3427,13 @@ class SalesProductMixin:
     def _sales_discount_segments_table_ready(self, conn):
         return self._table_has_column(conn, 'sales_product_discount_segments', 'sales_product_id')
 
-    def _sales_discount_snapshot_from_mapping(self, mapping):
+    def _sales_discount_snapshot_from_mapping(self, mapping, allowed_promotion_types=None):
         if not isinstance(mapping, dict):
             mapping = {}
         return {
             'promotion_activity_type': self._normalize_sales_promotion_activity_type(
-                mapping.get('promotion_activity_type')
+                mapping.get('promotion_activity_type'),
+                allowed_types=allowed_promotion_types,
             ),
             'discount_form_type': self._normalize_sales_discount_form_type(
                 mapping.get('discount_form_type')
@@ -3681,9 +3682,58 @@ class SalesProductMixin:
                 parts.append(f'NULL AS {col}')
         return ', '.join(parts)
 
-    def _normalize_sales_promotion_activity_type(self, raw):
+    def _load_platform_discount_types_map(self, conn):
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, discount_types FROM platform_types")
+            rows = cur.fetchall() or []
+        out = {}
+        for row in rows:
+            pt_id = self._parse_int(row.get('id'))
+            if not pt_id:
+                continue
+            out[pt_id] = self._parse_platform_discount_types_list(row.get('discount_types'))
+        return out
+
+    def _load_sales_product_platform_type_ids(self, cur, conn, sales_product_ids, sp_has_shop_col):
+        ids = [self._parse_int(v) for v in (sales_product_ids or []) if self._parse_int(v)]
+        if not ids:
+            return {}
+        shop_expr = self._sales_product_shop_expr(sp_has_shop_col)
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(
+            f"""
+            SELECT sp.id, s.platform_type_id
+            FROM sales_products sp
+            LEFT JOIN shops s ON s.id = {shop_expr}
+            WHERE sp.id IN ({placeholders})
+            """,
+            tuple(ids),
+        )
+        return {
+            self._parse_int(row.get('id')): self._parse_int(row.get('platform_type_id'))
+            for row in (cur.fetchall() or [])
+            if self._parse_int(row.get('id'))
+        }
+
+    def _sales_promotion_activity_allowed_types(self, platform_type_id, discount_types_map):
+        pt_id = self._parse_int(platform_type_id)
+        if pt_id and isinstance(discount_types_map, dict):
+            configured = discount_types_map.get(pt_id) or []
+            if configured:
+                return configured
+        return list(self._SALES_PROMOTION_ACTIVITY_TYPES)
+
+    def _normalize_sales_promotion_activity_type(self, raw, allowed_types=None):
         text = (raw or '').strip()
-        return text if text in self._SALES_PROMOTION_ACTIVITY_TYPES else None
+        if not text:
+            return None
+        if allowed_types is None:
+            allowed = self._SALES_PROMOTION_ACTIVITY_TYPES
+        else:
+            allowed = {str(x).strip() for x in (allowed_types or []) if str(x).strip()}
+            if not allowed:
+                allowed = self._SALES_PROMOTION_ACTIVITY_TYPES
+        return text if text in allowed else None
 
     def _normalize_sales_discount_form_type(self, raw):
         text = (raw or '').strip().lower()
@@ -3706,9 +3756,12 @@ class SalesProductMixin:
             touched_set |= self._SALES_DISCOUNT_BUNDLE_FIELDS
         return touched_set
 
-    def _normalize_sales_discount_bundle_values(self, values):
+    def _normalize_sales_discount_bundle_values(self, values, allowed_promotion_types=None):
         values = dict(values or {})
-        promo = self._normalize_sales_promotion_activity_type(values.get('promotion_activity_type'))
+        promo = self._normalize_sales_promotion_activity_type(
+            values.get('promotion_activity_type'),
+            allowed_types=allowed_promotion_types,
+        )
         if not promo:
             values['promotion_activity_type'] = None
             values['discount_form_type'] = None
@@ -5552,7 +5605,7 @@ class SalesProductMixin:
                             'gtin': gtin,
                             'upc': upc,
                             'sale_price_usd': self._parse_float(item.get('sale_price_usd')),
-                            'promotion_activity_type': self._normalize_sales_promotion_activity_type(item.get('promotion_activity_type')),
+                            'promotion_activity_type': item.get('promotion_activity_type'),
                             'discount_form_type': self._normalize_sales_discount_form_type(item.get('discount_form_type')),
                             'actual_discount_rate': self._parse_float(item.get('actual_discount_rate')),
                             'actual_discount_amount_usd': self._parse_float(item.get('actual_discount_amount_usd')),
@@ -5573,6 +5626,24 @@ class SalesProductMixin:
                     if not row_map:
                         return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
 
+                    allowed_by_product = {}
+                    with self._get_db_connection() as conn:
+                        sp_has_shop_col_preview = self._table_has_column(conn, 'sales_products', 'shop_id')
+                        discount_types_map = self._load_platform_discount_types_map(conn)
+                        with conn.cursor() as cur:
+                            platform_type_by_product = self._load_sales_product_platform_type_ids(
+                                cur, conn, list(row_map.keys()), sp_has_shop_col_preview
+                            )
+                        for item_id in row_map:
+                            allowed = self._sales_promotion_activity_allowed_types(
+                                platform_type_by_product.get(item_id), discount_types_map
+                            )
+                            allowed_by_product[item_id] = allowed
+                            row_map[item_id]['promotion_activity_type'] = self._normalize_sales_promotion_activity_type(
+                                row_map[item_id].get('promotion_activity_type'),
+                                allowed_types=allowed,
+                            )
+
                     bundle_errors = []
                     for item_id, values in row_map.items():
                         touched = touched_map.get(item_id) or set()
@@ -5580,7 +5651,9 @@ class SalesProductMixin:
                             continue
                         expanded = self._sales_discount_bundle_expand_touched(touched)
                         touched_map[item_id] = expanded
-                        normalized = self._normalize_sales_discount_bundle_values(values)
+                        normalized = self._normalize_sales_discount_bundle_values(
+                            values, allowed_by_product.get(item_id)
+                        )
                         row_map[item_id].update(normalized)
                         err = self._validate_sales_discount_bundle_values(normalized)
                         if err:
