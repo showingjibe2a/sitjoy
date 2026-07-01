@@ -148,6 +148,7 @@ class WSGIApp(
             'widgets_theme': '组件样式',
             'widgets_go_play': '围棋对弈',
             'widgets_mahjong': '麻将',
+            'widgets_package_class': '包裹归类计算器',
         }
 
         # 将上面定义的中文名应用到权限列表里
@@ -165,7 +166,7 @@ class WSGIApp(
             {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management', 'sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'sales_order_registration_management']},
             {'key': 'amazon_ad', 'title': 'Amazon广告', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
             {'key': 'system_management', 'title': '系统管理', 'page_keys': ['system_employee_management', 'system_audit_log_management', 'system_dingtalk_notify_management', 'about']},
-            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets_theme', 'widgets_go_play', 'widgets_mahjong']},
+            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets_theme', 'widgets_go_play', 'widgets_mahjong', 'widgets_package_class']},
         ]
 
     @staticmethod

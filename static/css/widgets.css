@@ -2056,6 +2056,31 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
     max-width: 11rem;
 }
 
+.widgets-pkg-class-card #packageClassCalcResult {
+    margin-top: 0.85rem;
+    max-height: none;
+}
+
+.widgets-pkg-class-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    gap: 0.65rem 0.85rem;
+}
+
+.widgets-pkg-class-form-grid .form-group {
+    margin: 0;
+}
+
+.widgets-pkg-class-actions {
+    margin-top: 0.65rem;
+}
+
+@media (max-width: 560px) {
+    .widgets-pkg-class-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* -------------------------------------------------------------------------
  * 围棋对弈：pm-layout 与侧栏
  * ------------------------------------------------------------------------- */

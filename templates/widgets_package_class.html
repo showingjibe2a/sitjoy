@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>包裹归类计算器 - SITJOY</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/widgets.css">
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1rem;">
+            <h2>包裹归类计算器</h2>
+            <p>输入包裹三边（inch）与毛重（lbs），按 FedEx / UPS 常见阈值试算内部归类标签（LTL / Oversize / AHS-D / AHS / 小件）。</p>
+        </section>
+
+        <section class="card pm-card widgets-pkg-class-card">
+            <h3 class="label-help" style="margin-top:0;">
+                试算
+                <span class="help-dot" data-tip="三边与毛重均向上取整后排序为 S≤M≤L；围长 G=(宽+高)×2，不含长边 L；体积 V=S×M×L（立方英寸）。实际计费以承运商价表为准。"></span>
+            </h3>
+            <div id="packageClassCalcForm">
+                <div class="pm-section-body widgets-pkg-class-form-grid">
+                    <div class="form-group">
+                        <label for="pkgClassCalcLength">包裹长 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcLength">
+                    </div>
+                    <div class="form-group">
+                        <label for="pkgClassCalcWidth">包裹宽 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcWidth">
+                    </div>
+                    <div class="form-group">
+                        <label for="pkgClassCalcHeight">包裹高 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcHeight">
+                    </div>
+                    <div class="form-group">
+                        <label for="pkgClassCalcGross">毛重 (lbs)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcGross">
+                    </div>
+                </div>
+                <div class="widgets-pkg-class-actions">
+                    <button type="button" class="btn-primary" id="pkgClassCalcSubmitBtn">计算</button>
+                </div>
+            </div>
+            <div id="packageClassCalcResult"></div>
+        </section>
+    </div>
+
+    <script src="/static/js/package_class_calculator.js"></script>
+    <script src="/static/js/header.js"></script>
+    <script>
+        window.addEventListener('load', () => {
+            if (window.SitjoyPackageClass && typeof window.SitjoyPackageClass.initCalculatorPage === 'function') {
+                window.SitjoyPackageClass.initCalculatorPage();
+            }
+            if (window.bindFloatingHelpDots) bindFloatingHelpDots(document);
+        });
+    </script>
+</body>
+</html>

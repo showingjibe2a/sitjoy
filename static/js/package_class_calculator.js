@@ -35,7 +35,7 @@
         const S = dims.S;
         const M = dims.M;
         const L = dims.L;
-        const G = (S + M) * 2 + L;
+        const G = (S + M) * 2;
         const V = S * M * L;
         const W = wInt;
         if (W > 150 || L > 108 || G > 165) return 'LTL';
@@ -96,7 +96,7 @@
         const S = dims.S;
         const M = dims.M;
         const L = dims.L;
-        const G = (S + M) * 2 + L;
+        const G = (S + M) * 2;
         const V = S * M * L;
         const result = classifyPackage(rawLen, rawWid, rawHei, rawGross);
 
@@ -118,7 +118,7 @@
             {
                 title: '围长 G',
                 lines: [
-                    'G = 长 + (宽+高)×2 = ' + L + ' + (' + M + '+' + S + ')×2 = ' + L + ' + ' + (2 * (M + S)) + ' = ' + G + ' in'
+                    'G = (宽+高)×2 = (' + M + '+' + S + ')×2 = ' + G + ' in（不含长边 L）'
                 ]
             },
             {
@@ -347,21 +347,7 @@
         m.classList.add('active');
     }
 
-    function bindPackageClassModal() {
-        const m = getModalEl();
-        if (!m || m.dataset.pkgClassBound === '1') return;
-        m.dataset.pkgClassBound = '1';
-        const calcBtn = document.getElementById('pkgClassCalcSubmitBtn');
-        if (calcBtn) calcBtn.addEventListener('click', runPackageClassCalcFromForm);
-        const closeBtn = document.getElementById('packageClassCalcCloseBtn');
-        if (closeBtn) closeBtn.addEventListener('click', closePackageClassModal);
-        if (typeof window.bindPmModalBackdropClose === 'function') {
-            window.bindPmModalBackdropClose(m, closePackageClassModal);
-        } else {
-            m.addEventListener('click', function (e) {
-                if (e.target === m) closePackageClassModal();
-            });
-        }
+    function bindPackageClassFormInputs() {
         ['pkgClassCalcLength', 'pkgClassCalcWidth', 'pkgClassCalcHeight', 'pkgClassCalcGross'].forEach(function (id) {
             const el = document.getElementById(id);
             if (!el) return;
@@ -372,6 +358,35 @@
                 }
             });
         });
+    }
+
+    function bindPackageClassModal() {
+        const m = getModalEl();
+        if (!m || m.dataset.pkgClassBound === '1') return;
+        m.dataset.pkgClassBound = '1';
+        const calcBtn = document.getElementById('pkgClassCalcSubmitBtn');
+        if (calcBtn && m.contains(calcBtn)) calcBtn.addEventListener('click', runPackageClassCalcFromForm);
+        const closeBtn = document.getElementById('packageClassCalcCloseBtn');
+        if (closeBtn) closeBtn.addEventListener('click', closePackageClassModal);
+        if (typeof window.bindPmModalBackdropClose === 'function') {
+            window.bindPmModalBackdropClose(m, closePackageClassModal);
+        } else {
+            m.addEventListener('click', function (e) {
+                if (e.target === m) closePackageClassModal();
+            });
+        }
+        bindPackageClassFormInputs();
+    }
+
+    function initCalculatorPage() {
+        const form = document.getElementById('packageClassCalcForm');
+        if (!form || form.dataset.pkgClassPageBound === '1') return;
+        const modal = getModalEl();
+        if (modal && modal.contains(form)) return;
+        form.dataset.pkgClassPageBound = '1';
+        const calcBtn = document.getElementById('pkgClassCalcSubmitBtn');
+        if (calcBtn) calcBtn.addEventListener('click', runPackageClassCalcFromForm);
+        bindPackageClassFormInputs();
     }
 
     global.SitjoyPackageClass = {
@@ -385,12 +400,17 @@
         openPackageClassExplainModal: openPackageClassExplainModal,
         closePackageClassModal: closePackageClassModal,
         bindPackageClassModal: bindPackageClassModal,
+        initCalculatorPage: initCalculatorPage,
         runPackageClassCalcFromForm: runPackageClassCalcFromForm
     };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', bindPackageClassModal);
+        document.addEventListener('DOMContentLoaded', function () {
+            bindPackageClassModal();
+            initCalculatorPage();
+        });
     } else {
         bindPackageClassModal();
+        initCalculatorPage();
     }
 }(typeof window !== 'undefined' ? window : this));

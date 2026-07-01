@@ -1151,7 +1151,7 @@ class OrderManagementMixin:
         """美国小件网络尺寸类归类（与 FedEx / UPS Service Guide 常见阈值对齐，用于内部标签）。
 
         S,M,L 为三边向上取整后的升序（英寸），故 L 为长边；毛重 W 为向上取整磅数。
-        G = L + (M+S)*2 为围长（长+(宽+高)×2，其中宽=M、高=S）；V = S*M*L 为立方英寸。
+        G = (M+S)*2 为围长（(宽+高)×2，其中宽=M、高=S，不含长边 L）；V = S*M*L 为立方英寸。
 
         判定顺序（后者不得越过前者已命中项）：
         1) LTL：超出小件承运上限（与 FedEx Ground Unauthorized / UPS 包裹上限同向）——
@@ -1168,7 +1168,7 @@ class OrderManagementMixin:
         """
         if S is None or M is None or L is None or weight_lb_int is None:
             return None
-        G = (S + M) * 2 + L
+        G = (S + M) * 2
         V = int(S) * int(M) * int(L)
         W = int(weight_lb_int)
 
@@ -1354,7 +1354,7 @@ class OrderManagementMixin:
                         'edge_mid_in': M,
                         'edge_long_in': L,
                         'gross_weight_lb_ceiled': w_int,
-                        'girth_in': (S + M) * 2 + L,
+                        'girth_in': (S + M) * 2,
                         'volume_cu_in': S * M * L,
                         'package_class_old': old_cls,
                         'package_class_new': cls,

@@ -188,6 +188,7 @@ PAGE_TEMPLATE_MAP = {
     '/widgets/go-play/board': ('templates/widgets_go_play_board.html', 'widgets_go_play'),
     '/widgets/mahjong': ('templates/widgets_mahjong.html', 'widgets_mahjong'),
     '/widgets/mahjong/table': ('templates/widgets_mahjong_table.html', 'widgets_mahjong'),
+    '/widgets/package-class': ('templates/widgets_package_class.html', 'widgets_package_class'),
 }
 
 # -------------------------------------------------------------------------
