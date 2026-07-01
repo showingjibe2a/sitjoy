@@ -14,18 +14,85 @@
             align-items: start;
             width: 100%;
             min-width: 0;
+            justify-content: start;
         }
-        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aplus) > .container,
+        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aplus) > .container {
+            overflow: visible;
+            display: block;
+            flex: none;
+            min-height: auto;
+        }
         body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aplus) {
             overflow: auto;
         }
-        body.sitjoy-has-shell .sitjoy-page-body .pm-layout.pm-layout--aplus {
+        body.sitjoy-has-shell .sitjoy-page-body .pm-layout.pm-layout--aplus,
+        body.sitjoy-has-shell .sitjoy-page-body.sj-page-fill-scroll .pm-layout.pm-layout--aplus {
             display: block;
+            flex: none;
             overflow: visible;
+            min-height: auto;
         }
-        .ap-left-col { width: max-content; max-width: 100%; }
-        .ap-left-stack { display: grid; gap: 0.75rem; width: fit-content; max-width: 100%; }
-        .ap-search-card, .ap-version-card { width: 100%; box-sizing: border-box; }
+        .pm-layout.pm-layout--aplus > .ap-grid {
+            min-width: 0;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
+        }
+        .pm-layout.pm-layout--aplus .ap-left-col {
+            min-width: 0;
+            width: max-content;
+            max-width: 100%;
+            justify-self: start;
+        }
+        .pm-layout.pm-layout--aplus .ap-mid-col,
+        .pm-layout.pm-layout--aplus .ap-right-col {
+            min-width: 0;
+        }
+        .ap-left-col {
+            width: max-content;
+            max-width: 100%;
+            overflow-x: visible;
+            overflow-y: visible;
+        }
+        .ap-left-stack {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+            width: fit-content;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .ap-search-card, .ap-version-card {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .ap-version-card {
+            flex: 0 0 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .ap-version-table-host {
+            flex: 0 0 auto;
+            min-height: 0;
+            width: fit-content;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .ap-version-table-host .pm-managed-body-wrap {
+            width: fit-content;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .ap-version-table-host .pm-table {
+            width: max-content;
+            min-width: 100%;
+            margin: 0;
+            color: var(--morandi-ink);
+        }
         .ap-field-row { display: flex; flex-direction: column; gap: 0.2rem; }
         .ap-field-row label { font-size: 0.78rem; color: var(--morandi-slate); font-weight: 600; }
         .ap-field-row select, .ap-field-row input[type="text"] {
@@ -34,17 +101,20 @@
         }
         .ap-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 0.45rem; }
         .ap-filter-grid .ap-field-row--wide { grid-column: 1 / -1; }
-        .ap-list-wrap { overflow: auto; max-height: calc(100vh - 280px); }
-        .ap-version-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 0.84rem; }
-        .ap-version-table th, .ap-version-table td {
-            border-bottom: 1px solid rgba(207,199,189,0.45); padding: 0.42rem 0.55rem; text-align: left; white-space: nowrap;
-        }
-        .ap-version-table thead th { background: rgba(245,239,229,0.85); font-weight: 600; position: sticky; top: 0; z-index: 1; }
-        .ap-version-table tbody tr { cursor: pointer; }
-        .ap-version-table tbody tr:hover { background: rgba(207,199,189,0.22); }
-        .ap-version-table tbody tr.is-active { background: rgba(155,74,74,0.12); }
+        .ap-version-table-host .pm-table th,
+        .ap-version-table-host .pm-table td { color: var(--morandi-ink); }
+        .ap-version-table-host .pm-table tbody tr { cursor: pointer; }
+        .ap-version-table-host .pm-table tbody tr.is-active { background: rgba(155, 74, 74, 0.12); }
         .ap-mid-col, .ap-right-col { padding: 0.75rem 0.85rem; min-width: 0; }
-        .ap-mid-col { display: flex; flex-direction: column; gap: 0.55rem; }
+        .ap-mid-col { display: flex; flex-direction: column; gap: 0.55rem; min-height: 420px; }
+        .ap-mid-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+        .ap-mid-footer {
+            flex: 0 0 auto; display: flex; gap: 0.45rem; align-items: center;
+            padding-top: 0.55rem; border-top: 1px solid rgba(207, 199, 189, 0.35);
+        }
+        .ap-mid-footer .ap-type-select {
+            flex: 1 1 auto; min-width: 7.5rem !important; max-width: 14rem !important; width: auto !important;
+        }
         .ap-right-col { display: flex; flex-direction: column; gap: 0.65rem; min-height: 420px; }
         .ap-module-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: calc(100vh - 320px); overflow: auto; }
         .ap-module-item {
@@ -56,23 +126,24 @@
         .ap-module-item__title { font-weight: 700; font-size: 0.86rem; }
         .ap-module-item__meta { font-size: 0.78rem; color: var(--morandi-slate); }
         .ap-module-actions { display: flex; flex-direction: column; gap: 0.2rem; }
-        .ap-image-list { display: flex; flex-direction: column; gap: 0.45rem; }
-        .ap-image-row {
-            display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem;
-            border: 1px solid var(--morandi-sand); border-radius: 8px; background: #fff;
-        }
-        .ap-image-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; }
-        .ap-image-row__meta { flex: 1; min-width: 0; font-size: 0.8rem; color: var(--morandi-slate); overflow: hidden; text-overflow: ellipsis; }
         .ap-preview-box {
             border: 1px solid var(--morandi-sand); border-radius: 10px; background: #fff;
             padding: 0.75rem; min-height: 200px; overflow: auto;
         }
         .ap-preview-box img { max-width: 100%; border-radius: 8px; display: block; }
+        .ap-preview-stack { display: flex; flex-direction: column; gap: 1rem; }
+        .ap-preview-group-block { margin-bottom: 0.65rem; }
+        .ap-preview-group-block:last-child { margin-bottom: 0; }
+        .ap-preview-group-label { font-size: 0.78rem; font-weight: 600; color: var(--morandi-slate); margin-bottom: 0.35rem; }
+        .ap-edit-block { display: flex; flex-direction: column; gap: 0.45rem; }
+        .ap-edit-block__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.45rem; }
+        .ap-edit-type-label { font-size: 0.84rem; font-weight: 600; color: var(--morandi-ink); }
+        .ap-device-flags { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; font-size: 0.8rem; color: var(--morandi-ink); }
+        .ap-device-flags label { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0; cursor: pointer; }
         .ap-toolbar-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
         .ap-section-title { margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--morandi-ink); }
         @media (max-width: 1100px) {
             .ap-grid { grid-template-columns: 1fr; }
-            .ap-list-wrap { max-height: 320px; }
         }
     </style>
 </head>
@@ -109,8 +180,11 @@
                             </div>
                         </div>
                         <div class="card pm-card ap-version-card">
-                            <h3 class="ap-section-title" style="margin-bottom:0.5rem;">版本列表</h3>
-                            <div class="ap-list-wrap" id="versionListHost">
+                            <h3 class="ap-section-title label-help" style="margin-bottom:0.5rem;">
+                                版本列表
+                                <span class="help-dot" data-tip="点击行选择版本；支持列筛选、排序与分页。"></span>
+                            </h3>
+                            <div class="ap-version-table-host" id="versionListHost">
                                 <div class="pm-muted pm-text-center">加载中…</div>
                             </div>
                         </div>
@@ -118,49 +192,83 @@
                 </div>
 
                 <div class="card pm-card ap-mid-col">
-                    <div class="ap-toolbar-row" style="justify-content:space-between;">
-                        <h3 class="ap-section-title">布局与排序</h3>
-                        <div class="status-segment status-segment--inline" id="deviceSegment" data-sj-status-segment data-value="desktop">
-                            <button type="button" class="status-pill status-pill--yes" data-value="desktop">电脑</button>
-                            <button type="button" class="status-pill status-pill--no" data-value="mobile">手机</button>
-                        </div>
-                    </div>
-                    <div class="pm-muted" id="midHint">请先选择左侧版本</div>
-                    <div id="modulePanel" class="pm-u-hidden">
-                        <div class="ap-toolbar-row">
-                            <select id="newImageTypeSelect" class="inline-input" style="flex:1; min-width:140px;"></select>
-                            <button class="btn-accent btn-small" type="button" onclick="addGroup()">新增栏目</button>
-                        </div>
+                    <h3 class="ap-section-title label-help">
+                        布局与排序
+                        <span class="help-dot" data-tip="选择版本后可拖拽排序栏目；底部选择图片类型并新增栏目。"></span>
+                    </h3>
+                    <div id="modulePanel" class="ap-mid-body pm-u-hidden">
                         <div id="moduleList" class="ap-module-list"></div>
-                        <div id="layoutEditPanel" class="pm-u-hidden" style="margin-top:0.55rem;">
-                            <div class="pm-muted" id="layoutTypeHint" style="margin-bottom:0.35rem;"></div>
-                            <textarea id="layoutJsonTextarea" class="optional-field" rows="10" spellcheck="false"
-                                style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.82rem;box-sizing:border-box;"></textarea>
-                            <div class="ap-toolbar-row" style="margin-top:0.45rem;">
-                                <button class="btn-primary btn-small" type="button" onclick="saveImageTypeLayout()">保存布局 JSON</button>
-                            </div>
-                        </div>
+                    </div>
+                    <div id="midAddFooter" class="ap-mid-footer pm-u-hidden">
+                        <select id="newImageTypeSelect" class="pm-inline-compact-select ap-type-select" data-universal-compact="1" data-universal-no-search="1" aria-label="图片类型"></select>
+                        <button class="btn-accent btn-small" type="button" onclick="addGroup()">新增</button>
                     </div>
                 </div>
 
                 <div class="card pm-card ap-right-col">
-                    <h3 class="ap-section-title">栏目编辑与预览</h3>
-                    <div class="pm-muted" id="rightHint">点击中间栏目进行编辑</div>
+                    <h3 class="ap-section-title label-help">
+                        栏目编辑与预览
+                        <span class="help-dot" data-tip="未选栏目时按顺序预览全部模块（电脑与手机）；选中栏目后可编辑布局 JSON 与图片。"></span>
+                    </h3>
+                    <div id="rightEmpty" class="pm-muted-block pm-text-center">请先选择版本</div>
+                    <div id="fullPreviewPanel" class="ap-preview-stack pm-u-hidden">
+                        <section class="ap-preview-section">
+                            <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
+                                电脑预览
+                                <span class="help-dot" data-tip="按栏目顺序上下衔接展示（仅含适用电脑的图片）。"></span>
+                            </h4>
+                            <div id="fullPreviewDesktop"></div>
+                        </section>
+                        <section class="ap-preview-section">
+                            <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
+                                手机预览
+                                <span class="help-dot" data-tip="按栏目顺序上下衔接展示（仅含适用手机的图片）。"></span>
+                            </h4>
+                            <div id="fullPreviewMobile"></div>
+                        </section>
+                    </div>
                     <div id="editorPanel" class="pm-u-hidden">
-                        <div class="pm-muted" id="editorTypeHint" style="margin-bottom:0.35rem;"></div>
-                        <div class="ap-toolbar-row">
-                            <label class="ap-field-row" style="flex-direction:row;align-items:center;gap:0.35rem;margin:0;">
-                                <input type="checkbox" id="imgApplyMobile" checked onchange="syncImageDeviceFlags()"> 手机
-                            </label>
-                            <label class="ap-field-row" style="flex-direction:row;align-items:center;gap:0.35rem;margin:0;">
-                                <input type="checkbox" id="imgApplyDesktop" checked onchange="syncImageDeviceFlags()"> 电脑
-                            </label>
-                            <input id="uploadInput" type="file" multiple accept="image/*" style="max-width:180px;font-size:0.8rem;">
-                            <button class="btn-accent btn-small" type="button" onclick="uploadModuleImages()">上传图片</button>
+                        <div class="ap-edit-block">
+                            <div class="ap-edit-block__head">
+                                <span class="label-help">
+                                    <span class="ap-edit-type-label" id="editorTypeLabel"></span>
+                                    <span class="help-dot" data-tip="图片类型由 image_asset 关联解析。"></span>
+                                </span>
+                                <div class="status-segment status-segment--inline" id="deviceSegment" data-sj-status-segment data-value="desktop">
+                                    <button type="button" class="status-pill status-pill--yes" data-value="desktop">电脑</button>
+                                    <button type="button" class="status-pill status-pill--no" data-value="mobile">手机</button>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
+                                    布局 JSON
+                                    <span class="help-dot" id="layoutJsonHelp" data-tip="保存后写入对应图片类型。"></span>
+                                </h4>
+                                <textarea id="layoutJsonTextarea" class="optional-field" rows="8" spellcheck="false"
+                                    style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.82rem;box-sizing:border-box;margin-top:0.35rem;"></textarea>
+                                <div class="ap-toolbar-row" style="margin-top:0.4rem;">
+                                    <button class="btn-primary btn-small" type="button" onclick="saveImageTypeLayout()">保存布局 JSON</button>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
+                                    图片
+                                    <span class="help-dot" data-tip="点击虚线框选择图片，选中后自动上传；上传框始终保留以便继续添加。"></span>
+                                </h4>
+                                <div class="ap-device-flags" style="margin:0.35rem 0 0.45rem;">
+                                    <label><input type="checkbox" id="imgApplyMobile" checked> 适用手机</label>
+                                    <label><input type="checkbox" id="imgApplyDesktop" checked> 适用电脑</label>
+                                </div>
+                                <div id="imageGrid" class="sj-thumb-grid"></div>
+                            </div>
+                            <div>
+                                <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
+                                    当前栏目预览
+                                    <span class="help-dot" data-tip="按当前电脑/手机切换与布局 JSON 渲染单栏预览。"></span>
+                                </h4>
+                                <div id="previewBox" class="ap-preview-box pm-muted" style="margin-top:0.35rem;">暂无预览</div>
+                            </div>
                         </div>
-                        <div id="imageList" class="ap-image-list"></div>
-                        <div class="ap-section-title" style="margin-top:0.35rem;">预览</div>
-                        <div id="previewBox" class="ap-preview-box pm-muted">暂无预览</div>
                     </div>
                 </div>
             </div>
@@ -245,15 +353,21 @@
             if (!currentVersion) {
                 aplusImageTypes = [];
                 fillSelect(document.getElementById('newImageTypeSelect'), [], 'id', 'name', false);
+                refreshCompactSelect(document.getElementById('newImageTypeSelect'));
                 return Promise.resolve();
             }
-            const dev = getEditDevice();
-            const url = '/api/image-type?usage=aplus&include_disabled=0&device=' + encodeURIComponent(dev)
+            const url = '/api/image-type?usage=aplus&include_disabled=0'
                 + '&platform_type_id=' + encodeURIComponent(currentVersion.platform_type_id);
             return fetch(url).then(r => r.json()).then(data => {
                 aplusImageTypes = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
                 fillSelect(document.getElementById('newImageTypeSelect'), aplusImageTypes, 'id', 'name', false);
+                refreshCompactSelect(document.getElementById('newImageTypeSelect'));
             });
+        }
+
+        function refreshCompactSelect(el) {
+            if (!el) return;
+            if (window.initUniversalSingleSelects) initUniversalSingleSelects(el.parentElement || el);
         }
 
         function buildGroups() {
@@ -312,14 +426,102 @@
             });
         }
 
+        function enhanceVersionTable() {
+            const table = document.getElementById('apVersionTable');
+            if (!table || !window.SitjoyManagedTable) return;
+            SitjoyManagedTable.enhance(table.closest('.ap-version-table-host') || document);
+            if (window.bindFloatingHelpDots) bindFloatingHelpDots(table.closest('.ap-version-table-host') || document);
+            bindApVersionTableResizeObserver();
+            scheduleSyncApLeftStackWidth();
+        }
+
+        function apVersionTableContentWidth(table) {
+            const el = table || document.getElementById('apVersionTable');
+            if (!el) return 0;
+            const cssW = el.style.getPropertyValue('--pm-managed-table-width');
+            if (cssW) {
+                const n = parseFloat(cssW);
+                if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+            }
+            return Math.ceil(el.scrollWidth || el.offsetWidth || 0);
+        }
+
+        function resetApLeftStackWidth() {
+            const stack = document.querySelector('.ap-left-stack');
+            const leftCol = document.querySelector('.ap-left-col');
+            const host = document.getElementById('versionListHost');
+            if (stack) stack.style.width = '';
+            if (leftCol) {
+                leftCol.style.width = '';
+                leftCol.style.maxWidth = '';
+            }
+            if (host) host.style.width = '';
+            const listWrap = host ? host.querySelector('.pm-managed-body-wrap') : null;
+            if (listWrap) listWrap.style.width = '';
+        }
+
+        function syncApLeftStackWidth() {
+            const stack = document.querySelector('.ap-left-stack');
+            const leftCol = document.querySelector('.ap-left-col');
+            const versionCard = document.querySelector('.ap-version-card');
+            const host = document.getElementById('versionListHost');
+            const table = document.getElementById('apVersionTable');
+            if (!stack) return;
+            if (!table || !host) {
+                resetApLeftStackWidth();
+                return;
+            }
+            const cs = getComputedStyle(versionCard || stack);
+            const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+            const listWrap = host.querySelector('.pm-managed-body-wrap') || host;
+            const listBorderX = (parseFloat(getComputedStyle(listWrap).borderLeftWidth) || 0)
+                + (parseFloat(getComputedStyle(listWrap).borderRightWidth) || 0);
+            const toolbar = host.querySelector('.pm-table-toolbar');
+            const contentW = apVersionTableContentWidth(table);
+            const bodyW = Math.ceil(contentW + listBorderX);
+            const toolbarW = toolbar ? Math.ceil(toolbar.scrollWidth) : 0;
+            const hostInnerW = Math.max(bodyW, toolbarW);
+            const outerW = Math.ceil(hostInnerW + padX);
+            stack.style.width = `${outerW}px`;
+            if (leftCol) {
+                leftCol.style.width = `${outerW}px`;
+                leftCol.style.maxWidth = `${outerW}px`;
+            }
+            host.style.width = `${hostInnerW}px`;
+            listWrap.style.width = `${bodyW}px`;
+            table.style.width = `${contentW}px`;
+        }
+
+        let _apStackWidthRaf = null;
+        function scheduleSyncApLeftStackWidth() {
+            if (_apStackWidthRaf) return;
+            _apStackWidthRaf = requestAnimationFrame(() => {
+                _apStackWidthRaf = null;
+                syncApLeftStackWidth();
+            });
+        }
+
+        function bindApVersionTableResizeObserver() {
+            const host = document.getElementById('versionListHost');
+            if (!host || typeof ResizeObserver === 'undefined') return;
+            if (window._apVersionTableRo) {
+                try { window._apVersionTableRo.disconnect(); } catch (_e) {}
+            }
+            window._apVersionTableRo = new ResizeObserver(() => scheduleSyncApLeftStackWidth());
+            window._apVersionTableRo.observe(host);
+            const table = document.getElementById('apVersionTable');
+            if (table) window._apVersionTableRo.observe(table);
+        }
+
         function renderVersionTable(items) {
             const host = document.getElementById('versionListHost');
             const list = Array.isArray(items) ? items : [];
             if (!list.length) {
-                host.innerHTML = '<div class="pm-muted pm-text-center">暂无版本</div>';
+                host.innerHTML = '<div class="pm-muted-block pm-text-center">暂无版本</div>';
+                resetApLeftStackWidth();
                 return;
             }
-            host.innerHTML = `<table class="ap-version-table"><thead><tr>
+            host.innerHTML = `<table class="pm-table pm-table--compact" id="apVersionTable"><thead><tr>
                 <th>版本</th><th>平台</th><th>货号</th><th>更新</th>
             </tr></thead><tbody>${list.map(v => {
                 const active = currentVersion && Number(currentVersion.id) === Number(v.id) ? 'is-active' : '';
@@ -331,6 +533,7 @@
                     <td>${esc(updated)}</td>
                 </tr>`;
             }).join('')}</tbody></table>`;
+            enhanceVersionTable();
         }
 
         function selectVersion(id) {
@@ -353,8 +556,7 @@
 
         function loadAssets() {
             if (!currentVersion) return Promise.resolve();
-            const dev = getEditDevice();
-            return fetch('/api/aplus-version-assets?aplus_version_id=' + encodeURIComponent(currentVersion.id) + '&device=' + encodeURIComponent(dev))
+            return fetch('/api/aplus-version-assets?aplus_version_id=' + encodeURIComponent(currentVersion.id))
                 .then(r => r.json())
                 .then(data => {
                     if (!data || data.status !== 'success') throw new Error(data.message || '素材加载失败');
@@ -364,21 +566,18 @@
         }
 
         function renderMiddle() {
-            const hint = document.getElementById('midHint');
             const panel = document.getElementById('modulePanel');
-            const layoutPanel = document.getElementById('layoutEditPanel');
+            const footer = document.getElementById('midAddFooter');
             if (!currentVersion) {
-                hint.classList.remove('pm-u-hidden');
                 panel.classList.add('pm-u-hidden');
-                hint.textContent = '请先选择左侧版本';
+                footer.classList.add('pm-u-hidden');
                 return;
             }
-            hint.classList.add('pm-u-hidden');
             panel.classList.remove('pm-u-hidden');
+            footer.classList.remove('pm-u-hidden');
             const list = document.getElementById('moduleList');
             if (!currentGroups.length) {
-                list.innerHTML = '<div class="pm-muted">暂无栏目，请选择图片类型后新增</div>';
-                layoutPanel.classList.add('pm-u-hidden');
+                list.innerHTML = '<div class="pm-muted-block pm-text-center" style="padding:0.65rem;font-size:0.82rem;">暂无栏目</div>';
                 return;
             }
             list.innerHTML = currentGroups.map(g => {
@@ -397,46 +596,91 @@
                     </div>
                 </div>`;
             }).join('');
-            const grp = getSelectedGroup();
-            if (!grp || !grp.image_type_id) {
-                layoutPanel.classList.add('pm-u-hidden');
-                return;
-            }
-            layoutPanel.classList.remove('pm-u-hidden');
-            const typeObj = resolveImageTypeForGroup(grp.sort_order);
-            document.getElementById('layoutTypeHint').textContent = '布局 JSON 来自图片类型「' + (typeObj?.name || grp.image_type_name || '') + '」，保存后写入图片类型';
-            const field = layoutJsonField(getEditDevice());
-            document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
         }
 
         function selectGroup(sortOrder) {
-            selectedSortOrder = Number(sortOrder || 0) || null;
+            const so = Number(sortOrder || 0);
+            selectedSortOrder = (selectedSortOrder === so) ? null : so;
             renderMiddle();
             renderRight();
         }
 
-        function renderRight() {
-            const hint = document.getElementById('rightHint');
-            const panel = document.getElementById('editorPanel');
-            const grp = getSelectedGroup();
-            if (!currentVersion || !grp) {
-                hint.classList.remove('pm-u-hidden');
-                panel.classList.add('pm-u-hidden');
-                hint.textContent = currentVersion ? '点击中间栏目进行编辑' : '请先选择版本';
-                return;
-            }
-            hint.classList.add('pm-u-hidden');
-            panel.classList.remove('pm-u-hidden');
-            const typeLabel = grp.image_type_name || (grp.image_type_id ? ('类型#' + grp.image_type_id) : '未绑定类型');
-            document.getElementById('editorTypeHint').textContent = '图片类型：' + typeLabel + '（image_type_id 取自 image_asset）';
-            renderImageList();
-            renderPreview();
+        function assetsForGroup(sortOrder, device) {
+            return currentAssets
+                .filter(a => Number(a.sort_order) === Number(sortOrder))
+                .filter(a => device === 'mobile' ? a.apply_mobile : a.apply_desktop)
+                .sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order) || Number(a.id) - Number(b.id));
         }
 
         function groupAssets() {
-            return currentAssets
-                .filter(a => Number(a.sort_order) === Number(selectedSortOrder))
-                .sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order) || Number(a.id) - Number(b.id));
+            if (!selectedSortOrder) return [];
+            return assetsForGroup(selectedSortOrder, getEditDevice());
+        }
+
+        function renderRight() {
+            const fullPanel = document.getElementById('fullPreviewPanel');
+            const editorPanel = document.getElementById('editorPanel');
+            const rightEmpty = document.getElementById('rightEmpty');
+            if (!currentVersion) {
+                fullPanel.classList.add('pm-u-hidden');
+                editorPanel.classList.add('pm-u-hidden');
+                rightEmpty.classList.remove('pm-u-hidden');
+                return;
+            }
+            rightEmpty.classList.add('pm-u-hidden');
+            const grp = getSelectedGroup();
+            if (!grp) {
+                fullPanel.classList.remove('pm-u-hidden');
+                editorPanel.classList.add('pm-u-hidden');
+                renderFullPreview();
+                if (window.bindFloatingHelpDots) bindFloatingHelpDots(fullPanel);
+                return;
+            }
+            fullPanel.classList.add('pm-u-hidden');
+            editorPanel.classList.remove('pm-u-hidden');
+            const typeLabel = grp.image_type_name || (grp.image_type_id ? ('类型#' + grp.image_type_id) : '未绑定类型');
+            document.getElementById('editorTypeLabel').textContent = typeLabel;
+            const helpDot = document.getElementById('layoutJsonHelp');
+            if (helpDot) helpDot.setAttribute('data-tip', '布局 JSON 来自图片类型「' + typeLabel + '」，保存后写入图片类型');
+            const typeObj = resolveImageTypeForGroup(grp.sort_order);
+            const field = layoutJsonField(getEditDevice());
+            document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
+            renderImageGrid();
+            renderSinglePreview();
+            if (window.bindFloatingHelpDots) bindFloatingHelpDots(editorPanel);
+        }
+
+        function renderFullPreviewForDevice(hostId, device) {
+            const host = document.getElementById(hostId);
+            if (!host) return;
+            if (!currentGroups.length) {
+                host.innerHTML = '<div class="ap-preview-box pm-muted">暂无栏目</div>';
+                return;
+            }
+            host.innerHTML = currentGroups.map(g => {
+                const typeLabel = g.image_type_name || (g.image_type_id ? ('类型#' + g.image_type_id) : '未绑定类型');
+                const typeObj = resolveImageTypeForGroup(g.sort_order);
+                const field = layoutJsonField(device);
+                const modules = parseLayoutModules(typeObj && typeObj[field]);
+                const imgs = assetsForGroup(g.sort_order, device);
+                let inner = '';
+                if (modules.length) {
+                    inner = modules.map(m => renderModuleHtml(m, imgs)).join('');
+                } else if (imgs.length) {
+                    inner = imgs.map(it => {
+                        const src = storagePathToPreviewUrl(it.storage_path);
+                        return src ? `<img src="${src}" style="margin-bottom:0.5rem;" alt="">` : '';
+                    }).join('');
+                } else {
+                    inner = '<div class="pm-muted" style="font-size:0.8rem;">暂无图片</div>';
+                }
+                return `<div class="ap-preview-group-block"><div class="ap-preview-group-label">${esc(typeLabel)}</div><div class="ap-preview-box">${inner}</div></div>`;
+            }).join('');
+        }
+
+        function renderFullPreview() {
+            renderFullPreviewForDevice('fullPreviewDesktop', 'desktop');
+            renderFullPreviewForDevice('fullPreviewMobile', 'mobile');
         }
 
         function storagePathToPreviewUrl(storagePath) {
@@ -448,54 +692,68 @@
             } catch { return ''; }
         }
 
-        function renderImageList() {
+        function renderImageGrid() {
+            const host = document.getElementById('imageGrid');
+            if (!host) return;
             const list = groupAssets();
-            const host = document.getElementById('imageList');
-            if (!list.length) {
-                host.innerHTML = '<div class="pm-muted">本栏目暂无图片</div>';
-                return;
-            }
-            host.innerHTML = list.map(it => {
+            let html = list.map(it => {
                 const src = it.storage_path ? storagePathToPreviewUrl(it.storage_path) : '';
-                const flags = `${it.apply_mobile ? '手机' : ''}${it.apply_mobile && it.apply_desktop ? '·' : ''}${it.apply_desktop ? '电脑' : ''}`;
-                return `<div class="ap-image-row">
+                return `<div class="sj-thumb-tile">
                     <img src="${src}" alt="" onerror="this.style.display='none'">
-                    <div class="ap-image-row__meta">#${it.item_sort_order} ${esc(it.storage_path || '')}<br>${esc(flags)}</div>
-                    <div style="display:flex;flex-direction:column;gap:0.2rem;">
-                        <button class="btn-secondary btn-small" type="button" onclick="moveImage(${it.id},-1)">↑</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="moveImage(${it.id},1)">↓</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="triggerReplace(${it.id})">换图</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="removeImage(${it.id})">移除</button>
-                    </div>
+                    <button type="button" class="sj-thumb-tile__remove" aria-label="删除" onclick="event.stopPropagation();removeImage(${it.id})">×</button>
                 </div>`;
             }).join('');
+            html += `<label class="sj-file-drop" id="apUploadDrop">
+                <input type="file" class="sj-file-drop__input" accept="image/*" multiple>
+                <span class="sj-file-drop__icon" aria-hidden="true">+</span>
+                <span class="sj-file-drop__text">选择图片</span>
+            </label>`;
+            host.innerHTML = html;
+            const inp = host.querySelector('.sj-file-drop__input');
+            if (inp) {
+                inp.addEventListener('change', function() {
+                    const files = inp.files ? Array.from(inp.files) : [];
+                    inp.value = '';
+                    if (files.length) uploadFilesSequential(files);
+                });
+            }
         }
 
-        let replaceLinkId = 0;
-        function triggerReplace(linkId) {
-            replaceLinkId = Number(linkId || 0);
-            const inp = document.createElement('input');
-            inp.type = 'file';
-            inp.accept = 'image/*';
-            inp.onchange = () => {
-                if (!inp.files || !inp.files[0]) return;
-                const fd = new FormData();
-                fd.append('aplus_version_id', String(currentVersion.id));
-                fd.append('sort_order', String(selectedSortOrder));
-                const grp = getSelectedGroup();
-                if (grp && grp.image_type_id) fd.append('image_type_id', String(grp.image_type_id));
-                fd.append('replace_link_id', String(replaceLinkId));
-                fd.append('file', inp.files[0]);
-                fetch('/api/aplus-upload', { method: 'POST', body: fd })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (!data || data.status !== 'success') throw new Error(data.message || '替换失败');
-                        toast('已替换图片', false);
-                        return loadAssets().then(() => { renderImageList(); renderPreview(); renderMiddle(); });
-                    })
-                    .catch(err => toast(String(err), true));
-            };
-            inp.click();
+        function uploadFilesSequential(files) {
+            if (!currentVersion || !selectedSortOrder) return toast('请选择栏目', true);
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) return toast('请为栏目选择图片类型', true);
+            const drop = document.getElementById('apUploadDrop');
+            if (drop) drop.classList.add('is-uploading');
+            const applyMobile = document.getElementById('imgApplyMobile').checked ? '1' : '0';
+            const applyDesktop = document.getElementById('imgApplyDesktop').checked ? '1' : '0';
+            let chain = Promise.resolve();
+            files.forEach(file => {
+                chain = chain.then(() => {
+                    const fd = new FormData();
+                    fd.append('aplus_version_id', String(currentVersion.id));
+                    fd.append('sort_order', String(selectedSortOrder));
+                    fd.append('image_type_id', String(grp.image_type_id));
+                    fd.append('apply_mobile', applyMobile);
+                    fd.append('apply_desktop', applyDesktop);
+                    fd.append('file', file, file.name);
+                    return fetch('/api/aplus-upload', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data || data.status !== 'success') throw new Error(data.message || '上传失败');
+                        });
+                });
+            });
+            chain.then(() => loadAssets())
+                .then(() => {
+                    toast('上传成功', false);
+                    renderImageGrid();
+                    renderSinglePreview();
+                    renderMiddle();
+                    if (!getSelectedGroup()) renderFullPreview();
+                })
+                .catch(err => toast(String(err), true))
+                .finally(() => { if (drop) drop.classList.remove('is-uploading'); });
         }
 
         function addGroup() {
@@ -577,65 +835,28 @@
                 const hit = aplusImageTypes.find(t => Number(t.id) === Number(grp.image_type_id));
                 if (hit) hit[field] = jsonText;
                 pageStatus('布局 JSON 已保存到图片类型', false);
+                renderSinglePreview();
             }).catch(err => pageStatus(String(err), true));
         }
 
-        function uploadModuleImages() {
-            if (!currentVersion || !selectedSortOrder) return toast('请选择栏目', true);
-            const grp = getSelectedGroup();
-            if (!grp || !grp.image_type_id) return toast('请为栏目选择图片类型', true);
-            const input = document.getElementById('uploadInput');
-            const files = input.files ? Array.from(input.files) : [];
-            if (!files.length) return toast('请选择文件', true);
-            const fd = new FormData();
-            fd.append('aplus_version_id', String(currentVersion.id));
-            fd.append('sort_order', String(selectedSortOrder));
-            fd.append('image_type_id', String(grp.image_type_id));
-            fd.append('apply_mobile', document.getElementById('imgApplyMobile').checked ? '1' : '0');
-            fd.append('apply_desktop', document.getElementById('imgApplyDesktop').checked ? '1' : '0');
-            files.forEach(f => fd.append('file', f, f.name));
-            fetch('/api/aplus-upload', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(data => {
-                    if (!data || data.status !== 'success') throw new Error(data.message || '上传失败');
-                    toast('上传成功', false);
-                    input.value = '';
-                    return loadAssets().then(() => { renderImageList(); renderPreview(); renderMiddle(); });
-                })
-                .catch(err => toast(String(err), true));
-        }
-
-        function moveImage(linkId, delta) {
-            const list = groupAssets();
-            const idx = list.findIndex(x => Number(x.id) === Number(linkId));
-            const j = idx + Number(delta || 0);
-            if (idx < 0 || j < 0 || j >= list.length) return;
-            const a = list[idx];
-            const b = list[j];
-            const items = [
-                { id: a.id, item_sort_order: b.item_sort_order },
-                { id: b.id, item_sort_order: a.item_sort_order }
-            ];
-            fetch('/api/aplus-version-assets', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items })
-            }).then(r => r.json()).then(data => {
-                if (!data || data.status !== 'success') throw new Error(data.message || '排序失败');
-                return loadAssets();
-            }).then(() => { renderImageList(); renderPreview(); }).catch(err => toast(String(err), true));
+        function refreshAfterAssetChange() {
+            return loadAssets().then(() => {
+                renderImageGrid();
+                renderSinglePreview();
+                renderMiddle();
+                if (!getSelectedGroup()) renderFullPreview();
+            });
         }
 
         function removeImage(linkId) {
-            if (!confirm('移除该图片？')) return;
             fetch('/api/aplus-version-assets', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: Number(linkId) })
             }).then(r => r.json()).then(data => {
                 if (!data || data.status !== 'success') throw new Error(data.message || '移除失败');
-                return loadAssets();
-            }).then(() => { renderImageList(); renderPreview(); renderMiddle(); }).catch(err => toast(String(err), true));
+                return refreshAfterAssetChange();
+            }).catch(err => toast(String(err), true));
         }
 
         function parseLayoutModules(raw) {
@@ -647,7 +868,7 @@
             } catch { return []; }
         }
 
-        function renderPreview() {
+        function renderSinglePreview() {
             const grp = getSelectedGroup();
             const box = document.getElementById('previewBox');
             if (!grp) { box.innerHTML = '暂无预览'; return; }
@@ -730,12 +951,14 @@
         function onDeviceChange() {
             editDevice = getEditDevice();
             if (!currentVersion) return;
-            selectedSortOrder = null;
-            loadAplusImageTypes().then(() => loadAssets()).then(() => {
-                currentGroups = buildGroups();
-                renderMiddle();
-                renderRight();
-            });
+            if (getSelectedGroup()) {
+                const grp = getSelectedGroup();
+                const typeObj = resolveImageTypeForGroup(grp.sort_order);
+                const field = layoutJsonField(editDevice);
+                document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
+                renderImageGrid();
+                renderSinglePreview();
+            }
         }
 
         function boot() {
@@ -744,6 +967,8 @@
             if (window.SitjoyPageUI) {
                 SitjoyPageUI.bindStatusSegment('#deviceSegment', { onChange: onDeviceChange });
             }
+            if (window.bindFloatingHelpDots) bindFloatingHelpDots(document);
+            window.addEventListener('resize', () => scheduleSyncApLeftStackWidth());
         }
 
         window.addEventListener('load', () => {

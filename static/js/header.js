@@ -11167,6 +11167,7 @@
     function pmLayoutPrefersPageScroll(pmLayout){
         if(!pmLayout) return false;
         if(pmLayout.classList.contains('pm-layout--aa-adjust')) return true;
+        if(pmLayout.classList.contains('pm-layout--aplus')) return true;
         if(pmLayout.classList.contains('pm-layout--page-scroll')) return true;
         return pmLayout.querySelectorAll(':scope > .card').length >= 2;
     }
