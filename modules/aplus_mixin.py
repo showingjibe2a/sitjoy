@@ -339,7 +339,8 @@ class AplusMixin:
                                    a.apply_mobile, a.apply_desktop,
                                    ia.storage_path, ia.description, ia.image_type_id,
                                    it.name AS image_type_name,
-                                   it.aplus_layout_json_mobile, it.aplus_layout_json_desktop
+                                   it.aplus_layout_json_mobile, it.aplus_layout_json_desktop,
+                                   it.aplus_share_images
                             FROM aplus_version_assets a
                             LEFT JOIN image_assets ia ON ia.id=a.image_asset_id
                             LEFT JOIN image_types it ON it.id=ia.image_type_id
@@ -453,6 +454,7 @@ class AplusMixin:
             if not vid:
                 return self.send_json({'status': 'error', 'message': 'Missing aplus_version_id'}, start_response)
             sort_order = max(1, self._parse_int(form.getfirst('sort_order', '') or '1') or 1)
+            requested_item_sort = self._parse_int(form.getfirst('item_sort_order', ''))
             apply_mobile = int(self._aplus_parse_bool(form.getfirst('apply_mobile', '1'), default=True))
             apply_desktop = int(self._aplus_parse_bool(form.getfirst('apply_desktop', '1'), default=True))
             image_type_id = self._parse_int(form.getfirst('image_type_id', ''))
@@ -484,6 +486,23 @@ class AplusMixin:
                         conn, int(vid), int(replace_link_id), files_list, folder_abs, start_response,
                     )
 
+                if requested_item_sort > 0:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id FROM aplus_version_assets
+                            WHERE aplus_version_id=%s AND sort_order=%s AND item_sort_order=%s
+                            LIMIT 1
+                            """,
+                            (int(vid), int(sort_order), int(requested_item_sort)),
+                        )
+                        slot_row = cur.fetchone() or {}
+                    slot_link_id = self._parse_int(slot_row.get('id'))
+                    if slot_link_id:
+                        return self._aplus_replace_linked_asset(
+                            conn, int(vid), int(slot_link_id), files_list, folder_abs, start_response,
+                        )
+
                 type_id, _type_name = self._resolve_aplus_image_type(
                     conn, image_type_id=image_type_id, image_type_name=image_type_name, platform_type_id=platform_type_id,
                 )
@@ -511,11 +530,14 @@ class AplusMixin:
                     return self.send_json({'status': 'error', 'message': '请选择有效的A+图片类型'}, start_response)
 
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT COALESCE(MAX(item_sort_order), 0) AS mx FROM aplus_version_assets WHERE aplus_version_id=%s AND sort_order=%s",
-                        (int(vid), int(sort_order)),
-                    )
-                    next_item_sort = int((cur.fetchone() or {}).get('mx') or 0)
+                    if requested_item_sort > 0:
+                        next_item_sort = int(requested_item_sort)
+                    else:
+                        cur.execute(
+                            "SELECT COALESCE(MAX(item_sort_order), 0) AS mx FROM aplus_version_assets WHERE aplus_version_id=%s AND sort_order=%s",
+                            (int(vid), int(sort_order)),
+                        )
+                        next_item_sort = int((cur.fetchone() or {}).get('mx') or 0)
 
                 created = 0
                 asset_ids = []
@@ -532,7 +554,9 @@ class AplusMixin:
                         content = b''
                     if not content:
                         continue
-                    next_item_sort += 1
+                    if requested_item_sort <= 0:
+                        next_item_sort += 1
+                    item_sort_order = int(next_item_sort)
                     sha = self._sha256_hex(content)
                     ext = os.path.splitext(filename)[1].lower() or '.jpg'
                     base = os.path.splitext(filename)[0]
@@ -560,7 +584,7 @@ class AplusMixin:
                                     (aplus_version_id, image_asset_id, sort_order, apply_mobile, apply_desktop, item_sort_order)
                                 VALUES (%s, %s, %s, %s, %s, %s)
                                 """,
-                                (int(vid), int(new_aid), int(sort_order), apply_mobile, apply_desktop, int(next_item_sort)),
+                                (int(vid), int(new_aid), int(sort_order), apply_mobile, apply_desktop, int(item_sort_order)),
                             )
                             link_ids.append(int(cur.lastrowid or 0))
 

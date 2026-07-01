@@ -9,7 +9,7 @@
     <style>
         .ap-grid {
             display: grid;
-            grid-template-columns: max-content minmax(280px, 340px) minmax(320px, 1fr);
+            grid-template-columns: max-content minmax(280px, 340px) minmax(640px, 2fr);
             gap: 1rem;
             align-items: start;
             width: 100%;
@@ -141,6 +141,32 @@
         .ap-preview-group-block { margin-bottom: 0.65rem; }
         .ap-preview-group-block:last-child { margin-bottom: 0; }
         .ap-preview-group-label { font-size: 0.78rem; font-weight: 600; color: var(--morandi-slate); margin-bottom: 0.35rem; }
+        .ap-edit-dual {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .ap-device-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+        .ap-device-col__title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--morandi-slate);
+        }
+        .ap-slot-label {
+            font-size: 0.72rem;
+            color: var(--morandi-slate);
+            margin-bottom: 0.15rem;
+        }
+        .ap-shared-images { margin-top: 0.55rem; }
+        @media (max-width: 1100px) {
+            .ap-edit-dual { grid-template-columns: 1fr; }
+        }
         .ap-edit-block { display: flex; flex-direction: column; gap: 0.45rem; }
         .ap-edit-block__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.45rem; }
         .ap-edit-type-label { font-size: 0.84rem; font-weight: 600; color: var(--morandi-ink); }
@@ -236,49 +262,48 @@
                     <div id="editorPanel" class="pm-u-hidden">
                         <div class="ap-edit-block">
                             <div class="ap-edit-block__head">
-                                <span class="label-help">
-                                    <span class="ap-edit-type-label" id="editorTypeLabel"></span>
-                                    <span class="help-dot" data-tip="图片类型由 image_asset 关联解析。"></span>
-                                </span>
-                                <div class="status-segment status-segment--inline" id="deviceSegment" data-sj-status-segment data-value="desktop">
-                                    <button type="button" class="status-pill status-pill--yes" data-value="desktop">电脑</button>
-                                    <button type="button" class="status-pill status-pill--no" data-value="mobile">手机</button>
+                                <span class="ap-edit-type-label" id="editorTypeLabel"></span>
+                            </div>
+                            <div class="ap-edit-dual">
+                                <div class="ap-device-col" data-device="desktop">
+                                    <div class="ap-device-col__title">电脑端</div>
+                                    <div id="previewDesktopCol" class="ap-preview-box pm-muted">暂无预览</div>
+                                    <button class="btn-secondary btn-small" type="button" onclick="openLayoutJsonModal('desktop')">编辑布局 JSON</button>
+                                    <div id="imageGridDesktop" class="sj-thumb-grid pm-u-hidden"></div>
+                                </div>
+                                <div class="ap-device-col" data-device="mobile">
+                                    <div class="ap-device-col__title">手机端</div>
+                                    <div id="previewMobileCol" class="ap-preview-box pm-muted">暂无预览</div>
+                                    <button class="btn-secondary btn-small" type="button" onclick="openLayoutJsonModal('mobile')">编辑布局 JSON</button>
+                                    <div id="imageGridMobile" class="sj-thumb-grid pm-u-hidden"></div>
                                 </div>
                             </div>
-                            <div>
+                            <div id="sharedImageSection" class="ap-shared-images pm-u-hidden">
                                 <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
-                                    布局 JSON
-                                    <span class="help-dot" id="layoutJsonHelp" data-tip="保存后写入对应图片类型。"></span>
+                                    图片（手机/电脑共用）
+                                    <span class="help-dot" data-tip="根据布局 JSON 中的图片位数量显示上传框；上传一张两端预览同步。"></span>
                                 </h4>
-                                <textarea id="layoutJsonTextarea" class="optional-field" rows="8" spellcheck="false"
-                                    style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.82rem;box-sizing:border-box;margin-top:0.35rem;"></textarea>
-                                <div class="ap-toolbar-row" style="margin-top:0.4rem;">
-                                    <button class="btn-primary btn-small" type="button" onclick="saveImageTypeLayout()">保存布局 JSON</button>
-                                </div>
-                            </div>
-                            <div>
-                                <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
-                                    图片
-                                    <span class="help-dot" data-tip="点击虚线框选择图片，选中后自动上传；上传框始终保留以便继续添加。"></span>
-                                </h4>
-                                <div class="ap-device-flags" style="margin:0.35rem 0 0.45rem;">
-                                    <label><input type="checkbox" id="imgApplyMobile" checked> 适用手机</label>
-                                    <label><input type="checkbox" id="imgApplyDesktop" checked> 适用电脑</label>
-                                </div>
-                                <div id="imageGrid" class="sj-thumb-grid"></div>
-                            </div>
-                            <div>
-                                <h4 class="ap-section-title label-help" style="font-size:0.84rem;">
-                                    当前栏目预览
-                                    <span class="help-dot" data-tip="按当前电脑/手机切换与布局 JSON 渲染单栏预览。"></span>
-                                </h4>
-                                <div id="previewBox" class="ap-preview-box pm-muted" style="margin-top:0.35rem;">暂无预览</div>
+                                <div id="imageGridShared" class="sj-thumb-grid"></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
+    </div>
+
+    <div class="pm-modal" id="layoutJsonModal">
+        <div class="pm-modal-content" style="max-width: 760px;">
+            <h3 id="layoutJsonModalTitle" style="margin-top:0;">编辑布局 JSON</h3>
+            <div class="pm-section-body">
+                <textarea id="layoutJsonModalTextarea" class="optional-field" rows="14" spellcheck="false"
+                    style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.86rem;box-sizing:border-box;padding:0.65rem 0.8rem;"></textarea>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeLayoutJsonModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveLayoutJsonModal()">保存</button>
+            </div>
+        </div>
     </div>
 
     <div class="pm-modal" id="createVersionModal">
@@ -315,7 +340,7 @@
         let currentAssets = [];
         let aplusImageTypes = [];
         let selectedSortOrder = null;
-        let editDevice = 'desktop';
+        let layoutJsonEditDevice = 'desktop';
 
         function esc(s) {
             return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -323,15 +348,57 @@
         function toast(msg, err) { if (window.showAppToast) window.showAppToast(msg, !!err); }
         function pageStatus(msg, err) { if (window.showPageStatus) window.showPageStatus(msg, !!err); }
 
-        function getEditDevice() {
-            if (window.SitjoyPageUI && SitjoyPageUI.getStatusSegmentValue) {
-                return SitjoyPageUI.getStatusSegmentValue('#deviceSegment') || 'desktop';
-            }
-            return editDevice;
-        }
-
         function layoutJsonField(dev) {
             return dev === 'mobile' ? 'aplus_layout_json_mobile' : 'aplus_layout_json_desktop';
+        }
+
+        function isTypeShareImages(typeObj) {
+            if (!typeObj) return true;
+            if (typeObj.aplus_share_images != null) return Number(typeObj.aplus_share_images) === 1;
+            return true;
+        }
+
+        function countAplusImageSlots(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return 0;
+            try {
+                const data = JSON.parse(text);
+                if (Number(data.image_slots) > 0) return Number(data.image_slots);
+            } catch (_e) {}
+            const modules = parseLayoutModules(raw);
+            let n = 0;
+            modules.forEach((m) => {
+                const type = String((m || {}).type || '');
+                const props = (m && m.props) || {};
+                if (type === 'Carousel') {
+                    if (Array.isArray(props.image_urls) && props.image_urls.length) n += props.image_urls.length;
+                    else if (Number(props.image_slot_count) > 0) n += Number(props.image_slot_count);
+                    else n += 1;
+                } else if (type === 'Image' || type === 'Hero' || type === 'TwoColumnImageText') {
+                    n += 1;
+                } else if (Number(props.image_slot_count) > 0) {
+                    n += Number(props.image_slot_count);
+                } else if (props.image_url !== undefined || props.left_image_url !== undefined) {
+                    n += 1;
+                }
+            });
+            return n;
+        }
+
+        function assetMapBySlot(assets) {
+            const map = new Map();
+            (assets || []).forEach((a) => {
+                const slot = Number(a.item_sort_order) || 0;
+                if (slot && !map.has(slot)) map.set(slot, a);
+            });
+            return map;
+        }
+
+        function assetsForDevice(sortOrder, device, shared) {
+            const list = currentAssets.filter((a) => Number(a.sort_order) === Number(sortOrder));
+            if (shared) return list.filter((a) => Number(a.apply_mobile) === 1 && Number(a.apply_desktop) === 1);
+            if (device === 'mobile') return list.filter((a) => Number(a.apply_mobile) === 1);
+            return list.filter((a) => Number(a.apply_desktop) === 1);
         }
 
         function fillSelect(el, items, idKey, nameKey, includeAll) {
@@ -412,6 +479,7 @@
                 name: hit.image_type_name || '',
                 aplus_layout_json_mobile: hit.aplus_layout_json_mobile,
                 aplus_layout_json_desktop: hit.aplus_layout_json_desktop,
+                aplus_share_images: hit.aplus_share_images,
             };
         }
 
@@ -586,7 +654,6 @@
                 currentVersion = data.item;
                 selectedSortOrder = null;
                 pendingGroups = [];
-                editDevice = getEditDevice();
                 return loadAplusImageTypes().then(() => loadAssets());
             }).then(() => {
                 currentGroups = buildGroups();
@@ -649,18 +716,6 @@
             renderRight();
         }
 
-        function assetsForGroup(sortOrder, device) {
-            return currentAssets
-                .filter(a => Number(a.sort_order) === Number(sortOrder))
-                .filter(a => device === 'mobile' ? a.apply_mobile : a.apply_desktop)
-                .sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order) || Number(a.id) - Number(b.id));
-        }
-
-        function groupAssets() {
-            if (!selectedSortOrder) return [];
-            return assetsForGroup(selectedSortOrder, getEditDevice());
-        }
-
         function renderRight() {
             const fullPanel = document.getElementById('fullPreviewPanel');
             const editorPanel = document.getElementById('editorPanel');
@@ -684,14 +739,52 @@
             editorPanel.classList.remove('pm-u-hidden');
             const typeLabel = grp.image_type_name || (grp.image_type_id ? ('类型#' + grp.image_type_id) : '未绑定类型');
             document.getElementById('editorTypeLabel').textContent = typeLabel;
-            const helpDot = document.getElementById('layoutJsonHelp');
-            if (helpDot) helpDot.setAttribute('data-tip', '布局 JSON 来自图片类型「' + typeLabel + '」，保存后写入图片类型');
             const typeObj = resolveImageTypeForGroup(grp.sort_order);
-            const field = layoutJsonField(getEditDevice());
-            document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
-            renderImageGrid();
-            renderSinglePreview();
+            const shared = isTypeShareImages(typeObj);
+            renderDeviceColumnPreview('desktop', 'previewDesktopCol', typeObj);
+            renderDeviceColumnPreview('mobile', 'previewMobileCol', typeObj);
+            const sharedSec = document.getElementById('sharedImageSection');
+            const gridDesk = document.getElementById('imageGridDesktop');
+            const gridMob = document.getElementById('imageGridMobile');
+            if (shared) {
+                if (sharedSec) sharedSec.classList.remove('pm-u-hidden');
+                if (gridDesk) gridDesk.classList.add('pm-u-hidden');
+                if (gridMob) gridMob.classList.add('pm-u-hidden');
+                renderSlotImageGrid('shared', 'imageGridShared', typeObj);
+            } else {
+                if (sharedSec) sharedSec.classList.add('pm-u-hidden');
+                if (gridDesk) gridDesk.classList.remove('pm-u-hidden');
+                if (gridMob) gridMob.classList.remove('pm-u-hidden');
+                renderSlotImageGrid('desktop', 'imageGridDesktop', typeObj);
+                renderSlotImageGrid('mobile', 'imageGridMobile', typeObj);
+            }
             if (window.bindFloatingHelpDots) bindFloatingHelpDots(editorPanel);
+        }
+
+        function renderDeviceColumnPreview(device, hostId, typeObj) {
+            const host = document.getElementById(hostId);
+            const grp = getSelectedGroup();
+            if (!host || !grp) return;
+            const field = layoutJsonField(device);
+            const modules = parseLayoutModules(typeObj && typeObj[field]);
+            const imgs = assetsForDevice(grp.sort_order, device, isTypeShareImages(typeObj));
+            const slotMap = assetMapBySlot(imgs);
+            const orderedImgs = imgs.slice().sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order));
+            if (!modules.length) {
+                if (!orderedImgs.length) {
+                    host.innerHTML = '暂无布局 JSON 或图片';
+                    host.classList.add('pm-muted');
+                    return;
+                }
+                host.classList.remove('pm-muted');
+                host.innerHTML = orderedImgs.map((it) => {
+                    const src = storagePathToPreviewUrl(it.storage_path);
+                    return src ? `<img src="${src}" style="margin-bottom:0.5rem;" alt="">` : '';
+                }).join('');
+                return;
+            }
+            host.classList.remove('pm-muted');
+            host.innerHTML = modules.map((m) => renderModuleHtml(m, orderedImgs, slotMap)).join('');
         }
 
         function renderFullPreviewForDevice(hostId, device) {
@@ -706,12 +799,15 @@
                 const typeObj = resolveImageTypeForGroup(g.sort_order);
                 const field = layoutJsonField(device);
                 const modules = parseLayoutModules(typeObj && typeObj[field]);
-                const imgs = assetsForGroup(g.sort_order, device);
+                const shared = isTypeShareImages(typeObj);
+                const imgs = assetsForDevice(g.sort_order, device, shared);
+                const slotMap = assetMapBySlot(imgs);
+                const orderedImgs = imgs.slice().sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order));
                 let inner = '';
                 if (modules.length) {
-                    inner = modules.map(m => renderModuleHtml(m, imgs)).join('');
-                } else if (imgs.length) {
-                    inner = imgs.map(it => {
+                    inner = modules.map(m => renderModuleHtml(m, orderedImgs, slotMap)).join('');
+                } else if (orderedImgs.length) {
+                    inner = orderedImgs.map(it => {
                         const src = storagePathToPreviewUrl(it.storage_path);
                         return src ? `<img src="${src}" style="margin-bottom:0.5rem;" alt="">` : '';
                     }).join('');
@@ -736,68 +832,126 @@
             } catch { return ''; }
         }
 
-        function renderImageGrid() {
-            const host = document.getElementById('imageGrid');
-            if (!host) return;
-            const list = groupAssets();
-            let html = list.map(it => {
-                const src = it.storage_path ? storagePathToPreviewUrl(it.storage_path) : '';
-                return `<div class="sj-thumb-tile">
-                    <img src="${src}" alt="" onerror="this.style.display='none'">
-                    <button type="button" class="sj-thumb-tile__remove" aria-label="删除" onclick="event.stopPropagation();removeImage(${it.id})">×</button>
-                </div>`;
-            }).join('');
-            html += `<label class="sj-file-drop" id="apUploadDrop">
-                <input type="file" class="sj-file-drop__input" accept="image/*" multiple>
-                <span class="sj-file-drop__icon" aria-hidden="true">+</span>
-                <span class="sj-file-drop__text">选择图片</span>
-            </label>`;
-            host.innerHTML = html;
-            const inp = host.querySelector('.sj-file-drop__input');
-            if (inp) {
-                inp.addEventListener('change', function() {
-                    const files = inp.files ? Array.from(inp.files) : [];
-                    inp.value = '';
-                    if (files.length) uploadFilesSequential(files);
-                });
-            }
-        }
-
-        function uploadFilesSequential(files) {
-            if (!currentVersion || !selectedSortOrder) return toast('请选择栏目', true);
+        function renderSlotImageGrid(mode, hostId, typeObj) {
+            const host = document.getElementById(hostId);
             const grp = getSelectedGroup();
-            if (!grp || !grp.image_type_id) return toast('请为栏目选择图片类型', true);
-            const drop = document.getElementById('apUploadDrop');
-            if (drop) drop.classList.add('is-uploading');
-            const applyMobile = document.getElementById('imgApplyMobile').checked ? '1' : '0';
-            const applyDesktop = document.getElementById('imgApplyDesktop').checked ? '1' : '0';
-            let chain = Promise.resolve();
-            files.forEach(file => {
-                chain = chain.then(() => {
-                    const fd = new FormData();
-                    fd.append('aplus_version_id', String(currentVersion.id));
-                    fd.append('sort_order', String(selectedSortOrder));
-                    fd.append('image_type_id', String(grp.image_type_id));
-                    fd.append('apply_mobile', applyMobile);
-                    fd.append('apply_desktop', applyDesktop);
-                    fd.append('file', file, file.name);
-                    return fetch('/api/aplus-upload', { method: 'POST', body: fd })
-                        .then(r => r.json())
-                        .then(data => {
-                            if (!data || data.status !== 'success') throw new Error(data.message || '上传失败');
-                        });
+            if (!host || !grp) return;
+            const shared = isTypeShareImages(typeObj);
+            const device = mode === 'mobile' ? 'mobile' : (mode === 'desktop' ? 'desktop' : 'shared');
+            const jsonDevice = device === 'shared' ? 'desktop' : device;
+            const field = layoutJsonField(jsonDevice);
+            let slotCount = countAplusImageSlots(typeObj && typeObj[field]);
+            if (device === 'shared' && typeObj) {
+                slotCount = Math.max(
+                    slotCount,
+                    countAplusImageSlots(typeObj.aplus_layout_json_mobile),
+                    countAplusImageSlots(typeObj.aplus_layout_json_desktop)
+                );
+            }
+            const assets = assetsForDevice(grp.sort_order, device === 'shared' ? 'desktop' : device, shared);
+            const slotMap = assetMapBySlot(assets);
+            if (!slotCount) {
+                host.innerHTML = '<div class="pm-muted-block" style="font-size:0.8rem;padding:0.35rem 0;">布局 JSON 未定义图片位（可在根级设置 image_slots，或在模块 props 中设置 image_slot_count）</div>';
+                return;
+            }
+            let html = '';
+            for (let slot = 1; slot <= slotCount; slot += 1) {
+                const it = slotMap.get(slot);
+                if (it) {
+                    const src = it.storage_path ? storagePathToPreviewUrl(it.storage_path) : '';
+                    html += `<div class="sj-thumb-tile" title="图片位 ${slot}">
+                        <div class="ap-slot-label">位 ${slot}</div>
+                        <img src="${src}" alt="" onerror="this.style.display='none'">
+                        <button type="button" class="sj-thumb-tile__remove" aria-label="删除" onclick="event.stopPropagation();removeImage(${it.id})">×</button>
+                    </div>`;
+                } else {
+                    html += `<label class="sj-file-drop ap-slot-drop" data-slot="${slot}" data-device="${device}" title="图片位 ${slot}">
+                        <input type="file" class="sj-file-drop__input" accept="image/*">
+                        <span class="sj-file-drop__icon" aria-hidden="true">+</span>
+                        <span class="sj-file-drop__text">位 ${slot}</span>
+                    </label>`;
+                }
+            }
+            host.innerHTML = html;
+            host.querySelectorAll('.sj-file-drop__input').forEach((inp) => {
+                inp.addEventListener('change', function() {
+                    const file = inp.files && inp.files[0];
+                    inp.value = '';
+                    const wrap = inp.closest('.ap-slot-drop');
+                    const slot = Number(wrap && wrap.getAttribute('data-slot'));
+                    const dev = String(wrap && wrap.getAttribute('data-device') || 'shared');
+                    if (file && slot) uploadFileToSlot(dev, slot, file);
                 });
             });
-            chain.then(() => loadAssets())
-                .then(() => {
-                    toast('上传成功', false);
-                    renderImageGrid();
-                    renderSinglePreview();
-                    renderMiddle();
-                    if (!getSelectedGroup()) renderFullPreview();
+        }
+
+        function uploadFileToSlot(deviceMode, slotIndex, file) {
+            if (!currentVersion || !selectedSortOrder || !file) return;
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) return toast('请为栏目选择图片类型', true);
+            const typeObj = resolveImageTypeForGroup(grp.sort_order);
+            const shared = isTypeShareImages(typeObj);
+            const fd = new FormData();
+            fd.append('aplus_version_id', String(currentVersion.id));
+            fd.append('sort_order', String(selectedSortOrder));
+            fd.append('image_type_id', String(grp.image_type_id));
+            fd.append('item_sort_order', String(slotIndex));
+            if (shared || deviceMode === 'shared') {
+                fd.append('apply_mobile', '1');
+                fd.append('apply_desktop', '1');
+            } else if (deviceMode === 'mobile') {
+                fd.append('apply_mobile', '1');
+                fd.append('apply_desktop', '0');
+            } else {
+                fd.append('apply_mobile', '0');
+                fd.append('apply_desktop', '1');
+            }
+            fd.append('file', file, file.name);
+            fetch('/api/aplus-upload', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') throw new Error(data.message || '上传失败');
+                    return refreshAfterAssetChange();
                 })
-                .catch(err => toast(String(err), true))
-                .finally(() => { if (drop) drop.classList.remove('is-uploading'); });
+                .then(() => toast('上传成功', false))
+                .catch(err => toast(String(err), true));
+        }
+
+        function openLayoutJsonModal(device) {
+            const grp = getSelectedGroup();
+            if (!grp) return;
+            layoutJsonEditDevice = device === 'mobile' ? 'mobile' : 'desktop';
+            const typeObj = resolveImageTypeForGroup(grp.sort_order);
+            const field = layoutJsonField(layoutJsonEditDevice);
+            const title = document.getElementById('layoutJsonModalTitle');
+            if (title) title.textContent = layoutJsonEditDevice === 'mobile' ? '编辑手机端布局 JSON' : '编辑电脑端布局 JSON';
+            document.getElementById('layoutJsonModalTextarea').value = String((typeObj && typeObj[field]) || '');
+            document.getElementById('layoutJsonModal').classList.add('active');
+        }
+
+        function closeLayoutJsonModal() {
+            document.getElementById('layoutJsonModal').classList.remove('active');
+        }
+
+        function saveLayoutJsonModal() {
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) return toast('当前栏目未绑定图片类型', true);
+            const field = layoutJsonField(layoutJsonEditDevice);
+            const jsonText = String(document.getElementById('layoutJsonModalTextarea').value || '');
+            const payload = { id: grp.image_type_id };
+            payload[field] = jsonText;
+            fetch('/api/image-type', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '保存失败');
+                const hit = aplusImageTypes.find(t => Number(t.id) === Number(grp.image_type_id));
+                if (hit) hit[field] = jsonText;
+                closeLayoutJsonModal();
+                pageStatus('布局 JSON 已保存', false);
+                renderRight();
+            }).catch(err => pageStatus(String(err), true));
         }
 
         function addGroup() {
@@ -862,32 +1016,10 @@
             persist.then(() => { currentGroups = buildGroups(); renderMiddle(); renderRight(); });
         }
 
-        function saveImageTypeLayout() {
-            const grp = getSelectedGroup();
-            if (!grp || !grp.image_type_id) return toast('当前栏目未绑定图片类型', true);
-            const dev = getEditDevice();
-            const field = layoutJsonField(dev);
-            const jsonText = String(document.getElementById('layoutJsonTextarea').value || '');
-            const payload = { id: grp.image_type_id };
-            payload[field] = jsonText;
-            fetch('/api/image-type', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            }).then(r => r.json()).then(data => {
-                if (!data || data.status !== 'success') throw new Error(data.message || '保存失败');
-                const hit = aplusImageTypes.find(t => Number(t.id) === Number(grp.image_type_id));
-                if (hit) hit[field] = jsonText;
-                pageStatus('布局 JSON 已保存到图片类型', false);
-                renderSinglePreview();
-            }).catch(err => pageStatus(String(err), true));
-        }
-
         function refreshAfterAssetChange() {
             return loadAssets().then(() => {
-                renderImageGrid();
-                renderSinglePreview();
                 renderMiddle();
+                renderRight();
                 if (!getSelectedGroup()) renderFullPreview();
             });
         }
@@ -912,31 +1044,28 @@
             } catch { return []; }
         }
 
-        function renderSinglePreview() {
-            const grp = getSelectedGroup();
-            const box = document.getElementById('previewBox');
-            if (!grp) { box.innerHTML = '暂无预览'; return; }
-            const typeObj = resolveImageTypeForGroup(grp.sort_order);
-            const field = layoutJsonField(getEditDevice());
-            const modules = parseLayoutModules(typeObj && typeObj[field]);
-            const imgs = groupAssets();
-            if (!modules.length) {
-                if (!imgs.length) { box.innerHTML = '暂无布局 JSON 或图片'; return; }
-                box.innerHTML = imgs.map(it => {
-                    const src = storagePathToPreviewUrl(it.storage_path);
-                    return src ? `<img src="${src}" style="margin-bottom:0.5rem;" alt="">` : '';
-                }).join('') || '暂无预览';
-                return;
-            }
-            box.innerHTML = modules.map(m => renderModuleHtml(m, imgs)).join('');
-        }
-
-        function renderModuleHtml(m, imgs) {
+        function renderModuleHtml(m, imgs, slotMap) {
             const type = String((m || {}).type || 'TextBlock');
             const props = Object.assign({}, (m && m.props) || {});
-            const urls = imgs.map(it => storagePathToPreviewUrl(it.storage_path)).filter(Boolean);
-            if (!props.image_url && urls.length) props.image_url = urls[0];
-            if (type === 'Carousel' && !props.image_urls) props.image_urls = urls;
+            const map = slotMap || assetMapBySlot(imgs);
+            const urlAt = (slot) => {
+                const it = map.get(Number(slot) || 0);
+                return it ? storagePathToPreviewUrl(it.storage_path) : '';
+            };
+            let slotCursor = 0;
+            const nextUrl = () => {
+                slotCursor += 1;
+                return urlAt(slotCursor) || (imgs[slotCursor - 1] ? storagePathToPreviewUrl(imgs[slotCursor - 1].storage_path) : '');
+            };
+            if (!props.image_url && type !== 'TextBlock') props.image_url = nextUrl();
+            if (type === 'Carousel' && !props.image_urls) {
+                const cnt = Number(props.image_slot_count) > 0 ? Number(props.image_slot_count) : (Array.isArray(props.image_urls) ? props.image_urls.length : 1);
+                props.image_urls = [];
+                for (let i = 0; i < cnt; i += 1) {
+                    const u = urlAt(slotCursor + 1) || nextUrl();
+                    if (u) props.image_urls.push(u);
+                }
+            }
             if (type === 'Hero') {
                 const img = esc(props.image_url || '');
                 return `<div><strong>${esc(props.title || '')}</strong>${img ? `<img src="${img}" alt="">` : ''}<div class="pm-sub">${esc(props.text || '')}</div></div>`;
@@ -992,25 +1121,9 @@
             document.getElementById('qInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadVersions(); });
         }
 
-        function onDeviceChange() {
-            editDevice = getEditDevice();
-            if (!currentVersion) return;
-            if (getSelectedGroup()) {
-                const grp = getSelectedGroup();
-                const typeObj = resolveImageTypeForGroup(grp.sort_order);
-                const field = layoutJsonField(editDevice);
-                document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
-                renderImageGrid();
-                renderSinglePreview();
-            }
-        }
-
         function boot() {
             bindPageEvents();
             loadInitOptions().finally(loadVersions);
-            if (window.SitjoyPageUI) {
-                SitjoyPageUI.bindStatusSegment('#deviceSegment', { onChange: onDeviceChange });
-            }
             if (window.bindFloatingHelpDots) bindFloatingHelpDots(document);
             window.addEventListener('resize', () => scheduleSyncApLeftStackWidth());
         }
@@ -1019,8 +1132,10 @@
             if (window.SitjoyPageUI) {
                 SitjoyPageUI.init({
                     selects: true,
-                    modals: [{ el: '#createVersionModal', onClose: closeCreateVersionModal }],
-                    statusSegments: true,
+                    modals: [
+                        { el: '#createVersionModal', onClose: closeCreateVersionModal },
+                        { el: '#layoutJsonModal', onClose: closeLayoutJsonModal }
+                    ],
                     onReady: boot
                 });
             } else boot();
@@ -1028,6 +1143,8 @@
         window.setTimeout(() => {
             const el = document.getElementById('createVersionModal');
             if (el && window.bindPmModalBackdropClose) window.bindPmModalBackdropClose(el, closeCreateVersionModal);
+            const lj = document.getElementById('layoutJsonModal');
+            if (lj && window.bindPmModalBackdropClose) window.bindPmModalBackdropClose(lj, closeLayoutJsonModal);
         }, 0);
     </script>
 </body>

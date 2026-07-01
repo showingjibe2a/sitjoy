@@ -6909,12 +6909,6 @@ class SalesProductMixin:
                         }.get(usage)
                         if usage_col:
                             where_parts.append(f"{usage_col}=1")
-                        device_usage = (query_params.get('device', [''])[0] or '').strip().lower()
-                        if usage == 'aplus' and device_usage == 'mobile':
-                            where_parts.append('applies_mobile=1')
-                        elif usage == 'aplus' and device_usage == 'desktop':
-                            where_parts.append('applies_desktop=1')
-
                         # platform filter:
                         # - if no mapping rows -> 通用 (always included)
                         # - else must have an explicit mapping row for requested platform_type_id
@@ -6930,7 +6924,7 @@ class SalesProductMixin:
                             f"""
                             SELECT id, name, is_enabled,
                                    applies_fabric, applies_sales, applies_order_product, applies_aplus,
-                                   applies_mobile, applies_desktop, platform_type_ids,
+                                   aplus_share_images, platform_type_ids,
                                    required_width_px, required_height_px,
                                    aplus_layout_json_mobile, aplus_layout_json_desktop,
                                    created_at, updated_at
@@ -6957,8 +6951,7 @@ class SalesProductMixin:
                 applies_sales = int(self._parse_bool_flag(data.get('applies_sales'), default=True))
                 applies_order_product = int(self._parse_bool_flag(data.get('applies_order_product'), default=True))
                 applies_aplus = int(self._parse_bool_flag(data.get('applies_aplus'), default=True))
-                applies_mobile = int(self._parse_bool_flag(data.get('applies_mobile'), default=True))
-                applies_desktop = int(self._parse_bool_flag(data.get('applies_desktop'), default=True))
+                aplus_share_images = int(self._parse_bool_flag(data.get('aplus_share_images'), default=True))
                 platform_type_ids_csv = self._format_platform_type_ids_csv(data.get('platform_type_ids', []))
                 aplus_layout_json_mobile = data.get('aplus_layout_json_mobile', None)
                 aplus_layout_json_desktop = data.get('aplus_layout_json_desktop', None)
@@ -6986,8 +6979,7 @@ class SalesProductMixin:
                                     applies_sales=%s,
                                     applies_order_product=%s,
                                     applies_aplus=%s,
-                                    applies_mobile=%s,
-                                    applies_desktop=%s,
+                                    aplus_share_images=%s,
                                     platform_type_ids=%s,
                                     required_width_px=%s,
                                     required_height_px=%s,
@@ -6995,7 +6987,7 @@ class SalesProductMixin:
                                     aplus_layout_json_desktop=%s
                                 WHERE id=%s
                                 """,
-                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, applies_mobile, applies_desktop, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
+                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
                             )
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
 
@@ -7003,13 +6995,13 @@ class SalesProductMixin:
                             """
                             INSERT INTO image_types (
                                 name, is_enabled, applies_fabric, applies_sales, applies_order_product, applies_aplus,
-                                applies_mobile, applies_desktop, platform_type_ids,
+                                aplus_share_images, platform_type_ids,
                                 required_width_px, required_height_px,
                                 aplus_layout_json_mobile, aplus_layout_json_desktop
                             )
-                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, applies_mobile, applies_desktop, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
+                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -7021,7 +7013,7 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 sets = []
                 vals = []
-                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_order_product', 'applies_aplus', 'applies_mobile', 'applies_desktop'):
+                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_order_product', 'applies_aplus', 'aplus_share_images'):
                     if key in data:
                         sets.append(f"{key}=%s")
                         vals.append(int(self._parse_bool_flag(data.get(key), default=False)))

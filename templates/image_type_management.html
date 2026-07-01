@@ -205,19 +205,25 @@
                         <span class="switch-slider"></span>
                     </label>
                 </div>
+                <div id="editAplusExtrasSection" class="pm-u-hidden">
                 <div class="form-group" style="margin:0;">
-                    <label>适用手机端A+</label>
-                    <label class="switch-wrap" aria-label="适用手机端A+">
-                        <input type="checkbox" id="editApplyMobile">
+                    <label>手机/电脑端共用图片</label>
+                    <label class="switch-wrap" aria-label="手机/电脑端共用图片">
+                        <input type="checkbox" id="editAplusShareImages" checked>
                         <span class="switch-slider"></span>
                     </label>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用电脑端A+</label>
-                    <label class="switch-wrap" aria-label="适用电脑端A+">
-                        <input type="checkbox" id="editApplyDesktop">
-                        <span class="switch-slider"></span>
-                    </label>
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label>A+ 布局 JSON</label>
+                    <div class="ap-toolbar-row" style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.35rem;">
+                        <button class="btn-secondary btn-small" type="button" onclick="openAplusJsonEditModal('mobile')">编辑手机端 JSON</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="openAplusJsonEditModal('desktop')">编辑电脑端 JSON</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="formatAplusJsonDraft('mobile')">格式化手机</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="formatAplusJsonDraft('desktop')">格式化电脑</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="previewAplusJsonDraft('mobile')">预览手机</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="previewAplusJsonDraft('desktop')">预览电脑</button>
+                    </div>
+                </div>
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label>启用</label>
@@ -226,30 +232,25 @@
                         <span class="switch-slider"></span>
                     </label>
                 </div>
-
-                <div id="editAplusJsonSection">
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>A+布局JSON（手机端）</label>
-                    <textarea id="editAplusLayoutMobile" class="optional-field" style="min-height:140px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:0.88rem; padding:0.65rem 0.8rem;"></textarea>
-                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
-                        <button class="btn-secondary" type="button" onclick="formatAplusJson('mobile')">格式化</button>
-                        <button class="btn-secondary" type="button" onclick="previewAplusJson('mobile')">预览</button>
-                    </div>
-                </div>
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>A+布局JSON（电脑端）</label>
-                    <textarea id="editAplusLayoutDesktop" class="optional-field" style="min-height:140px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:0.88rem; padding:0.65rem 0.8rem;"></textarea>
-                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
-                        <button class="btn-secondary" type="button" onclick="formatAplusJson('desktop')">格式化</button>
-                        <button class="btn-secondary" type="button" onclick="previewAplusJson('desktop')">预览</button>
-                    </div>
-                </div>
-                </div>
             </div>
             <div id="editStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEditModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveEditImageType()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="aplus-json-edit-modal">
+        <div class="pm-modal-content" style="max-width: 760px;">
+            <h3 id="aplusJsonEditTitle" style="margin-top:0;">编辑 A+ 布局 JSON</h3>
+            <div class="pm-section-body">
+                <textarea id="aplusJsonEditTextarea" class="optional-field" rows="14" spellcheck="false"
+                    style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.86rem;box-sizing:border-box;padding:0.65rem 0.8rem;"></textarea>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeAplusJsonEditModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveAplusJsonEditModal()">保存</button>
             </div>
         </div>
     </div>
@@ -282,6 +283,8 @@
         // -------------------------------------------------------------------------
         let platformTypeOptions = [];
         let currentEditItem = null;
+        let editAplusJsonDraft = { mobile: '', desktop: '' };
+        let aplusJsonEditDevice = 'desktop';
 
         // -------------------------------------------------------------------------
         // 通用工具与状态提示
@@ -505,8 +508,42 @@
 
         function toggleEditAplusSections() {
             const on = document.getElementById('editApplyAplus').checked;
-            const sec = document.getElementById('editAplusJsonSection');
+            const sec = document.getElementById('editAplusExtrasSection');
             if (sec) sec.classList.toggle('pm-u-hidden', !on);
+        }
+
+        function openAplusJsonEditModal(device) {
+            aplusJsonEditDevice = device === 'mobile' ? 'mobile' : 'desktop';
+            const title = document.getElementById('aplusJsonEditTitle');
+            if (title) title.textContent = aplusJsonEditDevice === 'mobile' ? '编辑手机端 A+ 布局 JSON' : '编辑电脑端 A+ 布局 JSON';
+            document.getElementById('aplusJsonEditTextarea').value = String(editAplusJsonDraft[aplusJsonEditDevice] || '');
+            document.getElementById('aplus-json-edit-modal').classList.add('active');
+        }
+
+        function closeAplusJsonEditModal() {
+            document.getElementById('aplus-json-edit-modal').classList.remove('active');
+        }
+
+        function saveAplusJsonEditModal() {
+            editAplusJsonDraft[aplusJsonEditDevice] = String(document.getElementById('aplusJsonEditTextarea').value || '');
+            closeAplusJsonEditModal();
+        }
+
+        function formatAplusJsonDraft(device) {
+            const dev = device === 'mobile' ? 'mobile' : 'desktop';
+            const raw = String(editAplusJsonDraft[dev] || '').trim();
+            if (!raw) return;
+            try {
+                editAplusJsonDraft[dev] = JSON.stringify(JSON.parse(raw), null, 2);
+                if (window.showAppToast) window.showAppToast('已格式化', false, 1200);
+            } catch (e) {
+                if (window.showAppToast) window.showAppToast('JSON 格式无效', true);
+            }
+        }
+
+        function previewAplusJsonDraft(device) {
+            const dev = device === 'mobile' ? 'mobile' : 'desktop';
+            previewAplusJsonText(String(editAplusJsonDraft[dev] || ''), dev === 'mobile' ? '手机端' : '电脑端');
         }
 
         function openEditModal(item) {
@@ -518,11 +555,10 @@
             document.getElementById('editApplySales').checked = Number(item.applies_sales || 0) === 1;
             document.getElementById('editApplyOrderProduct').checked = Number(item.applies_order_product || 0) === 1;
             document.getElementById('editApplyAplus').checked = Number(item.applies_aplus || 0) === 1;
-            document.getElementById('editApplyMobile').checked = Number(item.applies_mobile != null ? item.applies_mobile : 1) === 1;
-            document.getElementById('editApplyDesktop').checked = Number(item.applies_desktop != null ? item.applies_desktop : 1) === 1;
+            document.getElementById('editAplusShareImages').checked = Number(item.aplus_share_images != null ? item.aplus_share_images : 1) === 1;
             document.getElementById('editEnabled').checked = Number(item.is_enabled || 0) === 1;
-            document.getElementById('editAplusLayoutMobile').value = String(item.aplus_layout_json_mobile || '');
-            document.getElementById('editAplusLayoutDesktop').value = String(item.aplus_layout_json_desktop || '');
+            editAplusJsonDraft.mobile = String(item.aplus_layout_json_mobile || '');
+            editAplusJsonDraft.desktop = String(item.aplus_layout_json_desktop || '');
             renderPlatformTypeCheckboxes(document.getElementById('editPlatformTypeList'), item.platform_type_ids || []);
             toggleEditAplusSections();
             document.getElementById('editStatus').style.display = 'none';
@@ -546,8 +582,6 @@
             const required_width_px = document.getElementById('editRequiredWidth').value === '' ? null : Number(document.getElementById('editRequiredWidth').value || 0);
             const required_height_px = document.getElementById('editRequiredHeight').value === '' ? null : Number(document.getElementById('editRequiredHeight').value || 0);
             const platform_type_ids = readPlatformTypeIds(document.getElementById('editPlatformTypeList'));
-            const aplus_layout_json_mobile = String(document.getElementById('editAplusLayoutMobile').value || '');
-            const aplus_layout_json_desktop = String(document.getElementById('editAplusLayoutDesktop').value || '');
             const applies_aplus = document.getElementById('editApplyAplus').checked;
             const payload = {
                     id,
@@ -559,13 +593,12 @@
                     applies_sales: document.getElementById('editApplySales').checked,
                     applies_order_product: document.getElementById('editApplyOrderProduct').checked,
                     applies_aplus,
-                    applies_mobile: document.getElementById('editApplyMobile').checked,
-                    applies_desktop: document.getElementById('editApplyDesktop').checked,
                     is_enabled: document.getElementById('editEnabled').checked
                 };
             if (applies_aplus) {
-                payload.aplus_layout_json_mobile = aplus_layout_json_mobile;
-                payload.aplus_layout_json_desktop = aplus_layout_json_desktop;
+                payload.aplus_share_images = document.getElementById('editAplusShareImages').checked;
+                payload.aplus_layout_json_mobile = String(editAplusJsonDraft.mobile || '');
+                payload.aplus_layout_json_desktop = String(editAplusJsonDraft.desktop || '');
             }
             fetch('/api/image-type', {
                 method: 'PATCH',
@@ -629,6 +662,8 @@
             if (em) b(em, closeEditModal);
             var ap = document.getElementById('aplus-json-preview-modal');
             if (ap) b(ap, closeAplusJsonPreview);
+            var aj = document.getElementById('aplus-json-edit-modal');
+            if (aj) b(aj, closeAplusJsonEditModal);
         }, 0);
 
         // -------------------------------------------------------------------------
@@ -641,34 +676,26 @@
         }
 
         function formatAplusJson(device) {
-            const key = device === 'mobile' ? 'editAplusLayoutMobile' : 'editAplusLayoutDesktop';
-            const box = document.getElementById(key);
-            const text = String(box.value || '').trim();
-            if (!text) return;
-            try {
-                const obj = JSON.parse(text);
-                box.value = JSON.stringify(obj, null, 2);
-            } catch (e) {
-                showStatus('JSON格式错误：' + e, true);
-            }
+            formatAplusJsonDraft(device);
         }
 
         function previewAplusJson(device) {
-            const key = device === 'mobile' ? 'editAplusLayoutMobile' : 'editAplusLayoutDesktop';
-            const text = String((document.getElementById(key).value || '')).trim();
+            previewAplusJsonDraft(device);
+        }
+
+        function previewAplusJsonText(text, deviceLabel) {
             const meta = document.getElementById('aplusJsonPreviewMeta');
             const box = document.getElementById('aplusJsonPreviewBox');
-            meta.textContent = `${device === 'mobile' ? '手机端' : '电脑端'} · ${String(document.getElementById('editTypeName').value || '').trim() || '-'}`;
+            meta.textContent = `${deviceLabel} · ${String(document.getElementById('editTypeName').value || '').trim() || '-'}`;
             box.innerHTML = '';
-            if (!text) {
+            if (!String(text || '').trim()) {
                 box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">空</div>';
                 document.getElementById('aplus-json-preview-modal').classList.add('active');
                 return;
             }
             try {
                 const obj = JSON.parse(text);
-                // 结构预览：列出 modules[] 的 type + 关键字段（不做真实渲染，避免绑定业务过深）
-                const modules = (obj && obj.modules && Array.isArray(obj.modules)) ? obj.modules : [];
+                const modules = (obj && obj.modules && Array.isArray(obj.modules)) ? obj.modules : (Array.isArray(obj) ? obj : []);
                 if (!modules.length) {
                     box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">未检测到 modules[]</div>';
                 } else {
