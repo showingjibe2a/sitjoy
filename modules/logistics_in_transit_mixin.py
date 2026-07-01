@@ -411,14 +411,39 @@ class LogisticsInTransitMixin:
             return False
         return new_s > old_s
 
+    def _transit_destination_warehouse_label(self, meta):
+        """海外仓展示名：供应商 + 仓库简称/名称（与仓储看板口径一致）。"""
+        if not isinstance(meta, dict):
+            return '-'
+        supplier = str(meta.get('supplier_name') or '').strip()
+        short_name = str(meta.get('warehouse_short_name') or '').strip()
+        warehouse_name = str(meta.get('warehouse_name') or '').strip()
+
+        if warehouse_name:
+            if supplier and supplier not in warehouse_name:
+                detail = short_name or warehouse_name
+                if detail and detail != supplier:
+                    return f'{supplier} · {detail}'
+            return warehouse_name
+        if supplier and short_name:
+            return f'{supplier} · {short_name}'
+        if supplier:
+            return supplier
+        if short_name:
+            return short_name
+        return '-'
+
     def _fetch_transit_notify_meta(self, cur, transit_id):
         """读取钉钉通知所需的箱号/提单/仓库/区域/工厂等元数据。"""
         cur.execute(
             """
             SELECT t.id, t.logistics_box_no, t.bill_of_lading_no, t.listed_date,
-                   w.warehouse_name, dr.region_name, f.factory_name
+                   w.warehouse_name, w.warehouse_short_name,
+                   s.supplier_name,
+                   dr.region_name, f.factory_name
             FROM logistics_in_transit t
             LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+            LEFT JOIN logistics_suppliers s ON s.id = w.supplier_id
             LEFT JOIN logistics_destination_regions dr ON dr.id = t.destination_region_id
             LEFT JOIN logistics_factories f ON f.id = t.factory_id
             WHERE t.id=%s
@@ -469,11 +494,12 @@ class LogisticsInTransitMixin:
         """组装单条「到货延迟」钉钉通知项。"""
         if not meta:
             return None
+        warehouse_label = self._transit_destination_warehouse_label(meta)
         item = {
             'transit_id': int(meta.get('id') or 0),
             'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
             'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
-            'warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
+            'warehouse_name': warehouse_label,
             'field': str(field_key or '').strip(),
             'field_label': str(field_label or '').strip() or '预计到货',
             'previous_date': self._transit_notify_date_text(old_date),
@@ -492,12 +518,15 @@ class LogisticsInTransitMixin:
             sku_lines = self._fetch_transit_sku_lines(cur, transit_id, qty_by_order_product=qty_by_order_product)
         if not sku_lines:
             return None
+        warehouse_label = self._transit_destination_warehouse_label(meta)
         return {
             'transit_id': int(meta.get('id') or 0),
             'logistics_box_no': str(meta.get('logistics_box_no') or '').strip() or '-',
             'bill_of_lading_no': str(meta.get('bill_of_lading_no') or '').strip(),
-            'warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
-            'destination_warehouse_name': str(meta.get('warehouse_name') or '').strip() or '-',
+            'warehouse_name': warehouse_label,
+            'destination_warehouse_name': warehouse_label,
+            'supplier_name': str(meta.get('supplier_name') or '').strip(),
+            'warehouse_short_name': str(meta.get('warehouse_short_name') or '').strip(),
             'listed_date': self._transit_notify_date_text(meta.get('listed_date')),
             'event_kind': str(event_kind or 'registered').strip() or 'registered',
             'sku_lines': sku_lines,

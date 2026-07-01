@@ -1656,10 +1656,23 @@
             const sku = String(row && row.sku || '').trim() || '-';
             const qty = Number(row && row.qty);
             if(Number.isFinite(qty) && qty > 0){
-                return `${escapeAppNotifyHtml(sku)}<br>× ${escapeAppNotifyHtml(String(qty))}`;
+                return `${escapeAppNotifyHtml(sku)} × ${escapeAppNotifyHtml(String(qty))}`;
             }
             return escapeAppNotifyHtml(sku);
         }).filter(Boolean);
+    }
+
+    function formatTransitDestinationWarehouseLabel(item){
+        const direct = String(
+            (item && (item.destination_warehouse_name || item.warehouse_name)) || ''
+        ).trim();
+        if(direct && direct !== '-') return direct;
+        const supplier = String(item && item.supplier_name || '').trim();
+        const short = String(item && item.warehouse_short_name || '').trim();
+        if(supplier && short) return `${supplier} · ${short}`;
+        if(supplier) return supplier;
+        if(short) return short;
+        return '-';
     }
 
     function buildTransitListedPreviewHtml(items, maxLines){
@@ -1667,9 +1680,7 @@
         const limit = Number.isFinite(maxLines) && maxLines > 0 ? maxLines : 5;
         const blocks = list.slice(0, limit).map((item) => {
             const box = escapeAppNotifyHtml(String(item && item.logistics_box_no || '').trim() || '-');
-            const wh = escapeAppNotifyHtml(String(
-                (item && (item.destination_warehouse_name || item.warehouse_name)) || ''
-            ).trim() || '-');
+            const wh = escapeAppNotifyHtml(formatTransitDestinationWarehouseLabel(item));
             const skuHtml = formatTransitSkuDetailHtmlLines(item && item.sku_lines).map((line) => (
                 `<div class="app-dingtalk-notify-sku-line">${line}</div>`
             )).join('');

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -404,16 +405,40 @@ class DingTalkNotifyMixin:
     # Markdown 消息组装
     # -------------------------------------------------------------------------
 
-    def _dingtalk_notify_block(self, header_text, detail_content, header_color, detail_join='<br/>'):
-        """单条通知块：彩色标题 + 灰色明细（明细可为字符串或行列表）。"""
+    def _dingtalk_strip_inline_breaks(self, text):
+        body = str(text or '').strip()
+        if not body:
+            return body
+        return re.sub(r'<br\s*/?>', ' ', body, flags=re.I).strip()
+
+    def _dingtalk_normalize_detail_lines(self, detail_content):
         if isinstance(detail_content, list):
-            parts = [str(x or '').strip() for x in detail_content if str(x or '').strip()]
-            detail_block = detail_join.join(parts)
+            lines = []
+            for item in detail_content:
+                text = self._dingtalk_strip_inline_breaks(item)
+                if text:
+                    lines.append(text)
+            return lines
+        text = self._dingtalk_strip_inline_breaks(
+            re.sub(r'<br\s*/?>', '\n', str(detail_content or ''), flags=re.I)
+        )
+        if not text:
+            return []
+        return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    def _dingtalk_notify_block(self, header_text, detail_content, header_color, detail_join=None):
+        """单条通知块：彩色标题 + 灰色明细（每条明细独立一行，避免 Mac/Win 对 <br> 渲染不一致）。"""
+        header = self._dingtalk_strip_inline_breaks(header_text)
+        lines = [f'- {self._dingtalk_markdown_colored_text(header, header_color)}']
+        detail_lines = self._dingtalk_normalize_detail_lines(detail_content)
+        if detail_join and len(detail_lines) > 1:
+            # 兼容旧调用：仍允许显式 join，但默认逐行输出更稳定
+            joined = self._dingtalk_strip_inline_breaks(detail_join.join(detail_lines))
+            if joined:
+                lines.append(self._dingtalk_markdown_muted_text(f'  {joined}'))
         else:
-            detail_block = str(detail_content or '').strip()
-        lines = [f'- {self._dingtalk_markdown_colored_text(header_text, header_color)}']
-        if detail_block:
-            lines.append(self._dingtalk_markdown_muted_text(f'  {detail_block}'))
+            for detail_line in detail_lines:
+                lines.append(self._dingtalk_markdown_muted_text(f'  {detail_line}'))
         return '\n'.join(lines)
 
     def _send_dingtalk_markdown_notify(
@@ -525,7 +550,7 @@ class DingTalkNotifyMixin:
             us_total = entry.get('us_remaining_qty')
             if us_total is None:
                 us_total = 0
-            header = f'**{sku}**（全美库存：{us_total}）<br/>'
+            header = f'**{sku}**（全美库存：{us_total}）'
             detail_parts = []
             for row in rows:
                 wh = str(row.get('warehouse_name') or '').strip()
@@ -588,9 +613,9 @@ class DingTalkNotifyMixin:
             title_tone=title_tone, include_summary_line=include_summary_line,
         )
 
-    def _format_transit_listed_sku_block_text(self, sku_lines):
+    def _format_transit_listed_sku_detail_lines(self, sku_lines):
         rows = sku_lines if isinstance(sku_lines, list) else []
-        parts = []
+        lines = []
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -599,10 +624,13 @@ class DingTalkNotifyMixin:
                 continue
             qty = self._parse_int(row.get('qty'))
             if qty is not None and qty > 0:
-                parts.append(f'<br>{sku} × {qty}')
+                lines.append(f'{sku} × {qty}')
             else:
-                parts.append(sku)
-        return '<br/><br/>'.join(parts)
+                lines.append(sku)
+        return lines
+
+    def _format_transit_listed_sku_block_text(self, sku_lines):
+        return '\n'.join(self._format_transit_listed_sku_detail_lines(sku_lines))
 
     def _transit_eta_delay_detail_label(self, field_key, field_label):
         key = str(field_key or '').strip()
@@ -640,7 +668,7 @@ class DingTalkNotifyMixin:
             box = str(meta.get('logistics_box_no') or '').strip() or '-'
             bl = str(meta.get('bill_of_lading_no') or '').strip()
             bl_text = f' · 提单 {bl}' if bl else ''
-            header = f'**{box}**{bl_text}<br/>'
+            header = f'**{box}**{bl_text}'
             detail_parts = []
             seen_fields = set()
             for row in changes:
@@ -655,17 +683,10 @@ class DingTalkNotifyMixin:
                 detail_parts.append(f'{label} {old_date} → {new_date}')
             if not detail_parts:
                 continue
-            sku_block = self._format_transit_listed_sku_block_text(meta.get('sku_lines'))
-            if sku_block:
-                detail_content = '<br/>'.join(detail_parts)
-                if detail_content:
-                    detail_content = detail_content + '<br/><br/>' + sku_block
-                else:
-                    detail_content = sku_block
-            else:
-                detail_content = detail_parts
+            detail_lines = list(detail_parts)
+            detail_lines.extend(self._format_transit_listed_sku_detail_lines(meta.get('sku_lines')))
             blocks.append(self._dingtalk_notify_block(
-                header, detail_content, self.DINGTALK_COLOR_NEGATIVE,
+                header, detail_lines, self.DINGTALK_COLOR_NEGATIVE,
             ))
         return blocks
 
@@ -681,13 +702,15 @@ class DingTalkNotifyMixin:
             box = str(row.get('logistics_box_no') or '').strip() or '-'
             wh = str(
                 row.get('destination_warehouse_name') or row.get('warehouse_name') or ''
-            ).strip() or '-'
-            sku_block = self._format_transit_listed_sku_block_text(row.get('sku_lines'))
-            if not sku_block:
+            ).strip()
+            if not wh or wh == '-':
+                wh = self._transit_destination_warehouse_label(row)
+            sku_lines = self._format_transit_listed_sku_detail_lines(row.get('sku_lines'))
+            if not sku_lines:
                 continue
             header = f'**海外仓 {wh} · （{box}）**'
             blocks.append(self._dingtalk_notify_block(
-                header, sku_block, self.DINGTALK_COLOR_POSITIVE, detail_join='',
+                header, sku_lines, self.DINGTALK_COLOR_POSITIVE,
             ))
         return blocks
 
