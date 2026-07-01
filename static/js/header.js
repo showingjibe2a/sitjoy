@@ -3580,8 +3580,28 @@
         return without.slice(0, anchorIdx + 1).concat(presentFollow, without.slice(anchorIdx + 1));
     }
 
-    function buildManagedPersistedColumnKeyResolver(headerMeta, validKeys){
+    function parsePmColumnKeyReplacements(table){
+        if(!table || !table.dataset) return new Map();
+        try {
+            const raw = String(table.dataset.pmColumnKeyReplacements || '').trim();
+            if(!raw) return new Map();
+            const obj = JSON.parse(raw);
+            const out = new Map();
+            Object.keys(obj || {}).forEach((oldKey) => {
+                const nk = obj[oldKey];
+                const list = Array.isArray(nk) ? nk : [nk];
+                const next = list.map((x) => String(x || '').trim()).filter(Boolean);
+                if(next.length) out.set(String(oldKey).trim(), next);
+            });
+            return out;
+        } catch (_) {
+            return new Map();
+        }
+    }
+
+    function buildManagedPersistedColumnKeyResolver(headerMeta, validKeys, table){
         const validSet = new Set(validKeys);
+        const replacementMap = parsePmColumnKeyReplacements(table);
         const originToKey = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
         const labelToKeys = new Map();
         (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta) => {
@@ -3600,6 +3620,10 @@
             const token = String(raw || '').trim();
             if(!token) return [];
             if(validSet.has(token)) return [token];
+            const replaced = replacementMap.get(token);
+            if(replaced && replaced.length){
+                return replaced.filter((k) => validSet.has(k));
+            }
             const fromOrigin = originToKey.get(token);
             if(fromOrigin && validSet.has(fromOrigin)) return [fromOrigin];
             if(token === '操作' && validSet.has('操作类型') && validSet.has('行操作')){
@@ -3626,36 +3650,90 @@
             return out;
         }
 
-        return { expandLegacyPersistedColumnKeys };
+        return { expandLegacyPersistedColumnKeys, replacementMap };
+    }
+
+    function readManagedHeaderKeysSnapshot(table){
+        try {
+            const raw = localStorage.getItem(makeStorageKey(table, 'managed-header-keys'));
+            if(!raw) return [];
+            const arr = JSON.parse(raw);
+            return Array.isArray(arr) ? arr.map((k) => String(k || '').trim()).filter(Boolean) : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function persistManagedHeaderKeysSnapshot(table, validKeys){
+        try {
+            localStorage.setItem(makeStorageKey(table, 'managed-header-keys'), JSON.stringify(validKeys || []));
+        } catch (_) {}
     }
 
     function readPersistedColumns(table, headerMeta){
         const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
-        const { expandLegacyPersistedColumnKeys } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys);
+        const validSet = new Set(validKeys);
+        const { expandLegacyPersistedColumnKeys, replacementMap } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys, table);
+        const prevKeys = readManagedHeaderKeysSnapshot(table);
+        const prevKeySet = new Set(prevKeys);
+        let arr = [];
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'visible-columns'));
-            if(!raw) return new Set(validKeys);
-            const arr = JSON.parse(raw);
-            const migrated = expandLegacyPersistedColumnKeys(Array.isArray(arr) ? arr : []);
-            return new Set(migrated.length ? migrated : validKeys);
+            if(raw) arr = JSON.parse(raw);
+        } catch (_) {}
+        if(!Array.isArray(arr) || !arr.length){
+            persistManagedHeaderKeysSnapshot(table, validKeys);
+            return new Set(validKeys);
+        }
+        try {
+            const migrated = expandLegacyPersistedColumnKeys(arr);
+            const out = new Set();
+            migrated.forEach((k) => {
+                if(validSet.has(k)) out.add(k);
+            });
+            if(!out.size){
+                persistManagedHeaderKeysSnapshot(table, validKeys);
+                return new Set(validKeys);
+            }
+            validKeys.forEach((k) => {
+                if(out.has(k)) return;
+                let oldKey = '';
+                replacementMap.forEach((newList, ok) => {
+                    if(newList.includes(k)) oldKey = ok;
+                });
+                if(oldKey && prevKeySet.has(oldKey) && !validSet.has(oldKey)){
+                    const wasVisible = arr.some((token) => {
+                        const t = String(token || '').trim();
+                        if(t === oldKey) return true;
+                        return expandLegacyPersistedColumnKeys([t]).includes(oldKey);
+                    });
+                    if(wasVisible) out.add(k);
+                    return;
+                }
+                if(!prevKeySet.has(k)) out.add(k);
+            });
+            persistManagedHeaderKeysSnapshot(table, validKeys);
+            return out;
         } catch (_) {
+            persistManagedHeaderKeysSnapshot(table, validKeys);
             return new Set(validKeys);
         }
     }
 
     function readPersistedOrder(table, headerMeta){
         const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
-        const { expandLegacyPersistedColumnKeys } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys);
+        const { expandLegacyPersistedColumnKeys } = buildManagedPersistedColumnKeyResolver(headerMeta, validKeys, table);
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'column-order'));
             if(!raw) return normalizeManagedTableColumnOrder(canonicalManagedColumnOrderFromMeta(headerMeta), validKeys, headerMeta);
             const arr = JSON.parse(raw);
-            const inOrder = expandLegacyPersistedColumnKeys(Array.isArray(arr) ? arr : []);
+            const originalArr = Array.isArray(arr) ? arr : [];
+            const inOrder = expandLegacyPersistedColumnKeys(originalArr);
             validKeys.forEach(v => {
                 if(!inOrder.includes(v)) inOrder.push(v);
             });
             const normalized = normalizeManagedTableColumnOrder(inOrder, validKeys, headerMeta);
-            if(JSON.stringify(normalized) !== JSON.stringify(inOrder)){
+            if(JSON.stringify(normalized) !== JSON.stringify(originalArr)){
                 try {
                     localStorage.setItem(makeStorageKey(table, 'column-order'), JSON.stringify(normalized));
                 } catch (_e) {
@@ -5223,16 +5301,36 @@
         };
 
         const stampBodyRowByOrigin = (row) => {
-            if(!row || (row.cells || []).length !== colCount) return;
+            if(!row || !row.cells || !row.cells.length) return;
+            const cells = Array.from(row.cells);
+            if(cells.length === 1 && Number(cells[0].colSpan || 1) > 1) return;
+            const validKeySet = new Set(headerMeta.map((meta) => String(meta.key || '').trim()).filter(Boolean));
             const headerRow = getPrimaryHeaderRow(state);
+            if(cells.length !== colCount){
+                cells.forEach((cell, idx) => {
+                    const existingKey = String(cell.dataset.manageColKey || '').trim();
+                    if(existingKey && validKeySet.has(existingKey)) return;
+                    const keyFromHeader = headerRow && headerRow.cells && headerRow.cells[idx]
+                        ? String(headerRow.cells[idx].dataset.manageColKey || '').trim()
+                        : '';
+                    const key = keyFromHeader
+                        || originToKey.get(idx)
+                        || (headerMeta[idx] && String(headerMeta[idx].key || '').trim())
+                        || `字段${idx + 1}`;
+                    if(key) cell.dataset.manageColKey = key;
+                });
+                return;
+            }
             Array.from(row.cells || []).forEach((cell, idx) => {
+                const existingKey = String(cell.dataset.manageColKey || '').trim();
                 const headerCell = headerRow && headerRow.cells && headerRow.cells[idx];
                 const keyFromHeader = headerCell ? String(headerCell.dataset.manageColKey || '').trim() : '';
-                const key = keyFromHeader
-                    || String(cell.dataset.manageColKey || '').trim()
-                    || originToKey.get(idx)
-                    || (headerMeta[idx] && String(headerMeta[idx].key || '').trim())
-                    || `字段${idx + 1}`;
+                const key = (existingKey && validKeySet.has(existingKey))
+                    ? existingKey
+                    : (keyFromHeader
+                        || originToKey.get(idx)
+                        || (headerMeta[idx] && String(headerMeta[idx].key || '').trim())
+                        || `字段${idx + 1}`);
                 cell.dataset.manageColKey = key;
                 if(headerCell && headerCell.dataset.manageColOrigin){
                     cell.dataset.manageColOrigin = headerCell.dataset.manageColOrigin;
@@ -5294,6 +5392,33 @@
         srcHead.classList.add('pm-managed-hidden-head');
     }
 
+    function reorderManagedTableRowCells(row, columnOrder){
+        const cells = Array.from(row.cells || []);
+        if(!cells.length) return false;
+        if(cells.length === 1 && Number(cells[0].colSpan || 1) > 1) return false;
+        const currentOrder = cells.map((cell) => String(cell.dataset.manageColKey || '').trim());
+        if(currentOrder.length === columnOrder.length && currentOrder.every((v, i) => v === columnOrder[i])) {
+            return false;
+        }
+        const byKey = mapRowByKey(row);
+        const used = new Set();
+        const ordered = [];
+        columnOrder.forEach((key) => {
+            const cell = byKey.get(String(key || '').trim());
+            if(cell && !used.has(cell)){
+                ordered.push(cell);
+                used.add(cell);
+            }
+        });
+        cells.forEach((cell) => {
+            if(!used.has(cell)) ordered.push(cell);
+        });
+        if(ordered.length !== cells.length) return false;
+        ordered.forEach((cell) => row.appendChild(cell));
+        invalidatePmRowCellKeyMap(row);
+        return true;
+    }
+
     function applyColumnOrder(state){
         syncManagedColgroupOrder(state);
         const expected = state.headerCount;
@@ -5303,27 +5428,7 @@
         tables.forEach((table) => {
             if(!table) return;
             Array.from(table.rows || []).forEach((row) => {
-                const cells = Array.from(row.cells || []);
-                if(cells.length !== expected) return;
-                const currentOrder = cells.map((cell) => String(cell.dataset.manageColKey || '').trim());
-                if(currentOrder.length === state.columnOrder.length && currentOrder.every((v, i) => v === state.columnOrder[i])) {
-                    return;
-                }
-                const byKey = mapRowByKey(row);
-                const used = new Set();
-                const ordered = [];
-                state.columnOrder.forEach((key) => {
-                    const cell = byKey.get(String(key || '').trim());
-                    if(cell && !used.has(cell)){
-                        ordered.push(cell);
-                        used.add(cell);
-                    }
-                });
-                cells.forEach((cell) => {
-                    if(!used.has(cell)) ordered.push(cell);
-                });
-                if(ordered.length !== expected) return;
-                ordered.forEach((cell) => row.appendChild(cell));
+                reorderManagedTableRowCells(row, state.columnOrder);
             });
         });
     }
@@ -8081,6 +8186,9 @@
         if(!headerMeta.length) return;
         state.headerCount = headerMeta.length;
         ensureManagedColumnKeys(state, headerMeta);
+        if(Array.isArray(state.columnOrder) && state.columnOrder.length){
+            applyColumnOrder(state);
+        }
         syncManagedColumnVisibilitySlots(state);
         applyNumericColumnLayoutForTable(state.table);
         syncSjAggToggleColumnCssVar(state);
@@ -9362,6 +9470,7 @@
             state.headers = headerMeta.map(meta => ({ origin: meta.origin, key: meta.key, label: meta.label }));
             state.visibleColumns = readPersistedColumns(state.table, headerMeta);
             state.columnOrder = readPersistedOrder(state.table, headerMeta);
+            persistColumns(state);
             const persistedWidths = readPersistedColumnWidths(state.table);
             state.defaultColumnWidths = {};
             headerMeta.forEach(meta => {
