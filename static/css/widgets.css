@@ -2059,25 +2059,77 @@ body.sitjoy-has-shell.widgets-theme-page .sitjoy-theme-studio-table-wrap {
 .widgets-pkg-class-card #packageClassCalcResult {
     margin-top: 0.85rem;
     max-height: none;
+    overflow: visible;
 }
 
-.widgets-pkg-class-form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
-    gap: 0.65rem 0.85rem;
+body.widgets-pkg-class-page .sitjoy-page-body > .container,
+body.sitjoy-has-shell.widgets-pkg-class-page .sitjoy-page-body > .container {
+    max-width: 56rem;
 }
 
-.widgets-pkg-class-form-grid .form-group {
+.widgets-pkg-class-card {
+    color: var(--morandi-ink);
+}
+
+.widgets-pkg-class-head {
+    margin-bottom: 0.75rem;
+}
+
+.widgets-pkg-class-title {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--morandi-ink);
+    line-height: 1.3;
+}
+
+.widgets-pkg-class-lead {
     margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--morandi-slate);
+}
+
+.widgets-pkg-class-card #packageClassCalcForm .widgets-pkg-class-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 7.25rem));
+    gap: 0.5rem 0.65rem;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.widgets-pkg-class-card #packageClassCalcForm .form-group {
+    margin: 0;
+    gap: 0.18rem;
+}
+
+.widgets-pkg-class-card #packageClassCalcForm .form-group label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--morandi-slate);
+}
+
+.widgets-pkg-class-card #packageClassCalcForm .form-group .inline-input {
+    width: 100%;
+    max-width: 7.25rem;
+    min-height: 32px;
+    padding: 0.32rem 0.45rem;
+    font-size: 0.84rem;
+    box-sizing: border-box;
 }
 
 .widgets-pkg-class-actions {
-    margin-top: 0.65rem;
+    margin-top: 0.55rem;
 }
 
-@media (max-width: 560px) {
-    .widgets-pkg-class-form-grid {
-        grid-template-columns: 1fr;
+@media (max-width: 420px) {
+    .widgets-pkg-class-card #packageClassCalcForm .widgets-pkg-class-form-grid {
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+    }
+
+    .widgets-pkg-class-card #packageClassCalcForm .form-group .inline-input {
+        max-width: none;
     }
 }
 

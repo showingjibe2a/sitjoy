@@ -8,40 +8,38 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/widgets.css">
 </head>
-<body>
+<body class="widgets-pkg-class-page">
     <div id="site-header"></div>
     <div class="container">
-        <section class="hero" style="margin-bottom: 1rem;">
-            <h2>包裹归类计算器</h2>
-            <p>输入包裹三边（inch）与毛重（lbs），按 FedEx / UPS 常见阈值试算内部归类标签（LTL / Oversize / AHS-D / AHS / 小件）。</p>
-        </section>
-
         <section class="card pm-card widgets-pkg-class-card">
-            <h3 class="label-help" style="margin-top:0;">
-                试算
-                <span class="help-dot" data-tip="三边与毛重均向上取整后排序为 S≤M≤L；围长 G=(宽+高)×2，不含长边 L；体积 V=S×M×L（立方英寸）。实际计费以承运商价表为准。"></span>
-            </h3>
+            <header class="widgets-pkg-class-head">
+                <h2 class="label-help widgets-pkg-class-title">
+                    包裹归类计算器
+                    <span class="help-dot" data-tip="三边与毛重均向上取整后排序为 S≤M≤L；围长 G=(宽+高)×2；FedEx/UPS Large Package 用 L+G。UPS Additional Handling：V>8640 或 L>48 或 M>30（无 L+G>105）；FedEx AHS-D 另含 V>10368 与 L+G>105。Wayfair：Standard Small 体积>10368 按 Medium，Medium>17280 按 Large。"></span>
+                </h2>
+                <p class="widgets-pkg-class-lead">输入三边与毛重，分别试算 FedEx、UPS、Wayfair CG 仓归类（下单产品批量仍写入 FedEx 标签）。</p>
+            </header>
             <div id="packageClassCalcForm">
-                <div class="pm-section-body widgets-pkg-class-form-grid">
+                <div class="widgets-pkg-class-form-grid">
                     <div class="form-group">
-                        <label for="pkgClassCalcLength">包裹长 (inch)</label>
-                        <input type="number" step="0.01" min="0" id="pkgClassCalcLength">
+                        <label for="pkgClassCalcLength">长 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcLength" class="inline-input">
                     </div>
                     <div class="form-group">
-                        <label for="pkgClassCalcWidth">包裹宽 (inch)</label>
-                        <input type="number" step="0.01" min="0" id="pkgClassCalcWidth">
+                        <label for="pkgClassCalcWidth">宽 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcWidth" class="inline-input">
                     </div>
                     <div class="form-group">
-                        <label for="pkgClassCalcHeight">包裹高 (inch)</label>
-                        <input type="number" step="0.01" min="0" id="pkgClassCalcHeight">
+                        <label for="pkgClassCalcHeight">高 (inch)</label>
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcHeight" class="inline-input">
                     </div>
                     <div class="form-group">
                         <label for="pkgClassCalcGross">毛重 (lbs)</label>
-                        <input type="number" step="0.01" min="0" id="pkgClassCalcGross">
+                        <input type="number" step="0.01" min="0" id="pkgClassCalcGross" class="inline-input">
                     </div>
                 </div>
                 <div class="widgets-pkg-class-actions">
-                    <button type="button" class="btn-primary" id="pkgClassCalcSubmitBtn">计算</button>
+                    <button type="button" class="btn-primary btn-small" id="pkgClassCalcSubmitBtn">计算</button>
                 </div>
             </div>
             <div id="packageClassCalcResult"></div>

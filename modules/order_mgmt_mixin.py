@@ -1155,11 +1155,11 @@ class OrderManagementMixin:
 
         判定顺序（后者不得越过前者已命中项）：
         1) LTL：超出小件承运上限（与 FedEx Ground Unauthorized / UPS 包裹上限同向）——
-           W>150 或 L>108 或 G>165。
+           W>150 或 L>108 或 L+G>165（G=(M+S)×2）。
         2) Oversize：仍属小件网络内，但命中「大件费 / Large-Oversize」类触发条件之一即可
-           （条件之间为「或」）—— L>96 或 G>130 或 V>17280 或 W>110。
+           （条件之间为「或」）—— L>96 或 L+G>130 或 V>17280 或 W>110。
         3) AHS-D：未命中以上，但命中附加操作「尺寸类」常见触发之一——
-           V>10368 或 L>48 或 M>30 或 G>105（FedEx AHS-Dimension：长+围长>105\"；
+           V>10368 或 L>48 或 M>30 或 L+G>105（FedEx AHS-Dimension：长+围长>105\"；
            M 为次长边/宽，对应第二边>30\" 规则）。
         4) AHS：毛重 W>=50 且无上述情形（重量带附加操作，与尺寸类区分）。
         5) 小件：其余。
@@ -1169,14 +1169,15 @@ class OrderManagementMixin:
         if S is None or M is None or L is None or weight_lb_int is None:
             return None
         G = (S + M) * 2
+        LG = L + G
         V = int(S) * int(M) * int(L)
         W = int(weight_lb_int)
 
-        if W > 150 or L > 108 or G > 165:
+        if W > 150 or L > 108 or LG > 165:
             return 'LTL'
-        if L > 96 or G > 130 or V > 17280 or W > 110:
+        if L > 96 or LG > 130 or V > 17280 or W > 110:
             return 'Oversize'
-        if V > 10368 or L > 48 or M > 30 or G > 105:
+        if V > 10368 or L > 48 or M > 30 or LG > 105:
             return 'AHS-D'
         if W >= 50:
             return 'AHS'

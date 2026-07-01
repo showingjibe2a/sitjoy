@@ -2479,11 +2479,12 @@
             const M = dims.M;
             const L = dims.L;
             const G = (S + M) * 2;
+            const LG = L + G;
             const V = S * M * L;
             const W = wInt;
-            if (W > 150 || L > 108 || G > 165) return 'LTL';
-            if (L > 96 || G > 130 || V > 17280 || W > 110) return 'Oversize';
-            if (V > 10368 || L > 48 || M > 30 || G > 105) return 'AHS-D';
+            if (W > 150 || L > 108 || LG > 165) return 'LTL';
+            if (L > 96 || LG > 130 || V > 17280 || W > 110) return 'Oversize';
+            if (V > 10368 || L > 48 || M > 30 || LG > 105) return 'AHS-D';
             if (W >= 50) return 'AHS';
             return '小件';
         }
@@ -5044,7 +5045,7 @@
                     const ok = Number(data.updatable_count || 0);
                     const miss = Number(data.missing_info_count || 0);
                     const unchanged = Math.max(0, ok - changedIds.length);
-                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 为长）；围长 G=(宽+高)×2（不含长边）；体积 V=S×M×L（立方英寸）。顺序：围长>165 或 L>108 或 W>150 → LTL；否则 L>96 或 围长>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 或 围长>105 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 为长）；围长 G=(宽+高)×2；L+G=长+围长；体积 V=S×M×L（立方英寸）。顺序：L+G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 L+G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 或 L+G>105 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
                     const thead = '<tr><th>SKU</th><th>最长边(in)</th><th>次长边(in)</th><th>最短边(in)</th><th>毛重(lb↑)</th><th>当前归类</th><th>新归类</th></tr>';
                     const rows = previewRows.map(row => {
                         const sku = escapeHtml(row.sku || '');

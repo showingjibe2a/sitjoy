@@ -7328,6 +7328,47 @@ select.pm-inline-compact-select,
     font-size: 0.76rem;
     color: #999;
 }
+.pkg-class-carrier-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+}
+.pkg-class-carrier-panel {
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    border-radius: 10px;
+    padding: 0.62rem 0.72rem;
+    background: rgba(255, 255, 255, 0.72);
+    min-width: 0;
+}
+.pkg-class-carrier-panel__title {
+    margin: 0 0 0.4rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--morandi-ink);
+}
+.pkg-class-carrier-panel .pkg-class-explain-result {
+    margin-bottom: 0.45rem;
+    font-size: 0.84rem;
+}
+.pkg-class-carrier-billing {
+    margin: 0 0 0.4rem;
+    font-size: 0.8rem;
+    color: var(--morandi-ink);
+}
+.pkg-class-carrier-note {
+    margin: 0 0 0.4rem;
+    font-size: 0.76rem;
+    color: #8f6b2f;
+}
+.pkg-class-carrier-panel .pkg-class-rule-steps {
+    font-size: 0.78rem;
+}
+@media (max-width: 900px) {
+    .pkg-class-carrier-grid {
+        grid-template-columns: 1fr;
+    }
+}
 .pkg-class-explain-error {
     margin: 0;
     color: #a44;
