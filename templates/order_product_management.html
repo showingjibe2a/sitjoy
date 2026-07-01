@@ -397,14 +397,16 @@
                             <th style="width: 72px;" data-manage-col-key="包裹高(in)">包裹高(in)</th>
                             <th style="width: 72px;" data-manage-col-key="净重(lbs)">净重(lbs)</th>
                             <th style="width: 72px;" data-manage-col-key="毛重(lbs)">毛重(lbs)</th>
-                            <th data-manage-col-key="包裹归类">包裹归类</th>
+                            <th data-manage-col-key="FedEx包裹归类">FedEx包裹归类</th>
+                            <th data-manage-col-key="UPS包裹归类">UPS包裹归类</th>
+                            <th data-manage-col-key="CG包裹归类">CG包裹归类</th>
                             <th data-manage-col-key="装箱量">装箱量</th>
                             <th style="width:160px;" data-manage-col-key="创建时间">创建时间</th>
                             <th style="width:160px;" data-manage-col-key="操作">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="28" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="30" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -624,8 +626,16 @@
                             <input type="number" step="1" id="modalCartonQty" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalPackageClass">包裹大小归类（FedEx/UPS 阈值，自动）</label>
-                            <input type="text" id="modalPackageClass" class="optional-field package-class-clickable" readonly title="点击查看计算逻辑；随包裹三边与毛重自动计算">
+                            <label for="modalFedexPackageClass">FedEx包裹归类（自动）</label>
+                            <input type="text" id="modalFedexPackageClass" class="optional-field package-class-clickable" readonly title="点击查看计算逻辑">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalUpsPackageClass">UPS包裹归类（自动）</label>
+                            <input type="text" id="modalUpsPackageClass" class="optional-field package-class-clickable" readonly title="点击查看计算逻辑">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalCgPackageClass">CG包裹归类（自动）</label>
+                            <input type="text" id="modalCgPackageClass" class="optional-field package-class-clickable" readonly title="点击查看计算逻辑">
                         </div>
                     </div>
                 </div>
@@ -2467,10 +2477,10 @@
             return { S: arr[0], M: arr[1], L: arr[2] };
         }
 
-        /** 与后端 _order_product_classify_fedex_package 一致（三边与毛重均向上取整） */
-        function classifyOrderProductPackage(lengthIn, widthIn, heightIn, grossLbs) {
-            if (window.SitjoyPackageClass) {
-                return window.SitjoyPackageClass.classifyPackage(lengthIn, widthIn, heightIn, grossLbs);
+        /** 与后端 FedEx / UPS / CG 归类一致（三边与毛重均向上取整） */
+        function classifyOrderProductPackageAll(lengthIn, widthIn, heightIn, grossLbs) {
+            if (window.SitjoyPackageClass && typeof window.SitjoyPackageClass.classifyAllPackages === 'function') {
+                return window.SitjoyPackageClass.classifyAllPackages(lengthIn, widthIn, heightIn, grossLbs);
             }
             const dims = orderProductSortedCeiledDims(lengthIn, widthIn, heightIn);
             const wInt = orderProductCeilingPositiveInt(grossLbs);
@@ -2482,11 +2492,34 @@
             const LG = L + G;
             const V = S * M * L;
             const W = wInt;
-            if (W > 150 || L > 108 || LG > 165) return 'LTL';
-            if (L > 96 || LG > 130 || V > 17280 || W > 110) return 'Oversize';
-            if (V > 10368 || L > 48 || M > 30 || LG > 105) return 'AHS-D';
-            if (W >= 50) return 'AHS';
-            return '小件';
+            let fedex = '小件';
+            if (W > 150 || L > 108 || LG > 165) fedex = 'LTL';
+            else if (L > 96 || LG > 130 || V > 17280 || W > 110) fedex = 'Oversize';
+            else if (V > 10368 || L > 48 || M > 30 || LG > 105) fedex = 'AHS-D';
+            else if (W >= 50) fedex = 'AHS';
+            let ups = '小件';
+            if (W > 150 || L > 108 || LG > 165) ups = 'LTL';
+            else if (L > 96 || LG > 130 || V > 17280 || W > 110) ups = 'Oversize';
+            else if (V > 8640 || L > 48 || M > 30) ups = 'AHS-D';
+            else if (W >= 50) ups = 'AHS';
+            let cg = '超出表列范围';
+            if (S <= 6 && M <= 12 && L <= 19 && W <= 25) cg = 'Bin - Small';
+            else if (S <= 14 && M <= 17 && L <= 26 && W <= 25) cg = 'Bin - Large';
+            else if (S <= 14 && M <= 17 && L <= 26 && W <= 50) cg = 'Bin - Heavy';
+            else if (S <= 30 && M <= 30 && L <= 48 && LG <= 105 && W <= 50) {
+                cg = V > 10368 ? 'Standard - Medium' : 'Standard - Small';
+            } else if (L <= 96 && LG <= 130 && W <= 110) {
+                cg = V > 17280 ? 'Standard - Large' : 'Standard - Medium';
+            } else if (L <= 108 && LG <= 165 && W <= 120) cg = 'Standard - Large';
+            else if (L <= 108 && LG <= 165 && W <= 150) cg = 'Standard - Oversize';
+            else if (W <= 250) cg = 'Large - Standard';
+            else if (L <= 144 && W <= 800) cg = 'Large - Heavy';
+            return { fedex, ups, cg };
+        }
+
+        function classifyOrderProductPackage(lengthIn, widthIn, heightIn, grossLbs) {
+            const all = classifyOrderProductPackageAll(lengthIn, widthIn, heightIn, grossLbs);
+            return all ? all.fedex : null;
         }
 
         function openOrderProductPackageClassExplain(itemId) {
@@ -2514,21 +2547,26 @@
         }
 
         function bindOrderProductPackageClassExplainClicks() {
-            document.querySelectorAll('.preview-edit-field[data-field="package_size_class"]').forEach(el => {
-                if (el.dataset.pkgClassBound === '1') return;
-                el.dataset.pkgClassBound = '1';
-                el.classList.add('package-class-clickable');
-                el.title = '点击查看包裹归类计算逻辑';
-                el.addEventListener('click', function () {
-                    const itemId = this.getAttribute('data-id');
-                    if (itemId) openOrderProductPackageClassExplain(itemId);
+            const pkgFields = ['fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class'];
+            pkgFields.forEach(function (field) {
+                document.querySelectorAll('.preview-edit-field[data-field="' + field + '"]').forEach(el => {
+                    if (el.dataset.pkgClassBound === '1') return;
+                    el.dataset.pkgClassBound = '1';
+                    el.classList.add('package-class-clickable');
+                    el.title = '点击查看包裹归类计算逻辑';
+                    el.addEventListener('click', function () {
+                        const itemId = this.getAttribute('data-id');
+                        if (itemId) openOrderProductPackageClassExplain(itemId);
+                    });
                 });
             });
-            const modalCls = document.getElementById('modalPackageClass');
-            if (modalCls && modalCls.dataset.pkgClassBound !== '1') {
-                modalCls.dataset.pkgClassBound = '1';
-                modalCls.addEventListener('click', openModalPackageClassExplain);
-            }
+            ['modalFedexPackageClass', 'modalUpsPackageClass', 'modalCgPackageClass'].forEach(function (id) {
+                const modalCls = document.getElementById(id);
+                if (modalCls && modalCls.dataset.pkgClassBound !== '1') {
+                    modalCls.dataset.pkgClassBound = '1';
+                    modalCls.addEventListener('click', openModalPackageClassExplain);
+                }
+            });
         }
 
         function syncModalPackageClassFromInputs() {
@@ -2536,10 +2574,14 @@
             const widEl = document.getElementById('modalPackageWidth');
             const heiEl = document.getElementById('modalPackageHeight');
             const gwEl = document.getElementById('modalGrossWeight');
-            const outEl = document.getElementById('modalPackageClass');
-            if (!lenEl || !widEl || !heiEl || !gwEl || !outEl) return;
-            const cls = classifyOrderProductPackage(lenEl.value, widEl.value, heiEl.value, gwEl.value);
-            outEl.value = cls === null ? '' : String(cls);
+            const fedexEl = document.getElementById('modalFedexPackageClass');
+            const upsEl = document.getElementById('modalUpsPackageClass');
+            const cgEl = document.getElementById('modalCgPackageClass');
+            if (!lenEl || !widEl || !heiEl || !gwEl || !fedexEl || !upsEl || !cgEl) return;
+            const all = classifyOrderProductPackageAll(lenEl.value, widEl.value, heiEl.value, gwEl.value);
+            fedexEl.value = all ? String(all.fedex || '') : '';
+            upsEl.value = all ? String(all.ups || '') : '';
+            cgEl.value = all ? String(all.cg || '') : '';
         }
 
         function syncPreviewPackageClassFromDims(itemId) {
@@ -2549,13 +2591,21 @@
             const w = getPreviewEffectiveValue(item, 'package_width_in');
             const h = getPreviewEffectiveValue(item, 'package_height_in');
             const g = getPreviewEffectiveValue(item, 'gross_weight_lbs');
-            const cls = classifyOrderProductPackage(l, w, h, g);
-            const text = cls === null ? '' : String(cls);
-            const el = document.querySelector(
-                `.preview-edit-field[data-id="${String(itemId)}"][data-field="package_size_class"]`
-            );
-            if (el) el.value = text;
-            updatePreviewDraft(itemId, 'package_size_class', text);
+            const all = classifyOrderProductPackageAll(l, w, h, g);
+            const fields = [
+                ['fedex_package_size_class', all ? all.fedex : ''],
+                ['ups_package_size_class', all ? all.ups : ''],
+                ['cg_package_size_class', all ? all.cg : '']
+            ];
+            fields.forEach(function (pair) {
+                const field = pair[0];
+                const text = pair[1] === null ? '' : String(pair[1]);
+                const el = document.querySelector(
+                    `.preview-edit-field[data-id="${String(itemId)}"][data-field="${field}"]`
+                );
+                if (el) el.value = text;
+                updatePreviewDraft(itemId, field, text);
+            });
         }
 
         function renderReadonlyYesNoSwitch(value) {
@@ -2600,7 +2650,7 @@
             if (field === 'is_on_market' || field === 'is_reship_accessory') {
                 return Number(String(rawValue || '0')) === 1 ? 1 : 0;
             }
-            if (field === 'package_size_class') {
+            if (field === 'fedex_package_size_class' || field === 'ups_package_size_class' || field === 'cg_package_size_class') {
                 return String(rawValue || '').trim();
             }
             if (field === 'carton_qty') {
@@ -2640,7 +2690,9 @@
                 package_width_in: normalizePreviewFieldValue('package_width_in', g('package_width_in')),
                 package_height_in: normalizePreviewFieldValue('package_height_in', g('package_height_in')),
                 gross_weight_lbs: normalizePreviewFieldValue('gross_weight_lbs', g('gross_weight_lbs')),
-                package_size_class: normalizePreviewFieldValue('package_size_class', g('package_size_class')),
+                fedex_package_size_class: normalizePreviewFieldValue('fedex_package_size_class', g('fedex_package_size_class')),
+                ups_package_size_class: normalizePreviewFieldValue('ups_package_size_class', g('ups_package_size_class')),
+                cg_package_size_class: normalizePreviewFieldValue('cg_package_size_class', g('cg_package_size_class')),
                 carton_qty: normalizePreviewFieldValue('carton_qty', g('carton_qty')),
                 last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', g('last_mile_avg_freight_usd'))
             };
@@ -2675,7 +2727,9 @@
                         row.package_width_in = up.package_width_in;
                         row.package_height_in = up.package_height_in;
                         row.gross_weight_lbs = up.gross_weight_lbs;
-                        row.package_size_class = up.package_size_class;
+                        row.fedex_package_size_class = up.fedex_package_size_class;
+                        row.ups_package_size_class = up.ups_package_size_class;
+                        row.cg_package_size_class = up.cg_package_size_class;
                         row.carton_qty = up.carton_qty;
                         row.last_mile_avg_freight_usd = up.last_mile_avg_freight_usd;
                         delete previewEditDraft[String(up.id)];
@@ -2777,7 +2831,9 @@
                     package_width_in: item.package_width_in,
                     package_height_in: item.package_height_in,
                     gross_weight_lbs: item.gross_weight_lbs,
-                    package_size_class: item.package_size_class || '',
+                    fedex_package_size_class: item.fedex_package_size_class || '',
+                    ups_package_size_class: item.ups_package_size_class || '',
+                    cg_package_size_class: item.cg_package_size_class || '',
                     carton_qty: item.carton_qty,
                     last_mile_avg_freight_usd: item.last_mile_avg_freight_usd
                 };
@@ -2797,7 +2853,9 @@
                 && normalizePreviewFieldValue('package_width_in', draft.package_width_in) === normalizePreviewFieldValue('package_width_in', item.package_width_in)
                 && normalizePreviewFieldValue('package_height_in', draft.package_height_in) === normalizePreviewFieldValue('package_height_in', item.package_height_in)
                 && normalizePreviewFieldValue('gross_weight_lbs', draft.gross_weight_lbs) === normalizePreviewFieldValue('gross_weight_lbs', item.gross_weight_lbs)
-                && normalizePreviewFieldValue('package_size_class', draft.package_size_class) === normalizePreviewFieldValue('package_size_class', item.package_size_class)
+                && normalizePreviewFieldValue('fedex_package_size_class', draft.fedex_package_size_class) === normalizePreviewFieldValue('fedex_package_size_class', item.fedex_package_size_class)
+                && normalizePreviewFieldValue('ups_package_size_class', draft.ups_package_size_class) === normalizePreviewFieldValue('ups_package_size_class', item.ups_package_size_class)
+                && normalizePreviewFieldValue('cg_package_size_class', draft.cg_package_size_class) === normalizePreviewFieldValue('cg_package_size_class', item.cg_package_size_class)
                 && normalizePreviewFieldValue('carton_qty', draft.carton_qty) === normalizePreviewFieldValue('carton_qty', item.carton_qty)
                 && normalizePreviewFieldValue('last_mile_avg_freight_usd', draft.last_mile_avg_freight_usd) === normalizePreviewFieldValue('last_mile_avg_freight_usd', item.last_mile_avg_freight_usd);
             if (unchanged) {
@@ -2873,7 +2931,9 @@
                 package_width_in: normalizePreviewFieldValue('package_width_in', previewEditDraft[id].package_width_in),
                 package_height_in: normalizePreviewFieldValue('package_height_in', previewEditDraft[id].package_height_in),
                 gross_weight_lbs: normalizePreviewFieldValue('gross_weight_lbs', previewEditDraft[id].gross_weight_lbs),
-                package_size_class: normalizePreviewFieldValue('package_size_class', previewEditDraft[id].package_size_class),
+                fedex_package_size_class: normalizePreviewFieldValue('fedex_package_size_class', previewEditDraft[id].fedex_package_size_class),
+                ups_package_size_class: normalizePreviewFieldValue('ups_package_size_class', previewEditDraft[id].ups_package_size_class),
+                cg_package_size_class: normalizePreviewFieldValue('cg_package_size_class', previewEditDraft[id].cg_package_size_class),
                 carton_qty: normalizePreviewFieldValue('carton_qty', previewEditDraft[id].carton_qty),
                 last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', previewEditDraft[id].last_mile_avg_freight_usd)
             }));
@@ -2907,7 +2967,9 @@
                     item.package_width_in = update.package_width_in;
                     item.package_height_in = update.package_height_in;
                     item.gross_weight_lbs = update.gross_weight_lbs;
-                    item.package_size_class = update.package_size_class;
+                    item.fedex_package_size_class = update.fedex_package_size_class;
+                    item.ups_package_size_class = update.ups_package_size_class;
+                    item.cg_package_size_class = update.cg_package_size_class;
                     item.carton_qty = update.carton_qty;
                     item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
                 });
@@ -3702,7 +3764,9 @@
                 gross_weight_lbs: parseNumber(document.getElementById('modalGrossWeight').value),
                 cost_usd: parseNumber(document.getElementById('modalCost').value),
                 carton_qty: parseNumber(document.getElementById('modalCartonQty').value),
-                package_size_class: document.getElementById('modalPackageClass').value.trim(),
+                fedex_package_size_class: document.getElementById('modalFedexPackageClass').value.trim(),
+                ups_package_size_class: document.getElementById('modalUpsPackageClass').value.trim(),
+                cg_package_size_class: document.getElementById('modalCgPackageClass').value.trim(),
                 last_mile_avg_freight_usd: parseNumber(document.getElementById('modalLastMile').value),
                 filling_material_ids: selectedFillingMaterialIds,
                 frame_material_ids: selectedFrameMaterialIds,
@@ -3744,7 +3808,9 @@
                     'is_iteration', 'is_on_market', 'is_reship_accessory', 'is_dachene_product', 'source_order_product_id',
                     'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
                     'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
-                    'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+                    'cost_usd', 'carton_qty',
+                    'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class',
+                    'last_mile_avg_freight_usd'
                 ];
                 compareKeys.forEach(key => {
                     const newVal = payload[key];
@@ -4434,7 +4500,7 @@
                 });
         }
 
-        const ORDER_PRODUCT_TABLE_COLSPAN = 28;
+        const ORDER_PRODUCT_TABLE_COLSPAN = 30;
 
         // -------------------------------------------------------------------------
         // 列表渲染、加载与批量操作
@@ -4472,7 +4538,9 @@
                         const packageHeiText = getPreviewEffectiveValue(item, 'package_height_in');
                         const netWeightText = getPreviewEffectiveValue(item, 'net_weight_lbs');
                         const grossWeightText = getPreviewEffectiveValue(item, 'gross_weight_lbs');
-                        const packageClassText = getPreviewEffectiveValue(item, 'package_size_class') || '';
+                        const fedexClassText = getPreviewEffectiveValue(item, 'fedex_package_size_class') || '';
+                        const upsClassText = getPreviewEffectiveValue(item, 'ups_package_size_class') || '';
+                        const cgClassText = getPreviewEffectiveValue(item, 'cg_package_size_class') || '';
                         const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
                         const onMarketText = Number(getPreviewEffectiveValue(item, 'is_on_market') || 0) === 1 ? '1' : '0';
@@ -4509,7 +4577,9 @@
                                 <td class="preview-edit-cell" data-manage-col-key="包裹高(in)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_height_in" type="number" step="0.01" min="0" value="${packageHeiText ?? ''}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="净重(lbs)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="net_weight_lbs" type="number" step="0.01" min="0" value="${netWeightText ?? ''}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="毛重(lbs)"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gross_weight_lbs" type="number" step="0.01" min="0" value="${grossWeightText ?? ''}"></td>
-                                <td class="preview-edit-cell" data-manage-col-key="包裹归类"><input class="inline-input preview-edit-input preview-edit-field package-class-clickable" data-id="${item.id}" data-field="package_size_class" type="text" readonly title="点击查看包裹归类计算逻辑" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell" data-manage-col-key="FedEx包裹归类"><input class="inline-input preview-edit-input preview-edit-field package-class-clickable" data-id="${item.id}" data-field="fedex_package_size_class" type="text" readonly title="点击查看包裹归类计算逻辑" value="${String(fedexClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell" data-manage-col-key="UPS包裹归类"><input class="inline-input preview-edit-input preview-edit-field package-class-clickable" data-id="${item.id}" data-field="ups_package_size_class" type="text" readonly title="点击查看包裹归类计算逻辑" value="${String(upsClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell" data-manage-col-key="CG包裹归类"><input class="inline-input preview-edit-input preview-edit-field package-class-clickable" data-id="${item.id}" data-field="cg_package_size_class" type="text" readonly title="点击查看包裹归类计算逻辑" value="${String(cgClassText || '').replace(/"/g, '&quot;')}"></td>
                                 <td class="preview-edit-cell" data-manage-col-key="装箱量"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="carton_qty" type="number" step="1" min="0" value="${cartonQtyText ?? ''}"></td>
                                 <td data-manage-col-key="创建时间">${dateText}</td>
                                 <td data-manage-col-key="操作">
@@ -5037,7 +5107,11 @@
                     }
                     const previewRows = Array.isArray(data.rows) ? data.rows : [];
                     const changedIds = previewRows
-                        .filter((row) => String(row.package_class_old ?? '') !== String(row.package_class_new ?? ''))
+                        .filter((row) => {
+                            return String(row.fedex_package_size_class_old ?? '') !== String(row.fedex_package_size_class_new ?? '')
+                                || String(row.ups_package_size_class_old ?? '') !== String(row.ups_package_size_class_new ?? '')
+                                || String(row.cg_package_size_class_old ?? '') !== String(row.cg_package_size_class_new ?? '');
+                        })
                         .map((row) => row.id)
                         .filter((id) => id != null && id !== '');
                     orderBatchCalcState = { kind: 'package', endpoint: '/api/order-product-package-class-batch', ids: changedIds };
@@ -5045,15 +5119,14 @@
                     const ok = Number(data.updatable_count || 0);
                     const miss = Number(data.missing_info_count || 0);
                     const unchanged = Math.max(0, ok - changedIds.length);
-                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可计算 <strong>${ok}</strong> 条；其中值有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新值跳过 <strong>${unchanged}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 为长）；围长 G=(宽+高)×2；L+G=长+围长；体积 V=S×M×L（立方英寸）。顺序：L+G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 L+G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 或 L+G>105 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
-                    const thead = '<tr><th>SKU</th><th>最长边(in)</th><th>次长边(in)</th><th>最短边(in)</th><th>毛重(lb↑)</th><th>当前归类</th><th>新归类</th></tr>';
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；可计算 <strong>${ok}</strong> 条；有变化将写入 <strong>${changedIds.length}</strong> 条；已是最新跳过 <strong>${unchanged}</strong> 条；缺尺寸或毛重 <strong>${miss}</strong> 条。将同时更新 FedEx / UPS / CG 三列。`;
+                    const thead = '<tr><th>SKU</th><th>最长边</th><th>次长边</th><th>最短边</th><th>毛重↑</th><th>FedEx 原→新</th><th>UPS 原→新</th><th>CG 原→新</th></tr>';
                     const rows = previewRows.map(row => {
                         const sku = escapeHtml(row.sku || '');
-                        const o = escapeHtml(String(row.package_class_old || '—'));
-                        const n = escapeHtml(String(row.package_class_new || ''));
-                        return `<tr><td>${sku}</td><td>${escapeHtml(String(row.edge_long_in ?? ''))}</td><td>${escapeHtml(String(row.edge_mid_in ?? ''))}</td><td>${escapeHtml(String(row.edge_short_in ?? ''))}</td><td>${escapeHtml(String(row.gross_weight_lb_ceiled ?? ''))}</td><td>${o}</td><td>${n}</td></tr>`;
+                        const pair = (o, n) => `${escapeHtml(String(o || '—'))} → ${escapeHtml(String(n || '—'))}`;
+                        return `<tr><td>${sku}</td><td>${escapeHtml(String(row.edge_long_in ?? ''))}</td><td>${escapeHtml(String(row.edge_mid_in ?? ''))}</td><td>${escapeHtml(String(row.edge_short_in ?? ''))}</td><td>${escapeHtml(String(row.gross_weight_lb_ceiled ?? ''))}</td><td>${pair(row.fedex_package_size_class_old, row.fedex_package_size_class_new)}</td><td>${pair(row.ups_package_size_class_old, row.ups_package_size_class_new)}</td><td>${pair(row.cg_package_size_class_old, row.cg_package_size_class_new)}</td></tr>`;
                     }).join('');
-                    openOrderBatchCalcModal('批量更新包裹归类', summary, thead, rows || '<tr><td colspan="7" style="text-align:center;">无待更新行</td></tr>', changedIds.length > 0);
+                    openOrderBatchCalcModal('批量更新包裹归类', summary, thead, rows || '<tr><td colspan="8" style="text-align:center;">无待更新行</td></tr>', changedIds.length > 0);
                 })
                 .catch(err => {
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);

@@ -117,13 +117,24 @@
         return '小件';
     }
 
-    /** @deprecated 别名，下单产品批量仍调用 */
+    /** @deprecated 别名，下单产品 FedEx 归类 */
     function classifyPackage(lengthIn, widthIn, heightIn, grossLbs) {
+        const all = classifyAllPackages(lengthIn, widthIn, heightIn, grossLbs);
+        return all ? all.fedex : null;
+    }
+
+    /** 下单产品：FedEx / UPS / CG 三承运商归类 */
+    function classifyAllPackages(lengthIn, widthIn, heightIn, grossLbs) {
         const m = buildMetrics(
             parseNumber(lengthIn), parseNumber(widthIn), parseNumber(heightIn), parseNumber(grossLbs)
         );
         if (!m) return null;
-        return classifyFedex(m.S, m.M, m.L, m.W, m.V, m.G);
+        const cgHit = classifyWayfairCg(m.S, m.M, m.L, m.W, m.V, m.G);
+        return {
+            fedex: classifyFedex(m.S, m.M, m.L, m.W, m.V, m.G),
+            ups: classifyUps(m.S, m.M, m.L, m.W, m.V, m.G),
+            cg: cgHit ? cgHit.billingTier : null
+        };
     }
 
     function explainFedex(m) {
@@ -158,8 +169,8 @@
         const ruleSteps = [];
         const ltlHit = ltlConds.some(function (c) { return c.hit; });
         ruleSteps.push({
-            title: '1) LTL',
-            subtitle: '任一：W>150 或 L>108 或 L+G>165',
+            title: 'LTL',
+            subtitle: 'W>150 或 L>108 或 L+G>165',
             conditions: ltlConds,
             matched: ltlHit,
             resultIfMatch: 'LTL'
@@ -167,8 +178,8 @@
         if (!ltlHit) {
             const osHit = oversizeConds.some(function (c) { return c.hit; });
             ruleSteps.push({
-                title: '2) Oversize',
-                subtitle: '任一：L>96 或 L+G>130 或 V>17280 或 W>110',
+                title: 'Oversize',
+                subtitle: 'L>96 或 L+G>130 或 V>17280 或 W>110',
                 conditions: oversizeConds,
                 matched: osHit,
                 resultIfMatch: 'Oversize'
@@ -176,8 +187,8 @@
             if (!osHit) {
                 const ahsDHit = ahsDConds.some(function (c) { return c.hit; });
                 ruleSteps.push({
-                    title: '3) AHS-D',
-                    subtitle: '任一：V>10368 或 L>48 或 M>30 或 L+G>105',
+                    title: 'AHS-D',
+                    subtitle: 'V>10368 或 L>48 或 M>30 或 L+G>105',
                     conditions: ahsDConds,
                     matched: ahsDHit,
                     resultIfMatch: 'AHS-D'
@@ -185,16 +196,16 @@
                 if (!ahsDHit) {
                     const ahsHit = ahsConds.some(function (c) { return c.hit; });
                     ruleSteps.push({
-                        title: '4) AHS',
-                        subtitle: 'W≥50 且无上述尺寸类',
+                        title: 'AHS',
+                        subtitle: 'W≥50',
                         conditions: ahsConds,
                         matched: ahsHit,
                         resultIfMatch: 'AHS'
                     });
                     if (!ahsHit) {
                         ruleSteps.push({
-                            title: '5) 小件',
-                            subtitle: '未命中以上规则',
+                            title: '小件',
+                            subtitle: '',
                             conditions: [],
                             matched: true,
                             resultIfMatch: '小件'
@@ -207,21 +218,21 @@
         return {
             carrier: 'FedEx',
             result: result,
-            billingNote: '围长 G=(M+S)×2；尺寸阈值用 L+G（长+围长）比较。',
+            billingNote: '',
             ruleSteps: ruleSteps
         };
     }
 
     // -------------------------------------------------------------------------
-    // UPS（Large Package 与 FedEx Oversize 同阈值；AH 体积>8640 in³，无 L+G>105）
+    // UPS（Large Package 同 FedEx Oversize；AHS-D 体积>8640，无 L+G>105）
     // -------------------------------------------------------------------------
     function classifyUps(S, M, L, W, V, G) {
         const LG = L + G;
-        if (W > 150 || L > 108 || LG > 165) return '超限';
-        if (L > 96 || LG > 130 || V > 17280 || W > 110) return 'Large Package';
-        if (V > 8640 || L > 48 || M > 30) return 'Additional Handling';
-        if (W >= 50) return 'Additional Handling';
-        return '标准';
+        if (W > 150 || L > 108 || LG > 165) return 'LTL';
+        if (L > 96 || LG > 130 || V > 17280 || W > 110) return 'Oversize';
+        if (V > 8640 || L > 48 || M > 30) return 'AHS-D';
+        if (W >= 50) return 'AHS';
+        return '小件';
     }
 
     function explainUps(m) {
@@ -234,67 +245,67 @@
         const V = m.V;
         const result = classifyUps(S, M, L, W, V, G);
 
-        const overConds = [
+        const ltlConds = [
             condLine('W > 150', 'W=' + W + ' > 150', W > 150),
             condLine('L > 108', 'L=' + L + ' > 108', L > 108),
             condLine('L+G > 165', 'L+G=' + LG + ' > 165', LG > 165)
         ];
-        const largeConds = [
+        const oversizeConds = [
             condLine('L > 96', 'L=' + L + ' > 96', L > 96),
             condLine('L+G > 130', 'L+G=' + LG + ' > 130', LG > 130),
             condLine('V > 17280', 'V=' + V + ' > 17280', V > 17280),
             condLine('W > 110', 'W=' + W + ' > 110', W > 110)
         ];
-        const ahDimConds = [
+        const ahsDConds = [
             condLine('V > 8640', 'V=' + V + ' > 8640', V > 8640),
             condLine('L > 48', 'L=' + L + ' > 48', L > 48),
             condLine('M > 30', 'M=' + M + ' > 30', M > 30)
         ];
-        const ahWeightConds = [condLine('W ≥ 50', 'W=' + W + ' ≥ 50', W >= 50)];
+        const ahsConds = [condLine('W ≥ 50', 'W=' + W + ' ≥ 50', W >= 50)];
 
         const ruleSteps = [];
-        const overHit = overConds.some(function (c) { return c.hit; });
+        const ltlHit = ltlConds.some(function (c) { return c.hit; });
         ruleSteps.push({
-            title: '1) 超限',
-            subtitle: '任一：W>150 或 L>108 或 L+G>165',
-            conditions: overConds,
-            matched: overHit,
-            resultIfMatch: '超限'
+            title: 'LTL',
+            subtitle: 'W>150 或 L>108 或 L+G>165',
+            conditions: ltlConds,
+            matched: ltlHit,
+            resultIfMatch: 'LTL'
         });
-        if (!overHit) {
-            const lgHit = largeConds.some(function (c) { return c.hit; });
+        if (!ltlHit) {
+            const osHit = oversizeConds.some(function (c) { return c.hit; });
             ruleSteps.push({
-                title: '2) Large Package',
-                subtitle: '与 FedEx Oversize 相同：L>96 或 L+G>130 或 V>17280 或 W>110',
-                conditions: largeConds,
-                matched: lgHit,
-                resultIfMatch: 'Large Package'
+                title: 'Oversize',
+                subtitle: 'L>96 或 L+G>130 或 V>17280 或 W>110',
+                conditions: oversizeConds,
+                matched: osHit,
+                resultIfMatch: 'Oversize'
             });
-            if (!lgHit) {
-                const ahDimHit = ahDimConds.some(function (c) { return c.hit; });
+            if (!osHit) {
+                const ahsDHit = ahsDConds.some(function (c) { return c.hit; });
                 ruleSteps.push({
-                    title: '3) Additional Handling（尺寸）',
-                    subtitle: '任一：V>8640 或 L>48 或 M>30（无 L+G>105）',
-                    conditions: ahDimConds,
-                    matched: ahDimHit,
-                    resultIfMatch: 'Additional Handling'
+                    title: 'AHS-D',
+                    subtitle: 'V>8640 或 L>48 或 M>30',
+                    conditions: ahsDConds,
+                    matched: ahsDHit,
+                    resultIfMatch: 'AHS-D'
                 });
-                if (!ahDimHit) {
-                    const ahWeightHit = ahWeightConds.some(function (c) { return c.hit; });
+                if (!ahsDHit) {
+                    const ahsHit = ahsConds.some(function (c) { return c.hit; });
                     ruleSteps.push({
-                        title: '4) Additional Handling（重量）',
-                        subtitle: 'W≥50 且无上述尺寸类',
-                        conditions: ahWeightConds,
-                        matched: ahWeightHit,
-                        resultIfMatch: 'Additional Handling'
+                        title: 'AHS',
+                        subtitle: 'W≥50',
+                        conditions: ahsConds,
+                        matched: ahsHit,
+                        resultIfMatch: 'AHS'
                     });
-                    if (!ahWeightHit) {
+                    if (!ahsHit) {
                         ruleSteps.push({
-                            title: '5) 标准',
-                            subtitle: '未命中附加费/大件规则',
+                            title: '小件',
+                            subtitle: '',
                             conditions: [],
                             matched: true,
-                            resultIfMatch: '标准'
+                            resultIfMatch: '小件'
                         });
                     }
                 }
@@ -304,7 +315,7 @@
         return {
             carrier: 'UPS',
             result: result,
-            billingNote: '围长 G=(M+S)×2；Large Package 用 L+G；Additional Handling 体积 V=S×M×L>8640 in³，不含 L+G>105。',
+            billingNote: 'AHS-D：V>8640',
             ruleSteps: ruleSteps
         };
     }
@@ -312,47 +323,53 @@
     // -------------------------------------------------------------------------
     // Wayfair CG 仓（忽略 Rolled rugs）
     // -------------------------------------------------------------------------
+    function wayfairCgBillingTier(tier, V) {
+        if (tier === 'Standard - Small' && V > 10368) return 'Standard - Medium';
+        if (tier === 'Standard - Medium' && V > 17280) return 'Standard - Large';
+        return tier;
+    }
+
     function classifyWayfairCg(S, M, L, W, V, G) {
         const LG = L + G;
 
         if (S <= 6 && M <= 12 && L <= 19 && W <= 25) {
-            return { tier: 'Bin - Small', billing: 'Bin - Small', volumeBump: false };
+            return { tier: 'Bin - Small', billingTier: 'Bin - Small', volumeBump: false };
         }
         if (S <= 14 && M <= 17 && L <= 26 && W <= 25) {
-            return { tier: 'Bin - Large', billing: 'Bin - Large', volumeBump: false };
+            return { tier: 'Bin - Large', billingTier: 'Bin - Large', volumeBump: false };
         }
         if (S <= 14 && M <= 17 && L <= 26 && W <= 50) {
-            return { tier: 'Bin - Heavy', billing: 'Bin - Heavy', volumeBump: false };
+            return { tier: 'Bin - Heavy', billingTier: 'Bin - Heavy', volumeBump: false };
         }
         if (S <= 30 && M <= 30 && L <= 48 && LG <= 105 && W <= 50) {
-            const bump = V > 10368;
+            const billingTier = wayfairCgBillingTier('Standard - Small', V);
             return {
                 tier: 'Standard - Small',
-                billing: bump ? 'Standard - Medium（V>10368 按 Medium 计费）' : 'Standard - Small',
-                volumeBump: bump
+                billingTier: billingTier,
+                volumeBump: billingTier !== 'Standard - Small'
             };
         }
         if (L <= 96 && LG <= 130 && W <= 110) {
-            const bump = V > 17280;
+            const billingTier = wayfairCgBillingTier('Standard - Medium', V);
             return {
                 tier: 'Standard - Medium',
-                billing: bump ? 'Standard - Large（V>17280 按 Large 计费）' : 'Standard - Medium',
-                volumeBump: bump
+                billingTier: billingTier,
+                volumeBump: billingTier !== 'Standard - Medium'
             };
         }
         if (L <= 108 && LG <= 165 && W <= 120) {
-            return { tier: 'Standard - Large', billing: 'Standard - Large', volumeBump: false };
+            return { tier: 'Standard - Large', billingTier: 'Standard - Large', volumeBump: false };
         }
         if (L <= 108 && LG <= 165 && W <= 150) {
-            return { tier: 'Standard - Oversize', billing: 'Standard - Oversize', volumeBump: false };
+            return { tier: 'Standard - Oversize', billingTier: 'Standard - Oversize', volumeBump: false };
         }
         if (W <= 250) {
-            return { tier: 'Large - Standard', billing: 'Large - Standard', volumeBump: false };
+            return { tier: 'Large - Standard', billingTier: 'Large - Standard', volumeBump: false };
         }
         if (L <= 144 && W <= 800) {
-            return { tier: 'Large - Heavy', billing: 'Large - Heavy', volumeBump: false };
+            return { tier: 'Large - Heavy', billingTier: 'Large - Heavy', volumeBump: false };
         }
-        return { tier: '超出表列范围', billing: '—', volumeBump: false };
+        return { tier: '超出表列范围', billingTier: '超出表列范围', volumeBump: false };
     }
 
     function explainWayfairCg(m) {
@@ -460,26 +477,22 @@
 
         const ruleSteps = [];
         let matched = false;
-        tierChecks.forEach(function (tier, idx) {
+        let dimTier = null;
+        tierChecks.forEach(function (tier) {
             const allPass = tier.conditions.every(function (c) { return c.hit; });
             if (!matched && allPass) {
                 matched = true;
-                let billing = tier.resultIfMatch;
-                if (tier.resultIfMatch === 'Standard - Small' && V > 10368) {
-                    billing = 'Standard - Medium（V>10368）';
-                } else if (tier.resultIfMatch === 'Standard - Medium' && V > 17280) {
-                    billing = 'Standard - Large（V>17280）';
-                }
+                dimTier = tier;
                 ruleSteps.push({
-                    title: (idx + 1) + ') ' + tier.title,
-                    subtitle: tier.subtitle + ' → 命中',
+                    title: tier.title,
+                    subtitle: tier.subtitle,
                     conditions: tier.conditions,
                     matched: true,
-                    resultIfMatch: billing
+                    resultIfMatch: tier.resultIfMatch
                 });
             } else if (!matched) {
                 ruleSteps.push({
-                    title: (idx + 1) + ') ' + tier.title,
+                    title: tier.title,
                     subtitle: tier.subtitle,
                     conditions: tier.conditions,
                     matched: false,
@@ -489,23 +502,45 @@
         });
         if (!matched) {
             ruleSteps.push({
-                title: '超出 Wayfair CG 表列范围',
-                subtitle: '未满足任一已列档位',
+                title: '超出表列范围',
+                subtitle: '',
                 conditions: [],
                 matched: true,
                 resultIfMatch: '超出表列范围'
+            });
+        } else if (dimTier && dimTier.resultIfMatch === 'Standard - Small') {
+            const bumpHit = V > 10368;
+            ruleSteps.push({
+                title: '体积升档',
+                subtitle: 'V>10368 按 Standard - Medium 计费',
+                conditions: [condLine('V > 10368', 'V=' + V + ' > 10368', bumpHit)],
+                matched: bumpHit,
+                resultIfMatch: bumpHit ? 'Standard - Medium' : 'Standard - Small'
+            });
+        } else if (dimTier && dimTier.resultIfMatch === 'Standard - Medium') {
+            const bumpHit = V > 17280;
+            ruleSteps.push({
+                title: '体积升档',
+                subtitle: 'V>17280 按 Standard - Large 计费',
+                conditions: [condLine('V > 17280', 'V=' + V + ' > 17280', bumpHit)],
+                matched: bumpHit,
+                resultIfMatch: bumpHit ? 'Standard - Large' : 'Standard - Medium'
             });
         }
 
         let billingNote = '';
         if (hit.volumeBump) {
-            billingNote = '体积升档：' + hit.billing;
+            if (hit.tier === 'Standard - Small') {
+                billingNote = '尺寸档 Standard - Small；V>10368 升档计费';
+            } else if (hit.tier === 'Standard - Medium') {
+                billingNote = '尺寸档 Standard - Medium；V>17280 升档计费';
+            }
         }
 
         return {
             carrier: 'Wayfair CG',
-            result: hit.tier,
-            billing: hit.billing,
+            result: hit.billingTier,
+            billing: hit.billingTier,
             billingNote: billingNote,
             ruleSteps: ruleSteps
         };
@@ -646,7 +681,7 @@
             html += '</div>';
         }
 
-        html += '<p class="pkg-class-footnote">三边与毛重均向上取整；围长 G=(M+S)×2；Large Package/Oversize 用 L+G；UPS AH 用 V>8640（无 L+G>105）；Wayfair 忽略 Rolled rugs；实际计费以价表为准。</p>';
+        html += '<p class="pkg-class-footnote">向上取整；G=(M+S)×2；UPS AHS-D 为 V>8640；Wayfair 忽略 Rolled rugs。</p>';
         return html;
     }
 
@@ -768,6 +803,7 @@
         ceilingPositiveInt: ceilingPositiveInt,
         sortedCeiledDims: sortedCeiledDims,
         classifyPackage: classifyPackage,
+        classifyAllPackages: classifyAllPackages,
         classifyFedex: classifyFedex,
         classifyUps: classifyUps,
         classifyWayfairCg: classifyWayfairCg,

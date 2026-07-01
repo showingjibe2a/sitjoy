@@ -108,7 +108,9 @@ class OrderManagementMixin:
                                 net_weight_lbs,
                                 package_length_in, package_width_in, package_height_in,
                                 gross_weight_lbs,
-                                cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                                cost_usd, carton_qty,
+                                fedex_package_size_class, ups_package_size_class, cg_package_size_class,
+                                last_mile_avg_freight_usd
                             ) VALUES (
                                 %s, %s, %s, %s,
                                 %s, %s,
@@ -118,7 +120,7 @@ class OrderManagementMixin:
                                 %s,
                                 %s, %s, %s,
                                 %s,
-                                %s, %s, %s, %s
+                                %s, %s, %s, %s, %s, %s
                             )
                             """,
                             (
@@ -143,7 +145,9 @@ class OrderManagementMixin:
                                 self._parse_float(data.get('gross_weight_lbs')),
                                 self._parse_float(data.get('cost_usd')),
                                 self._parse_int(data.get('carton_qty')),
-                                (data.get('package_size_class') or '').strip() or None,
+                                (data.get('fedex_package_size_class') or '').strip() or None,
+                                (data.get('ups_package_size_class') or '').strip() or None,
+                                (data.get('cg_package_size_class') or '').strip() or None,
                                 self._parse_float(data.get('last_mile_avg_freight_usd')),
                             )
                         )
@@ -191,7 +195,9 @@ class OrderManagementMixin:
                             self._parse_float(item.get('package_height_in')),
                             self._parse_float(item.get('gross_weight_lbs')),
                             self._parse_float(item.get('cost_usd')),
-                            (item.get('package_size_class') or '').strip() or None,
+                            (item.get('fedex_package_size_class') or '').strip() or None,
+                            (item.get('ups_package_size_class') or '').strip() or None,
+                            (item.get('cg_package_size_class') or '').strip() or None,
                             self._parse_int(item.get('carton_qty')),
                             self._parse_float(item.get('last_mile_avg_freight_usd')),
                             1 if self._parse_int(item.get('is_on_market')) else 0,
@@ -205,7 +211,7 @@ class OrderManagementMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             row_map = {}
-                            for finished_length_in, finished_width_in, finished_height_in, net_weight_lbs, package_length_in, package_width_in, package_height_in, gross_weight_lbs, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, is_reship_accessory, item_id in updates:
+                            for finished_length_in, finished_width_in, finished_height_in, net_weight_lbs, package_length_in, package_width_in, package_height_in, gross_weight_lbs, cost_usd, fedex_package_size_class, ups_package_size_class, cg_package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, is_reship_accessory, item_id in updates:
                                 row_map[int(item_id)] = {
                                     'finished_length_in': finished_length_in,
                                     'finished_width_in': finished_width_in,
@@ -216,7 +222,9 @@ class OrderManagementMixin:
                                     'package_height_in': package_height_in,
                                     'gross_weight_lbs': gross_weight_lbs,
                                     'cost_usd': cost_usd,
-                                    'package_size_class': package_size_class,
+                                    'fedex_package_size_class': fedex_package_size_class,
+                                    'ups_package_size_class': ups_package_size_class,
+                                    'cg_package_size_class': cg_package_size_class,
                                     'carton_qty': carton_qty,
                                     'last_mile_avg_freight_usd': last_mile_avg_freight_usd,
                                     'is_on_market': is_on_market,
@@ -243,7 +251,9 @@ class OrderManagementMixin:
                                 f"package_height_in = {build_case('package_height_in')}",
                                 f"gross_weight_lbs = {build_case('gross_weight_lbs')}",
                                 f"cost_usd = {build_case('cost_usd')}",
-                                f"package_size_class = {build_case('package_size_class')}",
+                                f"fedex_package_size_class = {build_case('fedex_package_size_class')}",
+                                f"ups_package_size_class = {build_case('ups_package_size_class')}",
+                                f"cg_package_size_class = {build_case('cg_package_size_class')}",
                                 f"carton_qty = {build_case('carton_qty')}",
                                 f"last_mile_avg_freight_usd = {build_case('last_mile_avg_freight_usd')}",
                                 f"is_on_market = {build_case('is_on_market')}",
@@ -265,7 +275,9 @@ class OrderManagementMixin:
                             continue
                         updates.append((
                             self._parse_float(item.get('cost_usd')),
-                            (item.get('package_size_class') or '').strip() or None,
+                            (item.get('fedex_package_size_class') or '').strip() or None,
+                            (item.get('ups_package_size_class') or '').strip() or None,
+                            (item.get('cg_package_size_class') or '').strip() or None,
                             self._parse_int(item.get('carton_qty')),
                             self._parse_float(item.get('last_mile_avg_freight_usd')),
                             item_id
@@ -280,7 +292,9 @@ class OrderManagementMixin:
                                 """
                                 UPDATE order_products
                                 SET cost_usd=%s,
-                                    package_size_class=%s,
+                                    fedex_package_size_class=%s,
+                                    ups_package_size_class=%s,
+                                    cg_package_size_class=%s,
                                     carton_qty=%s,
                                     last_mile_avg_freight_usd=%s
                                 WHERE id=%s
@@ -296,11 +310,14 @@ class OrderManagementMixin:
                 updates = []
                 params = []
 
-                text_fields = ['sku', 'version_no', 'spec_qty_short', 'contents_desc_en', 'package_size_class']
+                text_fields = [
+                    'sku', 'version_no', 'spec_qty_short', 'contents_desc_en',
+                    'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class',
+                ]
                 for field in text_fields:
                     if field in data:
                         val = (data.get(field) or '').strip()
-                        if field in ('contents_desc_en', 'package_size_class'):
+                        if field in ('contents_desc_en', 'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class'):
                             val = val or None
                         updates.append(f"{field}=%s")
                         params.append(val)
@@ -1183,9 +1200,65 @@ class OrderManagementMixin:
             return 'AHS'
         return '小件'
 
+    def _order_product_classify_ups_package(self, S, M, L, weight_lb_int):
+        """UPS 内部标签（与 static/js/package_class_calculator.js classifyUps 一致）。"""
+        if S is None or M is None or L is None or weight_lb_int is None:
+            return None
+        G = (S + M) * 2
+        LG = L + G
+        V = int(S) * int(M) * int(L)
+        W = int(weight_lb_int)
+
+        if W > 150 or L > 108 or LG > 165:
+            return 'LTL'
+        if L > 96 or LG > 130 or V > 17280 or W > 110:
+            return 'Oversize'
+        if V > 8640 or L > 48 or M > 30:
+            return 'AHS-D'
+        if W >= 50:
+            return 'AHS'
+        return '小件'
+
+    def _order_product_classify_cg_package(self, S, M, L, weight_lb_int):
+        """Wayfair CG 计费档位（含体积升档：Small V>10368→Medium，Medium V>17280→Large）。"""
+        if S is None or M is None or L is None or weight_lb_int is None:
+            return None
+        G = (S + M) * 2
+        LG = L + G
+        V = int(S) * int(M) * int(L)
+        W = int(weight_lb_int)
+
+        tier = None
+        if S <= 6 and M <= 12 and L <= 19 and W <= 25:
+            tier = 'Bin - Small'
+        elif S <= 14 and M <= 17 and L <= 26 and W <= 25:
+            tier = 'Bin - Large'
+        elif S <= 14 and M <= 17 and L <= 26 and W <= 50:
+            tier = 'Bin - Heavy'
+        elif S <= 30 and M <= 30 and L <= 48 and LG <= 105 and W <= 50:
+            tier = 'Standard - Small'
+        elif L <= 96 and LG <= 130 and W <= 110:
+            tier = 'Standard - Medium'
+        elif L <= 108 and LG <= 165 and W <= 120:
+            tier = 'Standard - Large'
+        elif L <= 108 and LG <= 165 and W <= 150:
+            tier = 'Standard - Oversize'
+        elif W <= 250:
+            tier = 'Large - Standard'
+        elif L <= 144 and W <= 800:
+            tier = 'Large - Heavy'
+        else:
+            return '超出表列范围'
+
+        if tier == 'Standard - Small' and V > 10368:
+            return 'Standard - Medium'
+        if tier == 'Standard - Medium' and V > 17280:
+            return 'Standard - Large'
+        return tier
+
     def _order_product_batch_case_update(self, cur, apply_payload, column_name):
         """将多行 (value, id) 合并为少量 CASE WHEN UPDATE，减少数据库往返。"""
-        allowed = {'package_size_class', 'carton_qty'}
+        allowed = {'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class', 'carton_qty'}
         if column_name not in allowed:
             raise ValueError('invalid batch update column')
         if not apply_payload:
@@ -1210,6 +1283,41 @@ class OrderManagementMixin:
             )
             try:
                 cur.execute(sql, tuple(params + id_list))
+                updated += int(cur.rowcount or 0)
+            except Exception as ex:
+                errors.append({'id': id_list[0] if id_list else 0, 'sku': '', 'error': str(ex)})
+        return updated, errors
+
+    def _order_product_batch_case_update_package_classes(self, cur, apply_payload):
+        """批量更新 FedEx / UPS / CG 三列包裹归类。"""
+        if not apply_payload:
+            return 0, []
+        errors = []
+        updated = 0
+        chunk_size = 120
+        for i in range(0, len(apply_payload), chunk_size):
+            chunk = apply_payload[i:i + chunk_size]
+            when_f, when_u, when_c = [], [], []
+            fedex_params, ups_params, cg_params = [], [], []
+            id_list = []
+            for fedex_cls, ups_cls, cg_cls, rid in chunk:
+                when_f.append('WHEN %s THEN %s')
+                when_u.append('WHEN %s THEN %s')
+                when_c.append('WHEN %s THEN %s')
+                fedex_params.extend([rid, fedex_cls])
+                ups_params.extend([rid, ups_cls])
+                cg_params.extend([rid, cg_cls])
+                id_list.append(rid)
+            in_ph = ','.join(['%s'] * len(id_list))
+            sql = (
+                'UPDATE order_products SET '
+                f"fedex_package_size_class = CASE id {' '.join(when_f)} ELSE fedex_package_size_class END, "
+                f"ups_package_size_class = CASE id {' '.join(when_u)} ELSE ups_package_size_class END, "
+                f"cg_package_size_class = CASE id {' '.join(when_c)} ELSE cg_package_size_class END "
+                f'WHERE id IN ({in_ph})'
+            )
+            try:
+                cur.execute(sql, tuple(fedex_params + ups_params + cg_params + id_list))
                 updated += int(cur.rowcount or 0)
             except Exception as ex:
                 errors.append({'id': id_list[0] if id_list else 0, 'sku': '', 'error': str(ex)})
@@ -1305,7 +1413,7 @@ class OrderManagementMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_order_product_package_class_batch_api(self, environ, method, start_response):
-        """勾选 SKU 批量预览/更新包裹归类（FedEx/UPS Service Guide 阈值对齐的内部标签）。"""
+        """勾选 SKU 批量预览/更新 FedEx / UPS / CG 包裹归类。"""
         try:
             if method != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -1324,7 +1432,8 @@ class OrderManagementMixin:
                     cur.execute(
                         f"""
                         SELECT id, sku, package_length_in, package_width_in, package_height_in,
-                               gross_weight_lbs, package_size_class
+                               gross_weight_lbs,
+                               fedex_package_size_class, ups_package_size_class, cg_package_size_class
                         FROM order_products
                         WHERE id IN ({placeholders})
                         """,
@@ -1346,8 +1455,12 @@ class OrderManagementMixin:
                     if not dims or w_int is None:
                         continue
                     S, M, L = dims
-                    cls = self._order_product_classify_fedex_package(S, M, L, w_int)
-                    old_cls = (r.get('package_size_class') or '').strip() or None
+                    fedex_cls = self._order_product_classify_fedex_package(S, M, L, w_int)
+                    ups_cls = self._order_product_classify_ups_package(S, M, L, w_int)
+                    cg_cls = self._order_product_classify_cg_package(S, M, L, w_int)
+                    old_fedex = (r.get('fedex_package_size_class') or '').strip() or None
+                    old_ups = (r.get('ups_package_size_class') or '').strip() or None
+                    old_cg = (r.get('cg_package_size_class') or '').strip() or None
                     preview_rows.append({
                         'id': rid,
                         'sku': sku,
@@ -1357,11 +1470,15 @@ class OrderManagementMixin:
                         'gross_weight_lb_ceiled': w_int,
                         'girth_in': (S + M) * 2,
                         'volume_cu_in': S * M * L,
-                        'package_class_old': old_cls,
-                        'package_class_new': cls,
+                        'fedex_package_size_class_old': old_fedex,
+                        'fedex_package_size_class_new': fedex_cls,
+                        'ups_package_size_class_old': old_ups,
+                        'ups_package_size_class_new': ups_cls,
+                        'cg_package_size_class_old': old_cg,
+                        'cg_package_size_class_new': cg_cls,
                     })
-                    if cls != old_cls:
-                        apply_payload.append((cls, rid))
+                    if fedex_cls != old_fedex or ups_cls != old_ups or cg_cls != old_cg:
+                        apply_payload.append((fedex_cls, ups_cls, cg_cls, rid))
 
                 updatable_count = len(preview_rows)
                 missing_info_count = len(ids) - updatable_count
@@ -1379,7 +1496,7 @@ class OrderManagementMixin:
                 errors = []
                 updated = 0
                 with conn.cursor() as cur:
-                    updated, errors = self._order_product_batch_case_update(cur, apply_payload, 'package_size_class')
+                    updated, errors = self._order_product_batch_case_update_package_classes(cur, apply_payload)
 
                 return self.send_json({
                     'status': 'success',
@@ -1520,7 +1637,9 @@ class OrderManagementMixin:
                                 op.gross_weight_lbs,
                                 op.cost_usd,
                                 op.carton_qty,
-                                op.package_size_class,
+                                op.fedex_package_size_class,
+                                op.ups_package_size_class,
+                                op.cg_package_size_class,
                                 op.last_mile_avg_freight_usd
                             FROM order_products op
                             LEFT JOIN product_families pf ON op.sku_family_id = pf.id
@@ -1653,7 +1772,9 @@ class OrderManagementMixin:
                         ('package_height_in', '包裹高(inch)', 'number', None),
                         ('gross_weight_lbs', '毛重(lbs)', 'number', None),
                         ('carton_qty', '装箱量', 'number', None),
-                        ('package_size_class', '包裹大小归类(Fedx)', 'text', None)
+                        ('fedex_package_size_class', 'FedEx包裹归类', 'text', None),
+                        ('ups_package_size_class', 'UPS包裹归类', 'text', None),
+                        ('cg_package_size_class', 'CG包裹归类', 'text', None)
                     ]
                 },
                 {
@@ -1795,8 +1916,12 @@ class OrderManagementMixin:
                     example_row_data.append(('产品成本及发货至海外仓成本估算(USD，不含仓储费)', 0, 25.00))
                 elif field_base == 'carton_qty':
                     example_row_data.append(('装箱量', 0, 50))
-                elif field_base == 'package_size_class':
-                    example_row_data.append(('包裹大小归类(Fedx)', 0, 'Small'))
+                elif field_base == 'fedex_package_size_class':
+                    example_row_data.append(('FedEx包裹归类', 0, '小件'))
+                elif field_base == 'ups_package_size_class':
+                    example_row_data.append(('UPS包裹归类', 0, '小件'))
+                elif field_base == 'cg_package_size_class':
+                    example_row_data.append(('CG包裹归类', 0, 'Standard - Small'))
                 elif field_base == 'last_mile_avg_freight_usd':
                     example_row_data.append(('尾程平均运费(美元)', 0, 3.50))
                 elif field_base in ['filling_materials', 'frame_materials', 'features', 'certifications', 'factories']:
@@ -1891,7 +2016,9 @@ class OrderManagementMixin:
                         'gross_weight_lbs': item.get('gross_weight_lbs'),
                         'cost_usd': item.get('cost_usd'),
                         'carton_qty': item.get('carton_qty'),
-                        'package_size_class': item.get('package_size_class') or '',
+                        'fedex_package_size_class': item.get('fedex_package_size_class') or '',
+                        'ups_package_size_class': item.get('ups_package_size_class') or '',
+                        'cg_package_size_class': item.get('cg_package_size_class') or '',
                         'last_mile_avg_freight_usd': item.get('last_mile_avg_freight_usd'),
                     }
                     for field_name, value in direct_values.items():
@@ -2019,7 +2146,10 @@ class OrderManagementMixin:
                 '成本价(美元)': 'cost_usd',
                 '产品成本及发货至海外仓成本估算(USD，不含仓储费)': 'cost_usd',
                 '装箱量': 'carton_qty',
-                '包裹大小归类(Fedx)': 'package_size_class',
+                'FedEx包裹归类': 'fedex_package_size_class',
+                'UPS包裹归类': 'ups_package_size_class',
+                'CG包裹归类': 'cg_package_size_class',
+                '包裹大小归类(Fedx)': 'fedex_package_size_class',
                 '尾程平均运费(美元)': 'last_mile_avg_freight_usd',
                 '填充材料(可多项)': 'filling_materials',
                 '框架材料(可多项)': 'frame_materials',
@@ -2034,7 +2164,9 @@ class OrderManagementMixin:
                 'contents_desc_en',
                 'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
                 'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
-                'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+                'cost_usd', 'carton_qty',
+                'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class',
+                'last_mile_avg_freight_usd'
             }
             
             # 构建列映射，支持中文标签或字段代码
@@ -2169,7 +2301,9 @@ class OrderManagementMixin:
                                is_iteration, is_dachene_product, source_order_product_id,
                                finished_length_in, finished_width_in, finished_height_in,
                                net_weight_lbs, package_length_in, package_width_in, package_height_in,
-                               gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                               gross_weight_lbs, cost_usd, carton_qty,
+                               fedex_package_size_class, ups_package_size_class, cg_package_size_class,
+                               last_mile_avg_freight_usd
                         FROM order_products
                         """
                     )
@@ -2292,7 +2426,9 @@ class OrderManagementMixin:
                         'gross_weight_lbs': self._parse_float(get_cell(row, 'gross_weight_lbs')),
                         'cost_usd': self._parse_float(get_cell(row, 'cost_usd')),
                         'carton_qty': self._parse_int(get_cell(row, 'carton_qty')),
-                        'package_size_class': (get_cell(row, 'package_size_class') or '').strip() or None,
+                        'fedex_package_size_class': (get_cell(row, 'fedex_package_size_class') or '').strip() or None,
+                        'ups_package_size_class': (get_cell(row, 'ups_package_size_class') or '').strip() or None,
+                        'cg_package_size_class': (get_cell(row, 'cg_package_size_class') or '').strip() or None,
                         'last_mile_avg_freight_usd': self._parse_float(get_cell(row, 'last_mile_avg_freight_usd'))
                     }
 
@@ -2327,7 +2463,9 @@ class OrderManagementMixin:
                         'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en', 'is_iteration', 'is_dachene_product', 'is_on_market', 'is_reship_accessory', 'source_order_product_id',
                         'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
                         'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
-                        'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+                        'cost_usd', 'carton_qty',
+                        'fedex_package_size_class', 'ups_package_size_class', 'cg_package_size_class',
+                        'last_mile_avg_freight_usd'
                     ]
                     is_payload_changed = True
                     if target_id and target_id in order_row_map:
@@ -2390,7 +2528,9 @@ class OrderManagementMixin:
                                         gross_weight_lbs=%(gross_weight_lbs)s,
                                         cost_usd=%(cost_usd)s,
                                         carton_qty=%(carton_qty)s,
-                                        package_size_class=%(package_size_class)s,
+                                        fedex_package_size_class=%(fedex_package_size_class)s,
+                                        ups_package_size_class=%(ups_package_size_class)s,
+                                        cg_package_size_class=%(cg_package_size_class)s,
                                         last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s
                                     WHERE id=%(id)s
                                     """,
@@ -2405,13 +2545,17 @@ class OrderManagementMixin:
                                         is_iteration, is_dachene_product, is_on_market, is_reship_accessory, source_order_product_id,
                                         finished_length_in, finished_width_in, finished_height_in,
                                         net_weight_lbs, package_length_in, package_width_in, package_height_in,
-                                        gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                                        gross_weight_lbs, cost_usd, carton_qty,
+                                        fedex_package_size_class, ups_package_size_class, cg_package_size_class,
+                                        last_mile_avg_freight_usd
                                     ) VALUES (
                                         %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
                                         %(is_iteration)s, %(is_dachene_product)s, %(is_on_market)s, %(is_reship_accessory)s, %(source_order_product_id)s,
                                         %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                         %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
-                                        %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
+                                        %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s,
+                                        %(fedex_package_size_class)s, %(ups_package_size_class)s, %(cg_package_size_class)s,
+                                        %(last_mile_avg_freight_usd)s
                                     )
                                     """,
                                     payload
