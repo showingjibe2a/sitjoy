@@ -44,160 +44,6 @@
             text-align: center;
         }
         .switch-cell .switch-wrap { margin: 0 auto; }
-
-        /* 编辑弹窗：适用范围 / A+ 模块分区 */
-        .it-edit-modal-content { max-width: 1080px; }
-        .it-form-section {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 12px;
-            padding: 0.75rem 0.85rem;
-            margin-top: 0.85rem;
-            background: rgba(255, 255, 255, 0.55);
-        }
-        .it-form-section__title {
-            margin: 0 0 0.55rem;
-            font-size: 0.88rem;
-            font-weight: 700;
-            color: var(--morandi-ink);
-        }
-        .it-form-section__hint {
-            margin: -0.25rem 0 0.55rem;
-            font-size: 0.78rem;
-            color: rgba(42, 36, 32, 0.62);
-        }
-        .it-scope-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.45rem 1rem;
-        }
-        .it-scope-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.5rem;
-            font-size: 0.86rem;
-            padding: 0.35rem 0.45rem;
-            border-radius: 8px;
-            background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.45);
-        }
-        .it-enabled-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            margin-bottom: 0.65rem;
-            padding-bottom: 0.65rem;
-            border-bottom: 1px solid rgba(207, 199, 189, 0.35);
-        }
-        .it-enabled-row label:first-child { font-weight: 600; margin: 0; }
-        .it-ap-share-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            margin-bottom: 0.65rem;
-            padding: 0.45rem 0.55rem;
-            border-radius: 8px;
-            background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.45);
-        }
-        .it-ap-share-row label:first-child { margin: 0; font-size: 0.86rem; }
-        .it-ap-mobile-size-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.65rem;
-            margin-bottom: 0.65rem;
-        }
-        .it-ap-dual {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.75rem;
-            min-width: 0;
-        }
-        .it-ap-col {
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-            min-width: 0;
-        }
-        .it-ap-col__title {
-            font-size: 0.82rem;
-            font-weight: 700;
-            color: var(--morandi-slate);
-        }
-        .it-ap-json-ta {
-            width: 100%;
-            min-height: 132px;
-            font-family: ui-monospace, Menlo, Consolas, monospace;
-            font-size: 0.82rem;
-            box-sizing: border-box;
-            padding: 0.55rem 0.65rem;
-            border-radius: 8px;
-            border: 1px solid var(--morandi-sand);
-            resize: vertical;
-        }
-        .it-ap-preview-label {
-            font-size: 0.74rem;
-            font-weight: 600;
-            color: var(--morandi-slate);
-            margin-top: 0.15rem;
-        }
-        .it-ap-preview {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 10px;
-            padding: 0.55rem 0.65rem;
-            min-height: 88px;
-            max-height: 200px;
-            overflow: auto;
-            background: #fff;
-            font-size: 0.8rem;
-        }
-        .it-ap-preview .it-ap-mod {
-            border: 1px solid rgba(207, 199, 189, 0.55);
-            border-radius: 8px;
-            padding: 0.45rem 0.5rem;
-            margin-bottom: 0.45rem;
-        }
-        .it-ap-preview .it-ap-mod:last-child { margin-bottom: 0; }
-        .it-ap-preview .it-ap-mod__type { font-weight: 700; margin-bottom: 0.2rem; }
-        .it-ap-preview .it-ap-mod__props {
-            margin: 0;
-            white-space: pre-wrap;
-            color: rgba(42, 36, 32, 0.75);
-            font-size: 0.76rem;
-            font-family: ui-monospace, Menlo, Consolas, monospace;
-        }
-        .it-ap-slots {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-        }
-        .it-ap-slot-ph {
-            width: 68px;
-            height: 68px;
-            border: 1px dashed rgba(155, 74, 74, 0.45);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 0.15rem;
-            font-size: 0.68rem;
-            color: var(--morandi-slate);
-            background: rgba(255, 255, 255, 0.85);
-            text-align: center;
-            line-height: 1.2;
-        }
-        .it-ap-slot-ph__icon {
-            font-size: 1.1rem;
-            line-height: 1;
-            opacity: 0.55;
-        }
-        .it-ap-shared-slots { margin-top: 0.65rem; }
-        @media (max-width: 900px) {
-            .it-ap-dual, .it-ap-mobile-size-row, .it-scope-grid { grid-template-columns: 1fr; }
-        }
     </style>
 </head>
 <body>
@@ -253,62 +99,67 @@
     </div>
 
     <div class="pm-modal" id="create-modal">
-        <div class="pm-modal-content" style="max-width: 620px;">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <h3 style="margin-top:0;">新增图片类型</h3>
-            <div class="pm-section-body pm-form">
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label for="modalTypeName">类型名称<span class="required-asterisk">*</span></label>
-                    <input type="text" id="modalTypeName" class="required-field" maxlength="64" placeholder="例如：白底图 / 场景图 / A+电脑端">
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label for="modalRequiredWidth">电脑端需求宽(px)</label>
-                    <input type="number" id="modalRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label for="modalRequiredHeight">电脑端需求高(px)</label>
-                    <input type="number" id="modalRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
-                </div>
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>关联平台（不选=通用）</label>
-                    <div id="modalPlatformTypeWrap" class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
-                        <div id="modalPlatformTypeList" class="pm-select-empty">加载中...</div>
+            <div class="pm-section">
+                <h4 class="pm-section-title">基础信息</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label for="modalTypeName">类型名称<span class="required-asterisk">*</span></label>
+                        <input type="text" id="modalTypeName" class="required-field" maxlength="64" placeholder="例如：白底图 / 场景图 / A+电脑端">
                     </div>
-                </div>
-                <div class="it-form-section" style="margin-top:0.85rem;">
-                    <h4 class="it-form-section__title">适用范围</h4>
-                    <div class="it-scope-grid">
-                        <div class="it-scope-item">
-                            <span>适用面料</span>
-                            <label class="switch-wrap" aria-label="适用面料">
-                                <input type="checkbox" id="modalApplyFabric" checked>
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用销售产品</span>
-                            <label class="switch-wrap" aria-label="适用销售产品">
-                                <input type="checkbox" id="modalApplySales" checked>
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用下单产品</span>
-                            <label class="switch-wrap" aria-label="适用下单产品">
-                                <input type="checkbox" id="modalApplyOrderProduct" checked>
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用A+</span>
-                            <label class="switch-wrap" aria-label="适用A+">
-                                <input type="checkbox" id="modalApplyAplus" checked>
-                                <span class="switch-slider"></span>
-                            </label>
+                    <div class="form-group" style="margin:0;">
+                        <label for="modalRequiredWidth">电脑端需求宽(px)</label>
+                        <input type="number" id="modalRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="modalRequiredHeight">电脑端需求高(px)</label>
+                        <input type="number" id="modalRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label>关联平台（不选=通用）</label>
+                        <div id="modalPlatformTypeWrap" class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
+                            <div id="modalPlatformTypeList" class="pm-select-empty">加载中...</div>
                         </div>
                     </div>
                 </div>
             </div>
+            <div class="pm-section">
+                <h4 class="pm-section-title">适用范围</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group" style="margin:0;">
+                        <label>适用面料</label>
+                        <label class="switch-wrap" aria-label="适用面料">
+                            <input type="checkbox" id="modalApplyFabric" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用销售产品</label>
+                        <label class="switch-wrap" aria-label="适用销售产品">
+                            <input type="checkbox" id="modalApplySales" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用下单产品</label>
+                        <label class="switch-wrap" aria-label="适用下单产品">
+                            <input type="checkbox" id="modalApplyOrderProduct" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用A+</label>
+                        <label class="switch-wrap" aria-label="适用A+">
+                            <input type="checkbox" id="modalApplyAplus" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeCreateModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveImageType()">保存</button>
@@ -317,80 +168,85 @@
     </div>
 
     <div class="pm-modal" id="edit-modal">
-        <div class="pm-modal-content it-edit-modal-content">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <h3 style="margin-top:0;">编辑图片类型</h3>
-            <div class="pm-section-body pm-form">
-                <div class="it-enabled-row">
-                    <label for="editEnabled">启用</label>
-                    <label class="switch-wrap" aria-label="启用">
-                        <input type="checkbox" id="editEnabled">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label for="editTypeName">类型名称<span class="required-asterisk">*</span></label>
-                    <input type="text" id="editTypeName" class="required-field" maxlength="64">
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label for="editRequiredWidth">电脑端需求宽(px)</label>
-                    <input type="number" id="editRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label for="editRequiredHeight">电脑端需求高(px)</label>
-                    <input type="number" id="editRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
-                </div>
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>关联平台（不选=通用）</label>
-                    <div class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
-                        <div id="editPlatformTypeList" class="pm-select-empty">加载中...</div>
+            <div class="pm-section">
+                <h4 class="pm-section-title">基础信息</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group" style="margin:0;">
+                        <label for="editEnabled">启用</label>
+                        <label class="switch-wrap" aria-label="启用">
+                            <input type="checkbox" id="editEnabled">
+                            <span class="switch-slider"></span>
+                        </label>
                     </div>
-                </div>
-
-                <div class="it-form-section">
-                    <h4 class="it-form-section__title">适用范围</h4>
-                    <div class="it-scope-grid">
-                        <div class="it-scope-item">
-                            <span>适用面料</span>
-                            <label class="switch-wrap" aria-label="适用面料">
-                                <input type="checkbox" id="editApplyFabric">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用销售产品</span>
-                            <label class="switch-wrap" aria-label="适用销售产品">
-                                <input type="checkbox" id="editApplySales">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用下单产品</span>
-                            <label class="switch-wrap" aria-label="适用下单产品">
-                                <input type="checkbox" id="editApplyOrderProduct">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="it-scope-item">
-                            <span>适用A+</span>
-                            <label class="switch-wrap" aria-label="适用A+">
-                                <input type="checkbox" id="editApplyAplus" onchange="toggleEditAplusSections()">
-                                <span class="switch-slider"></span>
-                            </label>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label for="editTypeName">类型名称<span class="required-asterisk">*</span></label>
+                        <input type="text" id="editTypeName" class="required-field" maxlength="64">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="editRequiredWidth">电脑端需求宽(px)</label>
+                        <input type="number" id="editRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="editRequiredHeight">电脑端需求高(px)</label>
+                        <input type="number" id="editRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label>关联平台（不选=通用）</label>
+                        <div class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
+                            <div id="editPlatformTypeList" class="pm-select-empty">加载中...</div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div id="editAplusExtrasSection" class="it-form-section pm-u-hidden">
-                    <h4 class="it-form-section__title">A+ 模块自定义</h4>
-                    <p class="it-form-section__hint">布局 JSON 修改后约 0.4 秒自动刷新下方预览；虚线框为 A+ 管理中上传图片后将出现的区域。</p>
-                    <div class="it-ap-share-row">
+            <div class="pm-section">
+                <h4 class="pm-section-title">适用范围</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group" style="margin:0;">
+                        <label>适用面料</label>
+                        <label class="switch-wrap" aria-label="适用面料">
+                            <input type="checkbox" id="editApplyFabric">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用销售产品</label>
+                        <label class="switch-wrap" aria-label="适用销售产品">
+                            <input type="checkbox" id="editApplySales">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用下单产品</label>
+                        <label class="switch-wrap" aria-label="适用下单产品">
+                            <input type="checkbox" id="editApplyOrderProduct">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label>适用A+</label>
+                        <label class="switch-wrap" aria-label="适用A+">
+                            <input type="checkbox" id="editApplyAplus" onchange="toggleEditAplusSections()">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="editAplusExtrasSection" class="pm-section pm-u-hidden">
+                <h4 class="pm-section-title label-help">A+ 模块自定义<span class="help-dot" data-tip="布局 JSON 修改后约 0.4 秒自动刷新下方预览；虚线框为 A+ 管理中上传图片后将出现的区域。"></span></h4>
+                <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
+                    <div class="form-group pm-form-full" style="margin:0;">
                         <label for="editAplusShareImages">手机/电脑端共用图片</label>
                         <label class="switch-wrap" aria-label="手机/电脑端共用图片">
                             <input type="checkbox" id="editAplusShareImages" checked onchange="onEditAplusShareImagesChange()">
                             <span class="switch-slider"></span>
                         </label>
                     </div>
-                    <div id="editAplusMobileSizeSection" class="it-ap-mobile-size-row pm-u-hidden">
+                    <div id="editAplusMobileSizeSection" class="pm-section-body pm-form pm-form-full pm-u-hidden" style="margin:0; padding:0;">
                         <div class="form-group" style="margin:0;">
                             <label for="editRequiredWidthMobile">手机端需求宽(px)</label>
                             <input type="number" id="editRequiredWidthMobile" class="optional-field" min="0" step="1" placeholder="可为空">
@@ -400,37 +256,38 @@
                             <input type="number" id="editRequiredHeightMobile" class="optional-field" min="0" step="1" placeholder="可为空">
                         </div>
                     </div>
-                    <div class="it-ap-dual">
-                        <div class="it-ap-col">
-                            <div class="it-ap-col__title">手机端</div>
-                            <label class="it-ap-preview-label" for="editAplusJsonMobile">布局 JSON</label>
-                            <textarea id="editAplusJsonMobile" class="it-ap-json-ta optional-field" spellcheck="false" placeholder='{"modules":[...]}'></textarea>
-                            <div class="it-ap-preview-label">布局预览</div>
-                            <div id="editAplusPreviewMobile" class="it-ap-preview pm-muted">暂无内容</div>
+                    <div class="pm-section-body pm-form pm-form-full" style="grid-template-columns: 1fr 1fr; align-items: start; margin:0; padding:0;">
+                        <div class="form-group pm-form-full" style="margin:0; display:flex; flex-direction:column; gap:0.4rem;">
+                            <label style="margin:0; font-weight:700;">手机端</label>
+                            <label for="editAplusJsonMobile">布局 JSON</label>
+                            <textarea id="editAplusJsonMobile" class="optional-field" spellcheck="false" placeholder='{"modules":[...]}' style="min-height:132px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:0.82rem; width:100%; box-sizing:border-box;"></textarea>
+                            <label>布局预览</label>
+                            <div id="editAplusPreviewMobile" class="pm-inline-panel pm-muted" style="min-height:88px; max-height:200px; overflow:auto; font-size:0.8rem;">暂无内容</div>
                             <div id="editAplusSlotsMobileWrap" class="pm-u-hidden">
-                                <div class="it-ap-preview-label">图片位示意</div>
-                                <div id="editAplusSlotsMobile" class="it-ap-slots"></div>
+                                <label>图片位示意</label>
+                                <div id="editAplusSlotsMobile" class="pm-inline-panel" style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.35rem;"></div>
                             </div>
                         </div>
-                        <div class="it-ap-col">
-                            <div class="it-ap-col__title">电脑端</div>
-                            <label class="it-ap-preview-label" for="editAplusJsonDesktop">布局 JSON</label>
-                            <textarea id="editAplusJsonDesktop" class="it-ap-json-ta optional-field" spellcheck="false" placeholder='{"modules":[...]}'></textarea>
-                            <div class="it-ap-preview-label">布局预览</div>
-                            <div id="editAplusPreviewDesktop" class="it-ap-preview pm-muted">暂无内容</div>
+                        <div class="form-group pm-form-full" style="margin:0; display:flex; flex-direction:column; gap:0.4rem;">
+                            <label style="margin:0; font-weight:700;">电脑端</label>
+                            <label for="editAplusJsonDesktop">布局 JSON</label>
+                            <textarea id="editAplusJsonDesktop" class="optional-field" spellcheck="false" placeholder='{"modules":[...]}' style="min-height:132px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:0.82rem; width:100%; box-sizing:border-box;"></textarea>
+                            <label>布局预览</label>
+                            <div id="editAplusPreviewDesktop" class="pm-inline-panel pm-muted" style="min-height:88px; max-height:200px; overflow:auto; font-size:0.8rem;">暂无内容</div>
                             <div id="editAplusSlotsDesktopWrap" class="pm-u-hidden">
-                                <div class="it-ap-preview-label">图片位示意</div>
-                                <div id="editAplusSlotsDesktop" class="it-ap-slots"></div>
+                                <label>图片位示意</label>
+                                <div id="editAplusSlotsDesktop" class="pm-inline-panel" style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.35rem;"></div>
                             </div>
                         </div>
                     </div>
-                    <div id="editAplusSlotsSharedWrap" class="it-ap-shared-slots pm-u-hidden">
-                        <div class="it-ap-preview-label">共用图片位示意（上传后手机/电脑端共用）</div>
-                        <div id="editAplusSlotsShared" class="it-ap-slots"></div>
+                    <div id="editAplusSlotsSharedWrap" class="form-group pm-form-full pm-u-hidden" style="margin:0;">
+                        <label>共用图片位示意（上传后手机/电脑端共用）</label>
+                        <div id="editAplusSlotsShared" class="pm-inline-panel" style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.35rem;"></div>
                     </div>
                 </div>
             </div>
             <div id="editStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEditModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveEditImageType()">保存</button>
@@ -758,15 +615,19 @@
             if (!hostEl) return;
             const n = Math.max(0, Number(slotCount) || 0);
             if (!n) {
-                hostEl.innerHTML = '<span style="font-size:0.78rem;color:rgba(42,36,32,0.62);">布局 JSON 未定义图片位</span>';
+                hostEl.innerHTML = '<span class="pm-muted" style="font-size:0.78rem;">布局 JSON 未定义图片位</span>';
                 return;
             }
             hostEl.innerHTML = '';
             for (let slot = 1; slot <= n; slot += 1) {
                 const ph = document.createElement('div');
-                ph.className = 'it-ap-slot-ph';
+                ph.className = 'sj-file-drop';
                 ph.title = '图片位 ' + slot;
-                ph.innerHTML = '<span class="it-ap-slot-ph__icon">+</span><span class="it-ap-slot-ph__label">位 ' + slot + '</span>';
+                ph.style.pointerEvents = 'none';
+                ph.style.cursor = 'default';
+                ph.style.minHeight = '68px';
+                ph.style.minWidth = '68px';
+                ph.innerHTML = '<span class="sj-file-drop__icon">+</span><span class="sj-file-drop__text">位 ' + slot + '</span>';
                 hostEl.appendChild(ph);
             }
         }
@@ -781,12 +642,12 @@
             }
             const modules = parseAplusLayoutModules(raw);
             if (modules === null) {
-                hostEl.innerHTML = '<span class="it-ap-preview-err">JSON 格式无效</span>';
+                hostEl.innerHTML = '<span class="pm-table-cell-error">JSON 格式无效</span>';
                 hostEl.classList.remove('pm-muted');
                 return;
             }
             if (!modules.length) {
-                hostEl.innerHTML = '<span style="color:rgba(42,36,32,0.72);">未检测到 modules[]</span>';
+                hostEl.innerHTML = '<span class="pm-muted">未检测到 modules[]</span>';
                 hostEl.classList.add('pm-muted');
                 return;
             }
@@ -795,7 +656,7 @@
                 const type = escapeHtml((m && m.type) ? String(m.type) : '');
                 const props = m && typeof m.props === 'object' ? m.props : {};
                 const propsText = escapeHtml(JSON.stringify(props, null, 2));
-                return `<div class="it-ap-mod"><div class="it-ap-mod__type">模块 ${idx + 1}: ${type || '-'}</div><pre class="it-ap-mod__props">${propsText}</pre></div>`;
+                return `<div class="pm-inline-panel" style="margin-bottom:0.45rem;"><div style="font-weight:700;margin-bottom:0.2rem;">模块 ${idx + 1}: ${type || '-'}</div><pre style="margin:0;white-space:pre-wrap;font-size:0.76rem;font-family:ui-monospace,Menlo,Consolas,monospace;color:rgba(42,36,32,0.75);">${propsText}</pre></div>`;
             }).join('');
         }
 
@@ -875,6 +736,10 @@
             document.getElementById('editStatus').style.display = 'none';
             document.getElementById('editStatus').textContent = '';
             document.getElementById('edit-modal').classList.add('active');
+            if (window.bindFloatingHelpDots) {
+                const sec = document.getElementById('editAplusExtrasSection');
+                if (sec) window.bindFloatingHelpDots(sec);
+            }
         }
 
         function closeEditModal() {
@@ -983,6 +848,8 @@
             if (typeof b !== 'function') return;
             var em = document.getElementById('edit-modal');
             if (em) b(em, closeEditModal);
+            var cm = document.getElementById('create-modal');
+            if (cm) b(cm, closeCreateModal);
         }, 0);
 
         window.addEventListener('load', function() {

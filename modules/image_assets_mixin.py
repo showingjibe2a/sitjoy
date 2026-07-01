@@ -7,6 +7,7 @@
 _insert_image_asset_dynamic / _ensure_image_asset_from_rel_path / _get_image_type_id_by_name。
 """
 
+import base64
 import os
 
 
@@ -305,3 +306,205 @@ class ImageAssetsMixin:
                 )
                 inserted += 1
         return inserted
+
+    # -------------------------------------------------------------------------
+    # 列表/表格缩略图：白底 → 场景 → 原图（其它类型不展示）
+    # -------------------------------------------------------------------------
+
+    def _table_thumb_image_type_tiers(self):
+        return (
+            frozenset({
+                '白底纯图', '白底图', '主图·白底纯图', '主图白底纯图', '纯白底图',
+                '主图·白底图', '主图白底图', '白底', 'White',
+            }),
+            frozenset({
+                '场景图', '场景纯图', '主图·场景图', '主图场景图', '场景', 'Scene',
+            }),
+            frozenset({
+                '原图', '平面原图', '褶皱原图',
+            }),
+        )
+
+    def _table_thumb_type_priority(self, type_name):
+        name = str(type_name or '').strip()
+        if not name:
+            return None
+        for idx, tier in enumerate(self._table_thumb_image_type_tiers()):
+            if name in tier:
+                return idx
+        return None
+
+    def _table_thumb_row_rank_key(self, row, deprecated_key='is_deprecated', sort_key='sort_order', id_key='id'):
+        return (
+            self._parse_int(row.get(deprecated_key)) or 0,
+            self._parse_int(row.get(sort_key)) or 0,
+            self._parse_int(row.get(id_key)) or 0,
+        )
+
+    def _table_thumb_pick_best_row(self, rows, type_name_key='image_type_name', **rank_keys):
+        best = None
+        best_key = None
+        for row in rows or []:
+            priority = self._table_thumb_type_priority(row.get(type_name_key))
+            if priority is None:
+                continue
+            rank = (priority, self._table_thumb_row_rank_key(row, **rank_keys))
+            if best is None or rank < best_key:
+                best = row
+                best_key = rank
+        return best
+
+    def _preview_b64_from_storage_path(self, storage_path):
+        sp = str(storage_path or '').strip().replace('\\', '/').lstrip('/')
+        if not sp:
+            return ''
+        try:
+            return base64.b64encode(sp.encode('utf-8', errors='surrogatepass')).decode('ascii')
+        except Exception:
+            try:
+                return self._b64_from_fs(sp)
+            except Exception:
+                return ''
+
+    def _variant_table_thumb_query_parts(self, conn):
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        dep_expr = 'COALESCE(ia.is_deprecated, 0)' if has_ia_dep else '0'
+        if has_sim_tid and has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_sim.name),''), NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = """
+                LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id
+                LEFT JOIN image_types it_sim ON it_sim.id = sim.image_type_id
+            """
+        elif has_sim_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_sim.name),''), '') AS image_type_name"
+            join_types = "LEFT JOIN image_types it_sim ON it_sim.id = sim.image_type_id"
+        elif has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = "LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id"
+        else:
+            type_expr = "'' AS image_type_name"
+            join_types = ''
+        return type_expr, join_types, dep_expr
+
+    def _load_variant_table_thumb_b64(self, conn, variant_ids):
+        """variant_id -> preview b64；优先级：白底 → 场景 → 原图。"""
+        out = {}
+        ids = [self._parse_int(x) for x in (variant_ids or []) if self._parse_int(x)]
+        if not ids:
+            return out
+        if not self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
+            return out
+        placeholders = ','.join(['%s'] * len(ids))
+        type_expr, join_types, dep_expr = self._variant_table_thumb_query_parts(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sim.variant_id,
+                       ia.storage_path,
+                       sim.sort_order,
+                       sim.id AS sim_id,
+                       {dep_expr} AS is_deprecated,
+                       {type_expr}
+                FROM sales_variant_image_mappings sim
+                JOIN image_assets ia ON ia.id = sim.image_asset_id
+                {join_types}
+                WHERE sim.variant_id IN ({placeholders})
+                ORDER BY sim.variant_id ASC, {dep_expr} ASC, sim.sort_order ASC, sim.id ASC
+                """,
+                tuple(ids),
+            )
+            rows = cur.fetchall() or []
+        bucket = {}
+        for row in rows:
+            vid = self._parse_int(row.get('variant_id'))
+            if not vid:
+                continue
+            bucket.setdefault(vid, []).append(row)
+        for vid, items in bucket.items():
+            picked = self._table_thumb_pick_best_row(items, id_key='sim_id')
+            if not picked:
+                continue
+            sp = str(picked.get('storage_path') or '').strip()
+            b64 = self._preview_b64_from_storage_path(sp)
+            if b64:
+                out[int(vid)] = b64
+        return out
+
+    def _order_product_table_thumb_query_parts(self, conn):
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        dep_expr = 'COALESCE(ia.is_deprecated, 0)' if has_ia_dep else '0'
+        if has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = 'LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id'
+        else:
+            type_expr = "'' AS image_type_name"
+            join_types = ''
+        return type_expr, join_types, dep_expr
+
+    def _load_order_product_table_thumb_b64(self, conn, order_product_ids):
+        """order_product_id -> preview b64；优先级：白底 → 场景 → 原图。"""
+        out = {}
+        if not self._has_required_tables(['order_product_image_mappings', 'image_assets']):
+            return out
+        ids = [self._parse_int(x) for x in (order_product_ids or []) if self._parse_int(x)]
+        if not ids:
+            return out
+        placeholders = ','.join(['%s'] * len(ids))
+        type_expr, join_types, dep_expr = self._order_product_table_thumb_query_parts(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT opim.order_product_id,
+                       ia.storage_path,
+                       opim.sort_order,
+                       opim.id AS opim_id,
+                       {dep_expr} AS is_deprecated,
+                       {type_expr}
+                FROM order_product_image_mappings opim
+                JOIN image_assets ia ON ia.id = opim.image_asset_id
+                {join_types}
+                WHERE opim.order_product_id IN ({placeholders})
+                ORDER BY opim.order_product_id ASC, {dep_expr} ASC, opim.sort_order ASC, opim.id ASC
+                """,
+                tuple(ids),
+            )
+            rows = cur.fetchall() or []
+        bucket = {}
+        for row in rows:
+            opid = self._parse_int(row.get('order_product_id'))
+            if not opid:
+                continue
+            bucket.setdefault(opid, []).append(row)
+        for opid, items in bucket.items():
+            picked = self._table_thumb_pick_best_row(items, id_key='opim_id')
+            if not picked:
+                continue
+            sp = str(picked.get('storage_path') or '').strip()
+            b64 = self._preview_b64_from_storage_path(sp)
+            if b64:
+                out[int(opid)] = b64
+        return out
+
+    def _load_order_product_table_thumb_paths(self, conn, order_product_ids):
+        b64_map = self._load_order_product_table_thumb_b64(conn, order_product_ids)
+        out = {}
+        for opid, b64 in (b64_map or {}).items():
+            if not b64:
+                continue
+            try:
+                out[int(opid)] = base64.b64decode(b64).decode('utf-8', errors='surrogatepass')
+            except Exception:
+                continue
+        return out
+
+    def _attach_order_product_table_thumb_paths(self, conn, rows):
+        opids = [self._parse_int(r.get('id')) for r in (rows or []) if self._parse_int(r.get('id'))]
+        if not opids:
+            return
+        path_map = self._load_order_product_table_thumb_paths(conn, opids)
+        for row in rows or []:
+            opid = self._parse_int(row.get('id'))
+            row['preview_image_path'] = path_map.get(opid, '') if opid else ''

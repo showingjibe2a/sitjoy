@@ -439,8 +439,8 @@
   // -------------------------------------------------------------------------
   // 模块级状态与常量
   // -------------------------------------------------------------------------
-  // 列表「图片」列仅展示该类型的第一张主图（与销售侧白底图筛选一致）
-  const SPECMI_LIST_THUMB_IMAGE_TYPE = '白底纯图';
+  // 列表「图片」列：后端按 白底 → 场景 → 原图 优先级返回 list_thumb
+  const SPECMI_LIST_THUMB_IMAGE_TYPE = '';
 
   let specmiAllVariants = [];
   let specmiFiltered = [];
@@ -812,29 +812,17 @@
     if (!cell || !vid) return;
     try {
       const tt = encodeURIComponent(String(SPECMI_LIST_THUMB_IMAGE_TYPE || '').trim());
+      const thumbQs = tt ? `&thumb_image_type=${tt}` : '';
       const resp = await fetch(
-        `/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}&list_thumb=1&thumb_image_type=${tt}`
+        `/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}&list_thumb=1${thumbQs}`
       );
       const data = await resp.json();
       if (!data || data.status !== 'success' || !Array.isArray(data.items) || !data.items.length) {
         cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
         return;
       }
-      const white = String(SPECMI_LIST_THUMB_IMAGE_TYPE || '').trim();
-      let first = null;
-      for (let i = 0; i < data.items.length; i += 1) {
-        const it = data.items[i];
-        if (!it) continue;
-        if (String(it.image_type_name || '').trim() === white) {
-          first = it;
-          break;
-        }
-      }
-      if (!first) {
-        cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
-        return;
-      }
-      const b64 = String(first.image_b64 || '');
+      const first = data.items[0];
+      const b64 = String((first && first.image_b64) || '');
       if (!b64) {
         cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
         return;

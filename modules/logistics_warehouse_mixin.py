@@ -107,82 +107,10 @@ class LogisticsWarehouseMixin:
             row['order_product_ids'] = state['ids']
             row['order_product_skus'] = state['skus']
 
-    def _load_order_product_first_image_preview(self, conn, order_product_ids, type_name='白底纯图'):
-        """Return {order_product_id: image_b64} for first preferred main image."""
-        opids = [self._parse_int(v) for v in (order_product_ids or []) if self._parse_int(v)]
-        if not opids:
-            return {}
-        if not self._has_required_tables(['order_product_image_mappings', 'image_assets']):
-            return {}
-
-        base_name = str(type_name or '').strip() or '白底纯图'
-        alias_candidates = ()
-        if '白底纯图' in base_name:
-            alias_candidates = ('主图·白底纯图', '主图白底纯图', '纯白底图')
-        elif '白底' in base_name:
-            alias_candidates = ('主图·白底图', '主图白底图', '白底', 'White')
-        preferred = set([base_name, *alias_candidates])
-
-        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
-        has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
-        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
-        type_sel = "COALESCE(it.name, '') AS image_type_name" if has_tid else "'' AS image_type_name"
-        dep_sel = "COALESCE(ia.is_deprecated, 0) AS is_deprecated" if has_dep else "0 AS is_deprecated"
-
-        placeholders = ','.join(['%s'] * len(opids))
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT opim.order_product_id, ia.storage_path, opim.sort_order, opim.id,
-                       {type_sel}, {dep_sel}
-                FROM order_product_image_mappings opim
-                JOIN image_assets ia ON ia.id = opim.image_asset_id
-                {join_it}
-                WHERE opim.order_product_id IN ({placeholders})
-                ORDER BY opim.order_product_id ASC, opim.sort_order ASC, opim.id ASC
-                """,
-                tuple(opids),
-            )
-            rows = cur.fetchall() or []
-
-        bucket = {}
-        for r in rows:
-            opid = self._parse_int(r.get('order_product_id'))
-            sp = str(r.get('storage_path') or '').strip()
-            if not opid or not sp:
-                continue
-            bucket.setdefault(opid, []).append(r)
-
-        out = {}
-        for opid, items in bucket.items():
-            # 与下单产品列表一致：优先未废弃映射，再考虑已废弃；同组内按 sort_order / id（与 SQL 顺序一致）
-            items_ranked = sorted(
-                items,
-                key=lambda r: (
-                    self._parse_int(r.get('is_deprecated')) or 0,
-                    self._parse_int(r.get('sort_order')) or 0,
-                    self._parse_int(r.get('id')) or 0,
-                ),
-            )
-            picked = None
-            for r in items_ranked:
-                nm = str(r.get('image_type_name') or '').strip()
-                if nm and nm in preferred:
-                    picked = r
-                    break
-            if not picked and items_ranked:
-                picked = items_ranked[0]
-            if not picked:
-                continue
-            sp = str(picked.get('storage_path') or '').strip()
-            rel = sp.replace('\\', '/').lstrip('/')
-            # 与前端 order_product_management utf8ToB64 + /api/image-preview UTF-8 回退一致，避免 os.fsencode 与浏览器 UTF-8 不一致导致 404
-            if not rel:
-                continue
-            b64 = base64.b64encode(rel.encode('utf-8', errors='surrogatepass')).decode('ascii')
-            if b64:
-                out[int(opid)] = b64
-        return out
+    def _load_order_product_first_image_preview(self, conn, order_product_ids, type_name=None):
+        """Return {order_product_id: image_b64} for table thumbnails (白底 → 场景 → 原图)。"""
+        _ = type_name
+        return self._load_order_product_table_thumb_b64(conn, order_product_ids)
 
     # -------------------------------------------------------------------------
     # 工厂在库 API

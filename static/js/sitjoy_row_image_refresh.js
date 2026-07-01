@@ -6,6 +6,7 @@
  * - patchTableRow：用新 <tr> 的 HTML 替换已有行（局部刷新，不改变搜索词与其它行状态）
  *
  * 约定：表格行 <tr data-sj-row-entity-id="...">，预览列 <td data-sj-preview="1">...</td>
+ * 后端列表缩略图统一优先级：白底类 → 场景类 → 原图（见 ImageAssetsMixin._table_thumb_image_type_tiers）
  */
 (function (global) {
   'use strict';

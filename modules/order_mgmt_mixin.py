@@ -2834,14 +2834,7 @@ class OrderManagementMixin:
                         fm.fabric_code,
                         fm.fabric_name_en,
                         fm.representative_color,
-                        (
-                            SELECT ia.storage_path
-                            FROM order_product_image_mappings opim
-                            JOIN image_assets ia ON ia.id = opim.image_asset_id
-                            WHERE opim.order_product_id = op.id
-                            ORDER BY opim.sort_order ASC, opim.id ASC
-                            LIMIT 1
-                        ) AS preview_image_path,
+                        NULL AS preview_image_path,
                         (
                             SELECT l.variant_id
                             FROM sales_variant_order_links l
@@ -2868,14 +2861,7 @@ class OrderManagementMixin:
                         fm.fabric_code,
                         fm.fabric_name_en,
                         fm.representative_color,
-                        (
-                            SELECT ia.storage_path
-                            FROM order_product_image_mappings opim
-                            JOIN image_assets ia ON ia.id = opim.image_asset_id
-                            WHERE opim.order_product_id = op.id
-                            ORDER BY opim.sort_order ASC, opim.id ASC
-                            LIMIT 1
-                        ) AS preview_image_path,
+                        NULL AS preview_image_path,
                         (
                             SELECT l.variant_id
                             FROM sales_variant_order_links l
@@ -2907,14 +2893,7 @@ class OrderManagementMixin:
                         fm.fabric_code,
                         fm.fabric_name_en,
                         fm.representative_color,
-                        (
-                            SELECT ia.storage_path
-                            FROM order_product_image_mappings opim
-                            JOIN image_assets ia ON ia.id = opim.image_asset_id
-                            WHERE opim.order_product_id = op.id
-                            ORDER BY opim.sort_order ASC, opim.id ASC
-                            LIMIT 1
-                        ) AS preview_image_path,
+                        NULL AS preview_image_path,
                         (
                             SELECT l.variant_id
                             FROM sales_variant_order_links l
@@ -2933,6 +2912,8 @@ class OrderManagementMixin:
                 )
             rows = cur.fetchall() or []
 
+        if rows:
+            self._attach_order_product_table_thumb_paths(conn, rows)
         if include_relations and rows:
             self._attach_order_product_relations(conn, rows)
         return rows

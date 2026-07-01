@@ -5424,7 +5424,7 @@ class SalesProductMixin:
                         else:
                             row['order_sku_links'] = metrics.get('order_sku_links', [])
 
-                    # Variant preview image (first 白底图)：列表与单条 GET 均填充，供前端刷新行缩略图
+                    # Variant preview image (白底→场景→原图)：列表与单条 GET 均填充，供前端刷新行缩略图
                     try:
                         vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
                         preview_map = {}
@@ -7204,97 +7204,10 @@ class SalesProductMixin:
         except Exception:
             return 0
 
-    def _load_variant_first_image_preview(self, conn, variant_ids, type_name='白底纯图'):
-        """
-        Return {variant_id: image_b64} for the first image (by sort_order) of a given type.
-        Uses image_assets.image_type_id if available; falls back to sales_variant_image_mappings.image_type_id.
-        """
-        vids = [int(v or 0) for v in (variant_ids or []) if int(v or 0) > 0]
-        if not vids:
-            return {}
-
-        has_variant = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
-        if not has_variant:
-            return {}
-
-        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
-        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
-        if not (has_ia_tid or has_sim_tid):
-            return {}
-
-        # Prefer matching image type name; fallback to first image if none match
-        preferred_names = []
-        base_name = str(type_name or '').strip() or '白底纯图'
-        preferred_names.append(base_name)
-        # Keep aliases tight to avoid accidentally prioritizing non-target types.
-        if '白底纯图' in base_name:
-            alias_candidates = ('主图·白底纯图', '主图白底纯图', '纯白底图')
-        else:
-            # Backward-compatible aliases for non-pure white types.
-            alias_candidates = ('主图·白底图', '主图白底图', '白底', 'White')
-        for cand in alias_candidates:
-            if cand not in preferred_names:
-                preferred_names.append(cand)
-
-        join_it = ""
-        where_type = ""
-        params = []
-        if has_ia_tid:
-            # LEFT JOIN so assets with NULL image_type_id don't get excluded prematurely.
-            join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id"
-            where_type = "AND it.name IN ({})".format(",".join(["%s"] * len(preferred_names)))
-            params.extend(preferred_names)
-        else:
-            join_it = "JOIN image_types it ON it.id = sim.image_type_id"
-            where_type = "AND it.name IN ({})".format(",".join(["%s"] * len(preferred_names)))
-            params.extend(preferred_names)
-
-        placeholders = ",".join(["%s"] * len(vids))
-        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
-        ofn_sel = "ia.original_filename" if has_ia_ofn else "'' AS original_filename"
-        sql = f"""
-            SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
-            FROM sales_variant_image_mappings sim
-            JOIN image_assets ia ON ia.id = sim.image_asset_id
-            {join_it}
-            WHERE sim.variant_id IN ({placeholders})
-              {where_type}
-            ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
-        """
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(vids) + tuple(params))
-            rows = cur.fetchall() or []
-
-        # If no rows match preferred white-background types, fallback to first image per variant
-        if not rows:
-            sql2 = f"""
-                SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
-                FROM sales_variant_image_mappings sim
-                JOIN image_assets ia ON ia.id = sim.image_asset_id
-                WHERE sim.variant_id IN ({placeholders})
-                ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
-            """
-            with conn.cursor() as cur:
-                cur.execute(sql2, tuple(vids))
-                rows = cur.fetchall() or []
-
-        out = {}
-        for row in rows:
-            vid = int(row.get('variant_id') or 0)
-            if not vid or vid in out:
-                continue
-            storage_path = (row.get('storage_path') or '').strip()
-            if not storage_path:
-                continue
-            if isinstance(storage_path, str):
-                try:
-                    rel_bytes = os.fsencode(storage_path)
-                except Exception:
-                    rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
-            else:
-                rel_bytes = storage_path
-            out[vid] = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
-        return out
+    def _load_variant_first_image_preview(self, conn, variant_ids, type_name=None):
+        """Return {variant_id: image_b64} for table thumbnails (白底 → 场景 → 原图)。"""
+        _ = type_name  # 兼容旧参数；统一走优先级链
+        return self._load_variant_table_thumb_b64(conn, variant_ids)
 
     def _find_image_asset_by_sha256(self, conn, sha256):
         with conn.cursor() as cur:
@@ -7463,8 +7376,9 @@ class SalesProductMixin:
             })
         return items
 
-    def _read_sales_product_image_list_thumb(self, conn, variant_id, image_type_name):
-        """Return at most one mapped image for list thumbnails (LIMIT 1), same ordering as full list."""
+    def _read_sales_product_image_list_thumb(self, conn, variant_id, image_type_name=None):
+        """Return at most one mapped image for list thumbnails (白底 → 场景 → 原图)。"""
+        _ = image_type_name
         has_variant = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
         if not variant_id or not has_variant:
             return []
@@ -7486,12 +7400,6 @@ class SalesProductMixin:
             join_types = ""
             type_name_expr = "NULL"
             type_id_expr = "NULL"
-        type_name = str(image_type_name or "").strip()
-        type_clause = ""
-        params = [int(variant_id)]
-        if type_name and join_types:
-            type_clause = f" AND TRIM(COALESCE({type_name_expr},''))=%s"
-            params.append(type_name)
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -7505,44 +7413,38 @@ class SalesProductMixin:
                 FROM sales_variant_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
                 {join_types}
-                WHERE sim.variant_id=%s{type_clause}
+                WHERE sim.variant_id=%s
                 ORDER BY {dep_expr} ASC, sim.sort_order ASC, sim.id ASC
-                LIMIT 1
                 """,
-                tuple(params),
+                (int(variant_id),),
             )
             rows = cur.fetchall() or []
-        items = []
-        for row in rows:
-            storage_path = (row.get("storage_path") or "").strip()
-            base_name = os.path.basename(storage_path) if storage_path else ""
-            orig_fn = (str(row.get("original_filename") or "").strip()) if has_ia_ofn else ""
-            image_name = orig_fn or base_name
-            if isinstance(storage_path, str):
-                try:
-                    rel_bytes = os.fsencode(storage_path)
-                except Exception:
-                    rel_bytes = storage_path.encode("utf-8", errors="surrogatepass")
-            else:
-                rel_bytes = storage_path
-            image_b64 = base64.b64encode(rel_bytes).decode("ascii") if rel_bytes else ""
-            items.append(
-                {
-                    "mapping_id": row.get("mapping_id"),
-                    "image_asset_id": row.get("image_asset_id"),
-                    "image_name": image_name,
-                    "image_b64": image_b64,
-                    "description": row.get("description") or "",
-                    "image_type_id": row.get("image_type_id"),
-                    "image_type_name": row.get("image_type_name") or "",
-                    "sort_order": row.get("sort_order") or 0,
-                    "group_sort": None,
-                    "is_deprecated": int(row.get("is_deprecated") or 0),
-                    "sha256": row.get("sha256") or "",
-                    "file_size": 0,
-                }
-            )
-        return items
+        picked = self._table_thumb_pick_best_row(rows, id_key='mapping_id')
+        if not picked:
+            return []
+        storage_path = (picked.get("storage_path") or "").strip()
+        base_name = os.path.basename(storage_path) if storage_path else ""
+        orig_fn = (str(picked.get("original_filename") or "").strip()) if has_ia_ofn else ""
+        image_name = orig_fn or base_name
+        image_b64 = self._preview_b64_from_storage_path(storage_path)
+        if not image_b64:
+            return []
+        return [
+            {
+                "mapping_id": picked.get("mapping_id"),
+                "image_asset_id": picked.get("image_asset_id"),
+                "image_name": image_name,
+                "image_b64": image_b64,
+                "description": picked.get("description") or "",
+                "image_type_id": picked.get("image_type_id"),
+                "image_type_name": picked.get("image_type_name") or "",
+                "sort_order": picked.get("sort_order") or 0,
+                "group_sort": None,
+                "is_deprecated": int(picked.get("is_deprecated") or 0),
+                "sha256": picked.get("sha256") or "",
+                "file_size": 0,
+            }
+        ]
 
     def _storage_rel_from_image_b64(self, image_b64):
         """Decode UI `image_b64` / gallery id into a normalized relative storage path (UTF-8, forward slashes)."""
