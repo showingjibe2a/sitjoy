@@ -3803,12 +3803,13 @@
                         const skippedDate = Number(finalData.skipped_invalid_date || 0);
                         const skippedSample = Number(finalData.skipped_template_sample || 0);
                         const skippedZero = Number(finalData.skipped_all_zero || 0);
+                        const zeroOverwritten = Number(finalData.zero_overwritten || 0);
                         const aggWarn = String(finalData.agg_refresh_warning || '').trim();
                         const aggStatus = String(finalData.agg_refresh_status || '').toLowerCase();
                         const errList = finalData.errors || [];
                         const stopReasonText = getImportStopReasonText(finalData);
                         hideUploadProgress();
-                        const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，全0行跳过 ${skippedZero} 条，失败 ${errList.length} 条`;
+                        const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，全0新行跳过 ${skippedZero} 条，全0覆盖 ${zeroOverwritten} 条，失败 ${errList.length} 条`;
                         const okLine = aggWarn
                             ? `导入完成：${summaryLine}（周/月聚合未完全刷新）`
                             : (aggStatus === 'error'
@@ -3868,7 +3869,7 @@
                     showImportResultPanel('预检失败', failMessage, data, true);
                     return;
                 }
-                const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条，全0行跳过 ${data.skipped_all_zero || 0} 条`;
+                const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条，全0新行跳过 ${data.skipped_all_zero || 0} 条，全0覆盖 ${data.zero_overwritten || 0} 条`;
                 showImportResultPanel('预检通过', summaryText, {
                     message: summaryText,
                     created: data.created,
@@ -3877,6 +3878,7 @@
                     skipped_invalid_date: data.skipped_invalid_date,
                     skipped_template_sample: data.skipped_template_sample,
                     skipped_all_zero: data.skipped_all_zero,
+                    zero_overwritten: data.zero_overwritten,
                 }, false);
                 window.showAppToast && window.showAppToast(summaryText, false, 4200);
                 uploadSalesProductPerformanceTemplate(file, taskId, importShopId);

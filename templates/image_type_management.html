@@ -76,8 +76,10 @@
                     <thead>
                         <tr>
                             <th>类型名称</th>
-                            <th style="width:120px;">需求宽(px)</th>
-                            <th style="width:120px;">需求高(px)</th>
+                            <th style="width:120px;">电脑端需求宽(px)</th>
+                            <th style="width:120px;">电脑端需求高(px)</th>
+                            <th style="width:120px;">手机端需求宽(px)</th>
+                            <th style="width:120px;">手机端需求高(px)</th>
                             <th style="min-width:160px;">适用平台</th>
                             <th style="width:120px;" class="switch-cell">适用面料</th>
                             <th style="width:140px;" class="switch-cell">适用销售产品</th>
@@ -89,7 +91,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="13" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -105,11 +107,11 @@
                     <input type="text" id="modalTypeName" class="required-field" maxlength="64" placeholder="例如：白底图 / 场景图 / A+电脑端">
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label for="modalRequiredWidth">需求宽(px)</label>
+                    <label for="modalRequiredWidth">电脑端需求宽(px)</label>
                     <input type="number" id="modalRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label for="modalRequiredHeight">需求高(px)</label>
+                    <label for="modalRequiredHeight">电脑端需求高(px)</label>
                     <input type="number" id="modalRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
                 </div>
                 <div class="form-group pm-form-full" style="margin:0;">
@@ -164,11 +166,11 @@
                     <input type="text" id="editTypeName" class="required-field" maxlength="64">
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label for="editRequiredWidth">需求宽(px)</label>
+                    <label for="editRequiredWidth">电脑端需求宽(px)</label>
                     <input type="number" id="editRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label for="editRequiredHeight">需求高(px)</label>
+                    <label for="editRequiredHeight">电脑端需求高(px)</label>
                     <input type="number" id="editRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
                 </div>
                 <div class="form-group pm-form-full" style="margin:0;">
@@ -209,9 +211,19 @@
                 <div class="form-group" style="margin:0;">
                     <label>手机/电脑端共用图片</label>
                     <label class="switch-wrap" aria-label="手机/电脑端共用图片">
-                        <input type="checkbox" id="editAplusShareImages" checked>
+                        <input type="checkbox" id="editAplusShareImages" checked onchange="toggleEditAplusMobileSizeFields()">
                         <span class="switch-slider"></span>
                     </label>
+                </div>
+                <div id="editAplusMobileSizeSection" class="pm-u-hidden">
+                    <div class="form-group" style="margin:0;">
+                        <label for="editRequiredWidthMobile">手机端需求宽(px)</label>
+                        <input type="number" id="editRequiredWidthMobile" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="editRequiredHeightMobile">手机端需求高(px)</label>
+                        <input type="number" id="editRequiredHeightMobile" class="optional-field" min="0" step="1" placeholder="可为空">
+                    </div>
                 </div>
                 <div class="form-group pm-form-full" style="margin:0;">
                     <label>A+ 布局 JSON</label>
@@ -338,7 +350,7 @@
             const tbody = document.querySelector('#imageTypeTable tbody');
             const list = Array.isArray(items) ? items : [];
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = list.map(item => `
@@ -346,6 +358,8 @@
                     <td>${escapeHtml(item.name || '')}</td>
                     <td>${item.required_width_px == null ? '-' : Number(item.required_width_px || 0)}</td>
                     <td>${item.required_height_px == null ? '-' : Number(item.required_height_px || 0)}</td>
+                    <td>${formatMobileRequiredDimCell(item, 'required_width_px_mobile')}</td>
+                    <td>${formatMobileRequiredDimCell(item, 'required_height_px_mobile')}</td>
                     <td>${escapeHtml(formatPlatformLabel(item.platform_type_ids || []))}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_fabric', '适用面料')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_sales', '适用销售产品')}</td>
@@ -356,6 +370,14 @@
                     <td><div class="pm-actions"><button class="btn-secondary" type="button" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" type="button" onclick="deleteImageType(${Number(item.id || 0)})">删除</button></div></td>
                 </tr>
             `).join('');
+        }
+
+        function formatMobileRequiredDimCell(item, field) {
+            const shareImages = Number(item.aplus_share_images != null ? item.aplus_share_images : 1) === 1;
+            const appliesAplus = Number(item.applies_aplus || 0) === 1;
+            if (appliesAplus && shareImages) return '同电脑端';
+            const val = item[field];
+            return val == null ? '-' : Number(val || 0);
         }
 
         function formatPlatformLabel(platformTypeIds) {
@@ -408,14 +430,14 @@
                 .then(data => {
                     if (data.status !== 'success') {
                         const tbody = document.querySelector('#imageTypeTable tbody');
-                        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
                         return;
                     }
                     renderImageTypeList(data.items || []);
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#imageTypeTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
                 });
         }
 
@@ -510,6 +532,15 @@
             const on = document.getElementById('editApplyAplus').checked;
             const sec = document.getElementById('editAplusExtrasSection');
             if (sec) sec.classList.toggle('pm-u-hidden', !on);
+            toggleEditAplusMobileSizeFields();
+        }
+
+        function toggleEditAplusMobileSizeFields() {
+            const sec = document.getElementById('editAplusMobileSizeSection');
+            if (!sec) return;
+            const appliesAplus = document.getElementById('editApplyAplus').checked;
+            const shareImages = document.getElementById('editAplusShareImages').checked;
+            sec.classList.toggle('pm-u-hidden', !appliesAplus || shareImages);
         }
 
         function openAplusJsonEditModal(device) {
@@ -551,6 +582,8 @@
             document.getElementById('editTypeName').value = String(item.name || '');
             document.getElementById('editRequiredWidth').value = item.required_width_px == null ? '' : String(item.required_width_px);
             document.getElementById('editRequiredHeight').value = item.required_height_px == null ? '' : String(item.required_height_px);
+            document.getElementById('editRequiredWidthMobile').value = item.required_width_px_mobile == null ? '' : String(item.required_width_px_mobile);
+            document.getElementById('editRequiredHeightMobile').value = item.required_height_px_mobile == null ? '' : String(item.required_height_px_mobile);
             document.getElementById('editApplyFabric').checked = Number(item.applies_fabric || 0) === 1;
             document.getElementById('editApplySales').checked = Number(item.applies_sales || 0) === 1;
             document.getElementById('editApplyOrderProduct').checked = Number(item.applies_order_product || 0) === 1;
@@ -583,6 +616,7 @@
             const required_height_px = document.getElementById('editRequiredHeight').value === '' ? null : Number(document.getElementById('editRequiredHeight').value || 0);
             const platform_type_ids = readPlatformTypeIds(document.getElementById('editPlatformTypeList'));
             const applies_aplus = document.getElementById('editApplyAplus').checked;
+            const aplus_share_images = document.getElementById('editAplusShareImages').checked;
             const payload = {
                     id,
                     name,
@@ -596,9 +630,16 @@
                     is_enabled: document.getElementById('editEnabled').checked
                 };
             if (applies_aplus) {
-                payload.aplus_share_images = document.getElementById('editAplusShareImages').checked;
+                payload.aplus_share_images = aplus_share_images;
                 payload.aplus_layout_json_mobile = String(editAplusJsonDraft.mobile || '');
                 payload.aplus_layout_json_desktop = String(editAplusJsonDraft.desktop || '');
+                if (aplus_share_images) {
+                    payload.required_width_px_mobile = required_width_px;
+                    payload.required_height_px_mobile = required_height_px;
+                } else {
+                    payload.required_width_px_mobile = document.getElementById('editRequiredWidthMobile').value === '' ? null : Number(document.getElementById('editRequiredWidthMobile').value || 0);
+                    payload.required_height_px_mobile = document.getElementById('editRequiredHeightMobile').value === '' ? null : Number(document.getElementById('editRequiredHeightMobile').value || 0);
+                }
             }
             fetch('/api/image-type', {
                 method: 'PATCH',

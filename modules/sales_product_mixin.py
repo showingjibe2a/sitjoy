@@ -6881,6 +6881,35 @@ class SalesProductMixin:
             return False
         return bool(default)
 
+    def _parse_optional_image_dim_px(self, value):
+        if value is None or value == '':
+            return None
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def _resolve_image_type_required_dims(self, applies_aplus, aplus_share_images, width_px, height_px, width_mobile_px, height_mobile_px):
+        w = self._parse_optional_image_dim_px(width_px)
+        h = self._parse_optional_image_dim_px(height_px)
+        w_m = self._parse_optional_image_dim_px(width_mobile_px)
+        h_m = self._parse_optional_image_dim_px(height_mobile_px)
+        if int(applies_aplus or 0) == 1 and int(self._parse_bool_flag(aplus_share_images, default=True)):
+            return w, h, w, h
+        return w, h, w_m, h_m
+
+    def _sync_image_type_mobile_required_dims_if_shared(self, conn, item_id):
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE image_types
+                SET required_width_px_mobile = required_width_px,
+                    required_height_px_mobile = required_height_px
+                WHERE id=%s AND aplus_share_images=1
+                """,
+                (int(item_id),),
+            )
+
     def _handle_image_type_api_core(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -6926,6 +6955,7 @@ class SalesProductMixin:
                                    applies_fabric, applies_sales, applies_order_product, applies_aplus,
                                    aplus_share_images, platform_type_ids,
                                    required_width_px, required_height_px,
+                                   required_width_px_mobile, required_height_px_mobile,
                                    aplus_layout_json_mobile, aplus_layout_json_desktop,
                                    created_at, updated_at
                             FROM image_types
@@ -6955,16 +6985,14 @@ class SalesProductMixin:
                 platform_type_ids_csv = self._format_platform_type_ids_csv(data.get('platform_type_ids', []))
                 aplus_layout_json_mobile = data.get('aplus_layout_json_mobile', None)
                 aplus_layout_json_desktop = data.get('aplus_layout_json_desktop', None)
-                required_width_px = data.get('required_width_px', None)
-                required_height_px = data.get('required_height_px', None)
-                try:
-                    required_width_px = None if required_width_px is None or required_width_px == '' else int(required_width_px)
-                except Exception:
-                    required_width_px = None
-                try:
-                    required_height_px = None if required_height_px is None or required_height_px == '' else int(required_height_px)
-                except Exception:
-                    required_height_px = None
+                required_width_px, required_height_px, required_width_px_mobile, required_height_px_mobile = self._resolve_image_type_required_dims(
+                    applies_aplus,
+                    aplus_share_images,
+                    data.get('required_width_px'),
+                    data.get('required_height_px'),
+                    data.get('required_width_px_mobile'),
+                    data.get('required_height_px_mobile'),
+                )
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -6983,11 +7011,13 @@ class SalesProductMixin:
                                     platform_type_ids=%s,
                                     required_width_px=%s,
                                     required_height_px=%s,
+                                    required_width_px_mobile=%s,
+                                    required_height_px_mobile=%s,
                                     aplus_layout_json_mobile=%s,
                                     aplus_layout_json_desktop=%s
                                 WHERE id=%s
                                 """,
-                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
+                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, required_width_px_mobile, required_height_px_mobile, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
                             )
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
 
@@ -6997,11 +7027,12 @@ class SalesProductMixin:
                                 name, is_enabled, applies_fabric, applies_sales, applies_order_product, applies_aplus,
                                 aplus_share_images, platform_type_ids,
                                 required_width_px, required_height_px,
+                                required_width_px_mobile, required_height_px_mobile,
                                 aplus_layout_json_mobile, aplus_layout_json_desktop
                             )
-                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
+                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, aplus_share_images, platform_type_ids_csv, required_width_px, required_height_px, required_width_px_mobile, required_height_px_mobile, aplus_layout_json_mobile, aplus_layout_json_desktop),
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -7017,7 +7048,7 @@ class SalesProductMixin:
                     if key in data:
                         sets.append(f"{key}=%s")
                         vals.append(int(self._parse_bool_flag(data.get(key), default=False)))
-                for key in ('required_width_px', 'required_height_px'):
+                for key in ('required_width_px', 'required_height_px', 'required_width_px_mobile', 'required_height_px_mobile'):
                     if key in data:
                         v = data.get(key)
                         if v is None or v == '':
@@ -7054,6 +7085,7 @@ class SalesProductMixin:
                             cur.execute(f"UPDATE image_types SET {', '.join(sets)} WHERE id=%s", tuple(vals + [item_id]))
                     if has_platform_ids:
                         self._set_image_type_platform_ids(conn, item_id, data.get('platform_type_ids', []))
+                    self._sync_image_type_mobile_required_dims_if_shared(conn, item_id)
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             if method == 'DELETE':
@@ -11108,6 +11140,7 @@ class SalesProductMixin:
             skipped_invalid_date = 0
             skipped_template_sample = 0
             skipped_all_zero = 0
+            zero_overwritten = 0
             upserted = 0
 
             if check_only:
@@ -11206,6 +11239,20 @@ class SalesProductMixin:
                             if pid:
                                 return pid
                         return None
+
+                    existing_perf_key_cache = {}
+
+                    def _perf_record_exists(sales_product_id, record_date):
+                        key = (int(sales_product_id), str(record_date))
+                        if key in existing_perf_key_cache:
+                            return existing_perf_key_cache[key]
+                        cur.execute(
+                            "SELECT 1 AS ok FROM sales_product_performances WHERE sales_product_id=%s AND record_date=%s LIMIT 1",
+                            key,
+                        )
+                        exists = bool((cur.fetchone() or {}).get('ok'))
+                        existing_perf_key_cache[key] = exists
+                        return exists
 
                     # 初始化批处理变量
                     batch_rows = []
@@ -11447,7 +11494,7 @@ class SalesProductMixin:
                             ad_sales_amount = parse_number_flexible(get_cell(row, 'ad_sales_amount'), False)
                             refund_amount = parse_number_flexible(get_cell(row, 'refund_amount'), False)
 
-                            if (
+                            is_all_zero = (
                                 float(sales_qty or 0) == 0.0
                                 and float(net_sales_amount or 0) == 0.0
                                 and float(order_qty or 0) == 0.0
@@ -11458,9 +11505,13 @@ class SalesProductMixin:
                                 and float(ad_spend or 0) == 0.0
                                 and float(ad_sales_amount or 0) == 0.0
                                 and float(refund_amount or 0) == 0.0
-                            ):
-                                skipped_all_zero += 1
-                                continue
+                            )
+                            if is_all_zero:
+                                # 新键全0行仍跳过（避免表格空行入库）；已有记录允许覆盖为0（纠错/撤回）
+                                if not _perf_record_exists(sales_product_id, record_date):
+                                    skipped_all_zero += 1
+                                    continue
+                                zero_overwritten += 1
 
                             try:
                                 d_obj = datetime.strptime(record_date, '%Y-%m-%d').date()
@@ -11756,6 +11807,7 @@ class SalesProductMixin:
                 'skipped_invalid_date': skipped_invalid_date,
                 'skipped_template_sample': skipped_template_sample,
                 'skipped_all_zero': skipped_all_zero,
+                'zero_overwritten': zero_overwritten,
                 'errors': errors[:100],
                 'message': done_msg,
             }
@@ -11785,6 +11837,7 @@ class SalesProductMixin:
                 'skipped_invalid_date': skipped_invalid_date,
                 'skipped_template_sample': skipped_template_sample,
                 'skipped_all_zero': skipped_all_zero,
+                'zero_overwritten': zero_overwritten,
                 'errors': errors,
                 'total_rows': created + updated + unchanged + len(errors),
                 'message': (
