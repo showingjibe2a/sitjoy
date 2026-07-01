@@ -6785,36 +6785,56 @@ class SalesProductMixin:
         return
 
     def _image_type_platform_table_exists(self, conn):
-        # Intentionally avoid runtime schema checks.
-        return True
+        return False
+
+    def _parse_platform_type_ids_csv(self, raw):
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            return sorted(set([self._parse_int(x) for x in raw if self._parse_int(x)]))
+        text = str(raw or '').strip()
+        if not text:
+            return []
+        out = []
+        for part in text.split(','):
+            pid = self._parse_int(str(part).strip())
+            if pid:
+                out.append(pid)
+        return sorted(set(out))
+
+    def _format_platform_type_ids_csv(self, platform_type_ids):
+        ids = self._parse_platform_type_ids_csv(platform_type_ids)
+        return ','.join(str(x) for x in ids) if ids else None
 
     def _get_image_type_platform_ids_map(self, conn, image_type_ids):
         ids = [self._parse_int(x) for x in (image_type_ids or []) if self._parse_int(x)]
         if not ids:
             return {}
         placeholders = ','.join(['%s'] * len(ids))
+        out = {}
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"""
-                    SELECT image_type_id, platform_type_id
-                    FROM image_type_platform_types
-                    WHERE image_type_id IN ({placeholders})
-                    ORDER BY image_type_id ASC, platform_type_id ASC
-                    """,
+                    f"SELECT id, platform_type_ids FROM image_types WHERE id IN ({placeholders})",
                     tuple(ids),
                 )
-                rows = cur.fetchall() or []
+                for r in cur.fetchall() or []:
+                    tid = self._parse_int(r.get('id'))
+                    if not tid:
+                        continue
+                    out[tid] = self._parse_platform_type_ids_csv(r.get('platform_type_ids'))
         except Exception:
-            rows = []
-        out = {}
-        for r in rows:
-            tid = self._parse_int(r.get('image_type_id'))
-            pid = self._parse_int(r.get('platform_type_id'))
-            if not tid or not pid:
-                continue
-            out.setdefault(tid, []).append(pid)
+            return {}
         return out
+
+    def _image_type_matches_platform(self, platform_type_ids_csv, platform_type_id):
+        platform_type_id = self._parse_int(platform_type_id)
+        ids = self._parse_platform_type_ids_csv(platform_type_ids_csv)
+        if not ids:
+            return True
+        if not platform_type_id:
+            return True
+        return platform_type_id in ids
 
     def _get_image_type_reference_counts(self, conn, image_type_id):
         """Return list of (label, count) for business tables still referencing this image type."""
@@ -6824,8 +6844,6 @@ class SalesProductMixin:
         checks = []
         if self._table_has_column(conn, 'image_assets', 'image_type_id'):
             checks.append(('image_assets', '图片库'))
-        if self._has_required_tables(['aplus_version_assets']) and self._table_has_column(conn, 'aplus_version_assets', 'image_type_id'):
-            checks.append(('aplus_version_assets', 'A+版本素材'))
         if self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id'):
             checks.append(('sales_variant_image_mappings', '销售规格图片映射'))
         out = []
@@ -6841,15 +6859,13 @@ class SalesProductMixin:
         tid = self._parse_int(image_type_id)
         if not tid:
             return
-        ids = sorted(set([self._parse_int(x) for x in (platform_type_ids or []) if self._parse_int(x)]))
+        csv_val = self._format_platform_type_ids_csv(platform_type_ids)
         try:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM image_type_platform_types WHERE image_type_id=%s", (tid,))
-                for pid in ids:
-                    cur.execute(
-                        "INSERT IGNORE INTO image_type_platform_types (image_type_id, platform_type_id) VALUES (%s, %s)",
-                        (tid, int(pid)),
-                    )
+                cur.execute(
+                    "UPDATE image_types SET platform_type_ids=%s WHERE id=%s",
+                    (csv_val, int(tid)),
+                )
         except Exception:
             return
 
@@ -6893,14 +6909,19 @@ class SalesProductMixin:
                         }.get(usage)
                         if usage_col:
                             where_parts.append(f"{usage_col}=1")
+                        device_usage = (query_params.get('device', [''])[0] or '').strip().lower()
+                        if usage == 'aplus' and device_usage == 'mobile':
+                            where_parts.append('applies_mobile=1')
+                        elif usage == 'aplus' and device_usage == 'desktop':
+                            where_parts.append('applies_desktop=1')
 
                         # platform filter:
                         # - if no mapping rows -> 通用 (always included)
                         # - else must have an explicit mapping row for requested platform_type_id
-                        if platform_type_id and self._image_type_platform_table_exists(conn):
+                        if platform_type_id:
                             where_parts.append(
-                                "(NOT EXISTS (SELECT 1 FROM image_type_platform_types itpt WHERE itpt.image_type_id=image_types.id)"
-                                " OR EXISTS (SELECT 1 FROM image_type_platform_types itpt2 WHERE itpt2.image_type_id=image_types.id AND itpt2.platform_type_id=%s))"
+                                "(platform_type_ids IS NULL OR TRIM(platform_type_ids)=''"
+                                " OR FIND_IN_SET(%s, platform_type_ids))"
                             )
                             params.append(int(platform_type_id))
 
@@ -6909,6 +6930,7 @@ class SalesProductMixin:
                             f"""
                             SELECT id, name, is_enabled,
                                    applies_fabric, applies_sales, applies_order_product, applies_aplus,
+                                   applies_mobile, applies_desktop, platform_type_ids,
                                    required_width_px, required_height_px,
                                    aplus_layout_json_mobile, aplus_layout_json_desktop,
                                    created_at, updated_at
@@ -6919,12 +6941,8 @@ class SalesProductMixin:
                             tuple(params),
                         )
                         rows = cur.fetchall() or []
-                    if include_platforms and rows:
-                        id_list = [self._parse_int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
-                        mp = self._get_image_type_platform_ids_map(conn, id_list)
-                        for r in rows:
-                            rid = self._parse_int(r.get('id'))
-                            r['platform_type_ids'] = mp.get(rid, [])
+                    for r in rows:
+                        r['platform_type_ids'] = self._parse_platform_type_ids_csv(r.get('platform_type_ids'))
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -6939,11 +6957,13 @@ class SalesProductMixin:
                 applies_sales = int(self._parse_bool_flag(data.get('applies_sales'), default=True))
                 applies_order_product = int(self._parse_bool_flag(data.get('applies_order_product'), default=True))
                 applies_aplus = int(self._parse_bool_flag(data.get('applies_aplus'), default=True))
-                required_width_px = data.get('required_width_px', None)
-                required_height_px = data.get('required_height_px', None)
-                platform_type_ids = data.get('platform_type_ids', [])
+                applies_mobile = int(self._parse_bool_flag(data.get('applies_mobile'), default=True))
+                applies_desktop = int(self._parse_bool_flag(data.get('applies_desktop'), default=True))
+                platform_type_ids_csv = self._format_platform_type_ids_csv(data.get('platform_type_ids', []))
                 aplus_layout_json_mobile = data.get('aplus_layout_json_mobile', None)
                 aplus_layout_json_desktop = data.get('aplus_layout_json_desktop', None)
+                required_width_px = data.get('required_width_px', None)
+                required_height_px = data.get('required_height_px', None)
                 try:
                     required_width_px = None if required_width_px is None or required_width_px == '' else int(required_width_px)
                 except Exception:
@@ -6966,30 +6986,32 @@ class SalesProductMixin:
                                     applies_sales=%s,
                                     applies_order_product=%s,
                                     applies_aplus=%s,
+                                    applies_mobile=%s,
+                                    applies_desktop=%s,
+                                    platform_type_ids=%s,
                                     required_width_px=%s,
                                     required_height_px=%s,
                                     aplus_layout_json_mobile=%s,
                                     aplus_layout_json_desktop=%s
                                 WHERE id=%s
                                 """,
-                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
+                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, applies_mobile, applies_desktop, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
                             )
-                            self._set_image_type_platform_ids(conn, exists.get('id'), platform_type_ids)
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
 
                         cur.execute(
                             """
                             INSERT INTO image_types (
                                 name, is_enabled, applies_fabric, applies_sales, applies_order_product, applies_aplus,
+                                applies_mobile, applies_desktop, platform_type_ids,
                                 required_width_px, required_height_px,
                                 aplus_layout_json_mobile, aplus_layout_json_desktop
                             )
-                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
+                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, applies_mobile, applies_desktop, platform_type_ids_csv, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
                         )
                         new_id = cur.lastrowid
-                    self._set_image_type_platform_ids(conn, new_id, platform_type_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method in ('PUT', 'PATCH'):
@@ -6999,7 +7021,7 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 sets = []
                 vals = []
-                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_order_product', 'applies_aplus'):
+                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_order_product', 'applies_aplus', 'applies_mobile', 'applies_desktop'):
                     if key in data:
                         sets.append(f"{key}=%s")
                         vals.append(int(self._parse_bool_flag(data.get(key), default=False)))
@@ -7059,7 +7081,6 @@ class SalesProductMixin:
                                 'status': 'error',
                                 'message': f'无法删除：该类型仍被引用（{"，".join(parts)}）。请先解除引用或改为禁用。',
                             }, start_response)
-                        cur.execute("DELETE FROM image_type_platform_types WHERE image_type_id=%s", (item_id,))
                         cur.execute("DELETE FROM image_types WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 

@@ -7,156 +7,183 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .aplus-shell { max-width: 1400px; margin: 0 auto; padding: 1rem; }
-        .aplus-toolbar { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
-        .aplus-toolbar .pm-form { margin:0; }
-        .aplus-grid { display:grid; grid-template-columns: 320px 1fr 480px; gap: 1rem; margin-top: 1rem; }
-        .aplus-panel { background: rgba(255,255,255,0.72); border: 1px solid var(--morandi-sand); border-radius: 12px; overflow:hidden; }
-        .aplus-panel h3 { margin:0; padding: 0.75rem 0.9rem; border-bottom:1px solid var(--morandi-sand); font-size: 1rem; background: rgba(255,255,255,0.65); }
-        .aplus-panel-body { padding: 0.85rem; }
-        .aplus-list { display:flex; flex-direction:column; gap:0.45rem; }
-        .aplus-item { padding:0.6rem 0.65rem; border:1px solid var(--morandi-sand); border-radius:10px; background:#fff; cursor:pointer; }
-        .aplus-item.is-active { border-color: var(--morandi-ink); box-shadow: 0 0 0 3px rgba(42,36,32,0.08); }
-        .aplus-item-title { font-weight: 700; color: var(--morandi-ink); }
-        .aplus-item-meta { font-size: 0.85rem; color: rgba(42,36,32,0.72); margin-top:0.2rem; }
-        .aplus-split { display:grid; grid-template-columns: 1fr; gap: 0.75rem; }
-        .aplus-mod-row { border:1px solid var(--morandi-sand); border-radius:12px; background:#fff; padding:0.75rem; }
-        .aplus-mod-row-head { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; }
-        .aplus-mod-row-head .left { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
-        .aplus-mod-row textarea { width:100%; min-height:120px; border:1px solid var(--morandi-sand); border-radius:10px; padding:0.6rem 0.7rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.88rem; }
-        .aplus-preview { background:#fff; border:1px solid var(--morandi-sand); border-radius:12px; padding:0.85rem; min-height: 560px; }
-        .aplus-preview .m { border:1px dashed rgba(42,36,32,0.18); border-radius:12px; padding:0.8rem; margin-bottom:0.75rem; }
-        .aplus-preview .m:last-child { margin-bottom:0; }
-        .aplus-preview img { max-width:100%; border-radius:12px; display:block; }
-        .aplus-two-col { display:grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items:start; }
-        .aplus-bad { color:#a33; }
-        .aplus-assets { display:flex; flex-direction:column; gap:0.55rem; }
-        .asset-row { display:flex; gap:0.6rem; align-items:center; border:1px solid var(--morandi-sand); border-radius:12px; padding:0.6rem; background:#fff; }
-        .asset-row img { width:60px; height:60px; object-fit:cover; border-radius:10px; border:1px solid rgba(42,36,32,0.12); }
-        .asset-row .meta { flex:1; min-width:0; }
-        .asset-row .meta .path { font-size:0.85rem; color: rgba(42,36,32,0.72); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .asset-row .meta .sub { font-size:0.85rem; margin-top:0.25rem; color: rgba(42,36,32,0.72); }
-        @media (max-width: 1200px) {
-            .aplus-grid { grid-template-columns: 1fr; }
+        .ap-grid {
+            display: grid;
+            grid-template-columns: max-content minmax(280px, 340px) minmax(320px, 1fr);
+            gap: 1rem;
+            align-items: start;
+            width: 100%;
+            min-width: 0;
+        }
+        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aplus) > .container,
+        body.sitjoy-has-shell .sitjoy-page-body:has(.pm-layout--aplus) {
+            overflow: auto;
+        }
+        body.sitjoy-has-shell .sitjoy-page-body .pm-layout.pm-layout--aplus {
+            display: block;
+            overflow: visible;
+        }
+        .ap-left-col { width: max-content; max-width: 100%; }
+        .ap-left-stack { display: grid; gap: 0.75rem; width: fit-content; max-width: 100%; }
+        .ap-search-card, .ap-version-card { width: 100%; box-sizing: border-box; }
+        .ap-field-row { display: flex; flex-direction: column; gap: 0.2rem; }
+        .ap-field-row label { font-size: 0.78rem; color: var(--morandi-slate); font-weight: 600; }
+        .ap-field-row select, .ap-field-row input[type="text"] {
+            font-size: 0.82rem; padding: 0.32rem 0.45rem; border-radius: 6px;
+            border: 1px solid var(--morandi-sand); box-sizing: border-box; width: 100%;
+        }
+        .ap-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 0.45rem; }
+        .ap-filter-grid .ap-field-row--wide { grid-column: 1 / -1; }
+        .ap-list-wrap { overflow: auto; max-height: calc(100vh - 280px); }
+        .ap-version-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 0.84rem; }
+        .ap-version-table th, .ap-version-table td {
+            border-bottom: 1px solid rgba(207,199,189,0.45); padding: 0.42rem 0.55rem; text-align: left; white-space: nowrap;
+        }
+        .ap-version-table thead th { background: rgba(245,239,229,0.85); font-weight: 600; position: sticky; top: 0; z-index: 1; }
+        .ap-version-table tbody tr { cursor: pointer; }
+        .ap-version-table tbody tr:hover { background: rgba(207,199,189,0.22); }
+        .ap-version-table tbody tr.is-active { background: rgba(155,74,74,0.12); }
+        .ap-mid-col, .ap-right-col { padding: 0.75rem 0.85rem; min-width: 0; }
+        .ap-mid-col { display: flex; flex-direction: column; gap: 0.55rem; }
+        .ap-right-col { display: flex; flex-direction: column; gap: 0.65rem; min-height: 420px; }
+        .ap-module-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: calc(100vh - 320px); overflow: auto; }
+        .ap-module-item {
+            display: flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.5rem;
+            border: 1px solid var(--morandi-sand); border-radius: 8px; background: #fff; cursor: pointer;
+        }
+        .ap-module-item.is-active { border-color: var(--morandi-ink); box-shadow: 0 0 0 2px rgba(42,36,32,0.08); }
+        .ap-module-item__main { flex: 1; min-width: 0; }
+        .ap-module-item__title { font-weight: 700; font-size: 0.86rem; }
+        .ap-module-item__meta { font-size: 0.78rem; color: var(--morandi-slate); }
+        .ap-module-actions { display: flex; flex-direction: column; gap: 0.2rem; }
+        .ap-image-list { display: flex; flex-direction: column; gap: 0.45rem; }
+        .ap-image-row {
+            display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem;
+            border: 1px solid var(--morandi-sand); border-radius: 8px; background: #fff;
+        }
+        .ap-image-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; }
+        .ap-image-row__meta { flex: 1; min-width: 0; font-size: 0.8rem; color: var(--morandi-slate); overflow: hidden; text-overflow: ellipsis; }
+        .ap-preview-box {
+            border: 1px solid var(--morandi-sand); border-radius: 10px; background: #fff;
+            padding: 0.75rem; min-height: 200px; overflow: auto;
+        }
+        .ap-preview-box img { max-width: 100%; border-radius: 8px; display: block; }
+        .ap-toolbar-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+        .ap-section-title { margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--morandi-ink); }
+        @media (max-width: 1100px) {
+            .ap-grid { grid-template-columns: 1fr; }
+            .ap-list-wrap { max-height: 320px; }
         }
     </style>
 </head>
 <body>
     <div id="site-header"></div>
-    <div class="aplus-shell">
-        <div class="aplus-toolbar">
-            <div class="pm-form" style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-                <div class="form-group" style="margin:0;">
-                    <label>平台</label>
-                    <select id="platformSelect"></select>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1rem;">
+            <h2>A+管理</h2>
+            <p class="pm-page-lead">版本目录 · 栏目布局与排序 · 模块图片编辑与预览</p>
+        </section>
+
+        <section class="pm-layout pm-layout--aplus">
+            <div class="ap-grid">
+                <div class="ap-left-col">
+                    <div class="ap-left-stack">
+                        <div class="card pm-card ap-search-card">
+                            <div class="ap-filter-grid">
+                                <div class="ap-field-row">
+                                    <label for="platformSelect">平台</label>
+                                    <select id="platformSelect"></select>
+                                </div>
+                                <div class="ap-field-row">
+                                    <label for="skuFamilySelect">货号</label>
+                                    <select id="skuFamilySelect"></select>
+                                </div>
+                                <div class="ap-field-row ap-field-row--wide">
+                                    <label for="qInput">版本名</label>
+                                    <input id="qInput" type="text" placeholder="关键词">
+                                </div>
+                            </div>
+                            <div class="ap-toolbar-row" style="margin-top:0.55rem;">
+                                <button class="btn-secondary btn-small" type="button" onclick="loadVersions()">刷新</button>
+                                <button class="btn-accent btn-small" type="button" onclick="openCreateVersionModal()">新增版本</button>
+                            </div>
+                        </div>
+                        <div class="card pm-card ap-version-card">
+                            <h3 class="ap-section-title" style="margin-bottom:0.5rem;">版本列表</h3>
+                            <div class="ap-list-wrap" id="versionListHost">
+                                <div class="pm-muted pm-text-center">加载中…</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>货号</label>
-                    <select id="skuFamilySelect"></select>
+
+                <div class="card pm-card ap-mid-col">
+                    <div class="ap-toolbar-row" style="justify-content:space-between;">
+                        <h3 class="ap-section-title">布局与排序</h3>
+                        <div class="status-segment status-segment--inline" id="deviceSegment" data-sj-status-segment data-value="desktop">
+                            <button type="button" class="status-pill status-pill--yes" data-value="desktop">电脑</button>
+                            <button type="button" class="status-pill status-pill--no" data-value="mobile">手机</button>
+                        </div>
+                    </div>
+                    <div class="pm-muted" id="midHint">请先选择左侧版本</div>
+                    <div id="modulePanel" class="pm-u-hidden">
+                        <div class="ap-toolbar-row">
+                            <select id="newImageTypeSelect" class="inline-input" style="flex:1; min-width:140px;"></select>
+                            <button class="btn-accent btn-small" type="button" onclick="addGroup()">新增栏目</button>
+                        </div>
+                        <div id="moduleList" class="ap-module-list"></div>
+                        <div id="layoutEditPanel" class="pm-u-hidden" style="margin-top:0.55rem;">
+                            <div class="pm-muted" id="layoutTypeHint" style="margin-bottom:0.35rem;"></div>
+                            <textarea id="layoutJsonTextarea" class="optional-field" rows="10" spellcheck="false"
+                                style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.82rem;box-sizing:border-box;"></textarea>
+                            <div class="ap-toolbar-row" style="margin-top:0.45rem;">
+                                <button class="btn-primary btn-small" type="button" onclick="saveImageTypeLayout()">保存布局 JSON</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>搜索版本</label>
-                    <input id="qInput" type="text" placeholder="版本名关键词">
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <button class="btn-secondary" type="button" onclick="loadVersions()">刷新</button>
+
+                <div class="card pm-card ap-right-col">
+                    <h3 class="ap-section-title">栏目编辑与预览</h3>
+                    <div class="pm-muted" id="rightHint">点击中间栏目进行编辑</div>
+                    <div id="editorPanel" class="pm-u-hidden">
+                        <div class="pm-muted" id="editorTypeHint" style="margin-bottom:0.35rem;"></div>
+                        <div class="ap-toolbar-row">
+                            <label class="ap-field-row" style="flex-direction:row;align-items:center;gap:0.35rem;margin:0;">
+                                <input type="checkbox" id="imgApplyMobile" checked onchange="syncImageDeviceFlags()"> 手机
+                            </label>
+                            <label class="ap-field-row" style="flex-direction:row;align-items:center;gap:0.35rem;margin:0;">
+                                <input type="checkbox" id="imgApplyDesktop" checked onchange="syncImageDeviceFlags()"> 电脑
+                            </label>
+                            <input id="uploadInput" type="file" multiple accept="image/*" style="max-width:180px;font-size:0.8rem;">
+                            <button class="btn-accent btn-small" type="button" onclick="uploadModuleImages()">上传图片</button>
+                        </div>
+                        <div id="imageList" class="ap-image-list"></div>
+                        <div class="ap-section-title" style="margin-top:0.35rem;">预览</div>
+                        <div id="previewBox" class="ap-preview-box pm-muted">暂无预览</div>
+                    </div>
                 </div>
             </div>
-            <div style="display:flex; gap:0.6rem; align-items:center;">
-                <button class="btn-accent" type="button" onclick="openCreateVersionModal()">新增版本</button>
-            </div>
-        </div>
-
-        <div class="aplus-grid">
-            <section class="aplus-panel">
-                <h3>版本列表</h3>
-                <div class="aplus-panel-body">
-                    <div id="versionList" class="aplus-list"></div>
-                </div>
-            </section>
-
-            <section class="aplus-panel">
-                <h3>布局（按图片类型维护）</h3>
-                <div class="aplus-panel-body">
-                    <div class="pm-form" style="margin:0 0 0.75rem 0; display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
-                        <div class="form-group" style="margin:0; min-width: 220px;">
-                            <label>图片类型（A+可用）</label>
-                            <select id="layoutImageTypeSelect"></select>
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <label>端</label>
-                            <select id="layoutDeviceSelect">
-                                <option value="desktop">电脑端</option>
-                                <option value="mobile">手机端</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <button class="btn-secondary" type="button" onclick="loadImageTypeLayouts()">刷新</button>
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <button class="btn-primary" type="button" onclick="saveImageTypeLayout()">保存布局</button>
-                        </div>
-                    </div>
-                    <div style="color:rgba(42,36,32,0.7); font-size:0.88rem; margin-bottom:0.45rem;">
-                        这里维护的是“图片类型的通用布局 JSON”（手机/电脑各一份）。版本只负责选图与排序。
-                    </div>
-                    <textarea id="layoutJsonTextarea" style="width:100%; min-height:420px; border:1px solid var(--morandi-sand); border-radius:12px; padding:0.7rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:0.88rem;"></textarea>
-                    <div id="layoutStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
-                </div>
-            </section>
-
-            <section class="aplus-panel">
-                <h3>预览 & 素材</h3>
-                <div class="aplus-panel-body">
-                    <div class="pm-form" style="margin:0 0 0.75rem 0; display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
-                        <div class="form-group" style="margin:0; min-width: 180px;">
-                            <label>图片类型（A+可用）</label>
-                            <select id="aplusImageTypeSelect"></select>
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <label>端</label>
-                            <select id="assetDeviceSelect">
-                                <option value="desktop">电脑端</option>
-                                <option value="mobile">手机端</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <label>上传文件</label>
-                            <input id="aplusUploadInput" type="file" multiple accept="image/*">
-                        </div>
-                        <div class="form-group" style="margin:0;">
-                            <button class="btn-accent" type="button" onclick="uploadAplusFiles()">上传到该版本</button>
-                        </div>
-                    </div>
-
-                    <div class="aplus-preview" id="preview"></div>
-                    <div style="margin-top:0.85rem;">
-                        <div style="font-weight:700; margin-bottom:0.55rem;">版本素材</div>
-                        <div id="assetList" class="aplus-assets"></div>
-                    </div>
-                </div>
-            </section>
-        </div>
+        </section>
     </div>
 
     <div class="pm-modal" id="createVersionModal">
         <div class="pm-modal-content" style="max-width: 640px;">
             <h3 style="margin-top:0;">新增A+版本</h3>
             <div class="pm-section-body pm-form">
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>版本名称<span class="required-asterisk">*</span></label>
-                    <input type="text" id="newVersionName" class="required-field" maxlength="128" placeholder="例如：V1 / 2026-春季 / 主推版">
+                <div class="form-group pm-form-full">
+                    <label for="newVersionName">版本名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="newVersionName" class="required-field" maxlength="128">
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>平台<span class="required-asterisk">*</span></label>
+                <div class="form-group">
+                    <label for="newPlatformSelect">平台<span class="required-asterisk">*</span></label>
                     <select id="newPlatformSelect"></select>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>货号<span class="required-asterisk">*</span></label>
+                <div class="form-group">
+                    <label for="newSkuFamilySelect">货号<span class="required-asterisk">*</span></label>
                     <select id="newSkuFamilySelect"></select>
                 </div>
             </div>
-            <div id="createStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeCreateVersionModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="createVersion()">创建</button>
@@ -164,51 +191,49 @@
         </div>
     </div>
 
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
     <script>
-        // -------------------------------------------------------------------------
-        // A+ 页面：版本目录、素材绑定、布局 JSON 与预览渲染
-        // -------------------------------------------------------------------------
-
-        // -------------------------------------------------------------------------
-        // 模块级状态
-        // -------------------------------------------------------------------------
-        let platformTypes = [];
-        let skuFamilies = [];
-        let currentVersion = null; // {id, version_name, platform_type_id, sku_family_id, ...}
+        let platformTypes = [], skuFamilies = [];
+        let currentVersion = null;
+        let currentGroups = [];
+        let pendingGroups = [];
         let currentAssets = [];
-        let currentImageTypes = [];
+        let aplusImageTypes = [];
+        let selectedSortOrder = null;
+        let editDevice = 'desktop';
 
-        // -------------------------------------------------------------------------
-        // 通用工具与筛选选项加载
-        // -------------------------------------------------------------------------
-        function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function esc(s) {
+            return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function toast(msg, err) { if (window.showAppToast) window.showAppToast(msg, !!err); }
+        function pageStatus(msg, err) { if (window.showPageStatus) window.showPageStatus(msg, !!err); }
 
-        function toast(msg, isError){
-            if (window.showAppToast) window.showAppToast(msg, !!isError);
+        function getEditDevice() {
+            if (window.SitjoyPageUI && SitjoyPageUI.getStatusSegmentValue) {
+                return SitjoyPageUI.getStatusSegmentValue('#deviceSegment') || 'desktop';
+            }
+            return editDevice;
         }
 
-        function showEditorStatus(msg, isError){
-            const text = String(msg || '').trim();
-            if (!text) return;
-            if (window.showPageStatus) window.showPageStatus(text, isError);
+        function layoutJsonField(dev) {
+            return dev === 'mobile' ? 'aplus_layout_json_mobile' : 'aplus_layout_json_desktop';
         }
 
-        function fillSelect(selectEl, items, idKey, nameKey, includeAll){
-            if (!selectEl) return;
-            let html = '';
-            if (includeAll) html += `<option value="">全部</option>`;
-            html += (items||[]).map(it => `<option value="${Number(it[idKey]||0)}">${esc(it[nameKey]||'')}</option>`).join('');
-            selectEl.innerHTML = html;
+        function fillSelect(el, items, idKey, nameKey, includeAll) {
+            if (!el) return;
+            let html = includeAll ? '<option value="">全部</option>' : '';
+            html += (items || []).map(it => `<option value="${Number(it[idKey] || 0)}">${esc(it[nameKey] || '')}</option>`).join('');
+            el.innerHTML = html;
         }
 
-        function loadInitOptions(){
+        function loadInitOptions() {
             return Promise.all([
-                fetch('/api/platform-type').then(r=>r.json()).catch(()=>({})),
-                fetch('/api/sku?per_page=500').then(r=>r.json()).catch(()=>({}))
+                fetch('/api/platform-type').then(r => r.json()).catch(() => ({})),
+                fetch('/api/sku?per_page=500').then(r => r.json()).catch(() => ({}))
             ]).then(([p, s]) => {
-                platformTypes = (p && p.status==='success' && Array.isArray(p.items)) ? p.items : [];
-                skuFamilies = (s && s.status==='success' && Array.isArray(s.items)) ? s.items : [];
+                platformTypes = (p && p.status === 'success' && Array.isArray(p.items)) ? p.items : [];
+                skuFamilies = (s && s.status === 'success' && Array.isArray(s.items)) ? s.items : [];
                 fillSelect(document.getElementById('platformSelect'), platformTypes, 'id', 'name', true);
                 fillSelect(document.getElementById('newPlatformSelect'), platformTypes, 'id', 'name', false);
                 fillSelect(document.getElementById('skuFamilySelect'), skuFamilies, 'id', 'sku_family', true);
@@ -216,362 +241,525 @@
             });
         }
 
-        // -------------------------------------------------------------------------
-        // 版本列表与选中
-        // -------------------------------------------------------------------------
-        function loadVersions(){
-            const platform_type_id = document.getElementById('platformSelect').value || '';
-            const sku_family_id = document.getElementById('skuFamilySelect').value || '';
-            const q = encodeURIComponent(String(document.getElementById('qInput').value||'').trim());
-            const qs = [];
-            if (platform_type_id) qs.push('platform_type_id=' + encodeURIComponent(platform_type_id));
-            if (sku_family_id) qs.push('sku_family_id=' + encodeURIComponent(sku_family_id));
-            if (q) qs.push('q=' + q);
-            const url = '/api/aplus-version' + (qs.length ? ('?' + qs.join('&')) : '');
-            fetch(url).then(r=>r.json()).then(data => {
-                if (!data || data.status!=='success') throw new Error(data.message||'加载失败');
-                renderVersionList(data.items||[]);
-            }).catch(err => {
-                document.getElementById('versionList').innerHTML = `<div class="aplus-bad">加载失败：${esc(err)}</div>`;
+        function loadAplusImageTypes() {
+            if (!currentVersion) {
+                aplusImageTypes = [];
+                fillSelect(document.getElementById('newImageTypeSelect'), [], 'id', 'name', false);
+                return Promise.resolve();
+            }
+            const dev = getEditDevice();
+            const url = '/api/image-type?usage=aplus&include_disabled=0&device=' + encodeURIComponent(dev)
+                + '&platform_type_id=' + encodeURIComponent(currentVersion.platform_type_id);
+            return fetch(url).then(r => r.json()).then(data => {
+                aplusImageTypes = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+                fillSelect(document.getElementById('newImageTypeSelect'), aplusImageTypes, 'id', 'name', false);
             });
         }
 
-        function renderVersionList(items){
-            const list = Array.isArray(items) ? items : [];
-            if (!list.length){
-                document.getElementById('versionList').innerHTML = '<div style="color:rgba(42,36,32,0.72);">暂无版本</div>';
-                return;
-            }
-            document.getElementById('versionList').innerHTML = list.map(v => {
-                const active = currentVersion && Number(currentVersion.id)===Number(v.id) ? 'is-active' : '';
-                return `<div class="aplus-item ${active}" onclick="selectVersion(${Number(v.id)})">
-                    <div class="aplus-item-title">${esc(v.version_name||'')}</div>
-                    <div class="aplus-item-meta">${esc(v.platform_type_name||'')} · ${esc(v.sku_family||'')}</div>
-                </div>`;
-            }).join('');
+        function buildGroups() {
+            const map = new Map();
+            pendingGroups.forEach(g => map.set(Number(g.sort_order), { ...g }));
+            currentAssets.forEach(a => {
+                const so = Number(a.sort_order);
+                if (!map.has(so)) {
+                    map.set(so, {
+                        sort_order: so,
+                        image_type_id: Number(a.image_type_id || 0),
+                        image_type_name: String(a.image_type_name || ''),
+                    });
+                } else {
+                    const g = map.get(so);
+                    if (!g.image_type_id && a.image_type_id) {
+                        g.image_type_id = Number(a.image_type_id);
+                        g.image_type_name = String(a.image_type_name || '');
+                    }
+                }
+            });
+            return Array.from(map.values()).sort((a, b) => a.sort_order - b.sort_order);
         }
 
-        function selectVersion(id){
-            const vid = Number(id||0);
-            if (!vid) return;
-            fetch('/api/aplus-version?q=&platform_type_id=&sku_family_id=').then(()=>{}); // keepalive noop
-            // Load version detail list again to find item
-            fetch('/api/aplus-version?').then(r=>r.json()).then(() => {}); // noop; version list already holds all needed fields
-            // In practice we can re-fetch single by filtering current list; simpler: load list again and then set by id
-            fetch('/api/aplus-version?').then(r=>r.json()).catch(()=>({})); // noop
-            // Find in DOM by request fresh list with current filters to keep consistent
+        function getSelectedGroup() {
+            return currentGroups.find(g => Number(g.sort_order) === Number(selectedSortOrder)) || null;
+        }
+
+        function resolveImageTypeForGroup(sortOrder) {
+            const g = currentGroups.find(x => Number(x.sort_order) === Number(sortOrder));
+            if (g && g.image_type_id) return aplusImageTypes.find(t => Number(t.id) === Number(g.image_type_id)) || null;
+            const hit = currentAssets.find(a => Number(a.sort_order) === Number(sortOrder) && a.image_type_id);
+            if (!hit) return null;
+            return aplusImageTypes.find(t => Number(t.id) === Number(hit.image_type_id)) || {
+                id: hit.image_type_id,
+                name: hit.image_type_name || '',
+                aplus_layout_json_mobile: hit.aplus_layout_json_mobile,
+                aplus_layout_json_desktop: hit.aplus_layout_json_desktop,
+            };
+        }
+
+        function loadVersions() {
             const platform_type_id = document.getElementById('platformSelect').value || '';
             const sku_family_id = document.getElementById('skuFamilySelect').value || '';
-            const q = encodeURIComponent(String(document.getElementById('qInput').value||'').trim());
+            const q = encodeURIComponent(String(document.getElementById('qInput').value || '').trim());
             const qs = [];
             if (platform_type_id) qs.push('platform_type_id=' + encodeURIComponent(platform_type_id));
             if (sku_family_id) qs.push('sku_family_id=' + encodeURIComponent(sku_family_id));
             if (q) qs.push('q=' + q);
-            const url = '/api/aplus-version' + (qs.length ? ('?' + qs.join('&')) : '');
-            fetch(url).then(r=>r.json()).then(data => {
-                const item = (data.items||[]).find(x => Number(x.id)===vid);
-                if (!item) throw new Error('版本不存在');
-                currentVersion = item;
-                renderVersionList(data.items||[]);
-                return Promise.all([loadAssets(), loadAplusImageTypes()]);
+            const url = '/api/aplus-version' + (qs.length ? '?' + qs.join('&') : '');
+            fetch(url).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '加载失败');
+                renderVersionTable(data.items || []);
+            }).catch(err => {
+                document.getElementById('versionListHost').innerHTML = `<div class="sj-text-negative">${esc(err)}</div>`;
+            });
+        }
+
+        function renderVersionTable(items) {
+            const host = document.getElementById('versionListHost');
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                host.innerHTML = '<div class="pm-muted pm-text-center">暂无版本</div>';
+                return;
+            }
+            host.innerHTML = `<table class="ap-version-table"><thead><tr>
+                <th>版本</th><th>平台</th><th>货号</th><th>更新</th>
+            </tr></thead><tbody>${list.map(v => {
+                const active = currentVersion && Number(currentVersion.id) === Number(v.id) ? 'is-active' : '';
+                const updated = String(v.updated_at || '').replace('T', ' ').slice(0, 16);
+                return `<tr class="${active}" tabindex="0" data-vid="${Number(v.id)}" onclick="selectVersion(${Number(v.id)})" onkeydown="if(event.key==='Enter')selectVersion(${Number(v.id)})">
+                    <td>${esc(v.version_name)}</td>
+                    <td>${esc(v.platform_type_name || '')}</td>
+                    <td>${esc(v.sku_family || '')}</td>
+                    <td>${esc(updated)}</td>
+                </tr>`;
+            }).join('')}</tbody></table>`;
+        }
+
+        function selectVersion(id) {
+            const vid = Number(id || 0);
+            if (!vid) return;
+            fetch('/api/aplus-version?id=' + encodeURIComponent(vid)).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success' || !data.item) throw new Error(data.message || '加载失败');
+                currentVersion = data.item;
+                selectedSortOrder = null;
+                pendingGroups = [];
+                editDevice = getEditDevice();
+                return loadAplusImageTypes().then(() => loadAssets());
             }).then(() => {
-                renderPreview();
-                loadImageTypeLayouts();
-            }).catch(err => toast(String(err||'选择失败'), true));
+                currentGroups = buildGroups();
+                loadVersions();
+                renderMiddle();
+                renderRight();
+            }).catch(err => toast(String(err), true));
         }
 
-        // -------------------------------------------------------------------------
-        // 图片类型布局 JSON
-        // -------------------------------------------------------------------------
-        function loadImageTypeLayouts(){
-            if (!currentVersion) return;
-            const id = Number(document.getElementById('layoutImageTypeSelect').value||0);
-            const device = String(document.getElementById('layoutDeviceSelect').value||'desktop');
-            const hit = (currentImageTypes||[]).find(x => Number(x.id||0) === id);
-            const txt = document.getElementById('layoutJsonTextarea');
-            if (!txt) return;
-            if (!hit) { txt.value = ''; return; }
-            txt.value = device === 'mobile' ? (hit.aplus_layout_json_mobile || '') : (hit.aplus_layout_json_desktop || '');
-        }
-
-        function saveImageTypeLayout(){
-            if (!currentVersion) return toast('请先选择版本', true);
-            const id = Number(document.getElementById('layoutImageTypeSelect').value||0);
-            const device = String(document.getElementById('layoutDeviceSelect').value||'desktop');
-            const jsonText = String(document.getElementById('layoutJsonTextarea').value||'');
-            if (!id) return showEditorStatus('请选择图片类型', true);
-            const payload = { id };
-            if (device === 'mobile') payload.aplus_layout_json_mobile = jsonText;
-            else payload.aplus_layout_json_desktop = jsonText;
-            fetch('/api/image-type', {
-                method:'PATCH',
-                headers:{'Content-Type':'application/json'},
-                body: JSON.stringify(payload)
-            }).then(r=>r.json()).then(data => {
-                if (!data || data.status!=='success') throw new Error(data.message||'保存失败');
-                const hit = (currentImageTypes||[]).find(x => Number(x.id||0) === id);
-                if (hit) {
-                    if (device === 'mobile') hit.aplus_layout_json_mobile = jsonText;
-                    else hit.aplus_layout_json_desktop = jsonText;
-                }
-                showEditorStatus('已保存布局', false);
-            }).catch(err => showEditorStatus('保存失败：' + err, true));
-        }
-
-        // (旧的“模板/模块编辑器”逻辑已移除：布局 JSON 现在存到 image_types 的 mobile/desktop 字段中)
-
-        // -------------------------------------------------------------------------
-        // 版本素材列表与上传
-        // -------------------------------------------------------------------------
-        function loadAssets(){
+        function loadAssets() {
             if (!currentVersion) return Promise.resolve();
-            const device = String(document.getElementById('assetDeviceSelect').value||'desktop');
-            const typeName = String(document.getElementById('aplusImageTypeSelect').value||'').trim();
-            const typeObj = (currentImageTypes||[]).find(x => String(x.name||'') === typeName);
-            const typeId = typeObj ? Number(typeObj.id||0) : 0;
-            const qs = ['aplus_version_id=' + encodeURIComponent(currentVersion.id), 'device=' + encodeURIComponent(device)];
-            if (typeId) qs.push('image_type_id=' + encodeURIComponent(typeId));
-            return fetch('/api/aplus-version-assets?' + qs.join('&'))
-                .then(r=>r.json())
+            const dev = getEditDevice();
+            return fetch('/api/aplus-version-assets?aplus_version_id=' + encodeURIComponent(currentVersion.id) + '&device=' + encodeURIComponent(dev))
+                .then(r => r.json())
                 .then(data => {
-                    if (!data || data.status!=='success') throw new Error(data.message||'加载素材失败');
+                    if (!data || data.status !== 'success') throw new Error(data.message || '素材加载失败');
                     currentAssets = Array.isArray(data.items) ? data.items : [];
-                    renderAssets(data.items||[]);
+                    currentGroups = buildGroups();
                 });
         }
 
-        function renderAssets(items){
-            const list = Array.isArray(items) ? items : [];
-            if (!list.length){
-                document.getElementById('assetList').innerHTML = '<div style="color:rgba(42,36,32,0.72);">暂无素材</div>';
+        function renderMiddle() {
+            const hint = document.getElementById('midHint');
+            const panel = document.getElementById('modulePanel');
+            const layoutPanel = document.getElementById('layoutEditPanel');
+            if (!currentVersion) {
+                hint.classList.remove('pm-u-hidden');
+                panel.classList.add('pm-u-hidden');
+                hint.textContent = '请先选择左侧版本';
                 return;
             }
-            document.getElementById('assetList').innerHTML = list.map(it => {
-                const imgSrc = it.storage_path ? storagePathToPreviewUrl(it.storage_path) : '';
-                return `<div class="asset-row">
-                    <img src="${imgSrc}" onerror="this.style.display='none'">
-                    <div class="meta">
-                        <div class="path">${esc(it.storage_path||'')}</div>
-                        <div class="sub">asset_id: ${Number(it.image_asset_id||0)} · image_type_id: ${Number(it.image_type_id||0)} · device: ${esc(it.device||'')}</div>
+            hint.classList.add('pm-u-hidden');
+            panel.classList.remove('pm-u-hidden');
+            const list = document.getElementById('moduleList');
+            if (!currentGroups.length) {
+                list.innerHTML = '<div class="pm-muted">暂无栏目，请选择图片类型后新增</div>';
+                layoutPanel.classList.add('pm-u-hidden');
+                return;
+            }
+            list.innerHTML = currentGroups.map(g => {
+                const active = Number(selectedSortOrder) === Number(g.sort_order) ? 'is-active' : '';
+                const imgCount = currentAssets.filter(a => Number(a.sort_order) === Number(g.sort_order)).length;
+                const typeLabel = g.image_type_name || (g.image_type_id ? ('类型#' + g.image_type_id) : '未绑定类型');
+                return `<div class="ap-module-item ${active}" onclick="selectGroup(${Number(g.sort_order)})">
+                    <div class="ap-module-item__main">
+                        <div class="ap-module-item__title">${esc(typeLabel)}</div>
+                        <div class="ap-module-item__meta">组序 ${g.sort_order} · 图片 ${imgCount} 张</div>
                     </div>
-                    <button class="btn-secondary" type="button" onclick="removeAsset(${Number(it.id||0)})">移除</button>
+                    <div class="ap-module-actions" onclick="event.stopPropagation()">
+                        <button class="btn-secondary btn-small" type="button" onclick="moveGroup(${g.sort_order},-1)">↑</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="moveGroup(${g.sort_order},1)">↓</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="removeGroup(${g.sort_order})">删</button>
+                    </div>
                 </div>`;
             }).join('');
-        }
-
-        function removeAsset(itemId){
-            const id = Number(itemId||0);
-            if (!id) return;
-            fetch('/api/aplus-version-assets', {
-                method:'DELETE',
-                headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ id })
-            }).then(r=>r.json()).then(data => {
-                if (!data || data.status!=='success') throw new Error(data.message||'移除失败');
-                loadAssets().then(()=>renderPreview());
-            }).catch(err => toast('移除失败：' + err, true));
-        }
-
-        function loadAplusImageTypes(){
-            if (!currentVersion) {
-                document.getElementById('aplusImageTypeSelect').innerHTML = '';
-                return Promise.resolve();
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) {
+                layoutPanel.classList.add('pm-u-hidden');
+                return;
             }
-            const url = '/api/image-type?usage=aplus&include_disabled=0&platform_type_id=' + encodeURIComponent(currentVersion.platform_type_id);
-            return fetch(url).then(r=>r.json()).then(data => {
-                const items = (data && data.status==='success' && Array.isArray(data.items)) ? data.items : [];
-                currentImageTypes = items;
-                const sel = document.getElementById('aplusImageTypeSelect');
-                sel.innerHTML = items.map(it => `<option value="${esc(it.name||'')}">${esc(it.name||'')}</option>`).join('');
-
-                const sel2 = document.getElementById('layoutImageTypeSelect');
-                if (sel2) sel2.innerHTML = items.map(it => `<option value="${Number(it.id||0)}">${esc(it.name||'')}</option>`).join('');
-                loadImageTypeLayouts();
-            });
+            layoutPanel.classList.remove('pm-u-hidden');
+            const typeObj = resolveImageTypeForGroup(grp.sort_order);
+            document.getElementById('layoutTypeHint').textContent = '布局 JSON 来自图片类型「' + (typeObj?.name || grp.image_type_name || '') + '」，保存后写入图片类型';
+            const field = layoutJsonField(getEditDevice());
+            document.getElementById('layoutJsonTextarea').value = String((typeObj && typeObj[field]) || '');
         }
 
-        function uploadAplusFiles(){
-            if (!currentVersion) return toast('请先选择版本', true);
-            const typeName = String(document.getElementById('aplusImageTypeSelect').value||'').trim();
-            const input = document.getElementById('aplusUploadInput');
-            const files = input.files ? Array.from(input.files) : [];
-            const device = String(document.getElementById('assetDeviceSelect').value||'desktop');
-            if (!typeName) return toast('请选择图片类型', true);
-            if (!files.length) return toast('请选择文件', true);
-            const fd = new FormData();
-            fd.append('aplus_version_id', String(currentVersion.id));
-            fd.append('image_type_name', typeName);
-            fd.append('device', device);
-            files.forEach(f => fd.append('file', f, f.name));
-            fetch('/api/aplus-upload', { method:'POST', body: fd })
-                .then(r=>r.json())
-                .then(data => {
-                    if (!data || data.status!=='success') throw new Error(data.message||'上传失败');
-                    toast('上传成功：新增 ' + Number(data.created||0) + ' 张', false);
-                    input.value = '';
-                    return loadAssets().then(()=>renderPreview());
-                })
-                .catch(err => toast('上传失败：' + err, true));
+        function selectGroup(sortOrder) {
+            selectedSortOrder = Number(sortOrder || 0) || null;
+            renderMiddle();
+            renderRight();
         }
 
-        function storagePathToPreviewUrl(storagePath){
-            const p = String(storagePath||'').trim();
+        function renderRight() {
+            const hint = document.getElementById('rightHint');
+            const panel = document.getElementById('editorPanel');
+            const grp = getSelectedGroup();
+            if (!currentVersion || !grp) {
+                hint.classList.remove('pm-u-hidden');
+                panel.classList.add('pm-u-hidden');
+                hint.textContent = currentVersion ? '点击中间栏目进行编辑' : '请先选择版本';
+                return;
+            }
+            hint.classList.add('pm-u-hidden');
+            panel.classList.remove('pm-u-hidden');
+            const typeLabel = grp.image_type_name || (grp.image_type_id ? ('类型#' + grp.image_type_id) : '未绑定类型');
+            document.getElementById('editorTypeHint').textContent = '图片类型：' + typeLabel + '（image_type_id 取自 image_asset）';
+            renderImageList();
+            renderPreview();
+        }
+
+        function groupAssets() {
+            return currentAssets
+                .filter(a => Number(a.sort_order) === Number(selectedSortOrder))
+                .sort((a, b) => Number(a.item_sort_order) - Number(b.item_sort_order) || Number(a.id) - Number(b.id));
+        }
+
+        function storagePathToPreviewUrl(storagePath) {
+            const p = String(storagePath || '').trim();
             if (!p) return '';
             try {
                 const b64 = btoa(unescape(encodeURIComponent(p)));
                 return '/api/image-preview?id=' + encodeURIComponent(b64) + '&mode=thumb&w=480&q=78';
-            } catch {
-                return '';
-            }
+            } catch { return ''; }
         }
 
-        // -------------------------------------------------------------------------
-        // 预览渲染（模块拼装）
-        // -------------------------------------------------------------------------
-        function renderPreview(){
-            const el = document.getElementById('preview');
-            if (!currentVersion){
-                el.innerHTML = '<div style="color:rgba(42,36,32,0.72);">请选择左侧版本以开始编辑与预览。</div>';
+        function renderImageList() {
+            const list = groupAssets();
+            const host = document.getElementById('imageList');
+            if (!list.length) {
+                host.innerHTML = '<div class="pm-muted">本栏目暂无图片</div>';
                 return;
             }
-            if (!currentAssets.length){
-                el.innerHTML = '<div style="color:rgba(42,36,32,0.72);">当前筛选下暂无素材。</div>';
-                return;
-            }
-            el.innerHTML = currentAssets.map(it => {
+            host.innerHTML = list.map(it => {
                 const src = it.storage_path ? storagePathToPreviewUrl(it.storage_path) : '';
-                return `<div class="m">
-                    ${src ? `<img src="${src}" alt="">` : ''}
-                    <div style="margin-top:0.45rem; color:rgba(42,36,32,0.72); font-size:0.9rem;">
-                        sort: ${Number(it.sort_order||0)} · type_id: ${Number(it.image_type_id||0)} · device: ${esc(it.device||'')}
+                const flags = `${it.apply_mobile ? '手机' : ''}${it.apply_mobile && it.apply_desktop ? '·' : ''}${it.apply_desktop ? '电脑' : ''}`;
+                return `<div class="ap-image-row">
+                    <img src="${src}" alt="" onerror="this.style.display='none'">
+                    <div class="ap-image-row__meta">#${it.item_sort_order} ${esc(it.storage_path || '')}<br>${esc(flags)}</div>
+                    <div style="display:flex;flex-direction:column;gap:0.2rem;">
+                        <button class="btn-secondary btn-small" type="button" onclick="moveImage(${it.id},-1)">↑</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="moveImage(${it.id},1)">↓</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="triggerReplace(${it.id})">换图</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="removeImage(${it.id})">移除</button>
                     </div>
                 </div>`;
             }).join('');
         }
 
-        function renderModule(m){
-            const type = String((m||{}).type||'TextBlock');
-            const props = (m && typeof m.props==='object' && m.props) ? m.props : {};
-
-            function firstAssetPreviewByTypeId(typeId){
-                const tid = Number(typeId||0);
-                if (!tid) return '';
-                const hit = (currentAssets||[]).find(x => Number(x.image_type_id||0) === tid && x.storage_path);
-                return hit ? storagePathToPreviewUrl(hit.storage_path) : '';
-            }
-
-            function allAssetPreviewsByTypeId(typeId){
-                const tid = Number(typeId||0);
-                if (!tid) return [];
-                return (currentAssets||[])
-                    .filter(x => Number(x.image_type_id||0) === tid && x.storage_path)
-                    .map(x => storagePathToPreviewUrl(x.storage_path));
-            }
-
-            if (type === 'Hero'){
-                const title = esc(props.title||'');
-                const text = esc(props.text||'');
-                const auto = firstAssetPreviewByTypeId(props.image_type_id);
-                const img = esc(props.image_url||'') || esc(storagePathToPreviewUrl(props.storage_path||'')) || esc(auto);
-                return `<div class="m"><div style="font-weight:800; font-size:1.1rem; margin-bottom:0.4rem;">${title}</div>
-                    ${img ? `<img src="${img}" alt="">` : `<div style="color:rgba(42,36,32,0.6);">Hero: 请在 props 中提供 image_url</div>`}
-                    <div style="margin-top:0.5rem; color:rgba(42,36,32,0.78);">${text}</div></div>`;
-            }
-            if (type === 'Image'){
-                const auto = firstAssetPreviewByTypeId(props.image_type_id);
-                const img = esc(props.image_url||'') || esc(storagePathToPreviewUrl(props.storage_path||'')) || esc(auto);
-                const cap = esc(props.caption||'');
-                return `<div class="m">${img ? `<img src="${img}" alt="">` : `<div style="color:rgba(42,36,32,0.6);">Image: 请在 props 中提供 image_url</div>`}
-                    ${cap ? `<div style="margin-top:0.45rem; color:rgba(42,36,32,0.72); font-size:0.9rem;">${cap}</div>` : ''}</div>`;
-            }
-            if (type === 'Carousel'){
-                const title = esc(props.title||'');
-                const urls = Array.isArray(props.image_urls) ? props.image_urls : [];
-                const paths = Array.isArray(props.storage_paths) ? props.storage_paths : [];
-                const auto = allAssetPreviewsByTypeId(props.image_type_id);
-                const all = urls.length ? urls : (paths.length ? paths.map(storagePathToPreviewUrl) : auto);
-                return `<div class="m">
-                    ${title ? `<div style="font-weight:800; margin-bottom:0.45rem;">${title}</div>` : ''}
-                    ${all.length ? all.map(u => `<img style="margin-bottom:0.55rem;" src="${esc(u)}" alt="">`).join('') :
-                        `<div style="color:rgba(42,36,32,0.6);">Carousel: props.image_urls 或 props.storage_paths</div>`}
-                </div>`;
-            }
-            if (type === 'TwoColumnImageText'){
-                const auto = firstAssetPreviewByTypeId(props.left_image_type_id || props.image_type_id);
-                const img = esc(props.left_image_url||'') || esc(storagePathToPreviewUrl(props.left_storage_path||'')) || esc(auto);
-                const rt = esc(props.right_title||'');
-                const tx = esc(props.right_text||'');
-                return `<div class="m">
-                    <div class="aplus-two-col">
-                        <div>${img ? `<img src="${img}" alt="">` : `<div style="color:rgba(42,36,32,0.6);">left_image_url</div>`}</div>
-                        <div>
-                            ${rt ? `<div style="font-weight:800; margin-bottom:0.35rem;">${rt}</div>` : ''}
-                            <div style="color:rgba(42,36,32,0.78); white-space:pre-wrap;">${tx}</div>
-                        </div>
-                    </div>
-                </div>`;
-            }
-            // TextBlock
-            const title = esc(props.title||'');
-            const text = esc(props.text||'');
-            return `<div class="m">
-                ${title ? `<div style="font-weight:800; margin-bottom:0.35rem;">${title}</div>` : ''}
-                <div style="color:rgba(42,36,32,0.78); white-space:pre-wrap;">${text}</div>
-            </div>`;
+        let replaceLinkId = 0;
+        function triggerReplace(linkId) {
+            replaceLinkId = Number(linkId || 0);
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = 'image/*';
+            inp.onchange = () => {
+                if (!inp.files || !inp.files[0]) return;
+                const fd = new FormData();
+                fd.append('aplus_version_id', String(currentVersion.id));
+                fd.append('sort_order', String(selectedSortOrder));
+                const grp = getSelectedGroup();
+                if (grp && grp.image_type_id) fd.append('image_type_id', String(grp.image_type_id));
+                fd.append('replace_link_id', String(replaceLinkId));
+                fd.append('file', inp.files[0]);
+                fetch('/api/aplus-upload', { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data || data.status !== 'success') throw new Error(data.message || '替换失败');
+                        toast('已替换图片', false);
+                        return loadAssets().then(() => { renderImageList(); renderPreview(); renderMiddle(); });
+                    })
+                    .catch(err => toast(String(err), true));
+            };
+            inp.click();
         }
 
-        // -------------------------------------------------------------------------
-        // 新建版本弹窗
-        // -------------------------------------------------------------------------
-        function openCreateVersionModal(){
-            document.getElementById('createStatus').style.display = 'none';
-            document.getElementById('createStatus').textContent = '';
+        function addGroup() {
+            const typeId = Number(document.getElementById('newImageTypeSelect').value || 0);
+            if (!typeId) return toast('请选择图片类型', true);
+            const typeObj = aplusImageTypes.find(t => Number(t.id) === typeId);
+            const maxSort = currentGroups.reduce((mx, g) => Math.max(mx, Number(g.sort_order || 0)), 0);
+            const g = {
+                sort_order: maxSort + 1,
+                image_type_id: typeId,
+                image_type_name: typeObj ? typeObj.name : '',
+            };
+            pendingGroups.push(g);
+            currentGroups = buildGroups();
+            selectedSortOrder = g.sort_order;
+            renderMiddle();
+            renderRight();
+        }
+
+        function removeGroup(sortOrder) {
+            if (!confirm('删除栏目将同时移除其下图片绑定，确定？')) return;
+            const so = Number(sortOrder);
+            pendingGroups = pendingGroups.filter(g => Number(g.sort_order) !== so);
+            const toRemove = currentAssets.filter(a => Number(a.sort_order) === so);
+            Promise.all(toRemove.map(it => fetch('/api/aplus-version-assets', {
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: it.id })
+            }))).then(() => loadAssets()).then(() => {
+                if (Number(selectedSortOrder) === so) selectedSortOrder = null;
+                currentGroups = buildGroups();
+                renderMiddle();
+                renderRight();
+            });
+        }
+
+        function moveGroup(sortOrder, delta) {
+            const ordered = currentGroups.slice().sort((a, b) => a.sort_order - b.sort_order);
+            const idx = ordered.findIndex(g => Number(g.sort_order) === Number(sortOrder));
+            const j = idx + Number(delta || 0);
+            if (idx < 0 || j < 0 || j >= ordered.length) return;
+            [ordered[idx], ordered[j]] = [ordered[j], ordered[idx]];
+            const assetUpdates = [];
+            ordered.forEach((g, i) => {
+                const newSo = i + 1;
+                const oldSo = Number(g.sort_order);
+                if (newSo !== oldSo) {
+                    pendingGroups.filter(pg => Number(pg.sort_order) === oldSo).forEach(pg => { pg.sort_order = newSo; });
+                    currentAssets.filter(a => Number(a.sort_order) === oldSo).forEach(a => {
+                        assetUpdates.push({ id: a.id, sort_order: newSo });
+                    });
+                }
+                g.sort_order = newSo;
+            });
+            currentGroups = ordered;
+            selectedSortOrder = j + 1;
+            const persist = assetUpdates.length
+                ? fetch('/api/aplus-version-assets', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: assetUpdates })
+                }).then(() => loadAssets())
+                : Promise.resolve();
+            persist.then(() => { currentGroups = buildGroups(); renderMiddle(); renderRight(); });
+        }
+
+        function saveImageTypeLayout() {
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) return toast('当前栏目未绑定图片类型', true);
+            const dev = getEditDevice();
+            const field = layoutJsonField(dev);
+            const jsonText = String(document.getElementById('layoutJsonTextarea').value || '');
+            const payload = { id: grp.image_type_id };
+            payload[field] = jsonText;
+            fetch('/api/image-type', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '保存失败');
+                const hit = aplusImageTypes.find(t => Number(t.id) === Number(grp.image_type_id));
+                if (hit) hit[field] = jsonText;
+                pageStatus('布局 JSON 已保存到图片类型', false);
+            }).catch(err => pageStatus(String(err), true));
+        }
+
+        function uploadModuleImages() {
+            if (!currentVersion || !selectedSortOrder) return toast('请选择栏目', true);
+            const grp = getSelectedGroup();
+            if (!grp || !grp.image_type_id) return toast('请为栏目选择图片类型', true);
+            const input = document.getElementById('uploadInput');
+            const files = input.files ? Array.from(input.files) : [];
+            if (!files.length) return toast('请选择文件', true);
+            const fd = new FormData();
+            fd.append('aplus_version_id', String(currentVersion.id));
+            fd.append('sort_order', String(selectedSortOrder));
+            fd.append('image_type_id', String(grp.image_type_id));
+            fd.append('apply_mobile', document.getElementById('imgApplyMobile').checked ? '1' : '0');
+            fd.append('apply_desktop', document.getElementById('imgApplyDesktop').checked ? '1' : '0');
+            files.forEach(f => fd.append('file', f, f.name));
+            fetch('/api/aplus-upload', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') throw new Error(data.message || '上传失败');
+                    toast('上传成功', false);
+                    input.value = '';
+                    return loadAssets().then(() => { renderImageList(); renderPreview(); renderMiddle(); });
+                })
+                .catch(err => toast(String(err), true));
+        }
+
+        function moveImage(linkId, delta) {
+            const list = groupAssets();
+            const idx = list.findIndex(x => Number(x.id) === Number(linkId));
+            const j = idx + Number(delta || 0);
+            if (idx < 0 || j < 0 || j >= list.length) return;
+            const a = list[idx];
+            const b = list[j];
+            const items = [
+                { id: a.id, item_sort_order: b.item_sort_order },
+                { id: b.id, item_sort_order: a.item_sort_order }
+            ];
+            fetch('/api/aplus-version-assets', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items })
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '排序失败');
+                return loadAssets();
+            }).then(() => { renderImageList(); renderPreview(); }).catch(err => toast(String(err), true));
+        }
+
+        function removeImage(linkId) {
+            if (!confirm('移除该图片？')) return;
+            fetch('/api/aplus-version-assets', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: Number(linkId) })
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '移除失败');
+                return loadAssets();
+            }).then(() => { renderImageList(); renderPreview(); renderMiddle(); }).catch(err => toast(String(err), true));
+        }
+
+        function parseLayoutModules(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return [];
+            try {
+                const data = JSON.parse(text);
+                return Array.isArray(data) ? data : (Array.isArray(data.modules) ? data.modules : [data]);
+            } catch { return []; }
+        }
+
+        function renderPreview() {
+            const grp = getSelectedGroup();
+            const box = document.getElementById('previewBox');
+            if (!grp) { box.innerHTML = '暂无预览'; return; }
+            const typeObj = resolveImageTypeForGroup(grp.sort_order);
+            const field = layoutJsonField(getEditDevice());
+            const modules = parseLayoutModules(typeObj && typeObj[field]);
+            const imgs = groupAssets();
+            if (!modules.length) {
+                if (!imgs.length) { box.innerHTML = '暂无布局 JSON 或图片'; return; }
+                box.innerHTML = imgs.map(it => {
+                    const src = storagePathToPreviewUrl(it.storage_path);
+                    return src ? `<img src="${src}" style="margin-bottom:0.5rem;" alt="">` : '';
+                }).join('') || '暂无预览';
+                return;
+            }
+            box.innerHTML = modules.map(m => renderModuleHtml(m, imgs)).join('');
+        }
+
+        function renderModuleHtml(m, imgs) {
+            const type = String((m || {}).type || 'TextBlock');
+            const props = Object.assign({}, (m && m.props) || {});
+            const urls = imgs.map(it => storagePathToPreviewUrl(it.storage_path)).filter(Boolean);
+            if (!props.image_url && urls.length) props.image_url = urls[0];
+            if (type === 'Carousel' && !props.image_urls) props.image_urls = urls;
+            if (type === 'Hero') {
+                const img = esc(props.image_url || '');
+                return `<div><strong>${esc(props.title || '')}</strong>${img ? `<img src="${img}" alt="">` : ''}<div class="pm-sub">${esc(props.text || '')}</div></div>`;
+            }
+            if (type === 'Image') {
+                const img = esc(props.image_url || '');
+                return img ? `<img src="${img}" alt="">` : '<div class="pm-muted">无图</div>';
+            }
+            if (type === 'Carousel') {
+                const urls = Array.isArray(props.image_urls) ? props.image_urls : [];
+                return urls.length ? urls.map(u => `<img src="${esc(u)}" style="margin-bottom:0.5rem;" alt="">`).join('') : '<div class="pm-muted">轮播无图</div>';
+            }
+            if (type === 'TwoColumnImageText') {
+                const img = esc(props.image_url || props.left_image_url || '');
+                return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                    <div>${img ? `<img src="${img}" alt="">` : ''}</div>
+                    <div><strong>${esc(props.right_title || '')}</strong><div class="pm-sub">${esc(props.right_text || props.text || '')}</div></div>
+                </div>`;
+            }
+            return `<div><strong>${esc(props.title || '')}</strong><div class="pm-sub" style="white-space:pre-wrap;">${esc(props.text || '')}</div></div>`;
+        }
+
+        function openCreateVersionModal() {
             document.getElementById('newVersionName').value = '';
             document.getElementById('createVersionModal').classList.add('active');
-            // default selects follow toolbar selects if any
             const p = document.getElementById('platformSelect').value;
             const s = document.getElementById('skuFamilySelect').value;
             if (p) document.getElementById('newPlatformSelect').value = p;
             if (s) document.getElementById('newSkuFamilySelect').value = s;
         }
-        function closeCreateVersionModal(){ document.getElementById('createVersionModal').classList.remove('active'); }
-        window.setTimeout(function(){ var el=document.getElementById('createVersionModal'); if(el&&typeof window.bindPmModalBackdropClose==='function')window.bindPmModalBackdropClose(el,closeCreateVersionModal); },0);
+        function closeCreateVersionModal() { document.getElementById('createVersionModal').classList.remove('active'); }
 
-        function createVersion(){
-            const name = String(document.getElementById('newVersionName').value||'').trim();
-            const platform_type_id = Number(document.getElementById('newPlatformSelect').value||0);
-            const sku_family_id = Number(document.getElementById('newSkuFamilySelect').value||0);
-            if (!name || !platform_type_id || !sku_family_id){
-                toast('请填写版本名称、平台、货号', true);
-                return;
-            }
+        function createVersion() {
+            const name = String(document.getElementById('newVersionName').value || '').trim();
+            const platform_type_id = Number(document.getElementById('newPlatformSelect').value || 0);
+            const sku_family_id = Number(document.getElementById('newSkuFamilySelect').value || 0);
+            if (!name || !platform_type_id || !sku_family_id) return toast('请填写完整', true);
             fetch('/api/aplus-version', {
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ version_name: name, platform_type_id, sku_family_id })
-            }).then(r=>r.json()).then(data => {
-                if (!data || data.status!=='success') throw new Error(data.message||'创建失败');
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error(data.message || '创建失败');
                 closeCreateVersionModal();
                 loadVersions();
-                toast('已创建版本', false);
-            }).catch(err => {
-                toast('创建失败：' + err, true);
+                toast('已创建', false);
+            }).catch(err => toast(String(err), true));
+        }
+
+        function bindPageEvents() {
+            document.getElementById('platformSelect').addEventListener('change', loadVersions);
+            document.getElementById('skuFamilySelect').addEventListener('change', loadVersions);
+            document.getElementById('qInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadVersions(); });
+        }
+
+        function onDeviceChange() {
+            editDevice = getEditDevice();
+            if (!currentVersion) return;
+            selectedSortOrder = null;
+            loadAplusImageTypes().then(() => loadAssets()).then(() => {
+                currentGroups = buildGroups();
+                renderMiddle();
+                renderRight();
             });
         }
 
-        // auto load
-        window.addEventListener('load', function(){
-            loadInitOptions().finally(() => {
-                loadVersions();
-            });
-            document.getElementById('platformSelect').addEventListener('change', () => loadVersions());
-            document.getElementById('skuFamilySelect').addEventListener('change', () => loadVersions());
-            document.getElementById('layoutImageTypeSelect').addEventListener('change', () => loadImageTypeLayouts());
-            document.getElementById('layoutDeviceSelect').addEventListener('change', () => loadImageTypeLayouts());
-            document.getElementById('assetDeviceSelect').addEventListener('change', () => loadAssets().then(()=>renderPreview()));
-            document.getElementById('aplusImageTypeSelect').addEventListener('change', () => loadAssets().then(()=>renderPreview()));
+        function boot() {
+            bindPageEvents();
+            loadInitOptions().finally(loadVersions);
+            if (window.SitjoyPageUI) {
+                SitjoyPageUI.bindStatusSegment('#deviceSegment', { onChange: onDeviceChange });
+            }
+        }
+
+        window.addEventListener('load', () => {
+            if (window.SitjoyPageUI) {
+                SitjoyPageUI.init({
+                    selects: true,
+                    modals: [{ el: '#createVersionModal', onClose: closeCreateVersionModal }],
+                    statusSegments: true,
+                    onReady: boot
+                });
+            } else boot();
         });
+        window.setTimeout(() => {
+            const el = document.getElementById('createVersionModal');
+            if (el && window.bindPmModalBackdropClose) window.bindPmModalBackdropClose(el, closeCreateVersionModal);
+        }, 0);
     </script>
 </body>
 </html>
-
