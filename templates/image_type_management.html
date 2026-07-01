@@ -44,6 +44,160 @@
             text-align: center;
         }
         .switch-cell .switch-wrap { margin: 0 auto; }
+
+        /* 编辑弹窗：适用范围 / A+ 模块分区 */
+        .it-edit-modal-content { max-width: 1080px; }
+        .it-form-section {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 12px;
+            padding: 0.75rem 0.85rem;
+            margin-top: 0.85rem;
+            background: rgba(255, 255, 255, 0.55);
+        }
+        .it-form-section__title {
+            margin: 0 0 0.55rem;
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--morandi-ink);
+        }
+        .it-form-section__hint {
+            margin: -0.25rem 0 0.55rem;
+            font-size: 0.78rem;
+            color: rgba(42, 36, 32, 0.62);
+        }
+        .it-scope-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.45rem 1rem;
+        }
+        .it-scope-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            font-size: 0.86rem;
+            padding: 0.35rem 0.45rem;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.45);
+        }
+        .it-enabled-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.65rem;
+            padding-bottom: 0.65rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.35);
+        }
+        .it-enabled-row label:first-child { font-weight: 600; margin: 0; }
+        .it-ap-share-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.65rem;
+            padding: 0.45rem 0.55rem;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.45);
+        }
+        .it-ap-share-row label:first-child { margin: 0; font-size: 0.86rem; }
+        .it-ap-mobile-size-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.65rem;
+            margin-bottom: 0.65rem;
+        }
+        .it-ap-dual {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .it-ap-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+        .it-ap-col__title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--morandi-slate);
+        }
+        .it-ap-json-ta {
+            width: 100%;
+            min-height: 132px;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-size: 0.82rem;
+            box-sizing: border-box;
+            padding: 0.55rem 0.65rem;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            resize: vertical;
+        }
+        .it-ap-preview-label {
+            font-size: 0.74rem;
+            font-weight: 600;
+            color: var(--morandi-slate);
+            margin-top: 0.15rem;
+        }
+        .it-ap-preview {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            padding: 0.55rem 0.65rem;
+            min-height: 88px;
+            max-height: 200px;
+            overflow: auto;
+            background: #fff;
+            font-size: 0.8rem;
+        }
+        .it-ap-preview .it-ap-mod {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 8px;
+            padding: 0.45rem 0.5rem;
+            margin-bottom: 0.45rem;
+        }
+        .it-ap-preview .it-ap-mod:last-child { margin-bottom: 0; }
+        .it-ap-preview .it-ap-mod__type { font-weight: 700; margin-bottom: 0.2rem; }
+        .it-ap-preview .it-ap-mod__props {
+            margin: 0;
+            white-space: pre-wrap;
+            color: rgba(42, 36, 32, 0.75);
+            font-size: 0.76rem;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+        }
+        .it-ap-slots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .it-ap-slot-ph {
+            width: 68px;
+            height: 68px;
+            border: 1px dashed rgba(155, 74, 74, 0.45);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.15rem;
+            font-size: 0.68rem;
+            color: var(--morandi-slate);
+            background: rgba(255, 255, 255, 0.85);
+            text-align: center;
+            line-height: 1.2;
+        }
+        .it-ap-slot-ph__icon {
+            font-size: 1.1rem;
+            line-height: 1;
+            opacity: 0.55;
+        }
+        .it-ap-shared-slots { margin-top: 0.65rem; }
+        @media (max-width: 900px) {
+            .it-ap-dual, .it-ap-mobile-size-row, .it-scope-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -120,33 +274,38 @@
                         <div id="modalPlatformTypeList" class="pm-select-empty">加载中...</div>
                     </div>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用面料</label>
-                    <label class="switch-wrap" aria-label="适用面料">
-                        <input type="checkbox" id="modalApplyFabric" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用销售产品</label>
-                    <label class="switch-wrap" aria-label="适用销售产品">
-                        <input type="checkbox" id="modalApplySales" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用下单产品</label>
-                    <label class="switch-wrap" aria-label="适用下单产品">
-                        <input type="checkbox" id="modalApplyOrderProduct" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用A+</label>
-                    <label class="switch-wrap" aria-label="适用A+">
-                        <input type="checkbox" id="modalApplyAplus" checked>
-                        <span class="switch-slider"></span>
-                    </label>
+                <div class="it-form-section" style="margin-top:0.85rem;">
+                    <h4 class="it-form-section__title">适用范围</h4>
+                    <div class="it-scope-grid">
+                        <div class="it-scope-item">
+                            <span>适用面料</span>
+                            <label class="switch-wrap" aria-label="适用面料">
+                                <input type="checkbox" id="modalApplyFabric" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用销售产品</span>
+                            <label class="switch-wrap" aria-label="适用销售产品">
+                                <input type="checkbox" id="modalApplySales" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用下单产品</span>
+                            <label class="switch-wrap" aria-label="适用下单产品">
+                                <input type="checkbox" id="modalApplyOrderProduct" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用A+</span>
+                            <label class="switch-wrap" aria-label="适用A+">
+                                <input type="checkbox" id="modalApplyAplus" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
@@ -158,9 +317,16 @@
     </div>
 
     <div class="pm-modal" id="edit-modal">
-        <div class="pm-modal-content" style="max-width: 720px;">
+        <div class="pm-modal-content it-edit-modal-content">
             <h3 style="margin-top:0;">编辑图片类型</h3>
             <div class="pm-section-body pm-form">
+                <div class="it-enabled-row">
+                    <label for="editEnabled">启用</label>
+                    <label class="switch-wrap" aria-label="启用">
+                        <input type="checkbox" id="editEnabled">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
                 <div class="form-group pm-form-full" style="margin:0;">
                     <label for="editTypeName">类型名称<span class="required-asterisk">*</span></label>
                     <input type="text" id="editTypeName" class="required-field" maxlength="64">
@@ -179,103 +345,95 @@
                         <div id="editPlatformTypeList" class="pm-select-empty">加载中...</div>
                     </div>
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用面料</label>
-                    <label class="switch-wrap" aria-label="适用面料">
-                        <input type="checkbox" id="editApplyFabric">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用销售产品</label>
-                    <label class="switch-wrap" aria-label="适用销售产品">
-                        <input type="checkbox" id="editApplySales">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用下单产品</label>
-                    <label class="switch-wrap" aria-label="适用下单产品">
-                        <input type="checkbox" id="editApplyOrderProduct">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>适用A+</label>
-                    <label class="switch-wrap" aria-label="适用A+">
-                        <input type="checkbox" id="editApplyAplus" onchange="toggleEditAplusSections()">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div id="editAplusExtrasSection" class="pm-u-hidden">
-                <div class="form-group" style="margin:0;">
-                    <label>手机/电脑端共用图片</label>
-                    <label class="switch-wrap" aria-label="手机/电脑端共用图片">
-                        <input type="checkbox" id="editAplusShareImages" checked onchange="toggleEditAplusMobileSizeFields()">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div id="editAplusMobileSizeSection" class="pm-u-hidden">
-                    <div class="form-group" style="margin:0;">
-                        <label for="editRequiredWidthMobile">手机端需求宽(px)</label>
-                        <input type="number" id="editRequiredWidthMobile" class="optional-field" min="0" step="1" placeholder="可为空">
-                    </div>
-                    <div class="form-group" style="margin:0;">
-                        <label for="editRequiredHeightMobile">手机端需求高(px)</label>
-                        <input type="number" id="editRequiredHeightMobile" class="optional-field" min="0" step="1" placeholder="可为空">
+
+                <div class="it-form-section">
+                    <h4 class="it-form-section__title">适用范围</h4>
+                    <div class="it-scope-grid">
+                        <div class="it-scope-item">
+                            <span>适用面料</span>
+                            <label class="switch-wrap" aria-label="适用面料">
+                                <input type="checkbox" id="editApplyFabric">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用销售产品</span>
+                            <label class="switch-wrap" aria-label="适用销售产品">
+                                <input type="checkbox" id="editApplySales">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用下单产品</span>
+                            <label class="switch-wrap" aria-label="适用下单产品">
+                                <input type="checkbox" id="editApplyOrderProduct">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="it-scope-item">
+                            <span>适用A+</span>
+                            <label class="switch-wrap" aria-label="适用A+">
+                                <input type="checkbox" id="editApplyAplus" onchange="toggleEditAplusSections()">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
-                <div class="form-group pm-form-full" style="margin:0;">
-                    <label>A+ 布局 JSON</label>
-                    <div class="ap-toolbar-row" style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.35rem;">
-                        <button class="btn-secondary btn-small" type="button" onclick="openAplusJsonEditModal('mobile')">编辑手机端 JSON</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="openAplusJsonEditModal('desktop')">编辑电脑端 JSON</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="formatAplusJsonDraft('mobile')">格式化手机</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="formatAplusJsonDraft('desktop')">格式化电脑</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="previewAplusJsonDraft('mobile')">预览手机</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="previewAplusJsonDraft('desktop')">预览电脑</button>
+
+                <div id="editAplusExtrasSection" class="it-form-section pm-u-hidden">
+                    <h4 class="it-form-section__title">A+ 模块自定义</h4>
+                    <p class="it-form-section__hint">布局 JSON 修改后约 0.4 秒自动刷新下方预览；虚线框为 A+ 管理中上传图片后将出现的区域。</p>
+                    <div class="it-ap-share-row">
+                        <label for="editAplusShareImages">手机/电脑端共用图片</label>
+                        <label class="switch-wrap" aria-label="手机/电脑端共用图片">
+                            <input type="checkbox" id="editAplusShareImages" checked onchange="onEditAplusShareImagesChange()">
+                            <span class="switch-slider"></span>
+                        </label>
                     </div>
-                </div>
-                </div>
-                <div class="form-group" style="margin:0;">
-                    <label>启用</label>
-                    <label class="switch-wrap" aria-label="启用">
-                        <input type="checkbox" id="editEnabled">
-                        <span class="switch-slider"></span>
-                    </label>
+                    <div id="editAplusMobileSizeSection" class="it-ap-mobile-size-row pm-u-hidden">
+                        <div class="form-group" style="margin:0;">
+                            <label for="editRequiredWidthMobile">手机端需求宽(px)</label>
+                            <input type="number" id="editRequiredWidthMobile" class="optional-field" min="0" step="1" placeholder="可为空">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="editRequiredHeightMobile">手机端需求高(px)</label>
+                            <input type="number" id="editRequiredHeightMobile" class="optional-field" min="0" step="1" placeholder="可为空">
+                        </div>
+                    </div>
+                    <div class="it-ap-dual">
+                        <div class="it-ap-col">
+                            <div class="it-ap-col__title">手机端</div>
+                            <label class="it-ap-preview-label" for="editAplusJsonMobile">布局 JSON</label>
+                            <textarea id="editAplusJsonMobile" class="it-ap-json-ta optional-field" spellcheck="false" placeholder='{"modules":[...]}'></textarea>
+                            <div class="it-ap-preview-label">布局预览</div>
+                            <div id="editAplusPreviewMobile" class="it-ap-preview pm-muted">暂无内容</div>
+                            <div id="editAplusSlotsMobileWrap" class="pm-u-hidden">
+                                <div class="it-ap-preview-label">图片位示意</div>
+                                <div id="editAplusSlotsMobile" class="it-ap-slots"></div>
+                            </div>
+                        </div>
+                        <div class="it-ap-col">
+                            <div class="it-ap-col__title">电脑端</div>
+                            <label class="it-ap-preview-label" for="editAplusJsonDesktop">布局 JSON</label>
+                            <textarea id="editAplusJsonDesktop" class="it-ap-json-ta optional-field" spellcheck="false" placeholder='{"modules":[...]}'></textarea>
+                            <div class="it-ap-preview-label">布局预览</div>
+                            <div id="editAplusPreviewDesktop" class="it-ap-preview pm-muted">暂无内容</div>
+                            <div id="editAplusSlotsDesktopWrap" class="pm-u-hidden">
+                                <div class="it-ap-preview-label">图片位示意</div>
+                                <div id="editAplusSlotsDesktop" class="it-ap-slots"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="editAplusSlotsSharedWrap" class="it-ap-shared-slots pm-u-hidden">
+                        <div class="it-ap-preview-label">共用图片位示意（上传后手机/电脑端共用）</div>
+                        <div id="editAplusSlotsShared" class="it-ap-slots"></div>
+                    </div>
                 </div>
             </div>
             <div id="editStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEditModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveEditImageType()">保存</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="pm-modal" id="aplus-json-edit-modal">
-        <div class="pm-modal-content" style="max-width: 760px;">
-            <h3 id="aplusJsonEditTitle" style="margin-top:0;">编辑 A+ 布局 JSON</h3>
-            <div class="pm-section-body">
-                <textarea id="aplusJsonEditTextarea" class="optional-field" rows="14" spellcheck="false"
-                    style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.86rem;box-sizing:border-box;padding:0.65rem 0.8rem;"></textarea>
-            </div>
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" type="button" onclick="closeAplusJsonEditModal()">取消</button>
-                <button class="btn-primary" type="button" onclick="saveAplusJsonEditModal()">保存</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="pm-modal" id="aplus-json-preview-modal">
-        <div class="pm-modal-content" style="max-width: 760px;">
-            <h3 style="margin-top:0;">A+布局预览（结构）</h3>
-            <div class="pm-section-body">
-                <div id="aplusJsonPreviewMeta" style="color:rgba(42,36,32,0.72); font-size:0.9rem; margin-bottom:0.55rem;"></div>
-                <div id="aplusJsonPreviewBox" style="border:1px solid var(--morandi-sand); border-radius:12px; background:#fff; padding:0.75rem; max-height:520px; overflow:auto;"></div>
-            </div>
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" type="button" onclick="closeAplusJsonPreview()">关闭</button>
             </div>
         </div>
     </div>
@@ -295,8 +453,8 @@
         // -------------------------------------------------------------------------
         let platformTypeOptions = [];
         let currentEditItem = null;
-        let editAplusJsonDraft = { mobile: '', desktop: '' };
-        let aplusJsonEditDevice = 'desktop';
+        let aplusPreviewTimer = null;
+        const APLUS_PREVIEW_DELAY_MS = 400;
 
         // -------------------------------------------------------------------------
         // 通用工具与状态提示
@@ -532,7 +690,14 @@
             const on = document.getElementById('editApplyAplus').checked;
             const sec = document.getElementById('editAplusExtrasSection');
             if (sec) sec.classList.toggle('pm-u-hidden', !on);
+            onEditAplusShareImagesChange();
+            if (on) scheduleEditAplusInlinePreview();
+        }
+
+        function onEditAplusShareImagesChange() {
             toggleEditAplusMobileSizeFields();
+            refreshEditAplusSlotVisibility();
+            scheduleEditAplusInlinePreview();
         }
 
         function toggleEditAplusMobileSizeFields() {
@@ -543,38 +708,149 @@
             sec.classList.toggle('pm-u-hidden', !appliesAplus || shareImages);
         }
 
-        function openAplusJsonEditModal(device) {
-            aplusJsonEditDevice = device === 'mobile' ? 'mobile' : 'desktop';
-            const title = document.getElementById('aplusJsonEditTitle');
-            if (title) title.textContent = aplusJsonEditDevice === 'mobile' ? '编辑手机端 A+ 布局 JSON' : '编辑电脑端 A+ 布局 JSON';
-            document.getElementById('aplusJsonEditTextarea').value = String(editAplusJsonDraft[aplusJsonEditDevice] || '');
-            document.getElementById('aplus-json-edit-modal').classList.add('active');
+        function readEditAplusJsonText(device) {
+            const id = device === 'mobile' ? 'editAplusJsonMobile' : 'editAplusJsonDesktop';
+            const el = document.getElementById(id);
+            return el ? String(el.value || '') : '';
         }
 
-        function closeAplusJsonEditModal() {
-            document.getElementById('aplus-json-edit-modal').classList.remove('active');
-        }
-
-        function saveAplusJsonEditModal() {
-            editAplusJsonDraft[aplusJsonEditDevice] = String(document.getElementById('aplusJsonEditTextarea').value || '');
-            closeAplusJsonEditModal();
-        }
-
-        function formatAplusJsonDraft(device) {
-            const dev = device === 'mobile' ? 'mobile' : 'desktop';
-            const raw = String(editAplusJsonDraft[dev] || '').trim();
-            if (!raw) return;
+        function parseAplusLayoutModules(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return [];
             try {
-                editAplusJsonDraft[dev] = JSON.stringify(JSON.parse(raw), null, 2);
-                if (window.showAppToast) window.showAppToast('已格式化', false, 1200);
-            } catch (e) {
-                if (window.showAppToast) window.showAppToast('JSON 格式无效', true);
+                const data = JSON.parse(text);
+                if (Array.isArray(data)) return data;
+                if (data && Array.isArray(data.modules)) return data.modules;
+                if (data && typeof data === 'object') return [data];
+            } catch (_e) {}
+            return null;
+        }
+
+        function countAplusImageSlots(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return 0;
+            try {
+                const data = JSON.parse(text);
+                if (Number(data.image_slots) > 0) return Number(data.image_slots);
+            } catch (_e) {}
+            const modules = parseAplusLayoutModules(raw);
+            if (!modules) return 0;
+            let n = 0;
+            modules.forEach((m) => {
+                const type = String((m || {}).type || '');
+                const props = (m && m.props) || {};
+                if (type === 'Carousel') {
+                    if (Array.isArray(props.image_urls) && props.image_urls.length) n += props.image_urls.length;
+                    else if (Number(props.image_slot_count) > 0) n += Number(props.image_slot_count);
+                    else n += 1;
+                } else if (type === 'Image' || type === 'Hero' || type === 'TwoColumnImageText') {
+                    n += 1;
+                } else if (Number(props.image_slot_count) > 0) {
+                    n += Number(props.image_slot_count);
+                } else if (props.image_url !== undefined || props.left_image_url !== undefined) {
+                    n += 1;
+                }
+            });
+            return n;
+        }
+
+        function renderAplusSlotPlaceholders(hostEl, slotCount) {
+            if (!hostEl) return;
+            const n = Math.max(0, Number(slotCount) || 0);
+            if (!n) {
+                hostEl.innerHTML = '<span style="font-size:0.78rem;color:rgba(42,36,32,0.62);">布局 JSON 未定义图片位</span>';
+                return;
+            }
+            hostEl.innerHTML = '';
+            for (let slot = 1; slot <= n; slot += 1) {
+                const ph = document.createElement('div');
+                ph.className = 'it-ap-slot-ph';
+                ph.title = '图片位 ' + slot;
+                ph.innerHTML = '<span class="it-ap-slot-ph__icon">+</span><span class="it-ap-slot-ph__label">位 ' + slot + '</span>';
+                hostEl.appendChild(ph);
             }
         }
 
-        function previewAplusJsonDraft(device) {
-            const dev = device === 'mobile' ? 'mobile' : 'desktop';
-            previewAplusJsonText(String(editAplusJsonDraft[dev] || ''), dev === 'mobile' ? '手机端' : '电脑端');
+        function renderAplusLayoutPreviewBox(hostEl, raw) {
+            if (!hostEl) return;
+            const text = String(raw || '').trim();
+            if (!text) {
+                hostEl.innerHTML = '暂无内容';
+                hostEl.classList.add('pm-muted');
+                return;
+            }
+            const modules = parseAplusLayoutModules(raw);
+            if (modules === null) {
+                hostEl.innerHTML = '<span class="it-ap-preview-err">JSON 格式无效</span>';
+                hostEl.classList.remove('pm-muted');
+                return;
+            }
+            if (!modules.length) {
+                hostEl.innerHTML = '<span style="color:rgba(42,36,32,0.72);">未检测到 modules[]</span>';
+                hostEl.classList.add('pm-muted');
+                return;
+            }
+            hostEl.classList.remove('pm-muted');
+            hostEl.innerHTML = modules.map((m, idx) => {
+                const type = escapeHtml((m && m.type) ? String(m.type) : '');
+                const props = m && typeof m.props === 'object' ? m.props : {};
+                const propsText = escapeHtml(JSON.stringify(props, null, 2));
+                return `<div class="it-ap-mod"><div class="it-ap-mod__type">模块 ${idx + 1}: ${type || '-'}</div><pre class="it-ap-mod__props">${propsText}</pre></div>`;
+            }).join('');
+        }
+
+        function refreshEditAplusSlotVisibility() {
+            const appliesAplus = document.getElementById('editApplyAplus').checked;
+            const shareImages = document.getElementById('editAplusShareImages').checked;
+            const mobWrap = document.getElementById('editAplusSlotsMobileWrap');
+            const deskWrap = document.getElementById('editAplusSlotsDesktopWrap');
+            const sharedWrap = document.getElementById('editAplusSlotsSharedWrap');
+            if (!appliesAplus) {
+                if (mobWrap) mobWrap.classList.add('pm-u-hidden');
+                if (deskWrap) deskWrap.classList.add('pm-u-hidden');
+                if (sharedWrap) sharedWrap.classList.add('pm-u-hidden');
+                return;
+            }
+            if (shareImages) {
+                if (mobWrap) mobWrap.classList.add('pm-u-hidden');
+                if (deskWrap) deskWrap.classList.add('pm-u-hidden');
+                if (sharedWrap) sharedWrap.classList.remove('pm-u-hidden');
+            } else {
+                if (mobWrap) mobWrap.classList.remove('pm-u-hidden');
+                if (deskWrap) deskWrap.classList.remove('pm-u-hidden');
+                if (sharedWrap) sharedWrap.classList.add('pm-u-hidden');
+            }
+        }
+
+        function refreshEditAplusInlinePreview() {
+            if (!document.getElementById('editApplyAplus').checked) return;
+            const mobileText = readEditAplusJsonText('mobile');
+            const desktopText = readEditAplusJsonText('desktop');
+            const shareImages = document.getElementById('editAplusShareImages').checked;
+            renderAplusLayoutPreviewBox(document.getElementById('editAplusPreviewMobile'), mobileText);
+            renderAplusLayoutPreviewBox(document.getElementById('editAplusPreviewDesktop'), desktopText);
+            refreshEditAplusSlotVisibility();
+            if (shareImages) {
+                const slotCount = Math.max(countAplusImageSlots(mobileText), countAplusImageSlots(desktopText));
+                renderAplusSlotPlaceholders(document.getElementById('editAplusSlotsShared'), slotCount);
+            } else {
+                renderAplusSlotPlaceholders(document.getElementById('editAplusSlotsMobile'), countAplusImageSlots(mobileText));
+                renderAplusSlotPlaceholders(document.getElementById('editAplusSlotsDesktop'), countAplusImageSlots(desktopText));
+            }
+        }
+
+        function scheduleEditAplusInlinePreview() {
+            if (aplusPreviewTimer) window.clearTimeout(aplusPreviewTimer);
+            aplusPreviewTimer = window.setTimeout(refreshEditAplusInlinePreview, APLUS_PREVIEW_DELAY_MS);
+        }
+
+        function bindEditAplusJsonInputs() {
+            ['editAplusJsonMobile', 'editAplusJsonDesktop'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el || el.dataset.aplusBound === '1') return;
+                el.dataset.aplusBound = '1';
+                el.addEventListener('input', scheduleEditAplusInlinePreview);
+            });
         }
 
         function openEditModal(item) {
@@ -590,16 +866,22 @@
             document.getElementById('editApplyAplus').checked = Number(item.applies_aplus || 0) === 1;
             document.getElementById('editAplusShareImages').checked = Number(item.aplus_share_images != null ? item.aplus_share_images : 1) === 1;
             document.getElementById('editEnabled').checked = Number(item.is_enabled || 0) === 1;
-            editAplusJsonDraft.mobile = String(item.aplus_layout_json_mobile || '');
-            editAplusJsonDraft.desktop = String(item.aplus_layout_json_desktop || '');
+            document.getElementById('editAplusJsonMobile').value = String(item.aplus_layout_json_mobile || '');
+            document.getElementById('editAplusJsonDesktop').value = String(item.aplus_layout_json_desktop || '');
             renderPlatformTypeCheckboxes(document.getElementById('editPlatformTypeList'), item.platform_type_ids || []);
+            bindEditAplusJsonInputs();
             toggleEditAplusSections();
+            refreshEditAplusInlinePreview();
             document.getElementById('editStatus').style.display = 'none';
             document.getElementById('editStatus').textContent = '';
             document.getElementById('edit-modal').classList.add('active');
         }
 
         function closeEditModal() {
+            if (aplusPreviewTimer) {
+                window.clearTimeout(aplusPreviewTimer);
+                aplusPreviewTimer = null;
+            }
             document.getElementById('edit-modal').classList.remove('active');
             currentEditItem = null;
         }
@@ -631,8 +913,8 @@
                 };
             if (applies_aplus) {
                 payload.aplus_share_images = aplus_share_images;
-                payload.aplus_layout_json_mobile = String(editAplusJsonDraft.mobile || '');
-                payload.aplus_layout_json_desktop = String(editAplusJsonDraft.desktop || '');
+                payload.aplus_layout_json_mobile = readEditAplusJsonText('mobile');
+                payload.aplus_layout_json_desktop = readEditAplusJsonText('desktop');
                 if (aplus_share_images) {
                     payload.required_width_px_mobile = required_width_px;
                     payload.required_height_px_mobile = required_height_px;
@@ -701,62 +983,10 @@
             if (typeof b !== 'function') return;
             var em = document.getElementById('edit-modal');
             if (em) b(em, closeEditModal);
-            var ap = document.getElementById('aplus-json-preview-modal');
-            if (ap) b(ap, closeAplusJsonPreview);
-            var aj = document.getElementById('aplus-json-edit-modal');
-            if (aj) b(aj, closeAplusJsonEditModal);
         }, 0);
 
-        // -------------------------------------------------------------------------
-        // A+ 布局 JSON 格式化与预览
-        // -------------------------------------------------------------------------
-        function closeAplusJsonPreview() {
-            document.getElementById('aplus-json-preview-modal').classList.remove('active');
-            document.getElementById('aplusJsonPreviewBox').innerHTML = '';
-            document.getElementById('aplusJsonPreviewMeta').textContent = '';
-        }
-
-        function formatAplusJson(device) {
-            formatAplusJsonDraft(device);
-        }
-
-        function previewAplusJson(device) {
-            previewAplusJsonDraft(device);
-        }
-
-        function previewAplusJsonText(text, deviceLabel) {
-            const meta = document.getElementById('aplusJsonPreviewMeta');
-            const box = document.getElementById('aplusJsonPreviewBox');
-            meta.textContent = `${deviceLabel} · ${String(document.getElementById('editTypeName').value || '').trim() || '-'}`;
-            box.innerHTML = '';
-            if (!String(text || '').trim()) {
-                box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">空</div>';
-                document.getElementById('aplus-json-preview-modal').classList.add('active');
-                return;
-            }
-            try {
-                const obj = JSON.parse(text);
-                const modules = (obj && obj.modules && Array.isArray(obj.modules)) ? obj.modules : (Array.isArray(obj) ? obj : []);
-                if (!modules.length) {
-                    box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">未检测到 modules[]</div>';
-                } else {
-                    box.innerHTML = modules.map((m, idx) => {
-                        const type = escapeHtml((m && m.type) ? String(m.type) : '');
-                        const props = m && typeof m.props === 'object' ? m.props : {};
-                        const propsText = escapeHtml(JSON.stringify(props, null, 2));
-                        return `<div style="border:1px solid var(--morandi-sand); border-radius:12px; padding:0.65rem; margin-bottom:0.6rem;">
-                            <div style="font-weight:700; margin-bottom:0.35rem;">模块 ${idx+1}: ${type || '-'}</div>
-                            <pre style="margin:0; white-space:pre-wrap; color:rgba(42,36,32,0.78); font-size:0.88rem;">${propsText}</pre>
-                        </div>`;
-                    }).join('');
-                }
-                document.getElementById('aplus-json-preview-modal').classList.add('active');
-            } catch (e) {
-                showStatus('JSON格式错误：' + e, true);
-            }
-        }
-
         window.addEventListener('load', function() {
+            bindEditAplusJsonInputs();
             loadPlatformTypes().finally(() => loadImageTypeList());
         });
     </script>
