@@ -373,3 +373,29 @@
 .material-type-option {
     margin: 0;
 }
+
+/* -------------------------------------------------------------------------
+ * sj-row-reorder-actions — 列表行内顺序调整（btn-capsule-sm 横排）
+ * 用于：A+ 栏目排序、广告操作类型顺序、操作原因排序等
+ * ------------------------------------------------------------------------- */
+
+.sj-row-reorder-actions,
+.optype-order-actions,
+.reason-item-order,
+.ap-module-actions {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.12rem;
+    flex: 0 0 auto;
+}
+
+.sj-row-reorder-actions .btn-capsule-sm,
+.optype-order-actions .btn-capsule-sm,
+.reason-item-order .btn-capsule-sm,
+.ap-module-actions .btn-capsule-sm {
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+}

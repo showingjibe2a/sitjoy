@@ -77,44 +77,6 @@
             padding: 0.45rem 0.55rem;
             background: #fff;
         }
-        .reason-item-order,
-        .optype-order-actions {
-            display: inline-flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.08rem;
-            flex: 0 0 auto;
-        }
-        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-            margin: 0 !important;
-            padding: 0.04rem 0.18rem !important;
-            min-width: 1.05rem !important;
-            width: 1.05rem !important;
-            height: 1.05rem !important;
-            min-height: 1.05rem !important;
-            line-height: 1 !important;
-            font-size: 0.62rem !important;
-            font-weight: 700 !important;
-            color: #2a2420 !important;
-            border: 0 !important;
-            border-radius: 3px;
-            background: transparent !important;
-            box-shadow: none !important;
-        }
-        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move:hover:not(:disabled) {
-            color: #2a2420 !important;
-            background: rgba(42, 36, 32, 0.06) !important;
-        }
-        .sf-perf-field-reorder .sf-perf-field-move.sf-perf-field-move:disabled {
-            color: rgba(42, 36, 32, 0.28) !important;
-            opacity: 1;
-            cursor: not-allowed;
-        }
         .reason-item-name {
             flex: 1;
             color: var(--morandi-ink);
@@ -566,9 +528,9 @@
                 row.innerHTML = `
                     <span class="default-target-item-name">${escapeHtml(item.name)}</span>
                     <span class="default-target-item-value">${escapeHtml(item.value)}</span>
-                    <button type="button" class="btn-danger">删除</button>
+                    <button type="button" class="btn-capsule-sm sj-row-remove-btn" title="删除">×</button>
                 `;
-                row.querySelector('button').addEventListener('click', function() {
+                row.querySelector('.sj-row-remove-btn').addEventListener('click', function() {
                     items.splice(idx, 1);
                     renderDefaultTargetList(items, listId, emptyId);
                 });
@@ -755,16 +717,16 @@
                 const row = document.createElement('div');
                 row.className = 'reason-item';
                 row.innerHTML = `
-                    <div class="sf-perf-field-reorder reason-item-order" aria-label="调整顺序">
-                        <button type="button" class="btn-ghost sf-perf-field-move" data-move="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
-                        <button type="button" class="btn-ghost sf-perf-field-move" data-move="down" title="下移" ${idx === modalReasonItems.length - 1 ? 'disabled' : ''}>↓</button>
+                    <div class="sj-row-reorder-actions reason-item-order" aria-label="调整顺序">
+                        <button type="button" class="btn-capsule-sm sf-perf-field-move" data-move="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                        <button type="button" class="btn-capsule-sm sf-perf-field-move" data-move="down" title="下移" ${idx === modalReasonItems.length - 1 ? 'disabled' : ''}>↓</button>
                     </div>
                     <span class="reason-item-name">${escapeHtml(name)}</span>
-                    <button type="button" class="btn-danger">删除</button>
+                    <button type="button" class="btn-capsule-sm sj-row-remove-btn" title="删除">×</button>
                 `;
                 row.querySelector('[data-move="up"]').addEventListener('click', () => moveReasonItem(idx, -1));
                 row.querySelector('[data-move="down"]').addEventListener('click', () => moveReasonItem(idx, 1));
-                row.querySelector('.btn-danger').addEventListener('click', function() {
+                row.querySelector('.sj-row-remove-btn').addEventListener('click', function() {
                     modalReasonItems.splice(idx, 1);
                     renderReasonList();
                 });
@@ -956,9 +918,9 @@
 
         function renderOpTypeReorderButtons(idx, total) {
             return `
-                <div class="sf-perf-field-reorder optype-order-actions" aria-label="调整顺序">
-                    <button type="button" class="btn-ghost sf-perf-field-move" data-dir="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
-                    <button type="button" class="btn-ghost sf-perf-field-move" data-dir="down" title="下移" ${idx === total - 1 ? 'disabled' : ''}>↓</button>
+                <div class="sj-row-reorder-actions optype-order-actions" aria-label="调整顺序">
+                    <button type="button" class="btn-capsule-sm sf-perf-field-move" data-dir="up" title="上移" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                    <button type="button" class="btn-capsule-sm sf-perf-field-move" data-dir="down" title="下移" ${idx === total - 1 ? 'disabled' : ''}>↓</button>
                 </div>
             `;
         }

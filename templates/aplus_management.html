@@ -44,6 +44,7 @@
             width: max-content;
             max-width: 100%;
             justify-self: start;
+            overflow: hidden;
         }
         .pm-layout.pm-layout--aplus .ap-mid-col,
         .pm-layout.pm-layout--aplus .ap-right-col {
@@ -77,6 +78,12 @@
             flex: 0 0 auto;
             min-height: 0;
             width: fit-content;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-x: auto;
+            overflow-y: visible;
+        }
+        .ap-version-table-host .pm-table-toolbar {
             max-width: 100%;
             box-sizing: border-box;
         }
@@ -125,7 +132,6 @@
         .ap-module-item__main { flex: 1; min-width: 0; }
         .ap-module-item__title { font-weight: 700; font-size: 0.86rem; }
         .ap-module-item__meta { font-size: 0.78rem; color: var(--morandi-slate); }
-        .ap-module-actions { display: flex; flex-direction: column; gap: 0.2rem; }
         .ap-preview-box {
             border: 1px solid var(--morandi-sand); border-radius: 10px; background: #fff;
             padding: 0.75rem; min-height: 200px; overflow: auto;
@@ -428,11 +434,22 @@
 
         function enhanceVersionTable() {
             const table = document.getElementById('apVersionTable');
-            if (!table || !window.SitjoyManagedTable) return;
-            SitjoyManagedTable.enhance(table.closest('.ap-version-table-host') || document);
-            if (window.bindFloatingHelpDots) bindFloatingHelpDots(table.closest('.ap-version-table-host') || document);
+            if (!table) return;
+            const hostRoot = table.closest('.ap-version-table-host') || document;
+            const M = window.SitjoyManagedPmTable;
+            if (M && typeof M.enhance === 'function') M.enhance(hostRoot);
+            if (window.bindFloatingHelpDots) bindFloatingHelpDots(hostRoot);
             bindApVersionTableResizeObserver();
-            scheduleSyncApLeftStackWidth();
+            const runSync = () => scheduleSyncApLeftStackWidth();
+            runSync();
+            if (M && typeof M.whenReady === 'function') {
+                M.whenReady(table, () => {
+                    runSync();
+                    requestAnimationFrame(() => requestAnimationFrame(runSync));
+                });
+            } else {
+                requestAnimationFrame(() => requestAnimationFrame(runSync));
+            }
         }
 
         function apVersionTableContentWidth(table) {
@@ -443,7 +460,22 @@
                 const n = parseFloat(cssW);
                 if (Number.isFinite(n) && n > 0) return Math.ceil(n);
             }
+            if (el.getAttribute('data-pm-col-width-sum') === '1') {
+                const measured = el.offsetWidth || el.scrollWidth;
+                if (measured > 0) return Math.ceil(measured);
+            }
+            const listWrap = el.closest('.pm-managed-body-wrap');
+            if (listWrap) {
+                const wrapW = listWrap.scrollWidth || listWrap.offsetWidth;
+                if (wrapW > 0) return Math.ceil(wrapW);
+            }
             return Math.ceil(el.scrollWidth || el.offsetWidth || 0);
+        }
+
+        function apCardPaddingX(card) {
+            if (!card) return 0;
+            const cs = getComputedStyle(card);
+            return (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
         }
 
         function resetApLeftStackWidth() {
@@ -455,15 +487,22 @@
                 leftCol.style.width = '';
                 leftCol.style.maxWidth = '';
             }
-            if (host) host.style.width = '';
+            if (host) {
+                host.style.width = '';
+                host.style.maxWidth = '';
+            }
             const listWrap = host ? host.querySelector('.pm-managed-body-wrap') : null;
-            if (listWrap) listWrap.style.width = '';
+            if (listWrap) {
+                listWrap.style.width = '';
+                listWrap.style.maxWidth = '';
+            }
         }
 
         function syncApLeftStackWidth() {
             const stack = document.querySelector('.ap-left-stack');
             const leftCol = document.querySelector('.ap-left-col');
             const versionCard = document.querySelector('.ap-version-card');
+            const searchCard = document.querySelector('.ap-search-card');
             const host = document.getElementById('versionListHost');
             const table = document.getElementById('apVersionTable');
             if (!stack) return;
@@ -471,25 +510,26 @@
                 resetApLeftStackWidth();
                 return;
             }
-            const cs = getComputedStyle(versionCard || stack);
-            const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
             const listWrap = host.querySelector('.pm-managed-body-wrap') || host;
             const listBorderX = (parseFloat(getComputedStyle(listWrap).borderLeftWidth) || 0)
                 + (parseFloat(getComputedStyle(listWrap).borderRightWidth) || 0);
-            const toolbar = host.querySelector('.pm-table-toolbar');
             const contentW = apVersionTableContentWidth(table);
+            if (!contentW) return;
             const bodyW = Math.ceil(contentW + listBorderX);
-            const toolbarW = toolbar ? Math.ceil(toolbar.scrollWidth) : 0;
-            const hostInnerW = Math.max(bodyW, toolbarW);
-            const outerW = Math.ceil(hostInnerW + padX);
-            stack.style.width = `${outerW}px`;
+            const versionPadX = apCardPaddingX(versionCard);
+            const searchPadX = apCardPaddingX(searchCard);
+            const searchMinInner = 248;
+            const outerW = Math.ceil(bodyW + versionPadX);
+            const stackW = Math.max(outerW, searchMinInner + searchPadX);
+            stack.style.width = `${stackW}px`;
             if (leftCol) {
-                leftCol.style.width = `${outerW}px`;
-                leftCol.style.maxWidth = `${outerW}px`;
+                leftCol.style.width = `${stackW}px`;
+                leftCol.style.maxWidth = `${stackW}px`;
             }
-            host.style.width = `${hostInnerW}px`;
+            host.style.width = `${bodyW}px`;
+            host.style.maxWidth = `${bodyW}px`;
             listWrap.style.width = `${bodyW}px`;
-            table.style.width = `${contentW}px`;
+            listWrap.style.maxWidth = `${bodyW}px`;
         }
 
         let _apStackWidthRaf = null;
@@ -511,6 +551,8 @@
             window._apVersionTableRo.observe(host);
             const table = document.getElementById('apVersionTable');
             if (table) window._apVersionTableRo.observe(table);
+            const listWrap = host.querySelector('.pm-managed-body-wrap');
+            if (listWrap) window._apVersionTableRo.observe(listWrap);
         }
 
         function renderVersionTable(items) {
@@ -580,19 +622,21 @@
                 list.innerHTML = '<div class="pm-muted-block pm-text-center" style="padding:0.65rem;font-size:0.82rem;">暂无栏目</div>';
                 return;
             }
-            list.innerHTML = currentGroups.map(g => {
+            list.innerHTML = currentGroups.map((g, idx) => {
                 const active = Number(selectedSortOrder) === Number(g.sort_order) ? 'is-active' : '';
                 const imgCount = currentAssets.filter(a => Number(a.sort_order) === Number(g.sort_order)).length;
                 const typeLabel = g.image_type_name || (g.image_type_id ? ('类型#' + g.image_type_id) : '未绑定类型');
+                const atFirst = idx === 0;
+                const atLast = idx === currentGroups.length - 1;
                 return `<div class="ap-module-item ${active}" onclick="selectGroup(${Number(g.sort_order)})">
                     <div class="ap-module-item__main">
                         <div class="ap-module-item__title">${esc(typeLabel)}</div>
                         <div class="ap-module-item__meta">组序 ${g.sort_order} · 图片 ${imgCount} 张</div>
                     </div>
-                    <div class="ap-module-actions" onclick="event.stopPropagation()">
-                        <button class="btn-secondary btn-small" type="button" onclick="moveGroup(${g.sort_order},-1)">↑</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="moveGroup(${g.sort_order},1)">↓</button>
-                        <button class="btn-secondary btn-small" type="button" onclick="removeGroup(${g.sort_order})">删</button>
+                    <div class="sj-row-reorder-actions ap-module-actions" onclick="event.stopPropagation()">
+                        <button type="button" class="btn-capsule-sm" title="上移" ${atFirst ? 'disabled' : ''} onclick="moveGroup(${Number(g.sort_order)},-1)">↑</button>
+                        <button type="button" class="btn-capsule-sm" title="下移" ${atLast ? 'disabled' : ''} onclick="moveGroup(${Number(g.sort_order)},1)">↓</button>
+                        <button type="button" class="btn-capsule-sm sj-row-remove-btn" title="删除栏目" onclick="removeGroup(${Number(g.sort_order)})">×</button>
                     </div>
                 </div>`;
             }).join('');
